@@ -9,6 +9,12 @@ import { useToast } from '../components/Toast'
 const AUDITOR = ['auditor', 'gm', 'admin']
 const MANAGE_ANY = ['storekeeper', 'manager', 'gm', 'admin']
 const STAFF_COUNT = ['bar', 'front_desk']
+// Deleting a SUBMITTED count: exactly these five roles, not derived
+// from MANAGE_ANY or AUDITOR (adds 'auditor', who could previously
+// verify but not delete). A DRAFT is a separate rule entirely — only
+// the staff member still counting it may remove it; see the render
+// logic below rather than this list.
+const CAN_DELETE_COUNT = ['storekeeper', 'manager', 'gm', 'auditor', 'admin']
 
 export default function Counts({ boot }) {
   const { staff, allLocations, locations, items } = boot
@@ -16,6 +22,7 @@ export default function Counts({ boot }) {
   const canCountOwn  = STAFF_COUNT.includes(staff.role)
   const canCount = canManageAny || canCountOwn
   const canVerify = AUDITOR.includes(staff.role)
+  const canDelete = CAN_DELETE_COUNT.includes(staff.role)
   // staff pick from their own assigned department(s) only; a
   // storekeeper or above can count any department in the branch
   const pickableLocations = canManageAny ? allLocations : locations
@@ -263,9 +270,9 @@ export default function Counts({ boot }) {
             {open.count.status === 'submitted' && !canVerify && (
               <p className="text-center text-dim">Only an auditor can verify this count.</p>
             )}
-            {open.count.status !== 'verified' && (
-              canManageAny || canVerify
-              || (open.count.counted_by === staff.id && open.count.status === 'draft')
+            {(
+              (open.count.status === 'submitted' && canDelete)
+              || (open.count.status === 'draft' && open.count.counted_by === staff.id)
             ) && (
               <button onClick={() => setConfirmDel(open.count)}
                 className="mt-3 w-full h-12 rounded-xl border border-clay text-clay font-semibold">

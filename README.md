@@ -655,3 +655,39 @@ No database changes — `loadPendingVerifications()` is a lightweight
 count-only query against `stock_counts`, and it inherits the same RLS
 already governing that table, so each person only ever sees their own
 branch's pending count.
+
+
+## Count deletion narrowed to a specific role list
+
+Deleting a stock count is now storekeeper, GM, auditor, and admin
+only — an exact list, not "editor-tier" or "verifier-tier" reused.
+Two deliberate consequences worth knowing:
+
+- Plain "manager" role is excluded, even though it has most other
+  editor-tier rights elsewhere in the app.
+- Auditors gained delete rights they didn't have before (previously
+  verify-only).
+- The earlier rule letting bar/front-desk staff delete their own
+  not-yet-submitted draft is gone — only the four listed roles can
+  remove a count now, at any stage short of verified.
+
+Verified counts remain permanently undeletable, unchanged.
+
+
+## Stock count deletion: two separate rules now, not one
+
+Fixed while implementing this: the app already had a
+`CAN_DELETE_COUNT` list (storekeeper/manager/gm/auditor/admin) but it
+was wired to allow deleting BOTH drafts and submitted counts with no
+split — and along the way, the counting staff member's own right to
+delete their own not-yet-submitted draft had been dropped entirely.
+
+Now, matching 56_count_delete_rules.sql exactly:
+- **Draft** — only the staff member currently counting it.
+- **Submitted** — only storekeeper, manager, GM, auditor, admin. The
+  auditor gaining delete rights here is new; previously they could
+  verify a count but not remove one.
+- **Verified** — nobody, unchanged.
+
+Enforced at the database via `counts_remove`, not just hidden in the
+UI — the app's button visibility now matches the RLS policy exactly.
