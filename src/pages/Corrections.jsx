@@ -8,7 +8,7 @@ export default function Corrections({ boot }) {
   const { staff, allLocations, items, methods } = boot
   const toast = useToast()
   const isEditor = ['storekeeper', 'manager', 'gm', 'admin'].includes(staff.role)
-  const canEdit = isEditor || staff.role === 'bar'
+  const canEdit = isEditor || staff.role === 'bar' || staff.role === 'front_desk'
   const ownOnly = !isEditor
   const [rows, setRows] = useState(null)
   const [view, setView] = useState(canEdit ? 'entries' : 'history')

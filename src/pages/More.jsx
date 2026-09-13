@@ -1,8 +1,8 @@
 const ITEMS = [
   { key: 'credit',  label: 'Credit',  hint: 'Who owes what, and record repayments',
-    roles: ['bar', 'storekeeper', 'manager', 'gm', 'admin'] },
+    roles: ['bar', 'front_desk', 'storekeeper', 'manager', 'gm', 'admin'] },
   { key: 'recovery', label: 'Recovered debt', hint: 'Payments collected, who paid and who recovered it',
-    roles: ['bar', 'storekeeper', 'manager', 'gm', 'admin'] },
+    roles: ['bar', 'front_desk', 'storekeeper', 'manager', 'gm', 'admin'] },
   { key: 'count',   label: 'Stock count', hint: 'Count a location and have it verified',
     roles: ['storekeeper', 'manager', 'gm', 'admin', 'auditor'] },
   { key: 'catalog', label: 'Catalog', hint: 'Items, prices and what is active',
@@ -10,7 +10,7 @@ const ITEMS = [
   { key: 'variance', label: 'Variances', hint: 'Sales where collection did not match the goods sold',
     roles: ['storekeeper', 'manager', 'gm', 'admin'] },
   { key: 'fix',     label: 'Corrections', hint: 'Fix a mistake from today or yesterday',
-    roles: ['bar', 'storekeeper', 'manager', 'gm', 'admin'] },
+    roles: ['bar', 'front_desk', 'storekeeper', 'manager', 'gm', 'admin'] },
 ]
 
 export default function More({ boot, onGo }) {

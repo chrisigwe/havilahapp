@@ -94,7 +94,7 @@ export default function Credit({ boot }) {
               ? 'bg-raise border-amber text-amber font-bold' : 'border-line text-dim'}`}>
             Everyone
           </button>
-          {people.filter(p => p.role === 'bar').map(p => (
+          {people.filter(p => p.role === 'bar' || p.role === 'front_desk').map(p => (
             <button key={p.id} onClick={() => setStaffFilter(p.id)}
               className={`shrink-0 h-10 px-3 rounded-full border text-sm ${staffFilter === p.id
                 ? 'bg-raise border-amber text-amber font-bold' : 'border-line text-dim'}`}>

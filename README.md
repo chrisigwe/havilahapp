@@ -522,3 +522,20 @@ calling code, no matter how good the source map is. The source maps
 enabled earlier are still a permanent, valuable improvement for any
 future crash that *does* originate in a normal render or event
 handler, where they'll work as intended immediately.
+
+
+## Front desk given Credit, Recovered Debt, and Corrections
+
+The database side of this was already correct from when front desk
+first got recording rights (39_front_desk_minimart.sql) — the RLS
+policies check what someone did (`recorded_by`, `app_owns_recent()`)
+or a general "can record" flag, not a hardcoded role list, so front
+desk already had the right to use these three pages. The gap was
+purely in the app: `front_desk` was missing from More.jsx's visibility
+list for all three, and Corrections/Credit had their own internal
+`role === 'bar'` checks that would have shown front desk a broken or
+read-only view even after the menu item appeared. All three fixed —
+front desk staff (Daniel, Mercy, and the rest) now get exactly the
+same rights bar staff have: record, view their own department's
+credit and recovery, edit their own entries from today and yesterday,
+never delete. No database changes needed for this round.
