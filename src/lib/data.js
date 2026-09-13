@@ -561,3 +561,13 @@ export async function loadDepartmentHistory(branchId, locationId, days = 60) {
   if (error) throw error
   return data
 }
+
+// how many counts are sitting in 'submitted', waiting on an auditor —
+// used for the in-app badge shown to auditor/storekeeper/manager/gm/admin
+export async function loadPendingVerifications(branchId) {
+  const { count, error } = await supabase.from('stock_counts')
+    .select('id', { count: 'exact', head: true })
+    .eq('branch_id', branchId).eq('status', 'submitted')
+  if (error) return 0
+  return count || 0
+}

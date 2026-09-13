@@ -633,3 +633,25 @@ exactly as before, so a bar hand still only sees their own
 department's numbers and a GM viewing the branch still sees the
 branch total. Only the number of requests changed, not what anyone
 is allowed to see.
+
+
+## In-app alert for submitted counts
+
+Auditor, storekeeper, manager, GM and admin now see a badge when one
+or more counts are sitting in "submitted" — on the More tab itself (a
+small number, noticed before even opening the menu) and again next to
+"Stock count" inside it, with the hint text changing to "N awaiting
+your verification".
+
+This is an in-app alert, not a push notification — it updates while
+the app is open (checked on load, on branch switch, and every 60
+seconds) but won't buzz a phone whose screen is off. A true push
+notification would need new infrastructure this app doesn't have yet
+(a service worker, browser permission prompts, a server-side trigger
+to fire the push) — a real, buildable feature, just a materially
+bigger one than what was asked for here.
+
+No database changes — `loadPendingVerifications()` is a lightweight
+count-only query against `stock_counts`, and it inherits the same RLS
+already governing that table, so each person only ever sees their own
+branch's pending count.

@@ -8,7 +8,7 @@ const STOCK_ROLES = ['storekeeper', 'manager', 'gm', 'admin']
 const MORE = ['credit', 'recovery', 'count', 'catalog', 'variance', 'fix']
 
 export default function Shell({ staff, tab, onTab, children,
-                                branches = [], viewBranch, onBranch }) {
+                                branches = [], viewBranch, onBranch, pendingCount = 0 }) {
   const [confirmingSignOut, setConfirmingSignOut] = useState(false)
   const auditorOnly = staff.role === 'auditor'
   const tabs = auditorOnly ? [] : [['sales', 'Sales']]
@@ -59,8 +59,14 @@ export default function Shell({ staff, tab, onTab, children,
         style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}>
         {tabs.map(([k, label]) => (
           <button key={k} onClick={() => onTab(k)}
-            className={`flex-1 h-16 text-lg font-semibold ${tab === k || (k === 'more' && MORE.includes(tab)) ? 'text-amber' : 'text-dim'}`}>
+            className={`relative flex-1 h-16 text-lg font-semibold ${tab === k || (k === 'more' && MORE.includes(tab)) ? 'text-amber' : 'text-dim'}`}>
             {label}
+            {k === 'more' && pendingCount > 0 && (
+              <span className="absolute top-2 right-1/2 translate-x-4 min-w-[1.25rem] h-5 px-1
+                                rounded-full bg-clay text-bg text-xs font-bold flex items-center justify-center">
+                {pendingCount > 9 ? '9+' : pendingCount}
+              </span>
+            )}
           </button>
         ))}
       </nav>

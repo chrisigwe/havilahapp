@@ -13,7 +13,7 @@ import More from './pages/More'
 import { ToastHost } from './components/Toast'
 import { registerHandlers, flush } from './lib/outbox'
 import { saveBasket, saveWriteoff, saveMovements, loadBranches,
-         saveRepayment, saveCountLine } from './lib/data'
+         saveRepayment, saveCountLine, loadPendingVerifications } from './lib/data'
 import Credit from './pages/Credit'
 import Counts from './pages/Counts'
 import Shell from './components/Shell'
@@ -27,6 +27,9 @@ export default function App() {
   const [err, setErr] = useState(null)
   const [branches, setBranches] = useState([])
   const [viewBranch, setViewBranch] = useState(null)
+  const [pendingCount, setPendingCount] = useState(0)
+
+  const ALERT_ROLES = ['auditor', 'storekeeper', 'manager', 'gm', 'admin']
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => setSession(data.session))
@@ -53,6 +56,20 @@ export default function App() {
   }, [identity, viewBranch])
 
   useEffect(refresh, [refresh])
+
+  // badge for auditor/storekeeper/manager/gm/admin: how many counts
+  // are waiting for verification right now. Refetches on branch
+  // switch and every 60s while the app stays open, so it stays
+  // current without needing a full reload — this is an in-app alert,
+  // not a push notification, so it only updates while someone is
+  // actually looking at the app.
+  useEffect(() => {
+    if (!boot?.staff || !ALERT_ROLES.includes(boot.staff.role)) { setPendingCount(0); return }
+    const check = () => loadPendingVerifications(boot.staff.branch_id).then(setPendingCount)
+    check()
+    const id = setInterval(check, 60000)
+    return () => clearInterval(id)
+  }, [boot?.staff?.branch_id, boot?.staff?.role])
 
   // queued writes replay with the same code path as live ones
   useEffect(() => {
@@ -93,10 +110,11 @@ export default function App() {
     <ToastHost>
     <Shell staff={boot.staff} tab={tab} onTab={setTab}
       branches={boot.seesAllBranches ? branches : []}
-      viewBranch={boot.viewBranchId} onBranch={setViewBranch}>
+      viewBranch={boot.viewBranchId} onBranch={setViewBranch}
+      pendingCount={pendingCount}>
       {tab === 'sales' ? <SalesEntry boot={boot} />
         : tab === 'store' ? <Store boot={boot} />
-        : tab === 'more' ? <More boot={boot} onGo={setTab} />
+        : tab === 'more' ? <More boot={boot} onGo={setTab} pendingCount={pendingCount} />
         : tab === 'catalog' ? <Catalog boot={boot} onChanged={refresh} />
         : tab === 'variance' ? <Variances boot={boot} />
         : tab === 'recovery' ? <Recovery boot={boot} />
