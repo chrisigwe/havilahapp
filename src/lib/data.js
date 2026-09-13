@@ -250,31 +250,26 @@ export async function loadAudit(branchId, limit = 100) {
   return data
 }
 
-// ---------- reconciliation ----------
-export async function loadReconciliation(branchId, date, locationId) {
-  let q = supabase.from('v_reconciliation')
-    .select('gross_sales, received_at_sale, credit_raised, debt_recovered, total_money_in, location_id')
-    .eq('branch_id', branchId).eq('business_date', date)
-  if (locationId) q = q.eq('location_id', locationId)
-  const [rec, debt] = await Promise.all([
-    q,
-    supabase.from('v_debt_recovered_daily').select('amount, method, location_id')
-      .eq('branch_id', branchId).eq('business_date', date),
-  ])
-  if (rec.error) throw rec.error
-  const gross = (rec.data || []).reduce((s, r) => s + Number(r.gross_sales || 0), 0)
-  const received = (rec.data || []).reduce((s, r) => s + Number(r.received_at_sale || 0), 0)
-  const debtRows = (debt.data || []).filter(r => !locationId || r.location_id === locationId)
-  const recovered = debtRows.reduce((s, r) => s + Number(r.amount || 0), 0)
-  const recoveredBy = {}
-  for (const r of debtRows) recoveredBy[r.method] = (recoveredBy[r.method] || 0) + Number(r.amount)
+// ---------- daily financials: one round trip, not four ----------
+// Replaces the old loadReconciliation + loadDailySummary pair, which
+// each fired their own Promise.all internally — four separate
+// requests total, all genuinely concurrent already, so combining
+// them in JS alone would have changed nothing. This calls one
+// database function that computes everything server-side instead.
+export async function loadDailyFinancials(branchId, date, locationId) {
+  const { data, error } = await supabase.rpc('get_daily_financials', {
+    p_branch: branchId, p_date: date, p_location: locationId || null,
+  })
+  if (error) throw error
   return {
-    grossSales: gross,
-    received,
-    creditRaised: gross - received,
-    debtRecovered: recovered,
-    recoveredBy,
-    totalMoneyIn: received + recovered,
+    byMethod: data.byMethod || {},
+    nonRevenue: data.nonRevenue || [],
+    grossSales: Number(data.grossSales || 0),
+    received: Number(data.received || 0),
+    creditRaised: Number(data.creditRaised || 0),
+    debtRecovered: Number(data.debtRecovered || 0),
+    recoveredBy: data.recoveredBy || {},
+    totalMoneyIn: Number(data.totalMoneyIn || 0),
   }
 }
 
@@ -295,29 +290,7 @@ export async function loadOpeningDate(branchId) {
   return data?.opening_balance_date || null
 }
 
-// ---------- daily money summary ----------
-export async function loadDailySummary(branchId, date, locationId) {
-  const [takings, nonRev] = await Promise.all([
-    supabase.from('v_daily_takings').select('method, amount, location_id')
-      .eq('branch_id', branchId).eq('business_date', date),
-    supabase.from('v_daily_non_revenue').select('kind, qty, value, location_id')
-      .eq('branch_id', branchId).eq('business_date', date),
-  ])
-  if (takings.error) throw takings.error
-  const byMethod = {}
-  for (const r of takings.data) {
-    if (locationId && r.location_id !== locationId) continue
-    byMethod[r.method] = (byMethod[r.method] || 0) + Number(r.amount)
-  }
-  const nonRevenue = {}
-  for (const r of (nonRev.data || [])) {
-    if (locationId && r.location_id !== locationId) continue
-    const cur = nonRevenue[r.kind] || { kind: r.kind, qty: 0, value: 0 }
-    cur.qty += Number(r.qty); cur.value += Number(r.value)
-    nonRevenue[r.kind] = cur
-  }
-  return { byMethod, nonRevenue: Object.values(nonRevenue) }
-}
+
 
 // ---------- customers & credit ----------
 export async function loadCustomers(branchId) {

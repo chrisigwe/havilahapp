@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { naira, lagosToday, tierLabel, methodLabel } from '../lib/format'
 import { loadStockMap, loadPopular, loadToday, saveBasket, saveWriteoff,
-         loadDailySummary, loadCustomers, createCustomer,
-         loadReconciliation, loadOpeningDate, loadBalances, loadReceipt,
+         loadDailyFinancials, loadCustomers, createCustomer,
+         loadOpeningDate, loadBalances, loadReceipt,
          loadStaffForLocation } from '../lib/data'
 import { enqueue, flush, isConnectionError } from '../lib/outbox'
 import { useToast } from '../components/Toast'
@@ -69,8 +69,11 @@ export default function SalesEntry({ boot }) {
     loadStockMap(staff.branch_id).then(setStockMap).catch(() => {})
     loadPopular(staff.branch_id).then(setPopular).catch(() => {})
     loadToday(staff.branch_id, date).then(setToday).catch(() => {})
-    loadDailySummary(staff.branch_id, date, locationId).then(setSummary).catch(() => {})
-    loadReconciliation(staff.branch_id, date, locationId).then(setRecon).catch(() => {})
+    loadDailyFinancials(staff.branch_id, date, locationId).then(r => {
+      setSummary({ byMethod: r.byMethod, nonRevenue: r.nonRevenue })
+      setRecon({ grossSales: r.grossSales, received: r.received, creditRaised: r.creditRaised,
+                 debtRecovered: r.debtRecovered, recoveredBy: r.recoveredBy, totalMoneyIn: r.totalMoneyIn })
+    }).catch(() => {})
     loadOpeningDate(staff.branch_id).then(setOpeningDate).catch(() => {})
 
     if (canOverrideVariance) {

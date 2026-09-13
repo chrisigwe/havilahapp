@@ -615,3 +615,21 @@ The identity/branch split is a real, measurable reduction in what
 happens on every switch. The indexes should matter more as the two
 branches' history keeps growing — the query pattern doesn't change,
 but how expensive a table scan is does.
+
+
+## Daily financials: four requests collapsed into one
+
+`get_daily_financials()` (55_daily_financials_rpc.sql) computes gross
+sales, received-at-sale, credit raised, debt recovered, the
+payment-method breakdown, and PR/damage figures all in one database
+function call — replacing `loadDailySummary` + `loadReconciliation`,
+which together fired four separate queries (already concurrent with
+each other, but still four round trips). One RPC now returns
+everything Sales' reconciliation panel needs.
+
+Runs as SECURITY INVOKER (the default, stated explicitly) — RLS on
+sales, sale_payments, stock_movements, and credit_repayments applies
+exactly as before, so a bar hand still only sees their own
+department's numbers and a GM viewing the branch still sees the
+branch total. Only the number of requests changed, not what anyone
+is allowed to see.
