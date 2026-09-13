@@ -586,3 +586,32 @@ used for sales and credit.
 53_staff_stock_counts.sql carries all of this at the database level;
 the app changes are cosmetic on top of policies that now actually
 allow it.
+
+
+## Loading performance
+
+Two separate problems were making branch switches (and, more subtly,
+every screen's normal refresh) slower than they needed to be:
+
+- **The app was redoing identity work it didn't need to.** Every
+  branch switch re-ran the full bootstrap — an auth check plus a
+  staff-table lookup — even though the person's identity hadn't
+  changed, only which branch they wanted to view. `loadBootstrap()`
+  is now split into `loadStaffIdentity()` (runs once per sign-in) and
+  `loadBranchData()` (the part that actually depends on which branch
+  is selected). A branch switch now calls only the second half —
+  two fewer network round trips before the real work even starts.
+- **`v_stock_on_hand` had no supporting index.** This view backs
+  almost every screen — Sales, Stock, Store, Counts — and
+  `stock_movements` has grown into the largest table in the schema.
+  Without an index matching its actual filter (branch + location,
+  grouped by item), every read was a full table scan. Added two
+  partial indexes matching exactly what the view queries
+  (54_performance_indexes.sql), plus smaller ones for `stock_items`,
+  `stock_counts`, and `customers` that were filtered by branch
+  constantly but never indexed for it.
+
+The identity/branch split is a real, measurable reduction in what
+happens on every switch. The indexes should matter more as the two
+branches' history keeps growing — the query pattern doesn't change,
+but how expensive a table scan is does.

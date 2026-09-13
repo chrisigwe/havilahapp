@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback } from 'react'
 import { supabase } from './lib/supabase'
-import { loadBootstrap } from './lib/data'
+import { loadBootstrap, loadStaffIdentity, loadBranchData } from './lib/data'
 import Login from './pages/Login'
 import SalesEntry from './pages/SalesEntry'
 import Stock from './pages/Stock'
@@ -21,6 +21,7 @@ import ErrorBoundary from './components/ErrorBoundary'
 
 export default function App() {
   const [session, setSession] = useState(undefined) // undefined = loading
+  const [identity, setIdentity] = useState(undefined) // undefined = not loaded yet, null = no session, false = session but no staff row
   const [boot, setBoot] = useState(null)
   const [tab, setTab] = useState('sales')
   const [err, setErr] = useState(null)
@@ -33,13 +34,23 @@ export default function App() {
     return () => sub.subscription.unsubscribe()
   }, [])
 
+  // identity (auth check + staff row) only needs to run once per
+  // session — not once per branch switch
+  useEffect(() => {
+    if (!session) { setIdentity(undefined); setBoot(null); return }
+    loadStaffIdentity().then(staff => setIdentity(staff === undefined ? null : (staff || false)))
+      .catch(e => setErr(e.message))
+  }, [session])
+
   const refresh = useCallback(() => {
-    if (!session) { setBoot(null); return }
-    loadBootstrap(viewBranch).then(b => {
+    if (identity === undefined) return          // still loading identity
+    if (identity === null) { setBoot(null); return }  // no session
+    if (identity === false) { setBoot({ staff: null }); return } // not linked
+    loadBranchData(identity, viewBranch).then(b => {
       setBoot(b)
       if (b?.seesAllBranches && !branches.length) loadBranches().then(setBranches)
     }).catch(e => setErr(e.message))
-  }, [session, viewBranch])
+  }, [identity, viewBranch])
 
   useEffect(refresh, [refresh])
 

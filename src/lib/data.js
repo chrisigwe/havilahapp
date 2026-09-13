@@ -11,16 +11,25 @@ export async function loadBranches() {
 
 // viewBranchId lets GM/admin work in either branch; everyone else
 // is pinned to their own by RLS regardless of what is passed.
-export async function loadBootstrap(viewBranchId) {
+//
+// Split in two so switching branches doesn't re-run the identity
+// check: loadStaffIdentity() (auth + staff row) only needs to run
+// once per sign-in, not once per branch switch. loadBranchData()
+// is the part that actually changes when the viewed branch changes.
+export async function loadStaffIdentity() {
   const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return null
+  if (!user) return undefined  // no session — distinct from "session but no staff row"
   // accept both identity mappings: explicit auth_user_id link,
   // or innflow-style staff.id === auth uid
-  const { data: staff, error: e1 } = await supabase
+  const { data: staff, error } = await supabase
     .from('staff').select('*')
     .or(`auth_user_id.eq.${user.id},id.eq.${user.id}`)
     .eq('is_active', true).limit(1).maybeSingle()
-  if (e1) throw e1
+  if (error) throw error
+  return staff  // null = session exists but not linked to a staff record
+}
+
+export async function loadBranchData(staff, viewBranchId) {
   if (!staff) return { staff: null }
   const seesAllBranches = ['gm', 'admin'].includes(staff.role)
   const b = (seesAllBranches && viewBranchId) ? viewBranchId : staff.branch_id
@@ -58,6 +67,15 @@ export async function loadBootstrap(viewBranchId) {
     methods: methods.data.map(m => m.method),
     items: items.data,
   }
+}
+
+// kept for anything still calling the combined form directly (sign-in,
+// first load) — does the identity check every time, so branch switches
+// should call loadBranchData() instead once identity is already known
+export async function loadBootstrap(viewBranchId) {
+  const staff = await loadStaffIdentity()
+  if (staff === undefined) return null
+  return loadBranchData(staff, viewBranchId)
 }
 
 export async function loadStockMap(branchId) {
