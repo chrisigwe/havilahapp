@@ -72,7 +72,8 @@ export default function App() {
         You're signed in, but this account isn't linked to a staff record yet.
         Ask a manager to link it, then reload.
       </p>
-      <button onClick={() => supabase.auth.signOut()} className="mt-6 text-amber">Sign out</button>
+      <button onClick={() => window.confirm('Sign out?') && supabase.auth.signOut()}
+        className="mt-6 text-amber">Sign out</button>
     </Center>
   )
 
