@@ -539,3 +539,19 @@ front desk staff (Daniel, Mercy, and the rest) now get exactly the
 same rights bar staff have: record, view their own department's
 credit and recovery, edit their own entries from today and yesterday,
 never delete. No database changes needed for this round.
+
+
+## Sign-out confirmation
+
+Tapping "Sign out" now asks first, since with one phone per person the
+main real risk of losing a session is an accidental tap rather than
+anything the app was doing wrong. The dialog also reminds people that
+on their own phone, closing the app is usually enough — signing out
+isn't needed day to day, since the session persists on its own
+(Supabase's client keeps it in local storage automatically; this was
+already true before this change, nothing new added there).
+
+No credential storage was added, deliberately — the login form already
+carries the right `autoComplete` attributes for the phone's own browser
+password manager to offer to save and autofill, which is the safe
+version of "remember my password" and requires no code in this app.

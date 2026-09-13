@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { supabase } from '../lib/supabase'
 import Logo from './Logo'
 import PendingBanner from './PendingBanner'
@@ -8,6 +9,7 @@ const MORE = ['credit', 'recovery', 'count', 'catalog', 'variance', 'fix']
 
 export default function Shell({ staff, tab, onTab, children,
                                 branches = [], viewBranch, onBranch }) {
+  const [confirmingSignOut, setConfirmingSignOut] = useState(false)
   const auditorOnly = staff.role === 'auditor'
   const tabs = auditorOnly ? [] : [['sales', 'Sales']]
   if (STOCK_ROLES.includes(staff.role)) tabs.push(['store', 'Store'])
@@ -30,11 +32,26 @@ export default function Shell({ staff, tab, onTab, children,
               ))}
             </select>
           )}
-          <button onClick={() => supabase.auth.signOut()} className="text-dim text-sm">Sign out</button>
+          <button onClick={() => setConfirmingSignOut(true)} className="text-dim text-sm">Sign out</button>
         </div>
       </header>
       <PendingBanner />
       {children}
+      {confirmingSignOut && (
+        <div className="fixed inset-0 z-[70] bg-bg flex flex-col justify-center px-6">
+          <h2 className="text-2xl font-bold">Sign out?</h2>
+          <p className="text-dim mt-2">
+            You'll need your password to sign back in. If this is your own
+            phone, there's usually no need to sign out at all — just close the app.
+          </p>
+          <button onClick={() => supabase.auth.signOut()}
+            className="mt-6 w-full h-14 rounded-2xl bg-clay text-bg text-lg font-bold">
+            Sign out
+          </button>
+          <button onClick={() => setConfirmingSignOut(false)}
+            className="mt-3 w-full h-12 text-dim">Cancel</button>
+        </div>
+      )}
       <nav className="fixed bottom-0 inset-x-0 bg-surface border-t border-line flex"
         style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}>
         {tabs.map(([k, label]) => (
