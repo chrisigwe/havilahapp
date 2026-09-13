@@ -32,7 +32,10 @@ export default function Shell({ staff, tab, onTab, children,
               ))}
             </select>
           )}
-          <button onClick={() => setConfirmingSignOut(true)} className="text-dim text-sm">Sign out</button>
+          <button onClick={() => setConfirmingSignOut(true)}
+            className="h-9 px-3 rounded-lg border border-line text-dim text-sm">
+            Sign out
+          </button>
         </div>
       </header>
       <PendingBanner />
