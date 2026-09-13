@@ -555,3 +555,34 @@ No credential storage was added, deliberately — the login form already
 carries the right `autoComplete` attributes for the phone's own browser
 password manager to offer to save and autofill, which is the safe
 version of "remember my password" and requires no code in this app.
+
+
+## Stock count, opened up to staff
+
+Bar and front-desk staff can now count their own department's stock
+at the end of a shift and submit it for the auditor — same flow as
+storekeeper's counts, with two deliberate limits:
+
+- **Own department only.** The location picker for staff uses their
+  assigned location(s) (`boot.locations`), not the full branch list —
+  a barman counts his own bar, not any department. Storekeeper and
+  above still see every location, unchanged.
+- **No "Opening balance" option.** That stays storekeeper/manager/gm/
+  admin only — it's a structural reset, not an end-of-shift tally.
+  Staff only ever create the ordinary "count" type, and the date is
+  locked to today rather than backdatable.
+
+Every count now shows who counted it and, once verified, who verified
+it — pulled from the same `counted_by`/`verified_by` columns that
+already existed, just not previously surfaced in the UI.
+
+Staff may delete their own count only while it's still a draft
+(nothing posted to stock yet, genuinely harmless); once submitted,
+removing it requires storekeeper and above, same as before. Reading
+is department-wide — anyone assigned to a location can see that
+department's counts, whoever did them, same visibility rule already
+used for sales and credit.
+
+53_staff_stock_counts.sql carries all of this at the database level;
+the app changes are cosmetic on top of policies that now actually
+allow it.

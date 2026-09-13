@@ -379,7 +379,8 @@ export async function saveRepayment({ staff, customerId, amount, method, paidOn,
 // ---------- stock counts ----------
 export async function loadCounts(branchId) {
   const { data, error } = await supabase.from('stock_counts')
-    .select('id, count_date, status, location_id, counted_by, verified_by, submitted_at, verified_at, note')
+    .select(`id, count_date, status, location_id, counted_by, verified_by, submitted_at, verified_at, note,
+             counter:counted_by(full_name), verifier:verified_by(full_name)`)
     .eq('branch_id', branchId).order('created_at', { ascending: false }).limit(40)
   if (error) throw error
   return data

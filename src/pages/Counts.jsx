@@ -7,12 +7,18 @@ import { enqueue, flush, isConnectionError } from '../lib/outbox'
 import { useToast } from '../components/Toast'
 
 const AUDITOR = ['auditor', 'gm', 'admin']
-const COUNTER = ['storekeeper', 'manager', 'gm', 'admin']
+const MANAGE_ANY = ['storekeeper', 'manager', 'gm', 'admin']
+const STAFF_COUNT = ['bar', 'front_desk']
 
 export default function Counts({ boot }) {
-  const { staff, allLocations, items } = boot
-  const canCount  = COUNTER.includes(staff.role)
+  const { staff, allLocations, locations, items } = boot
+  const canManageAny = MANAGE_ANY.includes(staff.role)
+  const canCountOwn  = STAFF_COUNT.includes(staff.role)
+  const canCount = canManageAny || canCountOwn
   const canVerify = AUDITOR.includes(staff.role)
+  // staff pick from their own assigned department(s) only; a
+  // storekeeper or above can count any department in the branch
+  const pickableLocations = canManageAny ? allLocations : locations
   const toast = useToast()
 
   const [counts, setCounts] = useState(null)
@@ -20,12 +26,16 @@ export default function Counts({ boot }) {
   const [open, setOpen] = useState(null)      // { count, lines }
   const [busy, setBusy] = useState(false)
   const [confirmDel, setConfirmDel] = useState(null)
-  const [newLoc, setNewLoc] = useState(allLocations[0]?.id)
+  const [newLoc, setNewLoc] = useState(null)
   const [newType, setNewType] = useState('count')
   const [newDate, setNewDate] = useState(lagosToday())
 
   const itemById = useMemo(() => Object.fromEntries(items.map(i => [i.id, i])), [items])
   const locById  = useMemo(() => Object.fromEntries(allLocations.map(l => [l.id, l])), [allLocations])
+
+  useEffect(() => {
+    if (!newLoc && pickableLocations.length) setNewLoc(pickableLocations[0].id)
+  }, [pickableLocations, newLoc])
 
   const refresh = useCallback(() => {
     loadCounts(staff.branch_id).then(setCounts).catch(e => toast(e.message, 'error'))
@@ -113,25 +123,42 @@ export default function Counts({ boot }) {
     <div className="px-5">
       {canCount && (
         <div className="py-3">
-          <div className="text-dim mb-2">Start a new count</div>
-          <div className="flex gap-2 mb-2">
-            {[['count', 'Stock count'], ['opening', 'Opening balance']].map(([k, label]) => (
-              <button key={k} onClick={() => setNewType(k)}
-                className={`flex-1 h-11 rounded-xl border font-semibold ${newType === k
-                  ? 'bg-amber text-bg border-amber' : 'border-line text-dim'}`}>
-                {label}
-              </button>
-            ))}
+          <div className="text-dim mb-2">
+            {canManageAny ? 'Start a new count' : 'Count your stock at end of shift'}
           </div>
-          <input type="date" value={newDate} max={lagosToday()}
-            onChange={e => setNewDate(e.target.value)}
-            className="w-full h-12 px-3 mb-2 rounded-xl bg-surface border border-line tnum" />
+          {canManageAny && (
+            <div className="flex gap-2 mb-2">
+              {[['count', 'Stock count'], ['opening', 'Opening balance']].map(([k, label]) => (
+                <button key={k} onClick={() => setNewType(k)}
+                  className={`flex-1 h-11 rounded-xl border font-semibold ${newType === k
+                    ? 'bg-amber text-bg border-amber' : 'border-line text-dim'}`}>
+                  {label}
+                </button>
+              ))}
+            </div>
+          )}
+          {canManageAny ? (
+            <input type="date" value={newDate} max={lagosToday()}
+              onChange={e => setNewDate(e.target.value)}
+              className="w-full h-12 px-3 mb-2 rounded-xl bg-surface border border-line tnum" />
+          ) : (
+            <p className="text-dim text-sm mb-2">
+              Dated today ({lagosToday()}) — submitted to your department's history
+              with your name on it.
+            </p>
+          )}
           <div className="flex gap-2">
-            <select value={newLoc} onChange={e => setNewLoc(e.target.value)}
-              className="flex-1 h-12 px-3 rounded-xl bg-surface border border-line">
-              {allLocations.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
-            </select>
-            <button onClick={begin} disabled={busy}
+            {pickableLocations.length > 1 ? (
+              <select value={newLoc || ''} onChange={e => setNewLoc(e.target.value)}
+                className="flex-1 h-12 px-3 rounded-xl bg-surface border border-line">
+                {pickableLocations.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
+              </select>
+            ) : (
+              <div className="flex-1 h-12 px-3 rounded-xl bg-surface border border-line flex items-center text-dim">
+                {pickableLocations[0]?.name || 'No department assigned — ask a manager'}
+              </div>
+            )}
+            <button onClick={begin} disabled={busy || !newLoc}
               className="h-12 px-5 rounded-xl bg-amber text-bg font-bold disabled:opacity-40">
               Start
             </button>
@@ -150,7 +177,9 @@ export default function Counts({ boot }) {
                     : c.status === 'submitted' ? 'Awaiting auditor' : 'Verified'}
                 </span>
               </div>
-              <div className="text-dim text-sm">{c.count_date}</div>
+              <div className="text-dim text-sm">
+                {c.count_date}{c.counter?.full_name ? ` · counted by ${c.counter.full_name}` : ''}
+              </div>
             </button>
           </li>
         ))}
@@ -164,7 +193,14 @@ export default function Counts({ boot }) {
             <h2 className="mt-3 text-2xl font-bold">
               {locById[open.count.location_id]?.name}
             </h2>
-            <p className="text-dim">
+            <p className="text-dim">{open.count.count_date}</p>
+            {open.count.counter?.full_name && (
+              <p className="text-dim text-sm">Counted by {open.count.counter.full_name}</p>
+            )}
+            {open.count.verifier?.full_name && (
+              <p className="text-dim text-sm">Verified by {open.count.verifier.full_name}</p>
+            )}
+            <p className="text-dim mt-2">
               {open.count.count_type === 'opening' && open.count.status === 'draft'
                 ? 'Opening balance — posts straight to stock, no auditor step.'
                 : open.count.status === 'draft' ? 'Enter what is physically there.'
@@ -227,7 +263,10 @@ export default function Counts({ boot }) {
             {open.count.status === 'submitted' && !canVerify && (
               <p className="text-center text-dim">Only an auditor can verify this count.</p>
             )}
-            {open.count.status !== 'verified' && (canCount || canVerify) && (
+            {open.count.status !== 'verified' && (
+              canManageAny || canVerify
+              || (open.count.counted_by === staff.id && open.count.status === 'draft')
+            ) && (
               <button onClick={() => setConfirmDel(open.count)}
                 className="mt-3 w-full h-12 rounded-xl border border-clay text-clay font-semibold">
                 Delete this count
