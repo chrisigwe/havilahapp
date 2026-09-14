@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { naira, lagosToday, tierLabel, methodLabel } from '../lib/format'
+import { naira, lagosToday, tierLabel, methodLabel, whoRecorded } from '../lib/format'
 import { loadStockMap, loadPopular, loadToday, saveBasket, saveWriteoff,
          loadDailyFinancials, loadCustomers, createCustomer,
          loadOpeningDate, loadBalances, loadReceipt,
@@ -421,6 +421,7 @@ export default function SalesEntry({ boot }) {
                   {r.business_date !== r.created_at?.slice(0, 10) && (
                     <span className="ml-2 text-amber">backdated</span>
                   )}
+                  <br />{whoRecorded(r)}
                 </div>
               </div>
               <div className="tnum font-semibold">{naira(r.amount ?? r.qty * r.unit_price)}</div>

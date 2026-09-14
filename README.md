@@ -754,3 +754,18 @@ the reconciliation summary, but the list of individual sales below it
 still showed every department mixed together — `loadToday()` never
 had a location parameter to filter by. Fixed for everyone using that
 screen, not just the new page.
+
+
+## Sales lists show who recorded each entry
+
+`loadToday()` now embeds the recording staff member's name (and, when
+a sale was entered on someone's behalf, that person's name too) —
+shared by the live Sales screen's "Today" list and the read-only
+DailySales history, since both call the same function.
+
+Display rule lives in one place (`whoRecorded()` in format.js) rather
+than being written twice: shows the person the sale is attributed to
+if it was recorded on someone's behalf, noting who actually entered
+it — otherwise just whoever entered it themselves. One shared
+definition so the two screens can't drift apart on this the way the
+customer-name normalizer once did.

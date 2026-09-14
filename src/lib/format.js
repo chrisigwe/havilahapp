@@ -16,3 +16,13 @@ export const lagosDaysAgo = (n) => {
   d.setDate(d.getDate() - n)
   return d.toISOString().slice(0, 10)
 }
+
+// Who a sale is attributed to for display: the person it was
+// recorded on behalf of, if any, with a note on who actually typed
+// it — otherwise just whoever entered it themselves. One shared
+// definition so the Sales list and Daily Sales history can't drift
+// apart on this.
+export const whoRecorded = (r) =>
+  r.stood_in_for?.full_name
+    ? `${r.stood_in_for.full_name} (recorded by ${r.recorder?.full_name || 'unknown'})`
+    : (r.recorder?.full_name || 'unknown')
