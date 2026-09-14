@@ -252,7 +252,8 @@ export default function Credit({ boot }) {
               balance: Number(open.customer.balance),
               locationId: open.customer.location_id || locId,
               creditStaffId: open.customer.staff_id || staff.id })}
-              className="flex-1 h-14 rounded-2xl bg-amber text-bg font-bold">Record payment</button>
+              className={`flex-1 h-14 rounded-2xl bg-amber text-bg font-bold ${
+                staff.role === 'auditor' ? 'hidden' : ''}`}>Record payment</button>
           </div>
           {isAdmin && (
             <div className="px-5 pb-5 print:hidden">

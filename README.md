@@ -726,3 +726,31 @@ deleting an entry, it's clear whose record it actually is rather than
 just an item and a price that could belong to any of several people.
 Uses "customer", not "debtor" — a sale can have a name attached even
 when paid in full cash, not only on credit.
+
+
+## Auditor: Credit, Recovered Debt, Variances, and Daily Sales
+
+The auditor already had RLS-level read access to sales, credit, and
+variance data from early on — it was never actually exposed through
+any screen. Added to More: Credit, Recovered Debt, Variances (all
+read-only for this role; "Record payment" is explicitly hidden on
+Credit for auditor, since the database already refuses to let an
+auditor record anything and a visible button that fails on tap is
+worse than no button).
+
+## Daily Sales — new, shared page
+
+A genuinely new capability: browse any past day's sales, filterable
+by department, for auditor/storekeeper/manager/gm/admin. This is what
+gives the auditor sales visibility at all (they have no live Sales
+tab, by design — an auditor never records). No date floor other than
+"not the future" — unlike the live Sales screen, this is pure viewing,
+not backdating a write, so there's nothing to restrict.
+
+## Department filter now actually filters the sales list too
+
+On the live Sales tab, clicking a department chip already filtered
+the reconciliation summary, but the list of individual sales below it
+still showed every department mixed together — `loadToday()` never
+had a location parameter to filter by. Fixed for everyone using that
+screen, not just the new page.

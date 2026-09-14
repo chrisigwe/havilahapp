@@ -6,6 +6,7 @@ import SalesEntry from './pages/SalesEntry'
 import Stock from './pages/Stock'
 import Store from './pages/Store'
 import Corrections from './pages/Corrections'
+import DailySales from './pages/DailySales'
 import Catalog from './pages/Catalog'
 import Variances from './pages/Variances'
 import Recovery from './pages/Recovery'
@@ -115,6 +116,7 @@ export default function App() {
       {tab === 'sales' ? <SalesEntry boot={boot} />
         : tab === 'store' ? <Store boot={boot} />
         : tab === 'more' ? <More boot={boot} onGo={setTab} pendingCount={pendingCount} />
+        : tab === 'dailysales' ? <DailySales boot={boot} />
         : tab === 'catalog' ? <Catalog boot={boot} onChanged={refresh} />
         : tab === 'variance' ? <Variances boot={boot} />
         : tab === 'recovery' ? <Recovery boot={boot} />

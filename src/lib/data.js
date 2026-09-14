@@ -100,12 +100,13 @@ export async function loadPopular(branchId) {
   return c
 }
 
-export async function loadToday(branchId, date) {
-  const { data, error } = await supabase
+export async function loadToday(branchId, date, locationId) {
+  let q = supabase
     .from('sales')
-    .select('id, stock_item_id, location_id, tier, qty, unit_price, amount, created_at, receipt_id, business_date')
+    .select('id, stock_item_id, location_id, tier, qty, unit_price, amount, created_at, receipt_id, business_date, recorded_by')
     .eq('branch_id', branchId).eq('business_date', date)
-    .order('created_at', { ascending: false })
+  if (locationId) q = q.eq('location_id', locationId)
+  const { data, error } = await q.order('created_at', { ascending: false })
   if (error) throw error
   return data
 }

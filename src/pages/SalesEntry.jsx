@@ -68,7 +68,7 @@ export default function SalesEntry({ boot }) {
   const refresh = useCallback(() => {
     loadStockMap(staff.branch_id).then(setStockMap).catch(() => {})
     loadPopular(staff.branch_id).then(setPopular).catch(() => {})
-    loadToday(staff.branch_id, date).then(setToday).catch(() => {})
+    loadToday(staff.branch_id, date, locationId).then(setToday).catch(() => {})
     loadDailyFinancials(staff.branch_id, date, locationId).then(r => {
       setSummary({ byMethod: r.byMethod, nonRevenue: r.nonRevenue })
       setRecon({ grossSales: r.grossSales, received: r.received, creditRaised: r.creditRaised,
