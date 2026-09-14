@@ -482,7 +482,7 @@ export async function updateSaleWithPayments(saleId, { qty, unitPrice, payments 
 export async function loadRecovery(branchId, locationId, days = 60) {
   const since = new Date(Date.now() - days * 864e5).toISOString().slice(0, 10)
   let q = supabase.from('v_debt_recovery')
-    .select('id, paid_on, method, amount, note, customer_name, location_name, recovered_by_name, credit_staff_name, location_id')
+    .select('id, paid_on, method, amount, note, customer_name, location_name, recovered_by_name, credit_staff_name, location_id, first_credit_date, last_credit_date')
     .eq('branch_id', branchId).gte('paid_on', since)
   if (locationId) q = q.eq('location_id', locationId)
   const { data, error } = await q.order('paid_on', { ascending: false })

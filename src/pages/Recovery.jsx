@@ -75,6 +75,17 @@ export default function Recovery({ boot }) {
                   {r.credit_staff_name && r.credit_staff_name !== r.recovered_by_name
                     && ` · credit given by ${r.credit_staff_name}`}
                 </div>
+                {r.first_credit_date && (
+                  <div className="text-dim text-sm">
+                    Credit taken {new Date(r.first_credit_date + 'T12:00:00').toLocaleDateString('en-NG',
+                      { day: 'numeric', month: 'short' })}
+                    {r.last_credit_date && r.last_credit_date !== r.first_credit_date
+                      && ` (most recently ${new Date(r.last_credit_date + 'T12:00:00')
+                          .toLocaleDateString('en-NG', { day: 'numeric', month: 'short' })})`}
+                    {' '}· recovered {new Date(r.paid_on + 'T12:00:00').toLocaleDateString('en-NG',
+                      { day: 'numeric', month: 'short' })}
+                  </div>
+                )}
                 {r.note && <div className="text-dim text-sm">{r.note}</div>}
               </li>
             ))}

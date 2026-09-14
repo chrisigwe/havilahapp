@@ -780,3 +780,21 @@ inside More as before; hidden from the auditor's own More list
 specifically so it doesn't appear in two places at once, and the
 More tab no longer falsely highlights as active while viewing it
 through the dedicated tab.
+
+
+## Recovered Debt now shows both dates
+
+Each row shows "Credit taken [date] · recovered [date]" — and, when
+the customer's credit at that department spans more than one purchase,
+"(most recently [date])" too.
+
+Worth knowing why this isn't tied to one exact transaction: a
+repayment settles a customer's overall balance, not one specific
+credit sale (`credit_repayments.sale_id` exists in the schema but the
+app has never populated it — payments are recorded against the
+balance as a whole, which is often correct since one payment can
+cover several purchases at once). So "date of credit" here means when
+that customer's debt at that department first began, not the date of
+any single sale — the honest version given how repayments actually
+work, and the same convention already used on the Credit page's own
+"since" display (63_recovery_credit_dates.sql).
