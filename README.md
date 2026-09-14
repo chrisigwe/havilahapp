@@ -798,3 +798,25 @@ that customer's debt at that department first began, not the date of
 any single sale — the honest version given how repayments actually
 work, and the same convention already used on the Credit page's own
 "since" display (63_recovery_credit_dates.sql).
+
+
+## Credit page: department chips now explicit, not inferred
+
+The department chips on Credit were using the staff-scoped location
+list. For storekeeper/manager/gm/admin this happened to equal every
+department (they're excluded from location-scoping elsewhere), but
+for auditor it only worked because auditors typically have no
+`staff_locations` row — the "no assignment = sees everything"
+fallback, not a guarantee. An auditor accidentally assigned to one
+department would have silently lost visibility into every other
+department's credits, with nothing to indicate why.
+
+Fixed to check the role explicitly (`seesAllDepartments`) rather than
+rely on that inference — management and audit roles always see every
+department's chip regardless of any stray assignment. Confirmed the
+underlying RLS (`app_is_auditor()`) already granted unconditional
+branch-wide read access regardless of location, so the actual data was
+never at risk — only which chips the auditor could click.
+
+"Who recorded this credit" was already shown per row (`by <name>`)
+for every role, no change needed there.

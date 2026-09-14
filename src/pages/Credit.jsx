@@ -15,10 +15,17 @@ function printStatement() {
 
 export default function Credit({ boot }) {
   const { staff, items, methods, allLocations, locations } = boot
-  const salesPoints = (locations || []).filter(l => l.is_sales_point && !l.is_store)
-  const [locId, setLocId] = useState(staff.default_location_id || salesPoints[0]?.id || null)
   const isEditor = ['storekeeper', 'manager', 'gm', 'admin'].includes(staff.role)
   const isAdmin = ['gm', 'admin'].includes(staff.role)
+  // department chips must show EVERY department for management/audit
+  // roles, explicitly — not by relying on boot.locations happening to
+  // equal allLocations when nobody has assigned that person to a
+  // single department. An auditor accidentally given a staff_locations
+  // row would otherwise silently lose visibility with no error.
+  const seesAllDepartments = isEditor || staff.role === 'auditor'
+  const salesPoints = (seesAllDepartments ? allLocations : locations || [])
+    .filter(l => l.is_sales_point && !l.is_store)
+  const [locId, setLocId] = useState(staff.default_location_id || salesPoints[0]?.id || null)
   const [confirmDel, setConfirmDel] = useState(null)
   const [delBusy, setDelBusy] = useState(false)
   const [people, setPeople] = useState([])
