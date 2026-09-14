@@ -691,3 +691,38 @@ Now, matching 56_count_delete_rules.sql exactly:
 
 Enforced at the database via `counts_remove`, not just hidden in the
 UI — the app's button visibility now matches the RLS policy exactly.
+
+
+## Cross-department stock movement and conversion
+
+Store now has four modes: Receive, Issue, **Move Between Depts**, and
+**Convert** — storekeeper/manager/gm/admin only, same as the rest of
+Store.
+
+**Move** transfers stock directly between two departments without
+routing through the store — pick From, pick To, add items. Only makes
+sense for items that are genuinely one catalog row stocked at
+multiple locations (see the Gala/Peanut merge below).
+
+**Convert** records one item becoming a different item at a fixed
+ratio you type each time — e.g. 2 bottles of groundnut into 10
+plates. Posts as two linked `conversion` movements (one deduction, one
+addition) sharing the same note, so the pair reads as one event in
+history. The ratio is entered per conversion, not stored as a
+permanent recipe — simpler, and a wrong ratio can't silently apply
+forever with nobody noticing.
+
+Gala and Peanut 250g (Bottled) were each split into two catalog rows
+per location — the same problem Gulder had. Merged into single items
+(62b_merge_gala_peanut.sql) using the existing `merge_stock_items()`,
+then renamed to drop the location suffix. Moving either between
+OpenBar and Minimart is now an ordinary Move, nothing special.
+
+## Corrections now shows who a sale belongs to
+
+Any sale with a customer attached shows "customer: <name>" in its
+detail line, and the search box matches on it — so before editing or
+deleting an entry, it's clear whose record it actually is rather than
+just an item and a price that could belong to any of several people.
+Uses "customer", not "debtor" — a sale can have a name attached even
+when paid in full cash, not only on credit.

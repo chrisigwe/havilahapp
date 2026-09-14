@@ -32,7 +32,8 @@ export default function Corrections({ boot }) {
       const item = itemById[r.stock_item_id]?.name?.toLowerCase() || ''
       const dept = locById[rowLocationId(r)]?.name?.toLowerCase() || ''
       const date = r.business_date || ''
-      return item.includes(q) || dept.includes(q) || date.includes(q)
+      const customer = r.customers?.name?.toLowerCase() || ''
+      return item.includes(q) || dept.includes(q) || date.includes(q) || customer.includes(q)
     })
   }, [rows, query, deptFilter, itemById, locById])
 
@@ -56,16 +57,19 @@ export default function Corrections({ boot }) {
     const name = itemById[r.stock_item_id]?.name || 'Unknown item'
     if (r.kind === 'sale') {
       return { title: name,
-        detail: `Sale · ${tierLabel[r.tier] || r.tier} · ${locById[r.location_id]?.name || ''}`,
+        detail: `Sale · ${tierLabel[r.tier] || r.tier} · ${locById[r.location_id]?.name || ''}`
+          + (r.customers?.name ? ` · customer: ${r.customers.name}` : ''),
         money: naira(r.amount ?? r.qty * r.unit_price) }
     }
-    const label = { restock: 'Received', transfer: 'Disbursed', damage: 'Damaged',
-                    complimentary: 'PR / free', adjustment: 'Adjustment',
-                    opening: 'Opening' }[r.movement_type] || r.movement_type
+    const label = { restock: 'Received', transfer: 'Disbursed', issue: 'Issued',
+                    damage: 'Damaged', complimentary: 'PR / free', adjustment: 'Adjustment',
+                    opening: 'Opening', conversion: 'Converted' }[r.movement_type] || r.movement_type
     const where = r.movement_type === 'transfer'
       ? `to ${locById[r.to_location]?.name || '—'}`
+      : r.movement_type === 'conversion'
+      ? (locById[r.to_location || r.from_location]?.name || '—')
       : (locById[r.to_location]?.name || locById[r.from_location]?.name || 'store')
-    return { title: name, detail: `${label} · ${where}`,
+    return { title: name, detail: `${label} · ${where}${r.movement_type === 'conversion' && r.note ? ` · ${r.note}` : ''}`,
              money: r.unit_cost ? naira(r.qty * r.unit_cost) : '' }
   }
 
@@ -134,7 +138,7 @@ export default function Corrections({ boot }) {
       )}
 
       <input value={query} onChange={e => setQuery(e.target.value)}
-        placeholder="Search by item, department, or date (YYYY-MM-DD)"
+        placeholder="Search by item, customer, department, or date (YYYY-MM-DD)"
         className="w-full h-12 px-4 mt-1 mb-2 rounded-xl bg-surface border border-line placeholder:text-dim" />
 
       {view !== 'history' && allLocations.length > 1 && (

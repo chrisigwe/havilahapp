@@ -184,11 +184,11 @@ export async function loadActivity(branchId, days = 14, ownOnlyStaffId = null) {
     // the recorder's, so match either column
     (ownOnlyStaffId
       ? supabase.from('sales')
-          .select('id, business_date, stock_item_id, location_id, tier, qty, unit_price, amount, recorded_by, on_behalf_of, created_at')
+          .select('id, business_date, stock_item_id, location_id, tier, qty, unit_price, amount, recorded_by, on_behalf_of, created_at, customers(name)')
           .eq('branch_id', branchId).gte('business_date', since)
           .or(`recorded_by.eq.${ownOnlyStaffId},on_behalf_of.eq.${ownOnlyStaffId}`)
       : supabase.from('sales')
-          .select('id, business_date, stock_item_id, location_id, tier, qty, unit_price, amount, recorded_by, on_behalf_of, created_at')
+          .select('id, business_date, stock_item_id, location_id, tier, qty, unit_price, amount, recorded_by, on_behalf_of, created_at, customers(name)')
           .eq('branch_id', branchId).gte('business_date', since)
     ).order('created_at', { ascending: false }).limit(300),
     own(supabase.from('stock_movements')

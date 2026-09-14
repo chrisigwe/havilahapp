@@ -94,6 +94,11 @@ export default function Counts({ boot }) {
   }
 
   async function doSubmit() {
+    const missing = open.lines.filter(l => Number(l.system_qty) !== 0 && l.counted_qty === null).length
+    if (missing > 0) {
+      toast(`${missing} item${missing > 1 ? 's' : ''} with stock here still need a count entered`, 'error')
+      return
+    }
     setBusy(true)
     try { await submitCount(open.count.id); setOpen(null); refresh() }
     catch (e) { toast(e.message, 'error') }
@@ -234,7 +239,9 @@ export default function Counts({ boot }) {
                           value={l.counted_qty ?? ''} placeholder="—"
                           onChange={e => setLine(l.stock_item_id, e.target.value)}
                           className={`h-11 w-20 px-2 rounded-lg bg-surface border tnum text-center ${
-                            l.pending ? 'border-amber' : 'border-line'}`} />
+                            l.pending ? 'border-amber'
+                            : (Number(l.system_qty) !== 0 && l.counted_qty === null) ? 'border-clay'
+                            : 'border-line'}`} />
                       ) : (
                         <span className="tnum w-20 text-center">{l.counted_qty ?? '—'}</span>
                       )}
