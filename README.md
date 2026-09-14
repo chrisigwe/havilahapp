@@ -769,3 +769,14 @@ if it was recorded on someone's behalf, noting who actually entered
 it — otherwise just whoever entered it themselves. One shared
 definition so the two screens can't drift apart on this the way the
 customer-name normalizer once did.
+
+
+## Auditor's nav: Daily Sales promoted, before Stock
+
+For the auditor specifically, Daily Sales is now a dedicated
+bottom-nav tab — positioned before Stock — rather than something
+reached two taps deep through More. Every other role still finds it
+inside More as before; hidden from the auditor's own More list
+specifically so it doesn't appear in two places at once, and the
+More tab no longer falsely highlights as active while viewing it
+through the dedicated tab.

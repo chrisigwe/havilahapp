@@ -16,7 +16,12 @@ const ITEMS = [
 ]
 
 export default function More({ boot, onGo, pendingCount = 0 }) {
-  const allowed = ITEMS.filter(i => i.roles.includes(boot.staff.role))
+  // dailysales is a dedicated top-level tab for the auditor, not a
+  // More-menu destination — hide it here for them specifically so it
+  // doesn't appear in two places at once; every other role still
+  // reaches it through this menu as before
+  const allowed = ITEMS.filter(i =>
+    i.roles.includes(boot.staff.role) && !(i.key === 'dailysales' && boot.staff.role === 'auditor'))
   return (
     <div className="px-5">
       <ul className="divide-y divide-line/60">
