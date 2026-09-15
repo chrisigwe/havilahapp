@@ -832,3 +832,22 @@ blank, since that's exactly the thing worth noticing on a list.
 One shared helper (`paymentSummary()` in format.js) used by both
 screens, same discipline as `whoRecorded()` — Recovered Debt already
 showed its own payment method and needed no change.
+
+
+## Found: the actual "Ikenna in MainBar" cause
+
+Checked the underlying data directly — every MainBar debtor was
+already correctly attributed to MainBar's own staff (Chidera, Prosper,
+the Store Manager). Ikenna's name was never in the credit data itself.
+
+The real cause: the staff-filter chips at the top of the Credit page
+were loading every bar/front-desk staff member branch-wide
+(`loadBarStaff`), regardless of which department chip was selected —
+so switching to MainBar still showed Ikenna's name as a selectable
+filter option, even though he has no MainBar activity at all. Fixed
+to use the same department-scoped lookup already built for the Sales
+screen's on-behalf-of picker (`loadStaffForLocation`), and a stale
+filter selection now clears when switching departments rather than
+silently persisting. No database change — the underlying credit
+records were correct the whole time; only the filter chips were
+unscoped.

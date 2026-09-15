@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useToast } from '../components/Toast'
 import { naira, lagosToday, methodLabel, tierLabel } from '../lib/format'
-import { loadBalances, loadCustomerLedger, saveRepayment, loadBarStaff,
+import { loadBalances, loadCustomerLedger, saveRepayment, loadStaffForLocation,
          deleteCustomer, deactivateCustomer } from '../lib/data'
 import { enqueue, flush, isConnectionError } from '../lib/outbox'
 
@@ -41,7 +41,17 @@ export default function Credit({ boot }) {
   const refresh = useCallback(() => {
     loadBalances(staff.branch_id, locId, isEditor ? staffFilter : null)
       .then(setRows).catch(e => toast(e.message, 'error'))
-    if (isEditor && !people.length) loadBarStaff(staff.branch_id).then(setPeople)
+    // scoped to the CURRENTLY selected department, not branch-wide —
+    // otherwise every bar hand's name shows as a filter chip on every
+    // department's screen regardless of whether they work there
+    if (isEditor && locId) {
+      loadStaffForLocation(staff.branch_id, locId).then(ps => {
+        setPeople(ps)
+        // a filter selected while looking at a different department
+        // may not belong here — drop it rather than leave it stale
+        setStaffFilter(cur => ps.some(p => p.id === cur) ? cur : null)
+      })
+    }
   }, [staff.branch_id, locId, staffFilter, isEditor])
   useEffect(refresh, [refresh])
 
