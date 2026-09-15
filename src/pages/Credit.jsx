@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useToast } from '../components/Toast'
 import { naira, lagosToday, methodLabel, tierLabel } from '../lib/format'
 import { loadBalances, loadCustomerLedger, saveRepayment, loadStaffForLocation,
@@ -26,6 +26,19 @@ export default function Credit({ boot }) {
   const salesPoints = (seesAllDepartments ? allLocations : locations || [])
     .filter(l => l.is_sales_point && !l.is_store)
   const [locId, setLocId] = useState(staff.default_location_id || salesPoints[0]?.id || null)
+  // tracked synchronously so an in-flight response can check, when it
+  // arrives, whether it's still answering the CURRENT question — a
+  // ref rather than state, since it must be read inside an async
+  // callback without being subject to closure staleness itself.
+  // Widened from just locId to a combined key including staffFilter,
+  // because switching departments can trigger the staff filter to
+  // auto-clear (its previously-selected person doesn't work in the
+  // new department), which fires a SECOND refresh — and the first
+  // response's location was still correct when it arrived, so the
+  // narrower guard let it through despite carrying the wrong filter.
+  const requestKey = `${locId}|${isEditor ? (staffFilter || 'everyone') : 'na'}`
+  const requestKeyRef = useRef(requestKey)
+  requestKeyRef.current = requestKey
   const [confirmDel, setConfirmDel] = useState(null)
   const [delBusy, setDelBusy] = useState(false)
   const [people, setPeople] = useState([])
@@ -39,20 +52,23 @@ export default function Credit({ boot }) {
   const locById = useMemo(() => Object.fromEntries((allLocations || []).map(l => [l.id, l])), [allLocations])
 
   const refresh = useCallback(() => {
+    const requestedFor = requestKey   // snapshot at the moment this fetch was started
     loadBalances(staff.branch_id, locId, isEditor ? staffFilter : null)
-      .then(setRows).catch(e => toast(e.message, 'error'))
+      .then(data => { if (requestKeyRef.current === requestedFor) setRows(data) })
+      .catch(e => toast(e.message, 'error'))
     // scoped to the CURRENTLY selected department, not branch-wide —
     // otherwise every bar hand's name shows as a filter chip on every
     // department's screen regardless of whether they work there
     if (isEditor && locId) {
       loadStaffForLocation(staff.branch_id, locId).then(ps => {
+        if (requestKeyRef.current !== requestedFor) return   // a newer click already superseded this
         setPeople(ps)
         // a filter selected while looking at a different department
         // may not belong here — drop it rather than leave it stale
         setStaffFilter(cur => ps.some(p => p.id === cur) ? cur : null)
       })
     }
-  }, [staff.branch_id, locId, staffFilter, isEditor])
+  }, [staff.branch_id, locId, staffFilter, isEditor, requestKey])
   useEffect(refresh, [refresh])
 
   async function openCustomer(c) {

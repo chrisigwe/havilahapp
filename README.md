@@ -851,3 +851,28 @@ filter selection now clears when switching departments rather than
 silently persisting. No database change — the underlying credit
 records were correct the whole time; only the filter chips were
 unscoped.
+
+
+## The "OpenBar debtors showing under Minimart" bug: found
+
+Long diagnostic path, but the finding is genuine: an existing
+race-condition guard on Credit's data fetch keyed off only the
+location. When switching departments auto-cleared a stale staff
+filter (a person from the previous department no longer belonging on
+this one), that fired a SECOND refresh — but the FIRST fetch's
+response could still arrive while `locId` was correctly Minimart,
+carrying the previous department's `staffFilter` inside the query.
+That older response was accepted (its location was still current) and
+overwrote the newer, correct data. Effect: chips looked right, staff
+chips updated correctly, and the debtor list showed the previous
+department's rows under the new department's heading.
+
+Fixed by widening the guard from `locId` alone to a combined
+`locId|staffFilter` request key — a fetch response now only applies
+itself if BOTH the location and the filter it was originally sent for
+are still the ones the screen wants. Chased through several rounds
+of diagnostics that individually kept turning up clean: database
+filtering was correct end-to-end (67, 70), sales attribution was
+clean (68b), and the bug was ultimately client-side in a corner
+neither the code nor an isolated test could catch without the exact
+sequence of clicks that triggers it.
