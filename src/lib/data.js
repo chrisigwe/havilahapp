@@ -105,7 +105,8 @@ export async function loadToday(branchId, date, locationId) {
     .from('sales')
     .select(`id, stock_item_id, location_id, tier, qty, unit_price, amount, created_at,
              receipt_id, business_date, recorded_by, on_behalf_of,
-             recorder:recorded_by(full_name), stood_in_for:on_behalf_of(full_name)`)
+             recorder:recorded_by(full_name), stood_in_for:on_behalf_of(full_name),
+             sale_payments(method, amount)`)
     .eq('branch_id', branchId).eq('business_date', date)
   if (locationId) q = q.eq('location_id', locationId)
   const { data, error } = await q.order('created_at', { ascending: false })

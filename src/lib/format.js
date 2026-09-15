@@ -26,3 +26,15 @@ export const whoRecorded = (r) =>
   r.stood_in_for?.full_name
     ? `${r.stood_in_for.full_name} (recorded by ${r.recorder?.full_name || 'unknown'})`
     : (r.recorder?.full_name || 'unknown')
+
+// Payment method(s) for a sale row, for list display. A sale can be
+// split across methods — shown as "Split: POS + Cash" rather than
+// picking one arbitrarily. Unpaid (no sale_payments row at all) is
+// named plainly rather than left blank, since that's exactly the
+// thing worth noticing on a list.
+export const paymentSummary = (r) => {
+  const pays = r.sale_payments || []
+  if (!pays.length) return 'Unpaid'
+  if (pays.length === 1) return methodLabel[pays[0].method] || pays[0].method
+  return 'Split: ' + pays.map(p => methodLabel[p.method] || p.method).join(' + ')
+}

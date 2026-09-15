@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { naira, lagosToday, tierLabel, methodLabel, whoRecorded } from '../lib/format'
+import { naira, lagosToday, tierLabel, methodLabel, whoRecorded, paymentSummary } from '../lib/format'
 import { loadDailyFinancials, loadToday } from '../lib/data'
 import { useToast } from '../components/Toast'
 
@@ -111,7 +111,7 @@ export default function DailySales({ boot }) {
               <div className="text-dim text-sm">
                 {tierLabel[r.tier] || r.tier} · {r.qty} × {naira(r.unit_price)}
                 {locId === 'all' && locById[r.location_id] ? ` · ${locById[r.location_id].name}` : ''}
-                <br />{whoRecorded(r)}
+                <br />{paymentSummary(r)} · {whoRecorded(r)}
               </div>
             </div>
             <div className="tnum font-semibold">{naira(r.amount ?? r.qty * r.unit_price)}</div>

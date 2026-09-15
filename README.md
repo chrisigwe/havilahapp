@@ -820,3 +820,15 @@ never at risk — only which chips the auditor could click.
 
 "Who recorded this credit" was already shown per row (`by <name>`)
 for every role, no change needed there.
+
+
+## Payment method shown on Sales and Daily Sales lists
+
+Every entry now shows its payment method — POS, Cash, Credit, or
+"Split: POS + Cash" when a sale was paid across more than one method.
+An entry with no payment recorded at all shows "Unpaid" rather than
+blank, since that's exactly the thing worth noticing on a list.
+
+One shared helper (`paymentSummary()` in format.js) used by both
+screens, same discipline as `whoRecorded()` — Recovered Debt already
+showed its own payment method and needed no change.
