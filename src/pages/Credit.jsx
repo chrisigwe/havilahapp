@@ -26,6 +26,10 @@ export default function Credit({ boot }) {
   const salesPoints = (seesAllDepartments ? allLocations : locations || [])
     .filter(l => l.is_sales_point && !l.is_store)
   const [locId, setLocId] = useState(staff.default_location_id || salesPoints[0]?.id || null)
+  const [confirmDel, setConfirmDel] = useState(null)
+  const [delBusy, setDelBusy] = useState(false)
+  const [people, setPeople] = useState([])
+  const [staffFilter, setStaffFilter] = useState(null)   // null = everyone
   // tracked synchronously so an in-flight response can check, when it
   // arrives, whether it's still answering the CURRENT question — a
   // ref rather than state, since it must be read inside an async
@@ -39,10 +43,6 @@ export default function Credit({ boot }) {
   const requestKey = `${locId}|${isEditor ? (staffFilter || 'everyone') : 'na'}`
   const requestKeyRef = useRef(requestKey)
   requestKeyRef.current = requestKey
-  const [confirmDel, setConfirmDel] = useState(null)
-  const [delBusy, setDelBusy] = useState(false)
-  const [people, setPeople] = useState([])
-  const [staffFilter, setStaffFilter] = useState(null)   // null = everyone
   const [rows, setRows] = useState(null)
   const toast = useToast()
   const [open, setOpen] = useState(null)       // { customer, ledger }
