@@ -17,7 +17,7 @@ export default function Stock({ boot }) {
   // before; for them Stock stays read-only.
   const auditorWriteoff = staff.role === 'auditor'
 
-  const refresh = () => loadStockMap(staff.branch_id).then(setStockMap).catch(console.error)
+  const refresh = () => { loadStockMap(staff.branch_id).then(setStockMap).catch(console.error) }
   useEffect(refresh, [staff.branch_id])
 
   const rows = useMemo(() => {
