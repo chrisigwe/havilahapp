@@ -158,7 +158,7 @@ export async function saveBasket({ staff, locationId, lines, payments, date, cus
   return receipt
 }
 
-export async function saveWriteoff({ staff, item, locationId, kind, qty, unitValue, note, date }) {
+export async function saveWriteoff({ staff, item, locationId, kind, qty, unitValue, note, date, damageReason }) {
   const { error } = await supabase.from('stock_movements').insert({
     branch_id: staff.branch_id,
     stock_item_id: item.id,
@@ -170,6 +170,7 @@ export async function saveWriteoff({ staff, item, locationId, kind, qty, unitVal
     occurred_at: new Date().toISOString(),
     recorded_by: staff.id,
     is_migrated: false,
+    damage_reason: kind === 'damage' ? (damageReason || null) : null,
     note: note || (kind === 'damage' ? 'damaged' : 'PR / complimentary'),
   })
   if (error) throw error
@@ -196,7 +197,7 @@ export async function loadActivity(branchId, days = 14, ownOnlyStaffId = null) {
           .eq('branch_id', branchId).gte('business_date', since)
     ).order('created_at', { ascending: false }).limit(300),
     own(supabase.from('stock_movements')
-      .select('id, business_date, stock_item_id, movement_type, from_location, to_location, qty, unit_cost, note, recorded_by, created_at')
+      .select('id, business_date, stock_item_id, movement_type, from_location, to_location, qty, unit_cost, note, damage_reason, recorded_by, created_at')
       .eq('branch_id', branchId).gte('business_date', since)
       .is('reference_id', null)          // sale deductions are shown as their sale
       .order('created_at', { ascending: false }).limit(300)),

@@ -920,3 +920,24 @@ completeness check still applies — an adjusted line can't be left
 blank. Auditor still cannot touch a verified count (locked) or a
 draft (belongs to whoever is counting).
 74_auditor_edit_submitted_count.sql.
+
+
+## PR/free and damage now capture a reason
+
+Both were previously bare stock movements with a generic note.
+
+- Damage: a required fixed-list reason (breakage, expiry, spillage,
+  theft, spoilage, other) plus an optional note. Save is blocked
+  until a reason is picked, so damage can actually be counted and
+  investigated by cause. Stored in a new `damage_reason` column,
+  constrained to the known set (77_writeoff_reasons.sql).
+- PR/free: a free-text "Authorized by / note" field, so who
+  authorized it and why is on record. No approval workflow — capture
+  only, per the decision.
+
+The reason and note now show on each write-off row in Corrections,
+where they'd actually be reviewed. A `v_writeoffs` view is also added
+for GM-level investigation across all write-offs with reason, value,
+and who recorded each. The new fields thread through the offline
+outbox too, so a write-off recorded with no connection keeps its
+reason when it syncs.

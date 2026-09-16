@@ -207,10 +207,12 @@ export default function SalesEntry({ boot }) {
     try {
       const wDate = w.date || date
       const payload = { staffLite: { id: staff.id, branch_id: staff.branch_id },
-        itemId: w.item.id, locationId, kind: w.kind, qty: w.qty, unitValue: w.unitValue, date: wDate }
+        itemId: w.item.id, locationId, kind: w.kind, qty: w.qty, unitValue: w.unitValue, date: wDate,
+        note: w.note || null, damageReason: w.kind === 'damage' ? (w.damageReason || null) : null }
       try {
         await saveWriteoff({ staff, item: w.item, locationId, kind: w.kind,
-          qty: w.qty, unitValue: w.unitValue, date: wDate })
+          qty: w.qty, unitValue: w.unitValue, date: wDate,
+          note: w.note || null, damageReason: w.kind === 'damage' ? (w.damageReason || null) : null })
         toast(`${w.qty} × ${w.item.name} recorded as ${w.kind === 'damage' ? 'damaged' : 'PR'}`, 'success')
       } catch (e) {
         if (!isConnectionError(e)) throw e
@@ -592,7 +594,31 @@ export default function SalesEntry({ boot }) {
               onChange={e => setWriteoff(w => ({ ...w, date: e.target.value }))}
               className="h-12 px-3 rounded-xl bg-surface border border-line tnum" />
           </Row>
-          <button onClick={commitWriteoff} disabled={busy}
+          {writeoff.kind === 'damage' && (
+            <Row label="What happened">
+              <select value={writeoff.damageReason || ''}
+                onChange={e => setWriteoff(w => ({ ...w, damageReason: e.target.value || null }))}
+                className="h-12 px-3 rounded-xl bg-surface border border-line">
+                <option value="">Pick a reason…</option>
+                <option value="breakage">Breakage</option>
+                <option value="expiry">Expiry</option>
+                <option value="spillage">Spillage</option>
+                <option value="theft">Theft</option>
+                <option value="spoilage">Spoilage</option>
+                <option value="other">Other</option>
+              </select>
+            </Row>
+          )}
+          <Row label={writeoff.kind === 'complimentary' ? 'Authorized by / note' : 'Note (optional)'}>
+            <input value={writeoff.note || ''}
+              onChange={e => setWriteoff(w => ({ ...w, note: e.target.value }))}
+              placeholder={writeoff.kind === 'complimentary' ? 'e.g. approved by GM for…' : 'any detail'}
+              className="h-12 w-full px-3 rounded-xl bg-surface border border-line placeholder:text-dim" />
+          </Row>
+          {writeoff.kind === 'damage' && !writeoff.damageReason && (
+            <p className="text-dim text-sm mt-2">Pick a reason so damage can be tracked by cause.</p>
+          )}
+          <button onClick={commitWriteoff} disabled={busy || (writeoff.kind === 'damage' && !writeoff.damageReason)}
             className="mt-8 w-full h-16 rounded-2xl bg-amber text-bg text-xl font-bold disabled:opacity-40">
             {busy ? 'Saving…' : 'Save write-off'}
           </button>

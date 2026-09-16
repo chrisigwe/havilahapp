@@ -86,6 +86,7 @@ export default function App() {
       writeoff: (p) => saveWriteoff({
         staff: p.staffLite, item: { id: p.itemId }, locationId: p.locationId,
         kind: p.kind, qty: p.qty, unitValue: p.unitValue, date: p.date,
+        note: p.note || null, damageReason: p.damageReason || null,
       }),
     })
     flush()

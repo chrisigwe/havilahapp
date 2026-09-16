@@ -69,7 +69,12 @@ export default function Corrections({ boot }) {
       : r.movement_type === 'conversion'
       ? (locById[r.to_location || r.from_location]?.name || '—')
       : (locById[r.to_location]?.name || locById[r.from_location]?.name || 'store')
-    return { title: name, detail: `${label} · ${where}${r.movement_type === 'conversion' && r.note ? ` · ${r.note}` : ''}`,
+    const reasonBits = []
+    if (r.movement_type === 'damage' && r.damage_reason) reasonBits.push(r.damage_reason)
+    if ((r.movement_type === 'damage' || r.movement_type === 'complimentary')
+        && r.note && r.note !== 'damaged' && r.note !== 'PR / complimentary') reasonBits.push(r.note)
+    const reasonSuffix = reasonBits.length ? ` · ${reasonBits.join(' — ')}` : ''
+    return { title: name, detail: `${label} · ${where}${r.movement_type === 'conversion' && r.note ? ` · ${r.note}` : ''}${reasonSuffix}`,
              money: r.unit_cost ? naira(r.qty * r.unit_cost) : '' }
   }
 
