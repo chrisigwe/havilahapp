@@ -965,3 +965,15 @@ The Sales screen still uses its own inline copy for now; the shared
 component is what the auditor path uses. (Worth unifying the Sales
 screen onto it later, but that's a bigger refactor of a
 daily-critical screen and wasn't needed for this.)
+
+
+## Stock code hidden from catalog
+
+The "Stock code" input is removed from the add-item form — it wasn't
+useful to enter by hand and wasn't shown on the catalog list anyway.
+The column stays (it has a per-branch unique NOT NULL constraint, so
+it can't just be dropped), and is now auto-generated from the item
+name plus a short random suffix. createItem retries once with a fresh
+suffix on the rare chance of a collision, so the unique constraint
+can never surface as an error the person can't act on. No database
+change.

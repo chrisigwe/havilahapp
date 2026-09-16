@@ -453,10 +453,22 @@ export async function saveItemPrices(itemId, patch) {
 }
 
 export async function createItem(branchId, fields) {
-  const { data, error } = await supabase.from('stock_items')
-    .insert({ branch_id: branchId, ...fields }).select('*').single()
-  if (error) throw error
-  return data
+  // code has a per-branch unique constraint and is auto-generated
+  // (no longer user-entered), so on the rare chance of a collision,
+  // retry once with a fresh suffix rather than surface a constraint
+  // error the person can't act on
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const { data, error } = await supabase.from('stock_items')
+      .insert({ branch_id: branchId, ...fields }).select('*').single()
+    if (!error) return data
+    const isDup = error.code === '23505' || /duplicate|unique/i.test(error.message || '')
+    if (isDup && attempt === 0) {
+      fields = { ...fields, code: (fields.code || 'ITEM').split('-')[0]
+        + '-' + Math.random().toString(36).slice(2, 6).toUpperCase() }
+      continue
+    }
+    throw error
+  }
 }
 
 // ---------- split-payment aware corrections ----------

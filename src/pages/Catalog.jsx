@@ -70,9 +70,15 @@ export default function Catalog({ boot, onChanged }) {
   async function add() {
     setBusy(true)
     try {
+      const nm = adding.name.trim()
+      // stock code is no longer shown or entered — auto-generate a
+      // stable-ish one from the name plus a short random suffix so the
+      // column stays populated and unique without the user seeing it
+      const autoCode = (nm.replace(/[^a-zA-Z0-9]/g, '').slice(0, 8).toUpperCase() || 'ITEM')
+        + '-' + Math.random().toString(36).slice(2, 6).toUpperCase()
       await createItem(staff.branch_id, {
-        code: adding.code.trim(),
-        name: adding.name.trim(),
+        code: autoCode,
+        name: nm,
         selling_price: Number(adding.selling_price) || 0,
         lounge_price: adding.lounge_price === '' ? null : Number(adding.lounge_price),
         cost_price: adding.cost_price === '' ? null : Number(adding.cost_price),
@@ -88,7 +94,7 @@ export default function Catalog({ boot, onChanged }) {
       <div className="flex gap-2 py-2">
         <input value={q} onChange={e => setQ(e.target.value)} placeholder="Search items"
           className="flex-1 h-12 px-4 rounded-xl bg-surface border border-line placeholder:text-dim" />
-        <button onClick={() => setAdding({ code: '', name: '', selling_price: '', lounge_price: '', cost_price: '' })}
+        <button onClick={() => setAdding({ name: '', selling_price: '', lounge_price: '', cost_price: '' })}
           className="h-12 px-4 rounded-xl bg-amber text-bg font-bold">+ New</button>
       </div>
       <div className="flex gap-2 pb-2">
@@ -132,13 +138,6 @@ export default function Catalog({ boot, onChanged }) {
           <div className="p-5 flex-1 overflow-y-auto">
             <button onClick={() => { setEdit(null); setAdding(null) }} className="text-dim">Back</button>
             <h2 className="mt-3 text-2xl font-bold">{edit ? edit.name : 'New item'}</h2>
-
-            {adding && (
-              <Field label="Stock code">
-                <input value={adding.code} onChange={e => setAdding(a => ({ ...a, code: e.target.value }))}
-                  className="h-14 w-full px-4 rounded-xl bg-surface border border-line" />
-              </Field>
-            )}
 
             <Field label="Name">
               <input value={edit ? edit.name : adding.name}
