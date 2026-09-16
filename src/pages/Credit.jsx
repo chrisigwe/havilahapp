@@ -63,20 +63,21 @@ export default function Credit({ boot }) {
     loadBalances(staff.branch_id, locId, isEditor ? staffFilter : null)
       .then(data => { if (requestKeyRef.current === requestedFor) setRows(data) })
       .catch(e => toast(e.message, 'error'))
-    // scoped to the CURRENTLY selected department, not branch-wide —
-    // otherwise every bar hand's name shows as a filter chip on every
-    // department's screen regardless of whether they work there
-    if (isEditor && locId) {
-      loadStaffForLocation(staff.branch_id, locId).then(ps => {
-        if (requestKeyRef.current !== requestedFor) return   // a newer click already superseded this
-        setPeople(ps)
-        // a filter selected while looking at a different department
-        // may not belong here — drop it rather than leave it stale
-        setStaffFilter(cur => ps.some(p => p.id === cur) ? cur : null)
-      })
-    }
   }, [staff.branch_id, locId, staffFilter, isEditor, requestKey])
   useEffect(refresh, [refresh])
+
+  // Load the department-scoped staff list once per department change,
+  // NOT on every refresh — because the auto-clear inside would also
+  // reset staffFilter every time the user picks a filter chip, then
+  // immediately drop the (correct) response as stale. This was the
+  // real reason clicking a person still returned every debtor.
+  useEffect(() => {
+    if (!isEditor || !locId) return
+    loadStaffForLocation(staff.branch_id, locId).then(ps => {
+      setPeople(ps)
+      setStaffFilter(cur => ps.some(p => p.id === cur) ? cur : null)
+    })
+  }, [staff.branch_id, locId, isEditor])
 
   async function openCustomer(c) {
     try {
