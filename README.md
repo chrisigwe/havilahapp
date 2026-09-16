@@ -899,3 +899,24 @@ collected repayment to themselves, silently shifting accounting away
 from the original credit-giver. That's not what was asked for; the
 final version keeps attribution correct and just removes the
 storekeeper from the collection path when it isn't their own credit.
+
+
+## Auditor can correct a submitted count before verifying
+
+Previously, once a count was submitted the counted figures were
+read-only for everyone — an auditor faced with an obvious staff typo
+(50 entered instead of 5) could only approve the wrong number or
+delete the whole count and start over. Now the auditor can edit the
+counted quantity directly on a submitted count, then verify.
+
+Chose Option A (overwrite) per the decision — the corrected number
+replaces the original. One safeguard kept so it isn't a silent
+rewrite: a corrected line is flagged `auditor_adjusted` and shows an
+"adjusted" marker, so the history still records that a correction
+happened even though the original figure isn't preserved. The
+corrected value flows straight into the stock adjustment at
+verification (verify reads counted_qty live), and the existing
+completeness check still applies — an adjusted line can't be left
+blank. Auditor still cannot touch a verified count (locked) or a
+draft (belongs to whoever is counting).
+74_auditor_edit_submitted_count.sql.

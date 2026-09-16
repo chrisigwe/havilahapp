@@ -383,7 +383,7 @@ export async function loadCounts(branchId) {
 
 export async function loadCountLines(countId) {
   const { data, error } = await supabase.from('stock_count_lines')
-    .select('stock_item_id, system_qty, counted_qty').eq('count_id', countId)
+    .select('stock_item_id, system_qty, counted_qty, auditor_adjusted').eq('count_id', countId)
   if (error) throw error
   return data
 }
@@ -574,4 +574,15 @@ export async function loadPendingVerifications(branchId) {
     .eq('branch_id', branchId).eq('status', 'submitted')
   if (error) return 0
   return count || 0
+}
+
+// Auditor corrects one line of a submitted count before verifying —
+// overwrites the counted quantity and flags the line as
+// auditor-adjusted. Only works on a submitted (not verified) count,
+// enforced in the database function.
+export async function auditorAdjustCountLine(countId, itemId, qty) {
+  const { error } = await supabase.rpc('auditor_adjust_count_line', {
+    p_count: countId, p_item: itemId, p_qty: qty,
+  })
+  if (error) throw error
 }

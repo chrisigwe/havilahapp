@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { loadStockMap, loadCounts, loadCountLines, saveCountLine,
          startCountOfType, submitCount, verifyCount, deleteCount,
-         postOpeningBalance } from '../lib/data'
+         postOpeningBalance, auditorAdjustCountLine } from '../lib/data'
 import { lagosToday } from '../lib/format'
 import { enqueue, flush, isConnectionError } from '../lib/outbox'
 import { useToast } from '../components/Toast'
@@ -66,6 +66,20 @@ export default function Counts({ boot }) {
   async function openCount(c) {
     try { setOpen({ count: c, lines: await loadCountLines(c.id) }) }
     catch (e) { toast(e.message, 'error') }
+  }
+
+  // auditor correcting one line of a SUBMITTED count — different path
+  // from setLine (which upserts via saveCountLine, draft-only). This
+  // goes through the auditor RPC and flags the line as adjusted.
+  async function adjustLine(line) {
+    if (open.count.status !== 'submitted' || !canVerify) return
+    if (line.counted_qty === null || line.counted_qty === undefined) return
+    const countId = open.count.id
+    try {
+      await auditorAdjustCountLine(countId, line.stock_item_id, Number(line.counted_qty))
+      setOpen(o => o?.count.id === countId ? { ...o, lines: o.lines.map(l =>
+        l.stock_item_id === line.stock_item_id ? { ...l, auditor_adjusted: true } : l) } : o)
+    } catch (e) { toast('Could not adjust: ' + e.message, 'error') }
   }
 
   async function setLine(itemId, value) {
@@ -242,8 +256,26 @@ export default function Counts({ boot }) {
                             l.pending ? 'border-amber'
                             : (Number(l.system_qty) !== 0 && l.counted_qty === null) ? 'border-clay'
                             : 'border-line'}`} />
+                      ) : (open.count.status === 'submitted' && canVerify) ? (
+                        // auditor can correct a submitted figure before
+                        // verifying — overwrites, flags the line as adjusted.
+                        // onChange only touches local state (saveCountLine
+                        // is draft-only); onBlur persists via the auditor RPC.
+                        <input type="number" inputMode="numeric"
+                          value={l.counted_qty ?? ''} placeholder="—"
+                          onChange={e => {
+                            const qty = e.target.value === '' ? null : Number(e.target.value)
+                            setOpen(o => ({ ...o, lines: o.lines.map(x =>
+                              x.stock_item_id === l.stock_item_id ? { ...x, counted_qty: qty } : x) }))
+                          }}
+                          onBlur={() => adjustLine(open.lines.find(x => x.stock_item_id === l.stock_item_id))}
+                          className={`h-11 w-20 px-2 rounded-lg bg-surface border tnum text-center ${
+                            l.auditor_adjusted ? 'border-amber' : 'border-line'}`} />
                       ) : (
-                        <span className="tnum w-20 text-center">{l.counted_qty ?? '—'}</span>
+                        <span className="tnum w-20 text-center">
+                          {l.counted_qty ?? '—'}
+                          {l.auditor_adjusted && <span className="text-amber text-xs block leading-none">adjusted</span>}
+                        </span>
                       )}
                       <span className={`tnum w-12 text-right ${!diff ? 'text-dim'
                         : diff > 0 ? 'text-leaf' : 'text-clay'}`}>
