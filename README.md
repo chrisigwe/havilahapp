@@ -941,3 +941,27 @@ for GM-level investigation across all write-offs with reason, value,
 and who recorded each. The new fields thread through the offline
 outbox too, so a write-off recorded with no connection keeps its
 reason when it syncs.
+
+
+## Auditor can now record PR/damage write-offs
+
+Explicit, acknowledged exception to the auditor's view-only design,
+at the user's request. Scoped tightly at every layer:
+
+- RLS (80_auditor_writeoffs.sql): the auditor gains insert on
+  stock_movements for movement_type in (damage, complimentary) ONLY —
+  not sales, transfers, issues, or anything else. Their read-only
+  stance on everything else is unchanged.
+- UI: since the auditor has no Sales screen (where the write-off
+  button normally lives), the entry point is their existing Stock
+  tab — pick a department, tap an item, the PR/damage sheet opens.
+  Non-auditor roles keep recording write-offs on the Sales screen as
+  before; Stock stays read-only for them.
+
+The PR/damage sheet was extracted into a shared `WriteoffSheet`
+component so the Sales-screen and Stock-screen (auditor) entry points
+use one definition — same reason fields, same validation, no drift.
+The Sales screen still uses its own inline copy for now; the shared
+component is what the auditor path uses. (Worth unifying the Sales
+screen onto it later, but that's a bigger refactor of a
+daily-critical screen and wasn't needed for this.)
