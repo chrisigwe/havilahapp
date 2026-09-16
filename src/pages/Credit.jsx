@@ -17,6 +17,13 @@ export default function Credit({ boot }) {
   const { staff, items, methods, allLocations, locations } = boot
   const isEditor = ['storekeeper', 'manager', 'gm', 'admin'].includes(staff.role)
   const isAdmin = ['gm', 'admin'].includes(staff.role)
+  // Specifically excluded from crediting a repayment to anyone else —
+  // any repayment they record is attributed to themselves regardless
+  // of whose balance the customer is on. Pinned to their staff id so
+  // a role change doesn't quietly reopen it, and matched by an
+  // equivalent database trigger (72_awka_storekeeper_no_on_behalf.sql)
+  // so this can't be worked around by hand-editing the request.
+  const NO_ON_BEHALF = new Set(['a5ea88b6-80e7-4776-a491-78a509e589c6'])
   // department chips must show EVERY department for management/audit
   // roles, explicitly — not by relying on boot.locations happening to
   // equal allLocations when nobody has assigned that person to a
@@ -279,14 +286,28 @@ export default function Credit({ boot }) {
           <div className="p-5 border-t border-line flex gap-3 print:hidden">
             <button onClick={() => printStatement()}
               className="flex-1 h-14 rounded-2xl border border-line font-bold">Print / PDF</button>
-            <button onClick={() => setPay({ customerId: open.customer.customer_id,
-              amount: open.customer.balance, method: methods.find(m => m !== 'credit') || 'cash',
-              paidOn: lagosToday(), note: '',
-              balance: Number(open.customer.balance),
-              locationId: open.customer.location_id || locId,
-              creditStaffId: open.customer.staff_id || staff.id })}
-              className={`flex-1 h-14 rounded-2xl bg-amber text-bg font-bold ${
-                staff.role === 'auditor' ? 'hidden' : ''}`}>Record payment</button>
+            {(() => {
+              const hiddenForRole = staff.role === 'auditor'
+              // Awka storekeeper (or anyone in NO_ON_BEHALF) can't
+              // record a repayment that would be credited to a
+              // different staff member — the credit stays with
+              // whoever originally gave it, so someone else has to
+              // collect it. Buttons hides rather than errors on tap.
+              const wouldBeOnBehalf = NO_ON_BEHALF.has(staff.id)
+                && open.customer.staff_id
+                && open.customer.staff_id !== staff.id
+              const hidden = hiddenForRole || wouldBeOnBehalf
+              return (
+                <button onClick={() => setPay({ customerId: open.customer.customer_id,
+                  amount: open.customer.balance, method: methods.find(m => m !== 'credit') || 'cash',
+                  paidOn: lagosToday(), note: '',
+                  balance: Number(open.customer.balance),
+                  locationId: open.customer.location_id || locId,
+                  creditStaffId: open.customer.staff_id || staff.id })}
+                  className={`flex-1 h-14 rounded-2xl bg-amber text-bg font-bold ${
+                    hidden ? 'hidden' : ''}`}>Record payment</button>
+              )
+            })()}
           </div>
           {isAdmin && (
             <div className="px-5 pb-5 print:hidden">

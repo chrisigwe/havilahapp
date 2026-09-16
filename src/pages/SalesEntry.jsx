@@ -18,6 +18,13 @@ export default function SalesEntry({ boot }) {
   // sale stays with the roles above bar staff
   const canBackdate = staff.role !== 'auditor'
   const canOverrideVariance = ['storekeeper', 'manager', 'gm', 'admin'].includes(staff.role)
+  // Specifically excluded from on-behalf-of, per policy — pinned to
+  // their staff id so a role change doesn't quietly reopen it, and
+  // Nnewi's storekeeper (or any future Awka one) is unaffected. The
+  // database enforces the same block; this only hides the picker so
+  // they never see a control that would fail server-side.
+  const NO_ON_BEHALF = new Set(['a5ea88b6-80e7-4776-a491-78a509e589c6'])
+  const canRecordOnBehalf = canOverrideVariance && !NO_ON_BEHALF.has(staff.id)
   // bar staff can reach back 4 days; editors go to the opening balance
   const STAFF_BACKDATE_DAYS = 4
   const todayDate = lagosToday()
@@ -294,7 +301,7 @@ export default function SalesEntry({ boot }) {
         </div>
       )}
 
-      {canOverrideVariance && people.length > 0 && (
+      {canRecordOnBehalf && people.length > 0 && (
         <div className="mt-3">
           <div className="text-dim text-sm mb-2">Recording on behalf of (staff at this location)</div>
           <select value={onBehalfOf || ''} onChange={e => setOnBehalfOf(e.target.value || null)}

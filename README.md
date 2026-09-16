@@ -876,3 +876,26 @@ filtering was correct end-to-end (67, 70), sales attribution was
 clean (68b), and the bug was ultimately client-side in a corner
 neither the code nor an isolated test could catch without the exact
 sequence of clicks that triggers it.
+
+
+## Awka Store Manager: on-behalf-of removed entirely
+
+Both sales and repayments. Pinned to their specific staff id
+(a5ea88b6-...) rather than the storekeeper role, so a role change
+doesn't quietly reopen it and Nnewi's storekeeper (or any future
+Awka storekeeper) is unaffected.
+
+- Sales: the "Recording on behalf of" picker is hidden for this
+  account. A database trigger blocks the same at the write layer,
+  so a hand-crafted API call can't work around it either.
+- Repayments: the "Record payment" button is hidden on any customer
+  whose balance is already attributed to someone else. Deliberate
+  choice: credit stays with whoever originally gave it — this
+  storekeeper is simply not the one who collects those. Same
+  database trigger backs this at the write layer.
+
+An earlier draft of this fix would have credited any storekeeper-
+collected repayment to themselves, silently shifting accounting away
+from the original credit-giver. That's not what was asked for; the
+final version keeps attribution correct and just removes the
+storekeeper from the collection path when it isn't their own credit.
