@@ -1,5 +1,5 @@
 const ITEMS = [
-  { key: 'dailysales', label: 'Daily Sales', hint: 'Any past day, by department',
+  { key: 'dailysales', label: 'Daily sales', hint: 'Any past day, by department',
     roles: ['auditor', 'storekeeper', 'manager', 'gm', 'admin'] },
   { key: 'credit',  label: 'Credit',  hint: 'Who owes what, and record repayments',
     roles: ['bar', 'front_desk', 'storekeeper', 'manager', 'gm', 'admin', 'auditor'] },

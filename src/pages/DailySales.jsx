@@ -56,6 +56,14 @@ export default function DailySales({ boot }) {
 
       {summary && (
         <div className="mt-2 rounded-2xl border border-amber bg-surface p-4">
+          <div className="grid grid-cols-3 gap-3 pb-3 mb-3 border-b border-line">
+            {['pos', 'cash', 'credit'].map(m => (
+              <div key={m}>
+                <div className="text-dim text-sm">{methodLabel[m] || m}</div>
+                <div className="tnum font-bold">{naira((summary.byMethod || {})[m] || 0)}</div>
+              </div>
+            ))}
+          </div>
           <div className="text-dim text-sm">Gross sales — value of goods sold</div>
           <div className="tnum text-3xl font-bold text-amber">{naira(summary.grossSales)}</div>
           <div className="mt-3 space-y-1 text-sm">

@@ -11,7 +11,7 @@ export default function Shell({ staff, tab, onTab, children,
                                 branches = [], viewBranch, onBranch, pendingCount = 0 }) {
   const [confirmingSignOut, setConfirmingSignOut] = useState(false)
   const auditorOnly = staff.role === 'auditor'
-  const tabs = auditorOnly ? [['dailysales', 'Daily Sales']] : [['sales', 'Sales']]
+  const tabs = auditorOnly ? [['dailysales', 'Daily sales']] : [['sales', 'Sales']]
   if (STOCK_ROLES.includes(staff.role)) tabs.push(['store', 'Store'])
   tabs.push(['stock', 'Stock'])
   tabs.push(['more', 'More'])
