@@ -148,6 +148,11 @@ export default function Credit({ boot }) {
       <div className="flex items-baseline justify-between py-2">
         <h2 className="text-dim">
           Owed to {locById[locId]?.name || 'this department'}
+          {staffFilter && people.find(p => p.id === staffFilter)
+            ? ` · ${people.find(p => p.id === staffFilter).full_name}` : ''}
+          <span className="ml-2 text-sm">
+            ({owing.length} debtor{owing.length === 1 ? '' : 's'})
+          </span>
         </h2>
         <span className="tnum font-bold text-lg text-clay">{naira(total)}</span>
       </div>
