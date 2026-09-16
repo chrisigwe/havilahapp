@@ -111,7 +111,16 @@ export default function Credit({ boot }) {
   }
 
   if (!rows) return <p className="px-5 text-dim">Loading…</p>
-  const owing = rows.filter(r => Number(r.balance) > 0.009)
+  // Final safety net against any stale-response race: never show a row
+  // whose location doesn't match the selected department, and (when a
+  // staff filter is active) whose booker doesn't match it either. Even
+  // if a late/out-of-order fetch lands in `rows`, it physically cannot
+  // paint under the wrong department — the filter is on the data
+  // itself, not on a timing guard that can drift.
+  const owing = rows.filter(r =>
+    Number(r.balance) > 0.009
+    && (!locId || r.location_id === locId)
+    && (!staffFilter || r.staff_id === staffFilter))
   const total = owing.reduce((s, r) => s + Number(r.balance), 0)
 
   return (
