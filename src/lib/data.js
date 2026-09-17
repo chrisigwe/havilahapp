@@ -589,6 +589,20 @@ export async function loadPendingVerifications(branchId) {
   return count || 0
 }
 
+// Draft counts — started but never submitted. These are the classic
+// "incomplete task left rotting" case: someone began a count and
+// walked away. Returns who started each and how long ago, so the
+// banner can name it. Scoped by RLS, so a bar hand only sees their
+// own drafts; a manager/gm sees the branch's.
+export async function loadUnfinishedCounts(branchId) {
+  const { data, error } = await supabase.from('stock_counts')
+    .select('id, location_id, count_date, counted_by, created_at, counter:counted_by(full_name)')
+    .eq('branch_id', branchId).eq('status', 'draft')
+    .order('created_at', { ascending: true })
+  if (error) return []
+  return data || []
+}
+
 // Auditor corrects one line of a submitted count before verifying —
 // overwrites the counted quantity and flags the line as
 // auditor-adjusted. Only works on a submitted (not verified) count,

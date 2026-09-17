@@ -977,3 +977,21 @@ name plus a short random suffix. createItem retries once with a fresh
 suffix on the rare chance of a collision, so the unique constraint
 can never surface as an error the person can't act on. No database
 change.
+
+
+## Unfinished-task nudge (draft stock counts)
+
+A persistent banner now appears on every tab when a stock count has
+been started but not submitted — the "incomplete task left rotting"
+case. Tapping it jumps to the Counts tab to finish or discard; it
+hides itself while you're already on that tab.
+
+Deliberately scoped to draft counts rather than a generic
+"any incomplete task" system: a draft count is the one genuinely
+real, resumable started-but-unfinished state in the app, and it maps
+exactly to the example given. It reuses the existing stock_counts
+table and its RLS — so a bar hand sees only their own unfinished
+drafts, a manager/gm sees the branch's — on the same 60s refresh
+cadence as the awaiting-verification badge. No database change.
+(Submitted-awaiting-auditor counts already had their own badge from
+earlier; this covers the other end — never submitted at all.)

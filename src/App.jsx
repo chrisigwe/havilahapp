@@ -14,7 +14,8 @@ import More from './pages/More'
 import { ToastHost } from './components/Toast'
 import { registerHandlers, flush } from './lib/outbox'
 import { saveBasket, saveWriteoff, saveMovements, loadBranches,
-         saveRepayment, saveCountLine, loadPendingVerifications } from './lib/data'
+         saveRepayment, saveCountLine, loadPendingVerifications,
+         loadUnfinishedCounts } from './lib/data'
 import Credit from './pages/Credit'
 import Counts from './pages/Counts'
 import Shell from './components/Shell'
@@ -29,6 +30,7 @@ export default function App() {
   const [branches, setBranches] = useState([])
   const [viewBranch, setViewBranch] = useState(null)
   const [pendingCount, setPendingCount] = useState(0)
+  const [unfinished, setUnfinished] = useState([])
 
   const ALERT_ROLES = ['auditor', 'storekeeper', 'manager', 'gm', 'admin']
 
@@ -67,6 +69,20 @@ export default function App() {
   useEffect(() => {
     if (!boot?.staff || !ALERT_ROLES.includes(boot.staff.role)) { setPendingCount(0); return }
     const check = () => loadPendingVerifications(boot.staff.branch_id).then(setPendingCount)
+    check()
+    const id = setInterval(check, 60000)
+    return () => clearInterval(id)
+  }, [boot?.staff?.branch_id, boot?.staff?.role])
+
+  // Unfinished (draft) stock counts — the "incomplete task" nudge.
+  // Runs for anyone who can start a count (RLS then scopes what each
+  // person actually sees: their own drafts, or the branch's for a
+  // manager). Refetched on the same 60s cadence as the badge.
+  useEffect(() => {
+    if (!boot?.staff) { setUnfinished([]); return }
+    const CAN_COUNT = ['bar', 'front_desk', 'storekeeper', 'manager', 'gm', 'admin', 'auditor']
+    if (!CAN_COUNT.includes(boot.staff.role)) { setUnfinished([]); return }
+    const check = () => loadUnfinishedCounts(boot.staff.branch_id).then(setUnfinished).catch(() => {})
     check()
     const id = setInterval(check, 60000)
     return () => clearInterval(id)
@@ -114,6 +130,20 @@ export default function App() {
       branches={boot.seesAllBranches ? branches : []}
       viewBranch={boot.viewBranchId} onBranch={setViewBranch}
       pendingCount={pendingCount}>
+      {unfinished.length > 0 && tab !== 'count' && (
+        <button onClick={() => setTab('count')}
+          className="mx-5 mt-3 w-[calc(100%-2.5rem)] text-left rounded-xl border border-amber bg-amber/10 px-4 py-3">
+          <div className="font-semibold text-amber">
+            {unfinished.length === 1 ? 'A stock count was started but not finished'
+              : `${unfinished.length} stock counts started but not finished`}
+          </div>
+          <div className="text-dim text-sm mt-0.5">
+            {unfinished.length === 1 && unfinished[0].counter?.full_name
+              ? `Started by ${unfinished[0].counter.full_name} · tap to finish or discard`
+              : 'Tap to finish or discard'}
+          </div>
+        </button>
+      )}
       {tab === 'sales' ? <SalesEntry boot={boot} />
         : tab === 'store' ? <Store boot={boot} />
         : tab === 'more' ? <More boot={boot} onGo={setTab} pendingCount={pendingCount} />
