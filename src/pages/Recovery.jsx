@@ -10,6 +10,16 @@ export default function Recovery({ boot }) {
   const [locId, setLocId] = useState(staff.default_location_id || salesPoints[0]?.id || null)
   const [rows, setRows] = useState(null)
 
+  // When the GM switches branch, the previously-selected location id
+  // belongs to the old branch and matches no chip here — leaving
+  // nothing highlighted until a manual tap. Re-sync to a valid
+  // default whenever the current selection isn't a location in this
+  // branch.
+  useEffect(() => {
+    const valid = salesPoints.some(l => l.id === locId)
+    if (!valid) setLocId(staff.default_location_id || salesPoints[0]?.id || null)
+  }, [staff.branch_id])
+
   const refresh = useCallback(() => {
     loadRecovery(staff.branch_id, locId).then(setRows).catch(e => toast(e.message, 'error'))
   }, [staff.branch_id, locId])

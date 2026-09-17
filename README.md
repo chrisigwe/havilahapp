@@ -1038,3 +1038,20 @@ Fixed both ways:
   accounts to their own branch's assigned location, matched via their
   staff_locations rather than a hardcoded id. Not strictly needed once
   the code tolerates it, but the stored data should be correct too.
+
+
+## Branch switch left the location chip unhighlighted (GM)
+
+On Sales, Credit, and Recovered Debt, the selected-location state was
+set once via useState's initial value — which React ignores on later
+renders. So when the GM switched branch, the selected location id
+stayed frozen at the OLD branch's OpenBar, matching no chip in the
+new branch: nothing highlighted until a manual tap re-set it to a
+valid id.
+
+Fixed on all three pages with a re-sync effect keyed on
+staff.branch_id: when the branch changes and the current selection
+isn't a valid location for this branch, it resets to the branch's
+default. Related to but distinct from the cross-wired
+default_location_id fix — that was a bad stored default; this is
+stale in-component state after a switch.

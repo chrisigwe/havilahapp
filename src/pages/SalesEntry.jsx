@@ -42,6 +42,13 @@ export default function SalesEntry({ boot }) {
   const [backdateReason, setBackdateReason] = useState('')
 
   const [locationId, setLocationId] = useState(staff.default_location_id || salesPoints[0]?.id)
+  // Re-sync selected department on branch switch (GM) — otherwise the
+  // old branch's location id stays selected, matching no chip here,
+  // so nothing highlights until a manual tap.
+  useEffect(() => {
+    const valid = salesPoints.some(l => l.id === locationId)
+    if (!valid) setLocationId(staff.default_location_id || salesPoints[0]?.id)
+  }, [staff.branch_id])
   const [stockMap, setStockMap] = useState({})
   const [popular, setPopular] = useState({})
   const [today, setToday] = useState([])

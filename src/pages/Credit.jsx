@@ -33,6 +33,13 @@ export default function Credit({ boot }) {
   const salesPoints = (seesAllDepartments ? allLocations : locations || [])
     .filter(l => l.is_sales_point && !l.is_store)
   const [locId, setLocId] = useState(staff.default_location_id || salesPoints[0]?.id || null)
+  // Re-sync the selected department when the GM switches branch — the
+  // old branch's location id matches no chip here, so without this
+  // nothing highlights until a manual tap.
+  useEffect(() => {
+    const valid = salesPoints.some(l => l.id === locId)
+    if (!valid) setLocId(staff.default_location_id || salesPoints[0]?.id || null)
+  }, [staff.branch_id])
   const [confirmDel, setConfirmDel] = useState(null)
   const [delBusy, setDelBusy] = useState(false)
   const [people, setPeople] = useState([])
