@@ -53,10 +53,21 @@ export async function loadBranchData(staff, viewBranchId) {
     ? locs.data
     : locs.data.filter(l => mine.has(l.id))
 
+  // A safe default location for THIS branch: the person's stored
+  // default, but only if it actually exists among the locations they
+  // can see here. A cross-branch or stale default (e.g. pointing at
+  // the other branch's OpenBar) would otherwise blank every stock
+  // total until they manually tap a tab — so fall back to their
+  // first visible sales point instead.
+  const validDefault = visible.some(l => l.id === staff.default_location_id)
+    ? staff.default_location_id
+    : (visible.find(l => l.is_sales_point && !l.is_store)?.id || visible[0]?.id || null)
+
   return {
     // pages read staff.branch_id everywhere, so point it at the branch
     // being viewed; realBranchId keeps the person's home branch
-    staff: { ...staff, branch_id: b, realBranchId: staff.branch_id },
+    staff: { ...staff, branch_id: b, realBranchId: staff.branch_id,
+             default_location_id: validDefault },
     seesAllBranches,
     branchName: branchRow?.data?.name || '',
     viewBranchId: b,

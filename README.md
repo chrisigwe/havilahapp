@@ -1016,3 +1016,25 @@ for the active mode and is called both on mode/department change and
 after any successful save, so a just-recorded action shows
 immediately. No database change; all four read the existing
 stock_movements rows.
+
+
+## Cross-branch default_location_id bug (zero stock until a tab is tapped)
+
+Kelvin and Caleb (both Nnewi bar hands) had default_location_id
+pointing at AWKA's OpenBar — a different branch's location. On load
+their pages defaulted to an id that doesn't exist in Nnewi's data, so
+every stock total read zero until they manually tapped the OpenBar
+tab (which set the correct Nnewi id). Classic "works only after I
+click something" symptom.
+
+Fixed both ways:
+- Code (loadBranchData): the stored default is now validated against
+  the locations the person can actually see in the CURRENT branch. If
+  it doesn't match (cross-wired or stale), it falls back to their
+  first visible sales point. So no default can ever blank a screen
+  again, for any account, on any page, including after a Nnewi↔Awka
+  switch. This is the durable fix.
+- Data (103_fix_crosswired_defaults.sql): repointed the two affected
+  accounts to their own branch's assigned location, matched via their
+  staff_locations rather than a hardcoded id. Not strictly needed once
+  the code tolerates it, but the stored data should be correct too.
