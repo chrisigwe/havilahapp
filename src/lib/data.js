@@ -579,6 +579,59 @@ export async function loadDepartmentHistory(branchId, locationId, days = 60) {
   return data
 }
 
+// Receive (IN): stock arriving into the store from suppliers.
+export async function loadReceiveHistory(branchId, storeId, days = 60) {
+  const since = new Date(Date.now() - days * 864e5).toISOString().slice(0, 10)
+  const { data, error } = await supabase.from('stock_movements')
+    .select(`business_date, qty, received_by, created_at,
+             stock_items(name), staff:recorded_by(full_name)`)
+    .eq('branch_id', branchId).eq('to_location', storeId)
+    .eq('movement_type', 'restock')
+    .gte('business_date', since)
+    .order('business_date', { ascending: false })
+    .order('created_at', { ascending: false })
+    .limit(150)
+  if (error) throw error
+  return data
+}
+
+// Move Between Depts: transfers leaving a specific department for
+// another (filtered by the FROM department, since that's what the
+// user picks first in Move mode).
+export async function loadMoveHistory(branchId, fromLocationId, days = 60) {
+  const since = new Date(Date.now() - days * 864e5).toISOString().slice(0, 10)
+  const { data, error } = await supabase.from('stock_movements')
+    .select(`business_date, qty, received_by, created_at, from_location, to_location,
+             stock_items(name), staff:recorded_by(full_name)`)
+    .eq('branch_id', branchId).eq('from_location', fromLocationId)
+    .eq('movement_type', 'transfer')
+    .gte('business_date', since)
+    .order('business_date', { ascending: false })
+    .order('created_at', { ascending: false })
+    .limit(150)
+  if (error) throw error
+  return data
+}
+
+// Convert: conversions at a specific department. A conversion is two
+// linked rows (one out, one in) sharing a note; we show the "in"
+// side (to_location set) so each conversion appears once with its
+// produced item, and the note carries the full "X → Y" detail.
+export async function loadConvertHistory(branchId, locationId, days = 60) {
+  const since = new Date(Date.now() - days * 864e5).toISOString().slice(0, 10)
+  const { data, error } = await supabase.from('stock_movements')
+    .select(`business_date, qty, note, created_at,
+             stock_items(name), staff:recorded_by(full_name)`)
+    .eq('branch_id', branchId).eq('to_location', locationId)
+    .eq('movement_type', 'conversion')
+    .gte('business_date', since)
+    .order('business_date', { ascending: false })
+    .order('created_at', { ascending: false })
+    .limit(150)
+  if (error) throw error
+  return data
+}
+
 // how many counts are sitting in 'submitted', waiting on an auditor —
 // used for the in-app badge shown to auditor/storekeeper/manager/gm/admin
 export async function loadPendingVerifications(branchId) {

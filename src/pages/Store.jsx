@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useToast } from '../components/Toast'
 import { naira, lagosToday } from '../lib/format'
-import { loadStockMap, loadPopular, loadDepartmentHistory } from '../lib/data'
+import { loadStockMap, loadPopular, loadDepartmentHistory,
+         loadReceiveHistory, loadMoveHistory, loadConvertHistory } from '../lib/data'
 import { supabase } from '../lib/supabase'
 import { enqueue, flush, isConnectionError } from '../lib/outbox'
 import ItemPicker from '../components/ItemPicker'
@@ -42,11 +43,19 @@ export default function Store({ boot }) {
   }, [staff.branch_id])
   useEffect(refresh, [refresh])
 
-  useEffect(() => {
-    if (mode !== 'disburse' || !toDept) return
-    setHistory(null)
-    loadDepartmentHistory(staff.branch_id, toDept).then(setHistory).catch(() => setHistory([]))
-  }, [staff.branch_id, mode, toDept])
+  // history for whichever mode is active — receive (into store),
+  // issue (to a dept), move (from a dept), convert (at a dept)
+  const reloadHistory = useCallback((clearFirst = true) => {
+    if (clearFirst) setHistory(null)
+    let p
+    if (mode === 'receive' && store?.id) p = loadReceiveHistory(staff.branch_id, store.id)
+    else if (mode === 'disburse' && toDept) p = loadDepartmentHistory(staff.branch_id, toDept)
+    else if (mode === 'move' && fromDept) p = loadMoveHistory(staff.branch_id, fromDept)
+    else if (mode === 'convert' && convertLoc) p = loadConvertHistory(staff.branch_id, convertLoc)
+    if (p) p.then(setHistory).catch(() => setHistory([]))
+    else setHistory([])
+  }, [staff.branch_id, mode, toDept, fromDept, convertLoc, store?.id])
+  useEffect(() => reloadHistory(true), [reloadHistory])
 
   // stock at any location, not just the store — needed once "move"
   // draws from a department instead of the store
@@ -106,9 +115,7 @@ export default function Store({ boot }) {
         toast('No connection — saved and will send when you are back online')
       }
       setLines([]); setReceiver(''); refresh(); flush()
-      if (mode === 'disburse' && toDept) {
-        loadDepartmentHistory(staff.branch_id, toDept).then(setHistory).catch(() => {})
-      }
+      reloadHistory(false)
     } catch (e) { toast('Not saved: ' + e.message, 'error') }
     setBusy(false)
   }
@@ -140,7 +147,7 @@ export default function Store({ boot }) {
         enqueue({ kind: 'movements', payload: { rows } })
         toast('No connection — saved and will send when you are back online')
       }
-      setConvertFrom(null); setConvertTo(null); refresh(); flush()
+      setConvertFrom(null); setConvertTo(null); refresh(); flush(); reloadHistory(false)
     } catch (e) { toast('Not saved: ' + e.message, 'error') }
     setBusy(false)
   }
@@ -258,39 +265,62 @@ export default function Store({ boot }) {
         </button>
       )}
 
-      {mode === 'disburse' && toDept && (
-        <div className="mt-4">
-          <button onClick={() => setShowHistory(s => !s)}
-            className="w-full flex items-center justify-between text-left py-2">
-            <span className="font-semibold">
-              History — {departments.find(d => d.id === toDept)?.name}
-            </span>
-            <span className="text-dim text-sm">{showHistory ? 'Hide' : 'Show'}</span>
-          </button>
-          {showHistory && (
-            <ul className="divide-y divide-line/60 rounded-2xl border border-line bg-surface px-4 mb-2">
-              {(history || []).map((h, i) => (
-                <li key={i} className="py-3">
-                  <div className="flex items-center gap-3">
-                    <span className="flex-1 min-w-0 truncate font-semibold">
-                      {h.stock_items?.name || '—'}
-                    </span>
-                    <span className="tnum text-dim text-sm">{h.business_date}</span>
-                  </div>
-                  <div className="text-dim text-sm mt-0.5">
-                    {h.qty} received{h.received_by ? ` by ${h.received_by}` : ''}
-                    {h.staff?.full_name ? ` · issued by ${h.staff.full_name}` : ''}
-                  </div>
-                </li>
-              ))}
-              {history === null && <li className="py-6 text-dim text-center">Loading…</li>}
-              {history && !history.length && (
-                <li className="py-6 text-dim text-center">Nothing issued to this department yet.</li>
-              )}
-            </ul>
-          )}
-        </div>
-      )}
+      {(() => {
+        // history section for the active mode; only shows once the
+        // relevant selection is made (a dept for issue/move/convert,
+        // always for receive since it targets the store)
+        const active =
+          mode === 'receive' ? { title: 'Received into store', empty: 'Nothing received yet.' }
+          : mode === 'disburse' && toDept
+            ? { title: `Issued — ${departments.find(d => d.id === toDept)?.name || ''}`,
+                empty: 'Nothing issued to this department yet.' }
+          : mode === 'move' && fromDept
+            ? { title: `Moved from ${departments.find(d => d.id === fromDept)?.name || ''}`,
+                empty: 'Nothing moved from this department yet.' }
+          : mode === 'convert' && convertLoc
+            ? { title: `Conversions — ${departments.find(d => d.id === convertLoc)?.name || ''}`,
+                empty: 'Nothing converted here yet.' }
+          : null
+        if (!active) return null
+        return (
+          <div className="mt-4">
+            <button onClick={() => setShowHistory(s => !s)}
+              className="w-full flex items-center justify-between text-left py-2">
+              <span className="font-semibold">History — {active.title}</span>
+              <span className="text-dim text-sm">{showHistory ? 'Hide' : 'Show'}</span>
+            </button>
+            {showHistory && (
+              <ul className="divide-y divide-line/60 rounded-2xl border border-line bg-surface px-4 mb-2">
+                {(history || []).map((h, i) => (
+                  <li key={i} className="py-3">
+                    <div className="flex items-center gap-3">
+                      <span className="flex-1 min-w-0 truncate font-semibold">
+                        {h.stock_items?.name || '—'}
+                      </span>
+                      <span className="tnum text-dim text-sm">{h.business_date}</span>
+                    </div>
+                    <div className="text-dim text-sm mt-0.5">
+                      {mode === 'convert'
+                        ? (h.note || `${h.qty} produced`)
+                        : mode === 'receive'
+                        ? `${h.qty} received${h.received_by ? ` from ${h.received_by}` : ''}`
+                        : mode === 'move'
+                        ? `${h.qty} moved${h.received_by ? ` · received by ${h.received_by}` : ''}`
+                        : `${h.qty} received${h.received_by ? ` by ${h.received_by}` : ''}`}
+                      {h.staff?.full_name ? ` · by ${h.staff.full_name}` : ''}
+                    </div>
+                  </li>
+                ))}
+                {history === null && <li className="py-6 text-dim text-center">Loading…</li>}
+                {history && !history.length && (
+                  <li className="py-6 text-dim text-center">{active.empty}</li>
+                )}
+              </ul>
+            )}
+          </div>
+        )
+      })()}
+
 
       {mode !== 'convert' && (
         <ul className="mt-4 divide-y divide-line/60">

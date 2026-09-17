@@ -995,3 +995,24 @@ drafts, a manager/gm sees the branch's — on the same 60s refresh
 cadence as the awaiting-verification badge. No database change.
 (Submitted-awaiting-auditor counts already had their own badge from
 earlier; this covers the other end — never submitted at all.)
+
+
+## Store history extended to all four modes
+
+Previously only Issue (OUT) had a history list. Now Receive (IN),
+Move Between Depts, and Convert each have their own, matching the
+same collapsible pattern:
+
+- Receive: what's arrived into the store, with supplier/received-from
+  note.
+- Move: what's left the selected FROM department (the one picked
+  first in Move mode).
+- Convert: conversions at the selected department, showing the full
+  "X → Y" detail from the movement note (one row per conversion, read
+  from the produced-item side).
+
+One shared reloadHistory() drives all four — it picks the right query
+for the active mode and is called both on mode/department change and
+after any successful save, so a just-recorded action shows
+immediately. No database change; all four read the existing
+stock_movements rows.
