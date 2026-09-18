@@ -38,3 +38,12 @@ export const paymentSummary = (r) => {
   if (pays.length === 1) return methodLabel[pays[0].method] || pays[0].method
   return 'Split: ' + pays.map(p => methodLabel[p.method] || p.method).join(' + ')
 }
+
+// Departments that can fulfil an order — real sales points, plus
+// Kitchen specifically (not itself flagged as a sales point in the
+// schema, but exactly what a restaurant order needs). Excludes
+// Housekeeping, Others, and the store itself — nothing there should
+// ever be sold or charged to a guest. One definition shared by the
+// room-charge flow and the restaurant-order flow so they can't drift.
+export const orderableLocations = (allLocations) =>
+  (allLocations || []).filter(l => !l.is_store && (l.is_sales_point || /kitchen/i.test(l.name)))

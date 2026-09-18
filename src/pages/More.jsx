@@ -1,6 +1,8 @@
 const ITEMS = [
   { key: 'dailysales', label: 'Daily sales', hint: 'Any past day, by department',
     roles: ['auditor', 'storekeeper', 'manager', 'gm', 'admin'] },
+  { key: 'roomboard', label: 'Rooms', hint: 'Who is checked in, who is due out, what is owed',
+    roles: ['front_desk', 'storekeeper', 'manager', 'gm', 'admin'] },
   { key: 'credit',  label: 'Credit',  hint: 'Who owes what, and record repayments',
     roles: ['bar', 'front_desk', 'storekeeper', 'manager', 'gm', 'admin', 'auditor'] },
   { key: 'recovery', label: 'Recovered debt', hint: 'Payments collected, who paid and who recovered it',
@@ -16,12 +18,14 @@ const ITEMS = [
 ]
 
 export default function More({ boot, onGo, pendingCount = 0 }) {
-  // dailysales is a dedicated top-level tab for the auditor, not a
-  // More-menu destination — hide it here for them specifically so it
-  // doesn't appear in two places at once; every other role still
-  // reaches it through this menu as before
+  // dailysales/roomboard are dedicated top-level tabs for auditor/
+  // front_desk respectively, not More-menu destinations for THEM —
+  // hidden here so each doesn't appear in two places at once; every
+  // other role that has access still reaches them through this menu
   const allowed = ITEMS.filter(i =>
-    i.roles.includes(boot.staff.role) && !(i.key === 'dailysales' && boot.staff.role === 'auditor'))
+    i.roles.includes(boot.staff.role)
+    && !(i.key === 'dailysales' && boot.staff.role === 'auditor')
+    && !(i.key === 'roomboard' && boot.staff.role === 'front_desk'))
   return (
     <div className="px-5">
       <ul className="divide-y divide-line/60">

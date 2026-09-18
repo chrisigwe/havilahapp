@@ -138,7 +138,12 @@ export async function saveBasket({ staff, locationId, lines, payments, date, cus
       business_date: date,
       occurred_at: new Date().toISOString(),
       stock_item_id: line.item.id,
-      location_id: locationId,
+      // a cross-department pick (e.g. a Kitchen item sold at OpenBar)
+      // carries its own sourcing location — that's what both the
+      // stock deduction AND the daily takings attribute to, so a
+      // walk-in food order counts toward Kitchen's figures, not the
+      // bar's, per the explicit decision on how that should work
+      location_id: line.locationId || locationId,
       tier: line.tier,
       qty: line.qty,
       unit_price: line.unitPrice,
@@ -736,4 +741,16 @@ export async function chargeItemToRoom({ staff, stayId, item, locationId, locati
     throw iErr
   }
   return order.id
+}
+
+// ---------- Room Board — read-only view of every room's live status ----------
+// v_occupancy_today lives in the same shared schema as the room-charge
+// tables. Columns confirmed directly against the live database before
+// building this, not inferred from the front-desk app's own code.
+export async function loadOccupancy(branchId) {
+  const { data, error } = await supabase.from('v_occupancy_today')
+    .select('*').eq('branch_id', branchId)
+  if (error) throw error
+  return (data || []).sort((a, b) =>
+    String(a.room_number).localeCompare(String(b.room_number), undefined, { numeric: true }))
 }

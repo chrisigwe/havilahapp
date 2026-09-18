@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { naira, lagosToday } from '../lib/format'
+import { naira, lagosToday, orderableLocations } from '../lib/format'
 import { searchLiveStays, chargeItemToRoom } from '../lib/data'
 import RoomItemPicker from './RoomItemPicker'
 
@@ -9,15 +9,7 @@ import RoomItemPicker from './RoomItemPicker'
 // same whether it was added here or there.
 export default function RoomChargeSheet({ boot, stockMap, onClose, toast }) {
   const { staff, items, allLocations } = boot
-  // Only departments a room charge should ever draw from: the real
-  // sales points (bar/minimart) plus Kitchen specifically for food —
-  // Kitchen isn't flagged as a sales point in the schema (it's a
-  // consuming department, not a walk-up counter), but it's exactly
-  // what a restaurant order needs to pull from. Housekeeping, Others,
-  // and the store itself are excluded — nothing there should ever be
-  // "ordered" to a guest's room.
-  const orderableLocations = allLocations.filter(l =>
-    !l.is_store && (l.is_sales_point || /kitchen/i.test(l.name)))
+  const orderable = orderableLocations(allLocations)
   const [q, setQ] = useState('')
   const [stays, setStays] = useState(null)
   const [stay, setStay] = useState(null)
@@ -135,7 +127,7 @@ export default function RoomChargeSheet({ boot, stockMap, onClose, toast }) {
       </div>
 
       {picking && (
-        <RoomItemPicker items={items} locations={orderableLocations} stockMap={stockMap}
+        <RoomItemPicker items={items} locations={orderable} stockMap={stockMap}
           onPick={(item, loc) => {
             setPending({ item, loc, qty: 1, unitPrice: Number(item.selling_price) || 0 })
             setPicking(false)

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { naira, lagosToday, tierLabel, methodLabel, whoRecorded, paymentSummary } from '../lib/format'
+import { naira, lagosToday, tierLabel, methodLabel, whoRecorded, paymentSummary, orderableLocations } from '../lib/format'
 import { loadStockMap, loadPopular, loadToday, saveBasket, saveWriteoff,
          loadDailyFinancials, loadCustomers, createCustomer,
          loadOpeningDate, loadBalances, loadReceipt,
@@ -8,6 +8,7 @@ import { enqueue, flush, isConnectionError } from '../lib/outbox'
 import { useToast } from '../components/Toast'
 import ItemPicker from '../components/ItemPicker'
 import RoomChargeSheet from '../components/RoomChargeSheet'
+import RoomItemPicker from '../components/RoomItemPicker'
 import CustomerPicker from '../components/CustomerPicker'
 import Receipt from '../components/Receipt'
 
@@ -70,6 +71,7 @@ export default function SalesEntry({ boot }) {
   const [receipt, setReceipt] = useState(null)
   const [lastReceiptId, setLastReceiptId] = useState(null)
   const [roomCharging, setRoomCharging] = useState(false)
+  const [restaurantPicking, setRestaurantPicking] = useState(false)
 
   const itemById = useMemo(() => Object.fromEntries(items.map(i => [i.id, i])), [items])
   const locById = useMemo(() =>
@@ -121,18 +123,23 @@ export default function SalesEntry({ boot }) {
     : tier === 'staff' ? Number(item.staff_price ?? item.selling_price)
     : Number(item.selling_price)
 
-  const onHand = (itemId) => stockMap[`${itemId}:${locationId}`] ?? 0
+  const onHand = (itemId, atLocationId) => stockMap[`${itemId}:${atLocationId || locationId}`] ?? 0
   const basketTotal = basket.reduce((s, l) => s + l.qty * l.unitPrice, 0)
 
-  function addToBasket(item) {
+  function addToBasket(item, sourceLocation) {
     setPicking(false)
     setBasket(b => {
-      const at = b.findIndex(l => l.item.id === item.id && l.tier === defaultTier && !l.priceOverridden)
+      const at = b.findIndex(l => l.item.id === item.id && l.tier === defaultTier
+        && !l.priceOverridden && l.locationId === (sourceLocation?.id || undefined))
       if (at >= 0) {
         const copy = [...b]; copy[at] = { ...copy[at], qty: copy[at].qty + 1 }; return copy
       }
       return [...b, { key: crypto.randomUUID(), item, tier: defaultTier, qty: 1,
-                      unitPrice: priceFor(item, defaultTier), priceOverridden: false }]
+                      unitPrice: priceFor(item, defaultTier), priceOverridden: false,
+                      // undefined for a normal same-department item (falls back to
+                      // the basket's own locationId in saveBasket); set only for a
+                      // cross-department pick like a Kitchen item sold at a bar
+                      locationId: sourceLocation?.id, locationName: sourceLocation?.name }]
     })
   }
 
@@ -149,9 +156,9 @@ export default function SalesEntry({ boot }) {
 
   // finding 4: warn before recording more than the location holds
   function startPayment() {
-    const over = basket.filter(l => l.qty > onHand(l.item.id))
+    const over = basket.filter(l => l.qty > onHand(l.item.id, l.locationId))
     if (over.length) {
-      const names = over.map(l => `${l.item.name} (${onHand(l.item.id)} left, selling ${l.qty})`).join('\n')
+      const names = over.map(l => `${l.item.name} (${onHand(l.item.id, l.locationId)} left, selling ${l.qty})`).join('\n')
       if (!window.confirm(`More than the shelf shows:\n\n${names}\n\nRecord anyway?`)) return
     }
     setPaying({
@@ -190,7 +197,8 @@ export default function SalesEntry({ boot }) {
         staffLite: { id: staff.id, branch_id: staff.branch_id },
         locationId, date, customerId,
         lines: basket.map(l => ({ item: { id: l.item.id, name: l.item.name },
-                                  tier: l.tier, qty: l.qty, unitPrice: l.unitPrice })),
+                                  tier: l.tier, qty: l.qty, unitPrice: l.unitPrice,
+                                  locationId: l.locationId })),
         payments, backdateReason, onBehalfOf,
       }
       try {
@@ -317,6 +325,11 @@ export default function SalesEntry({ boot }) {
         Charge to a room
       </button>
 
+      <button onClick={() => setRestaurantPicking(true)}
+        className="mt-3 w-full h-12 rounded-xl border border-line text-ink font-semibold">
+        Add a restaurant order
+      </button>
+
       {canRecordOnBehalf && people.length > 0 && (
         <div className="mt-3">
           <div className="text-dim text-sm mb-2">Recording on behalf of (staff at this location)</div>
@@ -350,6 +363,7 @@ export default function SalesEntry({ boot }) {
                       {tierLabel[l.tier] || l.tier}
                     </span>
                     <span className="text-dim"> · {naira(l.unitPrice)} each</span>
+                    {l.locationName && <span className="text-dim"> · from {l.locationName}</span>}
                   </div>
                 </button>
                 <button onClick={() => patchLine(l.key, { qty: Math.max(1, l.qty - 1) })}
@@ -359,8 +373,8 @@ export default function SalesEntry({ boot }) {
                   className="h-11 w-11 rounded-xl bg-raise border border-line text-2xl">+</button>
                 <span className="tnum w-20 text-right">{naira(l.qty * l.unitPrice)}</span>
               </div>
-              {l.qty > onHand(l.item.id) && (
-                <p className="text-clay text-sm mt-1">Only {onHand(l.item.id)} on the shelf</p>
+              {l.qty > onHand(l.item.id, l.locationId) && (
+                <p className="text-clay text-sm mt-1">Only {onHand(l.item.id, l.locationId)} on the shelf</p>
               )}
             </li>
           ))}
@@ -642,6 +656,12 @@ export default function SalesEntry({ boot }) {
       {roomCharging && (
         <RoomChargeSheet boot={boot} stockMap={stockMap} toast={toast}
           onClose={() => setRoomCharging(false)} />
+      )}
+
+      {restaurantPicking && (
+        <RoomItemPicker items={items} locations={orderableLocations(boot.allLocations)} stockMap={stockMap}
+          onPick={(item, loc) => { addToBasket(item, loc); setRestaurantPicking(false) }}
+          onClose={() => setRestaurantPicking(false)} />
       )}
     </div>
   )

@@ -1144,3 +1144,59 @@ folding it into this app's own daily reconciliation figures would
 double-count revenue that hasn't actually been collected yet. It only
 affects stock levels, which is correct: the drink is gone the moment
 it's poured, whoever eventually pays for it.
+
+
+## Restaurant orders at OpenBar/MainBar — attributed to Kitchen
+
+New "Add a restaurant order" button on Sales, using the same
+cross-department picker built for room charges. Per the explicit
+decision: a walk-in food sale taken at OpenBar counts toward
+KITCHEN's daily takings, not OpenBar's — the department that actually
+fulfilled it gets the credit, whoever recorded it.
+
+Mechanically: basket lines now carry an optional locationId, defaulting
+to the bar's own department for normal items (nothing changes there)
+but set explicitly when picked via the cross-department picker.
+saveBasket uses each line's own location for both the resulting
+sale's location_id (so it flows into the RIGHT department's daily
+figures) and the stock deduction (so it decrements Kitchen's stock,
+not OpenBar's). Fixed the same class of bug this exposed in the
+existing "more than the shelf shows" warning, which was checking
+every line against the bar's own stock regardless of where it was
+actually sourced from — now checks each line's real location. The
+offline-outbox payload carries the same per-line location through, so
+a queued cross-department sale doesn't lose it on replay.
+
+Extracted the "which departments can fulfil an order" rule
+(orderableLocations in format.js — sales points plus Kitchen,
+excluding Housekeeping/Others/the store) into one shared definition
+used by both this and the room-charge flow, rather than two copies
+that could drift.
+
+## Room Board — Phase 1 of the front-desk consolidation
+
+Confirmed, real goal now: full replacement, staff stop using the
+separate front-desk app entirely. Read the whole reference app
+(RoomBoard, CheckIn, GuestRegister, FolioDrawer, Payments, Settings)
+to scope this honestly rather than guess, and proposed five phases:
+Room Board (view-only) → Check-in & bookings → Folio & checkout →
+Settings → retire the old app. This is phase 1.
+
+RoomBoard.jsx reads v_occupancy_today — confirmed its real columns
+directly against the live database before building, not inferred
+from the front-desk app's frontend code. View-only by design for this
+first phase (no out-of-service toggle yet) — status tally, outstanding/
+deposit totals, and a card per room showing guest, checkout date,
+nights remaining, and amount owed.
+
+Front desk gets it as a dedicated tab (same treatment as the
+auditor's Daily Sales) since it's their primary tool; storekeeper/
+manager/gm/admin reach it through More for oversight. Same
+double-highlight bug class fixed proactively this time, since
+roomboard sits in both places depending on role — the More tab
+correctly doesn't light up when front desk is viewing Rooms through
+their own dedicated tab.
+
+Next phase (check-in & new bookings) is a real write path into a
+system currently live and in daily use — worth a dedicated pass with
+its own verification, not tacked onto this one.

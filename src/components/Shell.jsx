@@ -5,13 +5,17 @@ import PendingBanner from './PendingBanner'
 
 const STOCK_ROLES = ['storekeeper', 'manager', 'gm', 'admin']
 
-const MORE = ['dailysales', 'credit', 'recovery', 'count', 'catalog', 'variance', 'fix']
+const MORE = ['dailysales', 'roomboard', 'credit', 'recovery', 'count', 'catalog', 'variance', 'fix']
 
 export default function Shell({ staff, tab, onTab, children,
                                 branches = [], viewBranch, onBranch, pendingCount = 0 }) {
   const [confirmingSignOut, setConfirmingSignOut] = useState(false)
   const auditorOnly = staff.role === 'auditor'
   const tabs = auditorOnly ? [['dailysales', 'Daily sales']] : [['sales', 'Sales']]
+  // Room Board is front desk's primary tool — a dedicated tab, same
+  // treatment as the auditor's Daily Sales. Everyone else who needs
+  // it (oversight roles) reaches it through More instead.
+  if (staff.role === 'front_desk') tabs.push(['roomboard', 'Rooms'])
   if (STOCK_ROLES.includes(staff.role)) tabs.push(['store', 'Store'])
   tabs.push(['stock', 'Stock'])
   tabs.push(['more', 'More'])
@@ -60,7 +64,9 @@ export default function Shell({ staff, tab, onTab, children,
         {tabs.map(([k, label]) => (
           <button key={k} onClick={() => onTab(k)}
             className={`relative flex-1 h-16 text-lg font-semibold ${
-              tab === k || (k === 'more' && MORE.includes(tab) && !(auditorOnly && tab === 'dailysales'))
+              tab === k || (k === 'more' && MORE.includes(tab)
+                && !(auditorOnly && tab === 'dailysales')
+                && !(staff.role === 'front_desk' && tab === 'roomboard'))
               ? 'text-amber' : 'text-dim'}`}>
             {label}
             {k === 'more' && pendingCount > 0 && (
