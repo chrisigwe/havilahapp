@@ -1090,3 +1090,13 @@ maskable version is full-bleed (no rounded corners) so Android can
 crop it to any shape; the regular one keeps the rounded tile for
 browser tabs. No code change — the manifest and HTML already point at
 these filenames.
+
+
+## In-app logo matches the new icon
+
+Updated the Logo component (used on the sign-in page and the header)
+from the old clipboard-and-check line drawing to the three stacked
+boxes, matching the new app icon. Drawn in currentColor so it stays
+amber via text-amber on the app's dark background — just the boxes, no
+tile, since the app already provides the dark backdrop. One component
+change updates both the large sign-in logo and the small header logo.
