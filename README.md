@@ -1077,3 +1077,16 @@ No app stores involved: staff install straight from the browser.
 iPhone users must use Safari (iOS only allows PWA install from
 Safari); Android is more forgiving. Updates are instant on next load
 after a Netlify deploy — no review, no fees.
+
+
+## New app icon (inventory boxes)
+
+Replaced the clipboard-and-check icon with three dark boxes stacked in
+a pyramid on the amber tile — reads clearly as stacked inventory at
+any size, from a 16px browser tab to a home-screen tile. Regenerated
+all referenced files from one design (icon.svg, icon-192, icon-512,
+apple-touch-icon 180, maskable 512, maskable svg) via cairosvg. The
+maskable version is full-bleed (no rounded corners) so Android can
+crop it to any shape; the regular one keeps the rounded tile for
+browser tabs. No code change — the manifest and HTML already point at
+these filenames.
