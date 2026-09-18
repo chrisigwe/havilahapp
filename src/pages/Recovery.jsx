@@ -1,11 +1,20 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { naira, methodLabel } from '../lib/format'
-import { loadRecovery } from '../lib/data'
+import { naira, methodLabel, lagosToday } from '../lib/format'
+import { loadRecovery, updateRepayment } from '../lib/data'
 import { useToast } from '../components/Toast'
+
+// Deliberately excludes storekeeper — an explicit choice, not an
+// oversight, matching how storekeeper's write access has been pulled
+// back elsewhere in this app.
+const CAN_EDIT_REPAYMENT = ['auditor', 'admin', 'manager', 'gm']
 
 export default function Recovery({ boot }) {
   const { staff, locations } = boot
   const toast = useToast()
+  const canEdit = CAN_EDIT_REPAYMENT.includes(staff.role)
+  const [editing, setEditing] = useState(null)   // the row being edited
+  const [draft, setDraft] = useState(null)
+  const [busy, setBusy] = useState(false)
   const salesPoints = (locations || []).filter(l => l.is_sales_point && !l.is_store)
   const [locId, setLocId] = useState(staff.default_location_id || salesPoints[0]?.id || null)
   const [rows, setRows] = useState(null)
@@ -24,6 +33,24 @@ export default function Recovery({ boot }) {
     loadRecovery(staff.branch_id, locId).then(setRows).catch(e => toast(e.message, 'error'))
   }, [staff.branch_id, locId])
   useEffect(refresh, [refresh])
+
+  function openEdit(r) {
+    setEditing(r)
+    setDraft({ amount: String(r.amount), method: r.method, paid_on: r.paid_on, note: r.note || '' })
+  }
+
+  async function saveEdit() {
+    setBusy(true)
+    try {
+      await updateRepayment(editing.id, {
+        amount: Number(draft.amount), method: draft.method,
+        paid_on: draft.paid_on, note: draft.note || null,
+      })
+      toast('Repayment updated', 'success')
+      setEditing(null); refresh()
+    } catch (e) { toast('Could not update: ' + e.message, 'error') }
+    setBusy(false)
+  }
 
   const byDay = useMemo(() => {
     const m = new Map()
@@ -77,6 +104,9 @@ export default function Recovery({ boot }) {
                 <div className="flex items-baseline gap-3">
                   <span className="flex-1 min-w-0 truncate font-semibold">{r.customer_name}</span>
                   <span className="tnum font-bold text-leaf">{naira(r.amount)}</span>
+                  {canEdit && (
+                    <button onClick={() => openEdit(r)} className="text-dim text-sm underline">Edit</button>
+                  )}
                 </div>
                 <div className="text-dim text-sm mt-0.5">
                   {methodLabel[r.method] || r.method}
@@ -104,6 +134,52 @@ export default function Recovery({ boot }) {
       ))}
 
       {!rows.length && <p className="py-8 text-center text-dim">No payments recorded yet.</p>}
+
+      {editing && (
+        <div className="fixed inset-0 z-50 bg-bg flex flex-col justify-center px-6">
+          <h2 className="text-2xl font-bold">Edit repayment</h2>
+          <p className="text-dim mt-1">{editing.customer_name}</p>
+
+          <div className="mt-6">
+            <div className="text-dim mb-1">Amount</div>
+            <input type="number" inputMode="decimal" value={draft.amount}
+              onChange={e => setDraft(d => ({ ...d, amount: e.target.value }))}
+              className="h-14 w-full px-4 rounded-xl bg-surface border border-line tnum text-xl" />
+          </div>
+
+          <div className="mt-4">
+            <div className="text-dim mb-1">Method</div>
+            <div className="flex gap-2">
+              {['pos', 'cash', 'transfer'].map(m => (
+                <button key={m} onClick={() => setDraft(d => ({ ...d, method: m }))}
+                  className={`flex-1 h-12 rounded-xl border font-semibold ${draft.method === m
+                    ? 'bg-amber text-bg border-amber' : 'border-line text-dim'}`}>
+                  {methodLabel[m] || m}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="mt-4">
+            <div className="text-dim mb-1">Date</div>
+            <input type="date" value={draft.paid_on} max={lagosToday()}
+              onChange={e => setDraft(d => ({ ...d, paid_on: e.target.value }))}
+              className="h-12 px-3 rounded-xl bg-surface border border-line tnum" />
+          </div>
+
+          <div className="mt-4">
+            <div className="text-dim mb-1">Note (optional)</div>
+            <input value={draft.note} onChange={e => setDraft(d => ({ ...d, note: e.target.value }))}
+              className="h-12 w-full px-4 rounded-xl bg-surface border border-line" />
+          </div>
+
+          <button onClick={saveEdit} disabled={busy || !draft.amount}
+            className="mt-8 w-full h-16 rounded-2xl bg-amber text-bg text-xl font-bold disabled:opacity-40">
+            {busy ? 'Saving…' : 'Save changes'}
+          </button>
+          <button onClick={() => setEditing(null)} className="mt-3 w-full h-12 text-dim">Cancel</button>
+        </div>
+      )}
     </div>
   )
 }

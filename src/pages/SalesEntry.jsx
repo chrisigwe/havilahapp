@@ -7,6 +7,7 @@ import { loadStockMap, loadPopular, loadToday, saveBasket, saveWriteoff,
 import { enqueue, flush, isConnectionError } from '../lib/outbox'
 import { useToast } from '../components/Toast'
 import ItemPicker from '../components/ItemPicker'
+import RoomChargeSheet from '../components/RoomChargeSheet'
 import CustomerPicker from '../components/CustomerPicker'
 import Receipt from '../components/Receipt'
 
@@ -68,6 +69,7 @@ export default function SalesEntry({ boot }) {
   const [busy, setBusy] = useState(false)
   const [receipt, setReceipt] = useState(null)
   const [lastReceiptId, setLastReceiptId] = useState(null)
+  const [roomCharging, setRoomCharging] = useState(false)
 
   const itemById = useMemo(() => Object.fromEntries(items.map(i => [i.id, i])), [items])
   const locById = useMemo(() =>
@@ -309,6 +311,11 @@ export default function SalesEntry({ boot }) {
           )}
         </div>
       )}
+
+      <button onClick={() => setRoomCharging(true)}
+        className="mt-3 w-full h-12 rounded-xl border border-line text-ink font-semibold">
+        Charge to a room
+      </button>
 
       {canRecordOnBehalf && people.length > 0 && (
         <div className="mt-3">
@@ -630,6 +637,11 @@ export default function SalesEntry({ boot }) {
             {busy ? 'Saving…' : 'Save write-off'}
           </button>
         </Sheet>
+      )}
+
+      {roomCharging && (
+        <RoomChargeSheet boot={boot} stockMap={stockMap} toast={toast}
+          onClose={() => setRoomCharging(false)} />
       )}
     </div>
   )

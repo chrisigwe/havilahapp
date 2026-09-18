@@ -515,6 +515,14 @@ export async function loadRecovery(branchId, locationId, days = 60) {
   return data
 }
 
+// Editing an already-recorded repayment — Auditor/Admin/Manager/GM
+// only (enforced by RLS regardless of what the UI shows).
+export async function updateRepayment(id, patch) {
+  const { error } = await supabase.from('credit_repayments')
+    .update(patch).eq('id', id)
+  if (error) throw error
+}
+
 export async function saveMovements(rows) {
   const { error } = await supabase.from('stock_movements').insert(rows)
   if (error) throw error
@@ -676,4 +684,56 @@ export async function auditorAdjustCountLine(countId, itemId, qty) {
     p_count: countId, p_item: itemId, p_qty: qty,
   })
   if (error) throw error
+}
+
+// ---------- Reception & Order: charging items to a hotel room ----------
+// Shares the front-desk app's schema (stays/orders/order_items) in the
+// same Supabase project — not a separate system. RLS on those tables
+// is already open to any authenticated staff on their own branch, so
+// no new security is needed here, only the queries themselves.
+
+// Live stays (reserved/occupied) matching a room number or guest name.
+export async function searchLiveStays(branchId, query) {
+  const q = (query || '').trim()
+  let req = supabase.from('stays')
+    .select(`id, status, check_in_date, scheduled_out,
+             guests(full_name, phone), rooms(room_number)`)
+    .eq('branch_id', branchId)
+    .in('status', ['reserved', 'occupied'])
+    .order('check_in_date', { ascending: false })
+    .limit(30)
+  const { data, error } = await req
+  if (error) throw error
+  if (!q) return data
+  const needle = q.toLowerCase()
+  return data.filter(s =>
+    s.rooms?.room_number?.toLowerCase().includes(needle) ||
+    s.guests?.full_name?.toLowerCase().includes(needle) ||
+    s.guests?.phone?.includes(q))
+}
+
+// One item charged to a room = one order + one order_item, matching
+// exactly how the front-desk's own folio drawer adds a charge — so a
+// room's bill looks identical whether it was added there or from a
+// bar's till here. location_id is what the new stock-decrement
+// trigger (108b) uses to know which department's stock to pull from;
+// category is inferred from that same location's name.
+export async function chargeItemToRoom({ staff, stayId, item, locationId, locationName, qty, unitPrice, businessDate }) {
+  const category = /kitchen|restaurant/i.test(locationName || '') ? 'food'
+    : /minimart/i.test(locationName || '') ? 'minimart'
+    : 'drink'
+  const { data: order, error: oErr } = await supabase.from('orders').insert({
+    branch_id: staff.branch_id, stay_id: stayId, business_date: businessDate,
+    settlement: 'charged_to_room', served_by: staff.id,
+  }).select('id').single()
+  if (oErr) throw oErr
+  const { error: iErr } = await supabase.from('order_items').insert({
+    order_id: order.id, category, stock_item_id: item.id, location_id: locationId,
+    description: item.name, qty, unit_price: unitPrice,
+  })
+  if (iErr) {
+    await supabase.from('orders').delete().eq('id', order.id)
+    throw iErr
+  }
+  return order.id
 }

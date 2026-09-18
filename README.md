@@ -1100,3 +1100,47 @@ boxes, matching the new app icon. Drawn in currentColor so it stays
 amber via text-amber on the app's dark background — just the boxes, no
 tile, since the app already provides the dark backdrop. One component
 change updates both the large sign-in logo and the small header logo.
+
+
+## Reception & Order — charging items to a hotel room
+
+New "Charge to a room" button on the Sales screen, available to any
+staff who can record sales (not gated to managers, since taking a
+room order is an everyday task, not an admin action).
+
+This isn't a new subsystem — it writes directly into the front-desk
+app's own `stays`/`orders`/`order_items` tables, in the same Supabase
+project. Confirmed via their actual schema and RLS (not guessed from
+their frontend code): both branch ids matched exactly what this app
+already uses, and `orders`/`order_items` already had a fully
+permissive `can_see_branch()` policy — no new security was needed for
+this app's staff to write there.
+
+What WAS missing, exactly as the front-desk app's own README flagged:
+"when inventory arrives, setting [stock_item_id] is the only change
+needed." Two things, not one — `order_items` had no `location_id`, so
+there was no way to know which department's stock a room charge
+should decrement. 108b adds that column and a trigger
+(`sync_order_item_stock_movement`) mirroring the existing
+`sync_sale_stock_movement` exactly — same insert/update/delete
+symmetry, so editing or deleting a room charge doesn't leave a stray
+stock movement behind. Uses a new `room_charge` movement type (108a)
+rather than reusing `sale`, so stock history can tell the two apart.
+
+Flow: search a live stay by room number or guest name → pick an item
+from a NEW cross-department picker (RoomItemPicker) that shows every
+department actually holding stock of it, not just the one you're
+standing at — this is what lets a food order taken at OpenBar pull
+from Kitchen's stock. Each item posts immediately as its own order,
+matching exactly how the front-desk's own folio drawer already adds
+charges one at a time — so a guest's bill looks identical regardless
+of which app added it to. Category (drink/food/minimart) is inferred
+from the department name, matching the three categories the front
+desk already uses.
+
+Deliberately does NOT create a `sales` row — a room charge is settled
+by the front desk at checkout, not by this department's own till, so
+folding it into this app's own daily reconciliation figures would
+double-count revenue that hasn't actually been collected yet. It only
+affects stock levels, which is correct: the drink is gone the moment
+it's poured, whoever eventually pays for it.
