@@ -29,7 +29,7 @@ export default function Corrections({ boot }) {
     return (rows || []).filter(r => {
       if (deptFilter !== 'all' && rowLocationId(r) !== deptFilter) return false
       if (!q) return true
-      const item = itemById[r.stock_item_id]?.name?.toLowerCase() || ''
+      const item = (itemById[r.stock_item_id]?.name || r.description || '').toLowerCase()
       const dept = locById[rowLocationId(r)]?.name?.toLowerCase() || ''
       const date = r.business_date || ''
       const customer = r.customers?.name?.toLowerCase() || ''
@@ -54,7 +54,7 @@ export default function Corrections({ boot }) {
   useEffect(refresh, [refresh])
 
   function describe(r) {
-    const name = itemById[r.stock_item_id]?.name || 'Unknown item'
+    const name = itemById[r.stock_item_id]?.name || r.description || 'Unknown item'
     if (r.kind === 'sale') {
       return { title: name,
         detail: `Sale · ${tierLabel[r.tier] || r.tier} · ${locById[r.location_id]?.name || ''}`

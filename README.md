@@ -1200,3 +1200,48 @@ their own dedicated tab.
 Next phase (check-in & new bookings) is a real write path into a
 system currently live and in daily use — worth a dedicated pass with
 its own verification, not tacked onto this one.
+
+
+## Restaurant orders are now genuinely typed — no catalog item, no stock
+
+Reworked from last turn's version, which required picking a real
+catalog item. Confirmed the actual requirement first: a plate of food
+isn't a countable stock unit, so Kitchen dishes should never need a
+tracked "12 left on the shelf" the way a bottled drink does.
+
+Checked every dependent piece directly against the live database
+before writing anything, given this makes sales.stock_item_id
+nullable for the first time in the whole system — the single most
+relied-upon table here:
+- v_item_popularity needs no change — a typed order correctly falls
+  out of "which catalog item is popular" on its own.
+- v_sale_variances DID need a fix — was (almost certainly) an inner
+  join, which would have silently hidden any real payment shortfall
+  on a typed order from the variance report entirely. Now a left join
+  with a fallback to the typed description.
+- sync_sale_stock_movement now skips entirely when stock_item_id is
+  null — no movement to create when there's no stock.
+- log_sale_change already tolerated a missing item name gracefully;
+  improved it to show the typed description instead of a bare '?'.
+
+sales gained a nullable description column, with a check constraint
+requiring every sale to have EITHER a real item OR a typed
+description — never neither. Both entry points (walk-in Sales, and
+now the room-charge flow too) always attribute a typed order to
+Kitchen's own daily figures, matching the earlier decision, with no
+stock deducted anywhere.
+
+Swept the whole app for anywhere a sale's item was assumed to exist
+(itemById[x.stock_item_id]?.name with no fallback) and fixed each one
+against the real typed description instead — the basket display, the
+per-line price/tier editor (which now hides the tier section entirely
+for a typed line, since tiers are a catalog-item concept that doesn't
+apply), the over-stock warnings (skip typed lines, nothing to check),
+the offline-outbox payload, Credit's ledger, Corrections' search and
+display, DailySales, and the printed receipt.
+
+RoomChargeSheet now offers two clearly separate buttons — "add a
+drink or minimart item" (unchanged, catalog-based) and "add a
+restaurant order" (new, typed) — rather than forcing every room
+charge through the same catalog picker that was never right for food
+in the first place.

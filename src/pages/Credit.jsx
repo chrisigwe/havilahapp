@@ -245,7 +245,7 @@ export default function Credit({ boot }) {
                       <td className="tnum">{s2.business_date?.slice(5)}</td>
                       <td>{locById[s2.location_id]?.name || '—'}</td>
                       <td>
-                        {itemById[s2.stock_item_id]?.name || '—'}
+                        {itemById[s2.stock_item_id]?.name || s2.description || '—'}
                         {s2.tier && s2.tier !== 'general' && (
                           <span className="text-dim"> ({tierLabel[s2.tier] || s2.tier})</span>
                         )}

@@ -115,7 +115,7 @@ export default function DailySales({ boot }) {
         {(rows || []).map(r => (
           <li key={r.id} className="py-3 flex items-center gap-3">
             <div className="flex-1 min-w-0">
-              <div className="font-semibold truncate">{itemById[r.stock_item_id]?.name || '—'}</div>
+              <div className="font-semibold truncate">{itemById[r.stock_item_id]?.name || r.description || '—'}</div>
               <div className="text-dim text-sm">
                 {tierLabel[r.tier] || r.tier} · {r.qty} × {naira(r.unit_price)}
                 {locId === 'all' && locById[r.location_id] ? ` · ${locById[r.location_id].name}` : ''}

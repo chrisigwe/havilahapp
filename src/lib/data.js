@@ -114,7 +114,7 @@ export async function loadPopular(branchId) {
 export async function loadToday(branchId, date, locationId) {
   let q = supabase
     .from('sales')
-    .select(`id, stock_item_id, location_id, tier, qty, unit_price, amount, created_at,
+    .select(`id, stock_item_id, description, location_id, tier, qty, unit_price, amount, created_at,
              receipt_id, business_date, recorded_by, on_behalf_of,
              recorder:recorded_by(full_name), stood_in_for:on_behalf_of(full_name),
              sale_payments(method, amount)`)
@@ -137,7 +137,11 @@ export async function saveBasket({ staff, locationId, lines, payments, date, cus
       branch_id: staff.branch_id,
       business_date: date,
       occurred_at: new Date().toISOString(),
-      stock_item_id: line.item.id,
+      // typed restaurant orders have no catalog item (a plate of food
+      // isn't a countable stock unit) — item is null, description
+      // carries the typed text instead
+      stock_item_id: line.item?.id || null,
+      description: line.item ? null : (line.description || null),
       // a cross-department pick (e.g. a Kitchen item sold at OpenBar)
       // carries its own sourcing location — that's what both the
       // stock deduction AND the daily takings attribute to, so a
@@ -205,11 +209,11 @@ export async function loadActivity(branchId, days = 14, ownOnlyStaffId = null) {
     // the recorder's, so match either column
     (ownOnlyStaffId
       ? supabase.from('sales')
-          .select('id, business_date, stock_item_id, location_id, tier, qty, unit_price, amount, recorded_by, on_behalf_of, created_at, customers(name)')
+          .select('id, business_date, stock_item_id, description, location_id, tier, qty, unit_price, amount, recorded_by, on_behalf_of, created_at, customers(name)')
           .eq('branch_id', branchId).gte('business_date', since)
           .or(`recorded_by.eq.${ownOnlyStaffId},on_behalf_of.eq.${ownOnlyStaffId}`)
       : supabase.from('sales')
-          .select('id, business_date, stock_item_id, location_id, tier, qty, unit_price, amount, recorded_by, on_behalf_of, created_at, customers(name)')
+          .select('id, business_date, stock_item_id, description, location_id, tier, qty, unit_price, amount, recorded_by, on_behalf_of, created_at, customers(name)')
           .eq('branch_id', branchId).gte('business_date', since)
     ).order('created_at', { ascending: false }).limit(300),
     own(supabase.from('stock_movements')
@@ -355,7 +359,7 @@ export async function loadBalances(branchId, locationId, staffId) {
 
 export async function loadCustomerLedger(branchId, customerId, locationId, staffId) {
   let sq = supabase.from('sales')
-    .select('id, business_date, qty, unit_price, stock_item_id, location_id, tier, sale_payments(method, amount)')
+    .select('id, business_date, qty, unit_price, stock_item_id, description, location_id, tier, sale_payments(method, amount)')
     .eq('branch_id', branchId).eq('customer_id', customerId)
   let rq = supabase.from('credit_repayments')
     .select('id, paid_on, method, amount, note, location_id')
@@ -537,7 +541,7 @@ export async function saveMovements(rows) {
 // ---------- receipts ----------
 export async function loadReceipt(receiptId) {
   const { data, error } = await supabase.from('sales')
-    .select(`id, business_date, qty, unit_price, tier, stock_item_id, location_id,
+    .select(`id, business_date, qty, unit_price, tier, stock_item_id, description, location_id,
              customer_id, recorded_by, created_at,
              sale_payments(method, amount),
              customers(name, phone),
@@ -723,18 +727,25 @@ export async function searchLiveStays(branchId, query) {
 // bar's till here. location_id is what the new stock-decrement
 // trigger (108b) uses to know which department's stock to pull from;
 // category is inferred from that same location's name.
-export async function chargeItemToRoom({ staff, stayId, item, locationId, locationName, qty, unitPrice, businessDate }) {
-  const category = /kitchen|restaurant/i.test(locationName || '') ? 'food'
-    : /minimart/i.test(locationName || '') ? 'minimart'
-    : 'drink'
+// item + locationId for a catalog pick (drinks/minimart, real stock);
+// OR description (no item, no locationId) for a typed restaurant
+// order — always category 'food', no stock link, matching how
+// walk-in restaurant orders work in the normal Sales flow.
+export async function chargeItemToRoom({ staff, stayId, item, locationId, locationName,
+                                          description, qty, unitPrice, businessDate }) {
+  const category = item
+    ? (/kitchen|restaurant/i.test(locationName || '') ? 'food'
+       : /minimart/i.test(locationName || '') ? 'minimart' : 'drink')
+    : 'food'
   const { data: order, error: oErr } = await supabase.from('orders').insert({
     branch_id: staff.branch_id, stay_id: stayId, business_date: businessDate,
     settlement: 'charged_to_room', served_by: staff.id,
   }).select('id').single()
   if (oErr) throw oErr
   const { error: iErr } = await supabase.from('order_items').insert({
-    order_id: order.id, category, stock_item_id: item.id, location_id: locationId,
-    description: item.name, qty, unit_price: unitPrice,
+    order_id: order.id, category,
+    stock_item_id: item?.id || null, location_id: item ? locationId : null,
+    description: item ? item.name : description, qty, unit_price: unitPrice,
   })
   if (iErr) {
     await supabase.from('orders').delete().eq('id', order.id)

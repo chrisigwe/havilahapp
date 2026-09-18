@@ -7,15 +7,22 @@ import RoomItemPicker from './RoomItemPicker'
 // side of this (their FolioDrawer) adds one item at a time, each its
 // own order, so this matches that exactly: a guest's bill looks the
 // same whether it was added here or there.
+//
+// Two kinds of charge, matching how the rest of the app now treats
+// this split: drinks/minimart are real catalog items with tracked
+// stock (picked via RoomItemPicker); restaurant orders are typed —
+// no catalog item, no stock tracking, since a plate of food isn't a
+// countable stock unit.
 export default function RoomChargeSheet({ boot, stockMap, onClose, toast }) {
   const { staff, items, allLocations } = boot
-  const orderable = orderableLocations(allLocations)
+  const orderable = orderableLocations(allLocations).filter(l => !/kitchen/i.test(l.name))
   const [q, setQ] = useState('')
   const [stays, setStays] = useState(null)
   const [stay, setStay] = useState(null)
   const [charged, setCharged] = useState([])   // this session's charges
   const [picking, setPicking] = useState(false)
-  const [pending, setPending] = useState(null) // { item, loc, qty, unitPrice }
+  const [typing, setTyping] = useState(null)    // { description, qty, unitPrice } while composing
+  const [pending, setPending] = useState(null)  // { item, loc, qty, unitPrice } confirmed catalog pick
   const [busy, setBusy] = useState(false)
 
   useEffect(() => {
@@ -38,6 +45,22 @@ export default function RoomChargeSheet({ boot, stockMap, onClose, toast }) {
       setCharged(c => [{ ...pending, at: Date.now() }, ...c])
       setPending(null)
       toast(`${pending.qty} × ${pending.item.name} charged to Room ${stay.rooms?.room_number}`, 'success')
+    } catch (e) { toast('Not saved: ' + e.message, 'error') }
+    setBusy(false)
+  }
+
+  async function confirmTypedCharge() {
+    if (!typing || !typing.description.trim() || !Number(typing.unitPrice)) return
+    setBusy(true)
+    try {
+      await chargeItemToRoom({
+        staff, stayId: stay.id, description: typing.description.trim(),
+        qty: typing.qty, unitPrice: Number(typing.unitPrice), businessDate: lagosToday(),
+      })
+      setCharged(c => [{ description: typing.description.trim(), qty: typing.qty,
+                         unitPrice: Number(typing.unitPrice), typed: true, at: Date.now() }, ...c])
+      toast(`${typing.qty} × ${typing.description.trim()} charged to Room ${stay.rooms?.room_number}`, 'success')
+      setTyping(null)
     } catch (e) { toast('Not saved: ' + e.message, 'error') }
     setBusy(false)
   }
@@ -82,7 +105,11 @@ export default function RoomChargeSheet({ boot, stockMap, onClose, toast }) {
 
             <button onClick={() => setPicking(true)}
               className="mt-6 w-full h-14 rounded-2xl border-2 border-amber text-amber text-lg font-bold">
-              + Add item
+              + Add a drink or minimart item
+            </button>
+            <button onClick={() => setTyping({ description: '', qty: 1, unitPrice: '' })}
+              className="mt-3 w-full h-14 rounded-2xl border-2 border-line text-ink text-lg font-bold">
+              + Add a restaurant order
             </button>
 
             {pending && (
@@ -108,14 +135,42 @@ export default function RoomChargeSheet({ boot, stockMap, onClose, toast }) {
               </div>
             )}
 
+            {typing && (
+              <div className="mt-4 rounded-2xl border border-line bg-surface p-4">
+                <div className="text-dim text-sm mb-2">Typed, not tracked as stock</div>
+                <input value={typing.description} autoFocus
+                  onChange={e => setTyping(t => ({ ...t, description: e.target.value }))}
+                  placeholder="e.g. Jollof Rice with Chicken"
+                  className="h-12 w-full px-3 mb-3 rounded-xl bg-raise border border-line placeholder:text-dim" />
+                <div className="flex items-center gap-3 mb-3">
+                  <button onClick={() => setTyping(t => ({ ...t, qty: Math.max(1, t.qty - 1) }))}
+                    className="h-11 w-11 rounded-xl bg-raise border border-line text-xl font-bold">−</button>
+                  <input type="number" inputMode="numeric" value={typing.qty}
+                    onChange={e => setTyping(t => ({ ...t, qty: Math.max(1, Number(e.target.value)) }))}
+                    className="h-11 w-16 px-2 rounded-xl bg-raise border border-line tnum text-center" />
+                  <button onClick={() => setTyping(t => ({ ...t, qty: t.qty + 1 }))}
+                    className="h-11 w-11 rounded-xl bg-raise border border-line text-xl font-bold">+</button>
+                  <input type="number" inputMode="decimal" value={typing.unitPrice}
+                    onChange={e => setTyping(t => ({ ...t, unitPrice: e.target.value }))}
+                    placeholder="price per plate"
+                    className="h-11 flex-1 px-3 rounded-xl bg-raise border border-line tnum text-right placeholder:text-dim" />
+                </div>
+                <button onClick={confirmTypedCharge}
+                  disabled={busy || !typing.description.trim() || !Number(typing.unitPrice)}
+                  className="w-full h-14 rounded-2xl bg-amber text-bg text-lg font-bold disabled:opacity-40">
+                  {busy ? 'Charging…' : `Charge ${naira((typing.qty || 0) * (Number(typing.unitPrice) || 0))} to room`}
+                </button>
+              </div>
+            )}
+
             {!!charged.length && (
               <div className="mt-6">
                 <div className="text-dim mb-2">Charged this session</div>
                 <ul className="divide-y divide-line/60">
                   {charged.map((c, i) => (
                     <li key={i} className="py-2 flex items-center gap-3">
-                      <span className="flex-1 min-w-0 truncate">{c.qty} × {c.item.name}</span>
-                      <span className="tnum text-dim text-sm">{c.loc.name}</span>
+                      <span className="flex-1 min-w-0 truncate">{c.qty} × {c.item?.name || c.description}</span>
+                      <span className="tnum text-dim text-sm">{c.typed ? 'Kitchen' : c.loc.name}</span>
                       <span className="tnum font-semibold">{naira(c.qty * c.unitPrice)}</span>
                     </li>
                   ))}

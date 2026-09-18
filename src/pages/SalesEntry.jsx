@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { naira, lagosToday, tierLabel, methodLabel, whoRecorded, paymentSummary, orderableLocations } from '../lib/format'
+import { naira, lagosToday, tierLabel, methodLabel, whoRecorded, paymentSummary } from '../lib/format'
 import { loadStockMap, loadPopular, loadToday, saveBasket, saveWriteoff,
          loadDailyFinancials, loadCustomers, createCustomer,
          loadOpeningDate, loadBalances, loadReceipt,
@@ -8,7 +8,6 @@ import { enqueue, flush, isConnectionError } from '../lib/outbox'
 import { useToast } from '../components/Toast'
 import ItemPicker from '../components/ItemPicker'
 import RoomChargeSheet from '../components/RoomChargeSheet'
-import RoomItemPicker from '../components/RoomItemPicker'
 import CustomerPicker from '../components/CustomerPicker'
 import Receipt from '../components/Receipt'
 
@@ -71,7 +70,7 @@ export default function SalesEntry({ boot }) {
   const [receipt, setReceipt] = useState(null)
   const [lastReceiptId, setLastReceiptId] = useState(null)
   const [roomCharging, setRoomCharging] = useState(false)
-  const [restaurantPicking, setRestaurantPicking] = useState(false)
+  const [restaurantOrder, setRestaurantOrder] = useState(null)
 
   const itemById = useMemo(() => Object.fromEntries(items.map(i => [i.id, i])), [items])
   const locById = useMemo(() =>
@@ -129,7 +128,7 @@ export default function SalesEntry({ boot }) {
   function addToBasket(item, sourceLocation) {
     setPicking(false)
     setBasket(b => {
-      const at = b.findIndex(l => l.item.id === item.id && l.tier === defaultTier
+      const at = b.findIndex(l => l.item?.id === item.id && l.tier === defaultTier
         && !l.priceOverridden && l.locationId === (sourceLocation?.id || undefined))
       if (at >= 0) {
         const copy = [...b]; copy[at] = { ...copy[at], qty: copy[at].qty + 1 }; return copy
@@ -143,11 +142,23 @@ export default function SalesEntry({ boot }) {
     })
   }
 
+  // typed restaurant order — no catalog item, since a plate of food
+  // isn't a countable stock unit the way a bottled drink is. Always
+  // attributed to Kitchen's own daily figures regardless of which
+  // bar rings it up, matching the earlier decision on how that
+  // revenue should count.
+  function addTypedOrder({ description, qty, unitPrice }) {
+    const kitchen = (boot.allLocations || []).find(l => /kitchen/i.test(l.name))
+    setBasket(b => [...b, { key: crypto.randomUUID(), item: null, description,
+                            tier: 'general', qty, unitPrice, priceOverridden: true,
+                            locationId: kitchen?.id, locationName: kitchen?.name || 'Kitchen' }])
+  }
+
   // switching the basket tier reprices everything already in it, EXCEPT
   // lines someone has hand-priced — those stay as entered
   function switchTier(t) {
     setDefaultTier(t)
-    setBasket(b => b.map(l => l.priceOverridden ? l
+    setBasket(b => b.map(l => (l.priceOverridden || !l.item) ? l
       : { ...l, tier: t, unitPrice: priceFor(l.item, t) }))
   }
   const patchLine = (key, patch) =>
@@ -156,7 +167,7 @@ export default function SalesEntry({ boot }) {
 
   // finding 4: warn before recording more than the location holds
   function startPayment() {
-    const over = basket.filter(l => l.qty > onHand(l.item.id, l.locationId))
+    const over = basket.filter(l => l.item && l.qty > onHand(l.item.id, l.locationId))
     if (over.length) {
       const names = over.map(l => `${l.item.name} (${onHand(l.item.id, l.locationId)} left, selling ${l.qty})`).join('\n')
       if (!window.confirm(`More than the shelf shows:\n\n${names}\n\nRecord anyway?`)) return
@@ -196,9 +207,10 @@ export default function SalesEntry({ boot }) {
       const payload = {
         staffLite: { id: staff.id, branch_id: staff.branch_id },
         locationId, date, customerId,
-        lines: basket.map(l => ({ item: { id: l.item.id, name: l.item.name },
-                                  tier: l.tier, qty: l.qty, unitPrice: l.unitPrice,
-                                  locationId: l.locationId })),
+        lines: basket.map(l => ({
+          item: l.item ? { id: l.item.id, name: l.item.name } : null,
+          description: l.description || null,
+          tier: l.tier, qty: l.qty, unitPrice: l.unitPrice, locationId: l.locationId })),
         payments, backdateReason, onBehalfOf,
       }
       try {
@@ -325,7 +337,7 @@ export default function SalesEntry({ boot }) {
         Charge to a room
       </button>
 
-      <button onClick={() => setRestaurantPicking(true)}
+      <button onClick={() => setRestaurantOrder({ description: '', qty: 1, unitPrice: '' })}
         className="mt-3 w-full h-12 rounded-xl border border-line text-ink font-semibold">
         Add a restaurant order
       </button>
@@ -357,7 +369,7 @@ export default function SalesEntry({ boot }) {
             <li key={l.key} className="py-3">
               <div className="flex items-center gap-3">
                 <button onClick={() => setTuning(l.key)} className="flex-1 min-w-0 text-left">
-                  <div className="font-semibold truncate">{l.item.name}</div>
+                  <div className="font-semibold truncate">{l.item?.name || l.description}</div>
                   <div className="text-sm">
                     <span className={l.tier === 'general' ? 'text-dim' : 'text-amber font-semibold'}>
                       {tierLabel[l.tier] || l.tier}
@@ -373,8 +385,8 @@ export default function SalesEntry({ boot }) {
                   className="h-11 w-11 rounded-xl bg-raise border border-line text-2xl">+</button>
                 <span className="tnum w-20 text-right">{naira(l.qty * l.unitPrice)}</span>
               </div>
-              {l.qty > onHand(l.item.id, l.locationId) && (
-                <p className="text-clay text-sm mt-1">Only {onHand(l.item.id, l.locationId)} on the shelf</p>
+              {l.item && l.qty > onHand(l.item.id, l.locationId) && (
+                <p className="text-clay text-sm mt-1">Only {l.item && onHand(l.item.id, l.locationId)} on the shelf</p>
               )}
             </li>
           ))}
@@ -452,7 +464,7 @@ export default function SalesEntry({ boot }) {
             <li key={r.id} className="py-3 flex items-center gap-3"
                 onClick={() => openReceipt(r.receipt_id)}>
               <div className="flex-1 min-w-0">
-                <div className="font-semibold truncate">{itemById[r.stock_item_id]?.name || '—'}</div>
+                <div className="font-semibold truncate">{itemById[r.stock_item_id]?.name || r.description || '—'}</div>
                 <div className="text-dim text-sm">
                   {tierLabel[r.tier] || r.tier} · {r.qty} × {naira(r.unit_price)}
                   {r.business_date !== r.created_at?.slice(0, 10) && (
@@ -494,24 +506,43 @@ export default function SalesEntry({ boot }) {
         if (!l) return null
         return (
           <Sheet onClose={() => setTuning(null)}>
-            <h2 className="text-2xl font-bold">{l.item.name}</h2>
-            <Row label="Price tier">
-              {tiers.map(t => (
-                <Chip key={t} active={l.tier === t}
-                  onClick={() => patchLine(l.key, { tier: t, unitPrice: priceFor(l.item, t), priceOverridden: false })}>
-                  {tierLabel[t] || t}
-                </Chip>
-              ))}
-            </Row>
-            <Row label="Unit price">
-              <input type="number" inputMode="decimal" value={l.unitPrice}
-                onChange={e => patchLine(l.key, { unitPrice: Number(e.target.value), priceOverridden: true })}
-                className="h-12 w-36 px-3 rounded-xl bg-surface border border-line tnum" />
-              {l.priceOverridden && (
-                <button onClick={() => patchLine(l.key, { unitPrice: priceFor(l.item, l.tier), priceOverridden: false })}
-                  className="text-dim text-sm underline">Reset to {tierLabel[l.tier] || l.tier} price</button>
-              )}
-            </Row>
+            <h2 className="text-2xl font-bold">{l.item?.name || l.description}</h2>
+            {l.item ? (
+              <>
+                <Row label="Price tier">
+                  {tiers.map(t => (
+                    <Chip key={t} active={l.tier === t}
+                      onClick={() => patchLine(l.key, { tier: t, unitPrice: priceFor(l.item, t), priceOverridden: false })}>
+                      {tierLabel[t] || t}
+                    </Chip>
+                  ))}
+                </Row>
+                <Row label="Unit price">
+                  <input type="number" inputMode="decimal" value={l.unitPrice}
+                    onChange={e => patchLine(l.key, { unitPrice: Number(e.target.value), priceOverridden: true })}
+                    className="h-12 w-36 px-3 rounded-xl bg-surface border border-line tnum" />
+                  {l.priceOverridden && (
+                    <button onClick={() => patchLine(l.key, { unitPrice: priceFor(l.item, l.tier), priceOverridden: false })}
+                      className="text-dim text-sm underline">Reset to {tierLabel[l.tier] || l.tier} price</button>
+                  )}
+                </Row>
+              </>
+            ) : (
+              // typed order — no catalog item, so no tier concept;
+              // just the description and the price as entered
+              <>
+                <Row label="Order">
+                  <input value={l.description}
+                    onChange={e => patchLine(l.key, { description: e.target.value })}
+                    className="h-12 w-full px-3 rounded-xl bg-surface border border-line" />
+                </Row>
+                <Row label="Unit price">
+                  <input type="number" inputMode="decimal" value={l.unitPrice}
+                    onChange={e => patchLine(l.key, { unitPrice: Number(e.target.value) })}
+                    className="h-12 w-36 px-3 rounded-xl bg-surface border border-line tnum" />
+                </Row>
+              </>
+            )}
             <button onClick={() => { dropLine(l.key); setTuning(null) }}
               className="mt-8 w-full h-12 rounded-xl border border-clay text-clay font-semibold">
               Remove from basket
@@ -658,10 +689,39 @@ export default function SalesEntry({ boot }) {
           onClose={() => setRoomCharging(false)} />
       )}
 
-      {restaurantPicking && (
-        <RoomItemPicker items={items} locations={orderableLocations(boot.allLocations)} stockMap={stockMap}
-          onPick={(item, loc) => { addToBasket(item, loc); setRestaurantPicking(false) }}
-          onClose={() => setRestaurantPicking(false)} />
+      {restaurantOrder && (
+        <Sheet onClose={() => setRestaurantOrder(null)}>
+          <h2 className="text-2xl font-bold">Restaurant order</h2>
+          <p className="text-dim mt-1">Typed, not tracked as stock — counts toward Kitchen's takings.</p>
+          <Row label="What was ordered">
+            <input value={restaurantOrder.description} autoFocus
+              onChange={e => setRestaurantOrder(r => ({ ...r, description: e.target.value }))}
+              placeholder="e.g. Jollof Rice with Chicken"
+              className="h-12 w-full px-3 rounded-xl bg-surface border border-line placeholder:text-dim" />
+          </Row>
+          <Row label="Quantity">
+            <button onClick={() => setRestaurantOrder(r => ({ ...r, qty: Math.max(1, r.qty - 1) }))}
+              className="h-14 w-14 rounded-xl bg-surface border border-line text-2xl">−</button>
+            <span className="tnum text-3xl font-bold w-14 text-center">{restaurantOrder.qty}</span>
+            <button onClick={() => setRestaurantOrder(r => ({ ...r, qty: r.qty + 1 }))}
+              className="h-14 w-14 rounded-xl bg-surface border border-line text-2xl">+</button>
+          </Row>
+          <Row label="Price per plate">
+            <input type="number" inputMode="decimal" value={restaurantOrder.unitPrice}
+              onChange={e => setRestaurantOrder(r => ({ ...r, unitPrice: e.target.value }))}
+              placeholder="0" className="h-12 w-36 px-3 rounded-xl bg-surface border border-line tnum" />
+          </Row>
+          <button
+            onClick={() => {
+              addTypedOrder({ description: restaurantOrder.description.trim(),
+                qty: restaurantOrder.qty, unitPrice: Number(restaurantOrder.unitPrice) || 0 })
+              setRestaurantOrder(null)
+            }}
+            disabled={!restaurantOrder.description.trim() || !Number(restaurantOrder.unitPrice)}
+            className="mt-8 w-full h-16 rounded-2xl bg-amber text-bg text-xl font-bold disabled:opacity-40">
+            Add to basket
+          </button>
+        </Sheet>
       )}
     </div>
   )

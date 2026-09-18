@@ -74,7 +74,7 @@ export default function Receipt({ lines, branchName, locById, onClose, onPrint }
                 <tr key={l.id}>
                   <td>{locById?.[l.location_id]?.name || '—'}</td>
                   <td>
-                    {l.stock_items?.name || '—'}
+                    {l.stock_items?.name || l.description || '—'}
                     {l.tier && l.tier !== 'general' && (
                       <span className="text-dim"> ({tierLabel[l.tier] || l.tier})</span>
                     )}
