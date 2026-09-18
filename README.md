@@ -1055,3 +1055,25 @@ isn't a valid location for this branch, it resets to the branch's
 default. Related to but distinct from the cross-wired
 default_location_id fix — that was a bad stored default; this is
 stale in-component state after a switch.
+
+
+## PWA install — activated for iPhone and Android
+
+The PWA groundwork already existed (manifest, full icon set, iOS
+Safari meta tags, a well-written network-first service worker that
+never caches live data). Two gaps closed:
+
+- **Service worker was never registered.** sw.js sat in public/ doing
+  nothing. Now registered in main.jsx (after load, non-blocking,
+  fails silently) so the offline shell actually works.
+- **No install guidance.** Added InstallHint: on Android/Chrome it
+  catches beforeinstallprompt and shows a one-tap Install button; on
+  iOS Safari (no such event exists) it shows "Share → Add to Home
+  Screen" instructions after a short delay. Hidden when already
+  installed (standalone), and stays dismissed 14 days once closed so
+  it never nags.
+
+No app stores involved: staff install straight from the browser.
+iPhone users must use Safari (iOS only allows PWA install from
+Safari); Android is more forgiving. Updates are instant on next load
+after a Netlify deploy — no review, no fees.

@@ -20,6 +20,7 @@ import Credit from './pages/Credit'
 import Counts from './pages/Counts'
 import Shell from './components/Shell'
 import ErrorBoundary from './components/ErrorBoundary'
+import InstallHint from './components/InstallHint'
 
 export default function App() {
   const [session, setSession] = useState(undefined) // undefined = loading
@@ -156,6 +157,7 @@ export default function App() {
         : tab === 'fix' ? <Corrections boot={boot} />
         : <Stock boot={boot} />}
     </Shell>
+    <InstallHint />
     </ToastHost>
     </ErrorBoundary>
   )
