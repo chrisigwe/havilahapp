@@ -1,11 +1,12 @@
 import { useEffect, useState } from 'react'
 import { naira } from '../lib/format'
 import { loadOccupancy } from '../lib/data'
+import CheckIn from './CheckIn'
 
-// Phase 1 of bringing the front-desk app's functionality into this
-// one: view-only room status. Check-in, new bookings, and settling a
-// stay stay in the separate front-desk app for now — this just lets
-// anyone here see the same live picture without switching apps.
+// Phase 2 of bringing the front-desk app's functionality into this
+// one: check-in and new bookings, alongside the view-only room status
+// from phase 1. Folio, checkout, and settling a stay's bill are still
+// in the separate front-desk app for now.
 const STATE = {
   vacant:   { label: 'Vacant',      bar: 'bg-line',  text: 'text-dim' },
   occupied: { label: 'Occupied',    bar: 'bg-leaf',  text: 'text-leaf' },
@@ -23,11 +24,11 @@ function stateOf(room) {
 
 export default function RoomBoard({ boot }) {
   const { staff } = boot
+  const [checkingIn, setCheckingIn] = useState(false)
   const [rooms, setRooms] = useState(null)
 
-  useEffect(() => {
-    loadOccupancy(staff.branch_id).then(setRooms).catch(() => setRooms([]))
-  }, [staff.branch_id])
+  const refresh = () => { loadOccupancy(staff.branch_id).then(setRooms).catch(() => setRooms([])) }
+  useEffect(refresh, [staff.branch_id])
 
   if (rooms === null) return <p className="px-5 text-dim">Loading…</p>
 
@@ -58,6 +59,11 @@ export default function RoomBoard({ boot }) {
           )}
         </div>
       )}
+
+      <button onClick={() => setCheckingIn(true)}
+        className="w-full h-14 rounded-2xl border-2 border-amber text-amber text-lg font-bold mb-4">
+        + New booking
+      </button>
 
       {!rooms.length && <p className="py-8 text-center text-dim">No rooms set up for this branch yet.</p>}
 
@@ -100,6 +106,15 @@ export default function RoomBoard({ boot }) {
           )
         })}
       </div>
+
+      {checkingIn && (
+        <div className="fixed inset-0 z-50 bg-bg overflow-y-auto">
+          <div className="p-5 pb-2">
+            <button onClick={() => setCheckingIn(false)} className="text-dim">Close</button>
+          </div>
+          <CheckIn boot={boot} onDone={() => { setCheckingIn(false); refresh() }} />
+        </div>
+      )}
     </div>
   )
 }

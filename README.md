@@ -1304,3 +1304,39 @@ consolidation already scoped earlier (Room Board is done; check-in
 & bookings, folio & checkout, and settings are still ahead). That's
 real, substantial work on a live system and deserves its own focused
 pass rather than being folded into a UI-visibility fix.
+
+
+## Check-in & new bookings — phase 2 of the front-desk consolidation
+
+Every piece of this was verified directly against the live database
+before writing anything — not inferred from the reference app's
+frontend code:
+- stays_one_live_per_room is real (a partial unique index on room_id
+  where status is reserved/occupied) — the database itself prevents
+  two guests being checked into the same room, even under a race
+  condition, so the app doesn't need to build that protection itself,
+  only handle the error gracefully if it fires.
+- guests.name_key and phone_norm are both GENERATED ALWAYS columns,
+  using a specific regex (strips a leading title, keeps only
+  alphanumerics). Replicated that exact pattern client-side
+  (nameKey() in format.js) — required, since a generated column can't
+  be searched against directly.
+- branches.allowed_cycles genuinely differs — confirmed Nnewi has no
+  'monthly' where Awka does, matching the reference app's own code
+  comment exactly. The cycle picker respects this per branch rather
+  than offering an option a branch doesn't use.
+- RLS on stays/guests was already fully open (same can_see_branch
+  pattern as orders/order_items) — no new policy needed.
+
+Guest matching follows the same rule as the reference app: same
+phone at the same branch reuses the existing guest; failing that, the
+same normalized name does too (so "Mr. Alphonso" and "alphonso" match
+without creating a duplicate), backfilling a phone number a returning
+guest didn't have on file before.
+
+Reachable from Room Board via "+ New booking," opening as a
+full-screen sheet — closing it refreshes the board immediately, so a
+just-booked room's status updates without needing a manual reload.
+
+Folio, checkout, and settling a stay's bill are still the next phase —
+this covers creating a booking, not the rest of a stay's lifecycle.

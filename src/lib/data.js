@@ -1,5 +1,5 @@
 import { supabase } from './supabase'
-import { lagosDaysAgo } from './format'
+import { lagosDaysAgo, nameKey } from './format'
 import { normalizeCustomerName } from './customerName'
 
 export async function loadBranches() {
@@ -764,4 +764,75 @@ export async function loadOccupancy(branchId) {
   if (error) throw error
   return (data || []).sort((a, b) =>
     String(a.room_number).localeCompare(String(b.room_number), undefined, { numeric: true }))
+}
+
+// ---------- Check-in & new bookings ----------
+// Same shared front-desk schema as Room Board and room charges —
+// stays/guests/rooms/room_categories, confirmed directly against the
+// live database (constraints, generated columns, RLS) before writing
+// any of this, not inferred from the reference app's frontend code.
+
+export async function loadFreeRooms(branchId) {
+  const [{ data: occ, error: e1 }, { data: rooms, error: e2 }] = await Promise.all([
+    supabase.from('v_occupancy_today').select('room_id')
+      .eq('branch_id', branchId).is('stay_id', null).eq('out_of_service', false),
+    supabase.from('rooms')
+      .select('id, room_number, rate_standard, rate_alternate, rate_short, room_categories(name)')
+      .eq('branch_id', branchId).eq('is_active', true),
+  ])
+  if (e1) throw e1
+  if (e2) throw e2
+  const freeIds = new Set((occ || []).map(r => r.room_id))
+  return (rooms || []).filter(r => freeIds.has(r.id))
+    .sort((a, b) => String(a.room_number).localeCompare(String(b.room_number), undefined, { numeric: true }))
+}
+
+export async function loadBranchCycles(branchId) {
+  const { data, error } = await supabase.from('branches')
+    .select('allowed_cycles').eq('id', branchId).maybeSingle()
+  if (error) throw error
+  return data?.allowed_cycles || null
+}
+
+// Same guest-matching rule as the reference front-desk app: same
+// phone at the same branch is the same person; failing that, the
+// same normalized name (so "Mr. Alphonso" and "alphonso" match)
+// reuses the existing record rather than creating a duplicate, and
+// backfills a phone number the earlier visit didn't capture.
+export async function findOrCreateGuest(branchId, name, phone) {
+  const digits = (phone || '').replace(/\D/g, '')
+  if (digits) {
+    const { data: existing } = await supabase.from('guests')
+      .select('id').eq('branch_id', branchId).eq('phone_norm', digits).maybeSingle()
+    if (existing?.id) return existing.id
+  }
+  const key = nameKey(name)
+  if (key) {
+    const { data: byName } = await supabase.from('guests')
+      .select('id, phone').eq('branch_id', branchId).eq('name_key', key)
+      .order('created_at').limit(1)
+    if (byName?.length) {
+      if (digits && !byName[0].phone) {
+        await supabase.from('guests').update({ phone: phone.trim() }).eq('id', byName[0].id)
+      }
+      return byName[0].id
+    }
+  }
+  const { data: created, error } = await supabase.from('guests')
+    .insert({ branch_id: branchId, full_name: name.trim(), phone: phone?.trim() || null })
+    .select('id').single()
+  if (error) throw error
+  return created.id
+}
+
+export async function createStay({ staff, guestId, roomId, rateType, dailyRate,
+                                    reserve, billingCycle, checkIn, scheduledOut }) {
+  const { error } = await supabase.from('stays').insert({
+    branch_id: staff.branch_id, guest_id: guestId, room_id: roomId,
+    rate_applied: rateType, daily_rate: dailyRate,
+    status: reserve ? 'reserved' : 'occupied',
+    billing_cycle: billingCycle, check_in_date: checkIn, scheduled_out: scheduledOut,
+    created_by: staff.id,
+  })
+  if (error) throw error
 }
