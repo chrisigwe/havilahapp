@@ -787,11 +787,19 @@ export async function loadFreeRooms(branchId) {
     .sort((a, b) => String(a.room_number).localeCompare(String(b.room_number), undefined, { numeric: true }))
 }
 
-export async function loadBranchCycles(branchId) {
+export async function loadBranchStaySettings(branchId) {
   const { data, error } = await supabase.from('branches')
-    .select('allowed_cycles').eq('id', branchId).maybeSingle()
+    .select('allowed_cycles, label_rate_standard, label_rate_alternate, label_rate_short')
+    .eq('id', branchId).maybeSingle()
   if (error) throw error
-  return data?.allowed_cycles || null
+  return {
+    allowedCycles: data?.allowed_cycles || null,
+    rateLabels: {
+      standard: data?.label_rate_standard || 'Standard',
+      alternate: data?.label_rate_alternate || 'Discounted',
+      short: data?.label_rate_short || 'Short-time',
+    },
+  }
 }
 
 // Same guest-matching rule as the reference front-desk app: same

@@ -1340,3 +1340,17 @@ just-booked room's status updates without needing a manual reload.
 
 Folio, checkout, and settling a stay's bill are still the next phase —
 this covers creating a booking, not the rest of a stay's lifecycle.
+
+
+## Rate type labels: now genuinely per-branch
+
+CheckIn's rate-type dropdown was showing generic English labels
+(Standard/Discounted/Short-time) I'd hardcoded rather than the real
+branch-specific ones. Checked first, and the columns
+(label_rate_standard/alternate/short on branches) already existed AND
+were already populated correctly — Nnewi: Season/Off-Season/Short-Time
+Rate; Awka: Full/Discounted/Special Rate. Pure app fix — read the real
+values instead of ignoring them. Folded into the same query that was
+already fetching allowed_cycles (loadBranchStaySettings replaces
+loadBranchCycles), rather than add a second round trip to a table
+already being queried.

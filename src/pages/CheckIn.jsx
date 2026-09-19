@@ -1,16 +1,16 @@
 import { useEffect, useMemo, useState } from 'react'
 import { naira, lagosToday, nightsBetween, addDays, cyclesFor, friendlyStayError } from '../lib/format'
-import { loadFreeRooms, loadBranchCycles, findOrCreateGuest, createStay } from '../lib/data'
+import { loadFreeRooms, loadBranchStaySettings, findOrCreateGuest, createStay } from '../lib/data'
 import { useToast } from '../components/Toast'
 
 const RATE_FIELDS = { standard: 'rate_standard', alternate: 'rate_alternate', short: 'rate_short' }
-const RATE_LABELS = { standard: 'Standard', alternate: 'Discounted', short: 'Short-time' }
 
 export default function CheckIn({ boot, onDone }) {
   const { staff } = boot
   const toast = useToast()
   const [rooms, setRooms] = useState(null)
   const [allowedCycles, setAllowedCycles] = useState(null)
+  const [rateLabels, setRateLabels] = useState({ standard: 'Standard', alternate: 'Discounted', short: 'Short-time' })
   const [busy, setBusy] = useState(false)
 
   const [name, setName] = useState('')
@@ -25,7 +25,10 @@ export default function CheckIn({ boot, onDone }) {
 
   useEffect(() => {
     loadFreeRooms(staff.branch_id).then(setRooms).catch(() => setRooms([]))
-    loadBranchCycles(staff.branch_id).then(setAllowedCycles).catch(() => setAllowedCycles(null))
+    loadBranchStaySettings(staff.branch_id).then(s => {
+      setAllowedCycles(s.allowedCycles)
+      setRateLabels(s.rateLabels)
+    }).catch(() => setAllowedCycles(null))
   }, [staff.branch_id])
 
   const cycles = useMemo(() => cyclesFor(allowedCycles), [allowedCycles])
@@ -91,7 +94,7 @@ export default function CheckIn({ boot, onDone }) {
           <div className="text-dim mb-1">Rate type</div>
           <select value={rateType} onChange={e => { setRateType(e.target.value); setRateOverride('') }}
             className="h-14 w-full px-3 rounded-xl bg-surface border border-line">
-            {Object.entries(RATE_LABELS).map(([k, label]) => <option key={k} value={k}>{label}</option>)}
+            {Object.entries(rateLabels).map(([k, label]) => <option key={k} value={k}>{label}</option>)}
           </select>
         </div>
         <div className="flex-1">
