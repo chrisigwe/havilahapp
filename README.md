@@ -1275,3 +1275,32 @@ attribution if left unfixed. Branch-wide price tiers and payment
 methods already apply to every sales point automatically, so nothing
 extra was needed there. Staff assignment to Restaurant (who actually
 works there) is a separate step, same as any other department.
+
+
+## Restaurant and Reception: no catalog selling
+
+Restaurant now shows only "Add a restaurant order" — the "+ Sell
+Item" button is hidden there, along with the tier selector and PR/
+Damage (which called the item picker directly, bypassing "+ Sell
+Item" entirely — hiding just the one button wouldn't have actually
+stopped someone reaching the catalog picker through PR/Damage, so
+both needed the same guard).
+
+Reception shows neither — a plain message pointing to the Rooms tab
+instead, since check-in, checkout, and folio settlement belong there,
+not on a sales screen. Every sales-related action is hidden for
+Reception specifically: Sell Item, PR/Damage, the tier selector,
+Charge to a room, Add a restaurant order, and Recording on behalf of.
+
+isRestaurant/isReception computed once, near the top of the
+component, and reused by every conditional — avoids the exact
+"several separate checks that quietly drift apart" risk that's shown
+up before in this build.
+
+The rest of what was asked for Reception — check-in, checkout, room
+status, rate handling, overstay fees, folio settlement, payment,
+guest register — is the remaining phases of the front-desk
+consolidation already scoped earlier (Room Board is done; check-in
+& bookings, folio & checkout, and settings are still ahead). That's
+real, substantial work on a live system and deserves its own focused
+pass rather than being folded into a UI-visibility fix.

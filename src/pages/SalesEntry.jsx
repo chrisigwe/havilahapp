@@ -43,6 +43,15 @@ export default function SalesEntry({ boot }) {
   const [backdateReason, setBackdateReason] = useState('')
 
   const [locationId, setLocationId] = useState(staff.default_location_id || salesPoints[0]?.id)
+  // Restaurant and Reception don't behave like a normal sales
+  // department — Restaurant is typed-order-only (no catalog stock to
+  // sell), Reception doesn't record sales at all (check-in/checkout/
+  // folio work lives on the Rooms tab instead). Computed once here so
+  // every button below agrees on it, rather than three separate
+  // checks that could drift apart.
+  const currentDept = salesPoints.find(l => l.id === locationId)
+  const isRestaurant = /restaurant/i.test(currentDept?.name || '')
+  const isReception = /reception/i.test(currentDept?.name || '')
   // Re-sync selected department on branch switch (GM) — otherwise the
   // old branch's location id stays selected, matching no chip here,
   // so nothing highlights until a manual tap.
@@ -306,7 +315,7 @@ export default function SalesEntry({ boot }) {
         </p>
       )}
 
-      {tiers.length > 1 && (
+      {!isReception && !isRestaurant && tiers.length > 1 && (
         <div className="mt-3">
           <div className="flex gap-2">
             {tiers.map(t => (
@@ -332,17 +341,21 @@ export default function SalesEntry({ boot }) {
         </div>
       )}
 
-      <button onClick={() => setRoomCharging(true)}
-        className="mt-3 w-full h-12 rounded-xl border border-line text-ink font-semibold">
-        Charge to a room
-      </button>
+      {!isReception && (
+        <button onClick={() => setRoomCharging(true)}
+          className="mt-3 w-full h-12 rounded-xl border border-line text-ink font-semibold">
+          Charge to a room
+        </button>
+      )}
 
-      <button onClick={() => setRestaurantOrder({ description: '', qty: 1, unitPrice: '' })}
-        className="mt-3 w-full h-12 rounded-xl border border-line text-ink font-semibold">
-        Add a restaurant order
-      </button>
+      {!isReception && (
+        <button onClick={() => setRestaurantOrder({ description: '', qty: 1, unitPrice: '' })}
+          className="mt-3 w-full h-12 rounded-xl border border-line text-ink font-semibold">
+          Add a restaurant order
+        </button>
+      )}
 
-      {canRecordOnBehalf && people.length > 0 && (
+      {!isReception && canRecordOnBehalf && people.length > 0 && (
         <div className="mt-3">
           <div className="text-dim text-sm mb-2">Recording on behalf of (staff at this location)</div>
           <select value={onBehalfOf || ''} onChange={e => setOnBehalfOf(e.target.value || null)}
@@ -358,10 +371,24 @@ export default function SalesEntry({ boot }) {
         </div>
       )}
 
-      <button onClick={() => setPicking(true)}
-        className="mt-3 w-full h-16 rounded-2xl bg-amber text-bg text-xl font-bold active:bg-amber-deep">
-        + Sell Item
-      </button>
+      {isReception ? (
+        // Reception doesn't sell catalog stock at all — check-in,
+        // checkout, and room charges belong on the Rooms tab, not
+        // here. Room Board exists today; check-in/checkout/folio
+        // settlement are still coming.
+        <div className="mt-3 rounded-2xl border border-line bg-surface p-4">
+          <p className="font-semibold">Reception doesn't record sales here.</p>
+          <p className="text-dim text-sm mt-1">
+            Room status is on the Rooms tab. Check-in, checkout, and settling a
+            guest's bill are coming there too.
+          </p>
+        </div>
+      ) : !isRestaurant && (
+        <button onClick={() => setPicking(true)}
+          className="mt-3 w-full h-16 rounded-2xl bg-amber text-bg text-xl font-bold active:bg-amber-deep">
+          + Sell Item
+        </button>
+      )}
 
       {!!basket.length && (
         <ul className="mt-4 divide-y divide-line/60 rounded-2xl border border-line bg-surface px-4">
