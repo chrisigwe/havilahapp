@@ -1433,3 +1433,48 @@ explicitly hardcoded to pos/cash, not Transfer, per direct
 instruction. Deliberately not deriving from boot.methods anymore for
 this screen, since the exact set was specified directly rather than
 left to branch configuration.
+
+
+## Closing the two Folio gaps: reopen search, rate/overstay editing
+
+Verified both remaining triggers directly before writing anything
+against them:
+- enforce_overstay_fee: setting the EXACT branch default is open to
+  anyone; a different amount or removing it entirely requires
+  is_supervisor() — confirmed as role in ('gm','admin') specifically,
+  NOT manager. A genuinely narrower set than the manager/gm/admin
+  group that governs undoing an old checkout — the two are not the
+  same rule, and the UI now reflects that distinction exactly rather
+  than reusing one role list for both.
+- stamp_rate_adjustment: no role restriction at all on changing
+  daily_rate — anyone can, the trigger just auto-stamps who and when.
+  billing_cycle and scheduled_out have no trigger governing them
+  either.
+- branches.overstay_fee is a real, populated per-branch default
+  (Awka ₦10,000, Nnewi ₦15,000) — folded into the same
+  loadBranchStaySettings call already fetching allowed_cycles and
+  rate labels, rather than a fourth separate query to branches.
+
+Reopen search (ReopenSearch.jsx): checked-out stays don't appear in
+v_occupancy_today, so this queries stays directly, filtered to the
+last two weeks, searchable by room number or guest name — same
+interaction shape as check-in's room search and room-charging's guest
+search. Reachable from Room Board via "Recently checked out,"
+reusing the exact same Folio component the room-tap flow already
+uses. reopenStay() — written last phase but unreachable until now —
+finally has a real call site.
+
+Rate/cycle editing and overstay-fee management both live inside
+Folio now, for a live stay only. The overstay section shows the
+branch default clearly and lets anyone set exactly that value;
+attempting anything else is blocked in the UI for non-GM/admin roles
+with an explanation, while the trigger remains the actual enforcement
+either way — matching the same "UI predicts, database enforces"
+relationship already established for checkout reversal.
+
+Caught and fixed two smaller things while writing this: a needlessly
+roundabout way of computing the GM/admin check (filtering a
+role list down to itself before checking membership, when a direct
+array check said the same thing clearly), and a rate-type label
+constant that was defined but never actually used anywhere — removed
+rather than left sitting as unreferenced code.

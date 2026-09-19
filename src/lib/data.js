@@ -789,11 +789,12 @@ export async function loadFreeRooms(branchId) {
 
 export async function loadBranchStaySettings(branchId) {
   const { data, error } = await supabase.from('branches')
-    .select('allowed_cycles, label_rate_standard, label_rate_alternate, label_rate_short')
+    .select('allowed_cycles, label_rate_standard, label_rate_alternate, label_rate_short, overstay_fee')
     .eq('id', branchId).maybeSingle()
   if (error) throw error
   return {
     allowedCycles: data?.allowed_cycles || null,
+    overstayDefault: data?.overstay_fee != null ? Number(data.overstay_fee) : null,
     rateLabels: {
       standard: data?.label_rate_standard || 'Standard',
       alternate: data?.label_rate_alternate || 'Discounted',
@@ -856,20 +857,25 @@ export async function createStay({ staff, guestId, roomId, rateType, dailyRate,
 // is what actually protects it either way.
 
 export async function loadFolio(stayId) {
-  const [{ data: orders, error: e1 }, { data: payments, error: e2 }, { data: folio, error: e3 }] =
-    await Promise.all([
-      supabase.from('orders')
-        .select('id, business_date, order_items(id, category, description, qty, unit_price, amount)')
-        .eq('stay_id', stayId).order('business_date', { ascending: false }),
-      supabase.from('payments')
-        .select('id, business_date, method, amount, is_overstay, remark')
-        .eq('stay_id', stayId).order('business_date', { ascending: false }),
-      supabase.from('v_stay_folio').select('*').eq('stay_id', stayId).maybeSingle(),
-    ])
+  const [{ data: orders, error: e1 }, { data: payments, error: e2 }, { data: folio, error: e3 },
+         { data: stay, error: e4 }] = await Promise.all([
+    supabase.from('orders')
+      .select('id, business_date, order_items(id, category, description, qty, unit_price, amount)')
+      .eq('stay_id', stayId).order('business_date', { ascending: false }),
+    supabase.from('payments')
+      .select('id, business_date, method, amount, is_overstay, remark')
+      .eq('stay_id', stayId).order('business_date', { ascending: false }),
+    supabase.from('v_stay_folio').select('*').eq('stay_id', stayId).maybeSingle(),
+    // v_stay_folio has daily_rate/billing_cycle but not the raw
+    // overstay_fee or rate_applied (the rate type) — both needed to
+    // pre-fill the editing form correctly.
+    supabase.from('stays').select('overstay_fee, rate_applied').eq('id', stayId).maybeSingle(),
+  ])
   if (e1) throw e1
   if (e2) throw e2
   if (e3) throw e3
-  return { orders: orders || [], payments: payments || [], folio: folio || null }
+  if (e4) throw e4
+  return { orders: orders || [], payments: payments || [], folio: folio || null, stay: stay || null }
 }
 
 // A guest paying part POS and part cash (or transfer) is one
@@ -899,5 +905,49 @@ export async function checkOutStay(stayId, actualOut) {
 // own; sending anything more here would just be overwritten anyway.
 export async function reopenStay(stayId) {
   const { error } = await supabase.from('stays').update({ status: 'occupied' }).eq('id', stayId)
+  if (error) throw error
+}
+
+// ---------- Closing the two Folio gaps: reopen search, rate/overstay editing ----------
+
+// Checked-out stays don't appear in v_occupancy_today (a checked-out
+// room just reverts to vacant there), so reopening one needs its own
+// search against stays directly — same shape as CheckIn's room search
+// and RoomChargeSheet's guest search. Limited to a recent window so
+// the list stays short and relevant; genuinely old stays are a
+// data-correction job, not a same-day "undo".
+export async function searchRecentCheckouts(branchId, query) {
+  const since = new Date(Date.now() - 14 * 864e5).toISOString().slice(0, 10)
+  const { data, error } = await supabase.from('stays')
+    .select(`id, check_in_date, scheduled_out, actual_out,
+             rooms(room_number), guests(full_name)`)
+    .eq('branch_id', branchId).eq('status', 'checked_out')
+    .gte('actual_out', since)
+    .order('actual_out', { ascending: false }).limit(30)
+  if (error) throw error
+  if (!query) return data
+  const needle = query.toLowerCase()
+  return data.filter(s =>
+    s.rooms?.room_number?.toLowerCase().includes(needle) ||
+    s.guests?.full_name?.toLowerCase().includes(needle))
+}
+
+// Deliberately minimal, same reasoning as reopenStay — the trigger
+// (stamp_rate_adjustment) stamps who and when on its own if daily_rate
+// changed; sending it here would just be overwritten.
+export async function updateStayDetails({ stayId, dailyRate, billingCycle, scheduledOut, rateReason }) {
+  const { error } = await supabase.from('stays').update({
+    daily_rate: dailyRate, billing_cycle: billingCycle,
+    scheduled_out: scheduledOut, rate_reason: rateReason || null,
+  }).eq('id', stayId)
+  if (error) throw error
+}
+
+// Same reasoning again — enforce_overstay_fee stamps overstay_set_by/
+// at itself, and is the actual enforcement of who can set a
+// non-default amount or remove one; this just sends the value.
+export async function updateOverstayFee(stayId, amount) {
+  const { error } = await supabase.from('stays')
+    .update({ overstay_fee: amount }).eq('id', stayId)
   if (error) throw error
 }

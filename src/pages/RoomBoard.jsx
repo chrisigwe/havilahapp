@@ -3,6 +3,7 @@ import { naira } from '../lib/format'
 import { loadOccupancy } from '../lib/data'
 import CheckIn from './CheckIn'
 import Folio from '../components/Folio'
+import ReopenSearch from '../components/ReopenSearch'
 
 // Phase 2 of bringing the front-desk app's functionality into this
 // one: check-in and new bookings, alongside the view-only room status
@@ -27,6 +28,7 @@ export default function RoomBoard({ boot }) {
   const { staff } = boot
   const [checkingIn, setCheckingIn] = useState(false)
   const [openStay, setOpenStay] = useState(null)   // the room whose folio is open
+  const [reopenSearching, setReopenSearching] = useState(false)
   const [rooms, setRooms] = useState(null)
 
   const refresh = () => { loadOccupancy(staff.branch_id).then(setRooms).catch(() => setRooms([])) }
@@ -63,8 +65,13 @@ export default function RoomBoard({ boot }) {
       )}
 
       <button onClick={() => setCheckingIn(true)}
-        className="w-full h-14 rounded-2xl border-2 border-amber text-amber text-lg font-bold mb-4">
+        className="w-full h-14 rounded-2xl border-2 border-amber text-amber text-lg font-bold mb-3">
         + New booking
+      </button>
+
+      <button onClick={() => setReopenSearching(true)}
+        className="w-full h-12 rounded-xl border border-line text-ink font-semibold mb-4">
+        Recently checked out
       </button>
 
       {!rooms.length && <p className="py-8 text-center text-dim">No rooms set up for this branch yet.</p>}
@@ -124,6 +131,12 @@ export default function RoomBoard({ boot }) {
         <Folio boot={boot} room={openStay}
           onClose={() => setOpenStay(null)}
           onChanged={refresh} />
+      )}
+
+      {reopenSearching && (
+        <ReopenSearch boot={boot}
+          onClose={() => setReopenSearching(false)}
+          onPick={(stayLike) => { setReopenSearching(false); setOpenStay(stayLike) }} />
       )}
     </div>
   )

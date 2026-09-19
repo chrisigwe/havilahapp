@@ -1,8 +1,10 @@
 import { useEffect, useState } from 'react'
-import { naira, lagosToday, methodLabel, friendlyStayError } from '../lib/format'
-import { loadFolio, recordStayPayment, checkOutStay } from '../lib/data'
+import { naira, lagosToday, methodLabel, cyclesFor, nightsBetween, friendlyStayError } from '../lib/format'
+import { loadFolio, loadBranchStaySettings, recordStayPayment, checkOutStay,
+         reopenStay, updateStayDetails, updateOverstayFee } from '../lib/data'
 import { useToast } from '../components/Toast'
 
+const SUPERVISOR_ROLES = ['manager', 'gm', 'admin']
 
 export default function Folio({ boot, room, onClose, onChanged }) {
   const { staff } = boot
@@ -10,12 +12,18 @@ export default function Folio({ boot, room, onClose, onChanged }) {
                                         // Rooms payment is POS/Cash only, no Transfer
   const toast = useToast()
   const [data, setData] = useState(null)
+  const [branchSettings, setBranchSettings] = useState(null)
   const [pay, setPay] = useState({ amount: '', method: 'pos', split: null })
   const [isOverstay, setIsOverstay] = useState(false)
+  const [editing, setEditing] = useState(null)   // { dailyRate, billingCycle, scheduledOut, rateReason } while open
+  const [overstayDraft, setOverstayDraft] = useState(null)   // amount string while editing
   const [busy, setBusy] = useState(false)
 
   const refresh = () => { loadFolio(room.stay_id).then(setData).catch(() => setData(null)) }
   useEffect(refresh, [room.stay_id])
+  useEffect(() => {
+    loadBranchStaySettings(staff.branch_id).then(setBranchSettings).catch(() => setBranchSettings(null))
+  }, [staff.branch_id])
 
   if (!data) return (
     <div className="fixed inset-0 z-50 bg-bg p-5">
@@ -24,18 +32,25 @@ export default function Folio({ boot, room, onClose, onChanged }) {
     </div>
   )
 
-  const { orders, payments, folio } = data
+  const { orders, payments, folio, stay } = data
   const outstanding = Number(folio?.outstanding ?? 0)
   const live = ['reserved', 'occupied'].includes(room.status) && !!room.stay_id
-  // room.status here reflects TODAY's occupancy view — once checked
-  // out it no longer appears live on the board, so this component is
-  // only ever opened for a currently-live stay; checkout/reopen state
-  // is still handled below for completeness if reopened mid-view.
   const orderLines = orders.flatMap(o => (o.order_items || []).map(li => ({ ...li, date: o.business_date })))
   const payParts = pay.split
     ? Object.entries(pay.split).map(([method, amt]) => ({ method, amount: Number(amt || 0) }))
     : [{ method: pay.method, amount: Number(pay.amount || 0) }]
   const payAllocated = payParts.reduce((s, p) => s + p.amount, 0)
+  const cycles = cyclesFor(branchSettings?.allowedCycles)
+  const overstayDefault = branchSettings?.overstayDefault ?? null
+  const currentOverstay = stay?.overstay_fee != null ? Number(stay.overstay_fee) : null
+  // Setting exactly the branch default is open to anyone (the trigger
+  // only restricts a DIFFERENT amount or removing one) — matches
+  // enforce_overstay_fee exactly, confirmed against its real body
+  // rather than assumed.
+  // Matches is_supervisor() exactly (confirmed against its real body):
+  // role in ('gm', 'admin') — NOT manager, a narrower set than the
+  // manager/gm/admin group that governs undoing an old checkout.
+  const canSetNonDefaultOverstay = ['gm', 'admin'].includes(staff.role)
 
   async function submitPayment() {
     if (payAllocated <= 0) return
@@ -62,15 +77,63 @@ export default function Folio({ boot, room, onClose, onChanged }) {
     setBusy(false)
   }
 
+  async function doReopen() {
+    setBusy(true)
+    try {
+      await reopenStay(room.stay_id)
+      toast('Check-out undone — guest is back in the room', 'success')
+      onChanged?.(); onClose()
+    } catch (e) { toast(friendlyStayError(e), 'error') }
+    setBusy(false)
+  }
+
+  function openEdit() {
+    setEditing({
+      dailyRate: String(folio?.daily_rate ?? ''),
+      billingCycle: folio?.billing_cycle || cycles[0]?.value,
+      scheduledOut: folio?.scheduled_out || room.scheduled_out,
+      rateReason: '',
+    })
+  }
+
+  async function saveEdit() {
+    setBusy(true)
+    try {
+      await updateStayDetails({
+        stayId: room.stay_id, dailyRate: Number(editing.dailyRate),
+        billingCycle: editing.billingCycle, scheduledOut: editing.scheduledOut,
+        rateReason: editing.rateReason,
+      })
+      toast('Stay updated', 'success')
+      setEditing(null); refresh(); onChanged?.()
+    } catch (e) { toast(friendlyStayError(e), 'error') }
+    setBusy(false)
+  }
+
+  async function saveOverstay() {
+    setBusy(true)
+    try {
+      await updateOverstayFee(room.stay_id, overstayDraft === '' ? null : Number(overstayDraft))
+      toast('Over-stay charge updated', 'success')
+      setOverstayDraft(null); refresh(); onChanged?.()
+    } catch (e) { toast(friendlyStayError(e), 'error') }
+    setBusy(false)
+  }
+
   return (
     <div className="fixed inset-0 z-50 bg-bg overflow-y-auto">
       <div className="p-5">
         <button onClick={onClose} className="text-dim">Close</button>
         <h2 className="mt-3 text-2xl font-bold">{room.guest_name || 'Guest'}</h2>
         <p className="text-dim mt-1">
-          Room {room.room_number} · {room.check_in_date} to {room.scheduled_out}
+          Room {room.room_number} · {room.check_in_date} to {folio?.scheduled_out || room.scheduled_out}
           {folio?.nights ? ` · ${folio.nights} night${folio.nights > 1 ? 's' : ''}` : ''}
         </p>
+        {live && (
+          <button onClick={openEdit} className="text-dim text-sm underline mt-1">
+            Edit rate, cycle, or dates
+          </button>
+        )}
 
         <div className="mt-4 rounded-2xl border border-line bg-surface p-4">
           <Row label="Room charge" value={folio?.room_charge} />
@@ -84,6 +147,46 @@ export default function Folio({ boot, room, onClose, onChanged }) {
             </span>
           </div>
         </div>
+
+        {live && (
+          <div className="mt-4 rounded-2xl border border-line bg-surface p-4">
+            <div className="flex items-center justify-between">
+              <div className="text-dim">Over-stay charge</div>
+              {overstayDraft === null && (
+                <button onClick={() => setOverstayDraft(currentOverstay != null ? String(currentOverstay) : '')}
+                  className="text-dim text-sm underline">
+                  {currentOverstay != null ? 'Change' : 'Set'}
+                </button>
+              )}
+            </div>
+            {overstayDraft === null ? (
+              <p className="tnum mt-1">
+                {currentOverstay != null ? naira(currentOverstay)
+                  : <span className="text-dim">Not set — branch default is {naira(overstayDefault || 0)}</span>}
+              </p>
+            ) : (
+              <div className="mt-2">
+                <input type="number" inputMode="decimal" value={overstayDraft}
+                  onChange={e => setOverstayDraft(e.target.value)}
+                  placeholder={`Branch default: ${naira(overstayDefault || 0)}`}
+                  className="h-12 w-full px-3 rounded-xl bg-raise border border-line tnum placeholder:text-dim" />
+                {!canSetNonDefaultOverstay && (
+                  <p className="text-dim text-sm mt-1">
+                    Only GM or admin can set an amount other than the branch default, or remove it.
+                    You can still set it to exactly {naira(overstayDefault || 0)}.
+                  </p>
+                )}
+                <div className="flex gap-3 mt-2">
+                  <button onClick={saveOverstay} disabled={busy}
+                    className="flex-1 h-11 rounded-xl bg-amber text-bg font-semibold disabled:opacity-40">
+                    Save
+                  </button>
+                  <button onClick={() => setOverstayDraft(null)} className="flex-1 h-11 text-dim">Cancel</button>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
 
         {live && (
           <div className="mt-4 rounded-2xl border border-line bg-surface p-4">
@@ -201,16 +304,66 @@ export default function Folio({ boot, room, onClose, onChanged }) {
           </div>
         )}
 
-        {/* Undoing a checkout deliberately has no entry point here — this
-            component only ever opens from a Room Board tap, and once a
-            stay is checked out the room reverts to vacant in
-            v_occupancy_today (stay_id becomes null), so there's nothing
-            to tap back into. Reaching an already-checked-out stay needs
-            its own search, the same way CheckIn searches for a room and
-            RoomChargeSheet searches for a guest — a real follow-up, not
-            done here so this screen doesn't look complete when a whole
-            path through it can never actually be reached. */}
+        {!live && room.status === 'checked_out' && (() => {
+          const closedToday = room.actual_out === lagosToday()
+          const canReopen = closedToday || SUPERVISOR_ROLES.includes(staff.role)
+          if (!canReopen) return (
+            <p className="mt-6 text-dim text-sm">
+              Checked out on {room.actual_out}. Only a manager can reopen a stay closed on an earlier day.
+            </p>
+          )
+          return (
+            <div className="mt-6">
+              <p className="text-dim text-sm mb-2">
+                {closedToday ? 'Checked out earlier today.' : `Checked out on ${room.actual_out}.`}
+                {outstanding > 0 && ' The balance above is still owing.'}
+              </p>
+              <button onClick={doReopen} disabled={busy}
+                className="w-full h-14 rounded-2xl border border-line text-ink font-semibold disabled:opacity-40">
+                Undo check-out — guest is still in the room
+              </button>
+            </div>
+          )
+        })()}
       </div>
+
+      {editing && (
+        <div className="fixed inset-0 z-[60] bg-bg overflow-y-auto p-5">
+          <button onClick={() => setEditing(null)} className="text-dim">Back</button>
+          <h2 className="mt-3 text-2xl font-bold">Edit rate & dates</h2>
+
+          <label className="block mt-4 text-dim">Daily rate</label>
+          <input type="number" inputMode="decimal" value={editing.dailyRate}
+            onChange={e => setEditing(x => ({ ...x, dailyRate: e.target.value }))}
+            className="mt-1 h-14 w-full px-4 rounded-xl bg-surface border border-line tnum" />
+
+          <label className="block mt-4 text-dim">Billing cycle</label>
+          <div className="mt-1 flex gap-2">
+            {cycles.map(c => (
+              <button key={c.value} onClick={() => setEditing(x => ({ ...x, billingCycle: c.value }))}
+                className={`flex-1 h-12 rounded-xl border font-semibold ${editing.billingCycle === c.value
+                  ? 'bg-amber text-bg border-amber' : 'border-line text-dim'}`}>
+                {c.label}
+              </button>
+            ))}
+          </div>
+
+          <label className="block mt-4 text-dim">Scheduled check-out</label>
+          <input type="date" value={editing.scheduledOut} min={room.check_in_date}
+            onChange={e => setEditing(x => ({ ...x, scheduledOut: e.target.value }))}
+            className="mt-1 h-14 w-full px-4 rounded-xl bg-surface border border-line tnum" />
+
+          <label className="block mt-4 text-dim">Reason for the change (optional, but worth noting)</label>
+          <input value={editing.rateReason}
+            onChange={e => setEditing(x => ({ ...x, rateReason: e.target.value }))}
+            className="mt-1 h-14 w-full px-4 rounded-xl bg-surface border border-line" />
+
+          <button onClick={saveEdit} disabled={busy || !editing.dailyRate || !editing.scheduledOut}
+            className="mt-6 w-full h-16 rounded-2xl bg-amber text-bg text-xl font-bold disabled:opacity-40">
+            {busy ? 'Saving…' : 'Save changes'}
+          </button>
+        </div>
+      )}
     </div>
   )
 }
