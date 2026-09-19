@@ -1245,3 +1245,33 @@ drink or minimart item" (unchanged, catalog-based) and "add a
 restaurant order" (new, typed) — rather than forcing every room
 charge through the same catalog picker that was never right for food
 in the first place.
+
+
+## Split payment method for Credit repayments
+
+"Record payment" on Credit now has a Split option, matching the same
+pattern already used for split sale payments. No schema change needed
+— credit_repayments was already one row per method per payment, same
+as it's always been; "split" just means saving more than one row for
+the same repayment when more than one method has a non-zero amount.
+Each part goes through the same save/queue path as a single payment
+always has, so the offline-outbox replay handler needed no changes.
+
+## Kitchen renamed to Restaurant — now a real sales point
+
+Confirmed the exact current state on both branches before touching
+anything: both had a "Kitchen" location, is_sales_point=false,
+consumes_on_issue=true (a back-of-house consuming department, not a
+walk-up sales point). Renamed to "Restaurant" and flipped both flags
+to match OpenBar/MainBar/Minimart — it now appears as a proper tab
+everywhere sales points do, and holds a running stock balance instead
+of expensing everything issued to it immediately.
+
+Updated every hardcoded reference to "Kitchen" across the app to
+match — most importantly the regex that finds which location typed
+restaurant orders get attributed to (SalesEntry's addTypedOrder),
+which would have found nothing and silently broken revenue
+attribution if left unfixed. Branch-wide price tiers and payment
+methods already apply to every sales point automatically, so nothing
+extra was needed there. Staff assignment to Restaurant (who actually
+works there) is a separate step, same as any other department.

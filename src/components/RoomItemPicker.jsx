@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { naira } from '../lib/format'
 
 // Cross-department item picker for room charges — a guest ordering
-// food from OpenBar needs a Kitchen item, so unlike the normal
+// food from OpenBar needs a Restaurant item, so unlike the normal
 // ItemPicker (one department at a time), this shows every location
 // that actually holds stock of each item, and the person picks the
 // (item, location) pair directly.

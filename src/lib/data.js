@@ -142,10 +142,10 @@ export async function saveBasket({ staff, locationId, lines, payments, date, cus
       // carries the typed text instead
       stock_item_id: line.item?.id || null,
       description: line.item ? null : (line.description || null),
-      // a cross-department pick (e.g. a Kitchen item sold at OpenBar)
+      // a cross-department pick (e.g. a Restaurant item sold at OpenBar)
       // carries its own sourcing location — that's what both the
       // stock deduction AND the daily takings attribute to, so a
-      // walk-in food order counts toward Kitchen's figures, not the
+      // walk-in food order counts toward Restaurant's figures, not the
       // bar's, per the explicit decision on how that should work
       location_id: line.locationId || locationId,
       tier: line.tier,
@@ -734,7 +734,7 @@ export async function searchLiveStays(branchId, query) {
 export async function chargeItemToRoom({ staff, stayId, item, locationId, locationName,
                                           description, qty, unitPrice, businessDate }) {
   const category = item
-    ? (/kitchen|restaurant/i.test(locationName || '') ? 'food'
+    ? (/restaurant/i.test(locationName || '') ? 'food'
        : /minimart/i.test(locationName || '') ? 'minimart' : 'drink')
     : 'food'
   const { data: order, error: oErr } = await supabase.from('orders').insert({

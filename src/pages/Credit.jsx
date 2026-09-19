@@ -96,22 +96,32 @@ export default function Credit({ boot }) {
 
   async function submitPayment() {
     setBusy(true)
-    const args = {
+    const base = {
       staffLite: { id: staff.id, branch_id: staff.branch_id },
-      customerId: pay.customerId, amount: Number(pay.amount),
-      method: pay.method, paidOn: pay.paidOn, note: pay.note,
+      customerId: pay.customerId, paidOn: pay.paidOn, note: pay.note,
       locationId: pay.locationId, creditStaffId: pay.creditStaffId,
     }
+    // Split: no schema change needed — credit_repayments is already
+    // one row per method, same as it's always been for a single
+    // payment. "Split" just means saving more than one row for the
+    // same repayment, one per method with a non-zero amount.
+    const parts = pay.split
+      ? Object.entries(pay.split)
+          .map(([method, amt]) => ({ method, amount: Number(amt || 0) }))
+          .filter(p => p.amount > 0)
+      : [{ method: pay.method, amount: Number(pay.amount) }]
     try {
-      try {
-        await saveRepayment({ ...args, staff })
-        toast('Payment recorded', 'success')
-      } catch (e) {
-        if (!isConnectionError(e)) throw e
-        enqueue({ kind: 'repayment', payload: args })
-        toast('No connection — payment saved and will send when you are back online')
-        flush()
+      for (const part of parts) {
+        const args = { ...base, amount: part.amount, method: part.method }
+        try {
+          await saveRepayment({ ...args, staff })
+        } catch (e) {
+          if (!isConnectionError(e)) throw e
+          enqueue({ kind: 'repayment', payload: args })
+        }
       }
+      toast('Payment recorded', 'success')
+      flush()
       setPay(null); setOpen(null); refresh()
     } catch (e) { toast('Not saved: ' + e.message, 'error') }
     setBusy(false)
@@ -398,13 +408,45 @@ export default function Credit({ boot }) {
             <label className="block mt-4 text-dim">Paid by</label>
             <div className="mt-2 flex flex-wrap gap-2">
               {methods.filter(m => m !== 'credit').map(m => (
-                <button key={m} onClick={() => setPay(p => ({ ...p, method: m }))}
-                  className={`h-12 px-4 rounded-xl border font-semibold ${pay.method === m
+                <button key={m} onClick={() => setPay(p => ({ ...p, method: m, split: null }))}
+                  className={`h-12 px-4 rounded-xl border font-semibold ${!pay.split && pay.method === m
                     ? 'bg-amber text-bg border-amber' : 'border-line text-ink'}`}>
                   {methodLabel[m] || m}
                 </button>
               ))}
+              <button
+                onClick={() => setPay(p => ({ ...p,
+                  split: p.split || Object.fromEntries(
+                    methods.filter(m => m !== 'credit').map(m => [m, ''])) }))}
+                className={`h-12 px-4 rounded-xl border font-semibold ${pay.split
+                  ? 'bg-amber text-bg border-amber' : 'border-line text-ink'}`}>
+                Split
+              </button>
             </div>
+
+            {pay.split && (
+              <div className="mt-3">
+                {Object.keys(pay.split).map(m => (
+                  <div key={m} className="flex items-center gap-3 mt-2">
+                    <span className="w-24 text-dim">{methodLabel[m] || m}</span>
+                    <input type="number" inputMode="decimal" placeholder="0" value={pay.split[m]}
+                      onChange={e => setPay(p => ({ ...p, split: { ...p.split, [m]: e.target.value } }))}
+                      className="h-12 flex-1 px-3 rounded-xl bg-surface border border-line tnum" />
+                  </div>
+                ))}
+                {(() => {
+                  const allocated = Object.values(pay.split).reduce((s, v) => s + Number(v || 0), 0)
+                  const target = Number(pay.amount) || 0
+                  const diff = target - allocated
+                  if (Math.abs(diff) < 0.01) return <p className="text-dim text-sm mt-2">Splits match the amount.</p>
+                  return (
+                    <p className="text-clay text-sm mt-2">
+                      {diff > 0 ? `${naira(diff)} still unallocated` : `${naira(-diff)} over the amount entered`}
+                    </p>
+                  )
+                })()}
+              </div>
+            )}
 
             <label className="block mt-4 text-dim">Date received</label>
             <input type="date" value={pay.paidOn}
@@ -421,10 +463,17 @@ export default function Credit({ boot }) {
                 That is more than they owe. It will leave a credit balance.
               </p>
             )}
-            <button onClick={submitPayment} disabled={busy || !(Number(pay.amount) > 0)}
-              className="w-full h-16 rounded-2xl bg-amber text-bg text-xl font-bold disabled:opacity-40">
-              {busy ? 'Saving…' : 'Save payment'}
-            </button>
+            {(() => {
+              const splitOk = pay.split
+                && Object.values(pay.split).reduce((s, v) => s + Number(v || 0), 0) > 0
+              const canSave = pay.split ? splitOk : Number(pay.amount) > 0
+              return (
+                <button onClick={submitPayment} disabled={busy || !canSave}
+                  className="w-full h-16 rounded-2xl bg-amber text-bg text-xl font-bold disabled:opacity-40">
+                  {busy ? 'Saving…' : 'Save payment'}
+                </button>
+              )
+            })()}
           </div>
         </div>
       )}

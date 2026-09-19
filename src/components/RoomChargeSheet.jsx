@@ -15,7 +15,7 @@ import RoomItemPicker from './RoomItemPicker'
 // countable stock unit.
 export default function RoomChargeSheet({ boot, stockMap, onClose, toast }) {
   const { staff, items, allLocations } = boot
-  const orderable = orderableLocations(allLocations).filter(l => !/kitchen/i.test(l.name))
+  const orderable = orderableLocations(allLocations).filter(l => !/restaurant/i.test(l.name))
   const [q, setQ] = useState('')
   const [stays, setStays] = useState(null)
   const [stay, setStay] = useState(null)
@@ -170,7 +170,7 @@ export default function RoomChargeSheet({ boot, stockMap, onClose, toast }) {
                   {charged.map((c, i) => (
                     <li key={i} className="py-2 flex items-center gap-3">
                       <span className="flex-1 min-w-0 truncate">{c.qty} × {c.item?.name || c.description}</span>
-                      <span className="tnum text-dim text-sm">{c.typed ? 'Kitchen' : c.loc.name}</span>
+                      <span className="tnum text-dim text-sm">{c.typed ? 'Restaurant' : c.loc.name}</span>
                       <span className="tnum font-semibold">{naira(c.qty * c.unitPrice)}</span>
                     </li>
                   ))}

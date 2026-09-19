@@ -137,21 +137,21 @@ export default function SalesEntry({ boot }) {
                       unitPrice: priceFor(item, defaultTier), priceOverridden: false,
                       // undefined for a normal same-department item (falls back to
                       // the basket's own locationId in saveBasket); set only for a
-                      // cross-department pick like a Kitchen item sold at a bar
+                      // cross-department pick like a Restaurant item sold at a bar
                       locationId: sourceLocation?.id, locationName: sourceLocation?.name }]
     })
   }
 
   // typed restaurant order — no catalog item, since a plate of food
   // isn't a countable stock unit the way a bottled drink is. Always
-  // attributed to Kitchen's own daily figures regardless of which
+  // attributed to Restaurant's own daily figures regardless of which
   // bar rings it up, matching the earlier decision on how that
   // revenue should count.
   function addTypedOrder({ description, qty, unitPrice }) {
-    const kitchen = (boot.allLocations || []).find(l => /kitchen/i.test(l.name))
+    const restaurant = (boot.allLocations || []).find(l => /restaurant/i.test(l.name))
     setBasket(b => [...b, { key: crypto.randomUUID(), item: null, description,
                             tier: 'general', qty, unitPrice, priceOverridden: true,
-                            locationId: kitchen?.id, locationName: kitchen?.name || 'Kitchen' }])
+                            locationId: restaurant?.id, locationName: restaurant?.name || 'Restaurant' }])
   }
 
   // switching the basket tier reprices everything already in it, EXCEPT
@@ -692,7 +692,7 @@ export default function SalesEntry({ boot }) {
       {restaurantOrder && (
         <Sheet onClose={() => setRestaurantOrder(null)}>
           <h2 className="text-2xl font-bold">Restaurant order</h2>
-          <p className="text-dim mt-1">Typed, not tracked as stock — counts toward Kitchen's takings.</p>
+          <p className="text-dim mt-1">Typed, not tracked as stock — counts toward Restaurant's takings.</p>
           <Row label="What was ordered">
             <input value={restaurantOrder.description} autoFocus
               onChange={e => setRestaurantOrder(r => ({ ...r, description: e.target.value }))}
