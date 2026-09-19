@@ -3,7 +3,7 @@ import { naira, lagosToday, tierLabel, methodLabel, whoRecorded, paymentSummary 
 import { loadStockMap, loadPopular, loadToday, saveBasket, saveWriteoff,
          loadDailyFinancials, loadCustomers, createCustomer,
          loadOpeningDate, loadBalances, loadReceipt,
-         loadStaffForLocation } from '../lib/data'
+         loadStaffForLocation, loadReceptionActivity } from '../lib/data'
 import { enqueue, flush, isConnectionError } from '../lib/outbox'
 import { useToast } from '../components/Toast'
 import ItemPicker from '../components/ItemPicker'
@@ -62,6 +62,7 @@ export default function SalesEntry({ boot }) {
   const [stockMap, setStockMap] = useState({})
   const [popular, setPopular] = useState({})
   const [today, setToday] = useState([])
+  const [receptionActivity, setReceptionActivity] = useState([])
   const [summary, setSummary] = useState(null)
   const [recon, setRecon] = useState(null)
   const [customers, setCustomers] = useState([])
@@ -95,6 +96,9 @@ export default function SalesEntry({ boot }) {
     loadStockMap(staff.branch_id).then(setStockMap).catch(() => {})
     loadPopular(staff.branch_id).then(setPopular).catch(() => {})
     loadToday(staff.branch_id, date, locationId).then(setToday).catch(() => {})
+    if (isReception) {
+      loadReceptionActivity(staff.branch_id, date).then(setReceptionActivity).catch(() => {})
+    }
     loadDailyFinancials(staff.branch_id, date, locationId).then(r => {
       setSummary({ byMethod: r.byMethod, nonRevenue: r.nonRevenue })
       setRecon({ grossSales: r.grossSales, received: r.received, creditRaised: r.creditRaised,
@@ -373,14 +377,15 @@ export default function SalesEntry({ boot }) {
 
       {isReception ? (
         // Reception doesn't sell catalog stock at all — check-in,
-        // checkout, and room charges belong on the Rooms tab, not
-        // here. Room Board exists today; check-in/checkout/folio
-        // settlement are still coming.
+        // checkout, and room charges belong on the Rooms tab. Shows a
+        // real activity feed below (payments collected today), since
+        // Reception has no sales rows at all by design — the parallel
+        // to a bar's daily sales here is money collected, not items sold.
         <div className="mt-3 rounded-2xl border border-line bg-surface p-4">
           <p className="font-semibold">Reception doesn't record sales here.</p>
           <p className="text-dim text-sm mt-1">
-            Room status is on the Rooms tab. Check-in, checkout, and settling a
-            guest's bill are coming there too.
+            Check-in, checkout, room status, and settling a guest's bill are all
+            on the Rooms tab.
           </p>
         </div>
       ) : !isRestaurant && (
@@ -388,6 +393,36 @@ export default function SalesEntry({ boot }) {
           className="mt-3 w-full h-16 rounded-2xl bg-amber text-bg text-xl font-bold active:bg-amber-deep">
           + Sell Item
         </button>
+      )}
+
+      {isReception && (
+        <div className="mt-4">
+          <div className="flex items-baseline justify-between">
+            <h2 className="text-dim">Today at Reception</h2>
+            <span className="tnum font-bold text-lg">
+              {naira(receptionActivity.reduce((s, p) => s + Number(p.amount || 0), 0))}
+            </span>
+          </div>
+          <ul className="mt-2 divide-y divide-line/60">
+            {receptionActivity.map(p => (
+              <li key={p.id} className="py-3 flex items-center gap-3">
+                <div className="flex-1 min-w-0">
+                  <div className="font-semibold truncate">
+                    {p.stays?.guests?.full_name || 'Guest'} · Room {p.stays?.rooms?.room_number || '—'}
+                  </div>
+                  <div className="text-dim text-sm">
+                    {methodLabel[p.method] || p.method}{p.is_overstay ? ' · over-stay' : ''}
+                    {p.remark ? ` · ${p.remark}` : ''}
+                  </div>
+                </div>
+                <span className="tnum font-semibold">{naira(p.amount)}</span>
+              </li>
+            ))}
+            {!receptionActivity.length && (
+              <li className="py-6 text-dim">No payments recorded yet today.</li>
+            )}
+          </ul>
+        </div>
       )}
 
       {!!basket.length && (
@@ -427,6 +462,7 @@ export default function SalesEntry({ boot }) {
         </button>
       )}
 
+      {!isReception && (
       <section className="mt-6">
         <div className="flex items-baseline justify-between">
           <div>
@@ -506,6 +542,7 @@ export default function SalesEntry({ boot }) {
           {!today.length && <li className="py-6 text-dim">No sales recorded yet — the first one goes on top.</li>}
         </ul>
       </section>
+      )}
 
       {!!basket.length && (
         <div className="fixed bottom-20 inset-x-0 px-5 pb-2 z-20">

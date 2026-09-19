@@ -1478,3 +1478,29 @@ role list down to itself before checking membership, when a direct
 array check said the same thing clearly), and a rate-type label
 constant that was defined but never actually used anywhere — removed
 rather than left sitting as unreferenced code.
+
+
+## Restaurant and Reception activity feeds
+
+Restaurant: confirmed rather than assumed — typed orders already save
+as real sales rows with location_id set to Restaurant, and loadToday
+has no inner join that would exclude a null stock_item_id, so its
+Today list was already correctly showing typed orders with no changes
+needed. Verified this by reading the actual query and row-rendering
+code, not just asserting it works.
+
+Reception: genuinely different, not a bug — Reception creates no
+sales rows at all by design (every sales action is deliberately
+blocked there), so its old "Today" section would always show empty.
+Built a real parallel instead: a "Today at Reception" list of payments
+actually collected, joined to the guest and room for context, since
+that's the true equivalent of a bar's daily sales — money collected,
+not items sold. Hid the old sales-based Today section specifically
+for Reception (including the reconciliation cards above it, which are
+built from sales data that doesn't apply there either), so the two
+lists don't sit stacked with one of them permanently and confusingly
+empty.
+
+Also updated stale copy in the Reception message — it used to say
+check-in/checkout/settlement were "still coming," which stopped being
+true once Phase 3 shipped.

@@ -951,3 +951,18 @@ export async function updateOverstayFee(stayId, amount) {
     .update({ overstay_fee: amount }).eq('id', stayId)
   if (error) throw error
 }
+
+// Reception's "Today" — the closest real parallel to a bar's daily
+// sales list is money actually collected at the desk, not items sold
+// (Reception has no sales rows at all, by design: check-in/checkout/
+// payment are all stays/payments, never sales). Joins to the guest
+// and room for display, same way the folio itself shows a payment.
+export async function loadReceptionActivity(branchId, date) {
+  const { data, error } = await supabase.from('payments')
+    .select(`id, method, amount, is_overstay, remark, created_at,
+             stays(id, rooms(room_number), guests(full_name))`)
+    .eq('branch_id', branchId).eq('business_date', date)
+    .order('created_at', { ascending: false })
+  if (error) throw error
+  return data || []
+}
