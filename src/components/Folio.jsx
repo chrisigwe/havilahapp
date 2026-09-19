@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { naira, lagosToday, methodLabel, cyclesFor, nightsBetween, friendlyStayError } from '../lib/format'
 import { loadFolio, loadBranchStaySettings, recordStayPayment, checkOutStay,
-         reopenStay, updateStayDetails, updateOverstayFee } from '../lib/data'
+         reopenStay, updateStayDetails, updateOverstayFee, deleteStay } from '../lib/data'
 import { useToast } from '../components/Toast'
 
 const SUPERVISOR_ROLES = ['manager', 'gm', 'admin']
@@ -17,6 +17,7 @@ export default function Folio({ boot, room, onClose, onChanged }) {
   const [isOverstay, setIsOverstay] = useState(false)
   const [editing, setEditing] = useState(null)   // { dailyRate, billingCycle, scheduledOut, rateReason } while open
   const [overstayDraft, setOverstayDraft] = useState(null)   // amount string while editing
+  const [confirmingDelete, setConfirmingDelete] = useState(false)
   const [busy, setBusy] = useState(false)
 
   const refresh = () => { loadFolio(room.stay_id).then(setData).catch(() => setData(null)) }
@@ -87,6 +88,16 @@ export default function Folio({ boot, room, onClose, onChanged }) {
     setBusy(false)
   }
 
+  async function doDeleteStay() {
+    setBusy(true)
+    try {
+      await deleteStay(room.stay_id)
+      toast('Booking deleted', 'success')
+      onChanged?.(); onClose()
+    } catch (e) { toast(friendlyStayError(e), 'error') }
+    setBusy(false)
+  }
+
   function openEdit() {
     setEditing({
       dailyRate: String(folio?.daily_rate ?? ''),
@@ -132,6 +143,11 @@ export default function Folio({ boot, room, onClose, onChanged }) {
         {live && (
           <button onClick={openEdit} className="text-dim text-sm underline mt-1">
             Edit rate, cycle, or dates
+          </button>
+        )}
+        {['gm', 'admin'].includes(staff.role) && (
+          <button onClick={() => setConfirmingDelete(true)} className="block text-clay text-sm underline mt-1">
+            Delete this booking — training records only
           </button>
         )}
 
@@ -362,6 +378,24 @@ export default function Folio({ boot, room, onClose, onChanged }) {
             className="mt-6 w-full h-16 rounded-2xl bg-amber text-bg text-xl font-bold disabled:opacity-40">
             {busy ? 'Saving…' : 'Save changes'}
           </button>
+        </div>
+      )}
+
+      {confirmingDelete && (
+        <div className="fixed inset-0 z-[60] bg-bg flex flex-col justify-center px-6">
+          <h2 className="text-2xl font-bold">Delete this booking?</h2>
+          <p className="text-dim mt-2">
+            {room.guest_name || 'Guest'} · Room {room.room_number}
+          </p>
+          <p className="text-dim text-sm mt-2">
+            Removes the stay along with every room charge and payment attached
+            to it. For training records only — this cannot be undone.
+          </p>
+          <button onClick={doDeleteStay} disabled={busy}
+            className="mt-8 w-full h-16 rounded-2xl bg-clay text-bg text-xl font-bold disabled:opacity-40">
+            {busy ? 'Deleting…' : 'Delete booking'}
+          </button>
+          <button onClick={() => setConfirmingDelete(false)} className="mt-3 w-full h-12 text-dim">Cancel</button>
         </div>
       )}
     </div>

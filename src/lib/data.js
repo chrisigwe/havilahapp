@@ -966,3 +966,13 @@ export async function loadReceptionActivity(branchId, date) {
   if (error) throw error
   return data || []
 }
+
+// Deletes an entire training booking — stay, its orders/order_items,
+// and its payments, in one RPC. Already enforces GM/Admin at the
+// database level (is_supervisor()), confirmed against its real body
+// rather than assumed; the app-side role check below is just for
+// showing the right UI, not the actual security.
+export async function deleteStay(stayId) {
+  const { error } = await supabase.rpc('delete_stay', { target: stayId })
+  if (error) throw error
+}

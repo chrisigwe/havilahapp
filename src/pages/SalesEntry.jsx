@@ -3,7 +3,7 @@ import { naira, lagosToday, tierLabel, methodLabel, whoRecorded, paymentSummary 
 import { loadStockMap, loadPopular, loadToday, saveBasket, saveWriteoff,
          loadDailyFinancials, loadCustomers, createCustomer,
          loadOpeningDate, loadBalances, loadReceipt,
-         loadStaffForLocation, loadReceptionActivity } from '../lib/data'
+         loadStaffForLocation, loadReceptionActivity, deleteEntry } from '../lib/data'
 import { enqueue, flush, isConnectionError } from '../lib/outbox'
 import { useToast } from '../components/Toast'
 import ItemPicker from '../components/ItemPicker'
@@ -63,6 +63,22 @@ export default function SalesEntry({ boot }) {
   const [popular, setPopular] = useState({})
   const [today, setToday] = useState([])
   const [receptionActivity, setReceptionActivity] = useState([])
+  // GM/Admin-only cleanup for training records, scoped specifically to
+  // Restaurant here (Reception's version deletes a whole booking, not
+  // a single row, so it lives separately in Folio)
+  const canDeleteTraining = isRestaurant && ['gm', 'admin'].includes(staff.role)
+  const [deleteConfirm, setDeleteConfirm] = useState(null)
+  const [deleteBusy, setDeleteBusy] = useState(false)
+
+  async function doDeleteEntry() {
+    setDeleteBusy(true)
+    try {
+      await deleteEntry({ kind: 'sale', id: deleteConfirm.id })
+      toast('Deleted', 'success')
+      setDeleteConfirm(null); refresh()
+    } catch (e) { toast('Could not delete: ' + e.message, 'error') }
+    setDeleteBusy(false)
+  }
   const [summary, setSummary] = useState(null)
   const [recon, setRecon] = useState(null)
   const [customers, setCustomers] = useState([])
@@ -537,6 +553,12 @@ export default function SalesEntry({ boot }) {
                 </div>
               </div>
               <div className="tnum font-semibold">{naira(r.amount ?? r.qty * r.unit_price)}</div>
+              {canDeleteTraining && (
+                <button onClick={(e) => { e.stopPropagation(); setDeleteConfirm(r) }}
+                  className="h-9 px-3 rounded-lg border border-clay text-clay text-sm font-semibold shrink-0">
+                  Delete
+                </button>
+              )}
             </li>
           ))}
           {!today.length && <li className="py-6 text-dim">No sales recorded yet — the first one goes on top.</li>}
@@ -785,6 +807,24 @@ export default function SalesEntry({ boot }) {
             className="mt-8 w-full h-16 rounded-2xl bg-amber text-bg text-xl font-bold disabled:opacity-40">
             Add to basket
           </button>
+        </Sheet>
+      )}
+
+      {deleteConfirm && (
+        <Sheet onClose={() => setDeleteConfirm(null)}>
+          <h2 className="text-2xl font-bold">Delete this entry?</h2>
+          <p className="text-dim mt-2">
+            {itemById[deleteConfirm.stock_item_id]?.name || deleteConfirm.description || 'This entry'}
+            {' — '}{deleteConfirm.qty} × {naira(deleteConfirm.unit_price)}
+          </p>
+          <p className="text-dim text-sm mt-1">
+            For training records only — this cannot be undone.
+          </p>
+          <button onClick={doDeleteEntry} disabled={deleteBusy}
+            className="mt-6 w-full h-14 rounded-2xl bg-clay text-bg text-lg font-bold disabled:opacity-40">
+            {deleteBusy ? 'Deleting…' : 'Delete'}
+          </button>
+          <button onClick={() => setDeleteConfirm(null)} className="mt-3 w-full h-12 text-dim">Cancel</button>
         </Sheet>
       )}
     </div>

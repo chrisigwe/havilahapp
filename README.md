@@ -1504,3 +1504,27 @@ empty.
 Also updated stale copy in the Reception message — it used to say
 check-in/checkout/settlement were "still coming," which stopped being
 true once Phase 3 shipped.
+
+
+## GM/Admin delete for training records — Restaurant and Reception
+
+Restaurant: a Delete button on each Today-list row, GM/admin only,
+scoped specifically to the Restaurant tab. Reuses the existing
+deleteEntry function unchanged (already correctly removes
+sale_payments before the sale, letting the existing trigger clean up
+any stock deduction) — no new deletion logic needed, since a typed
+order is just a sales row like any other.
+
+Reception: deletes an entire training booking, not a single row —
+confirmed this needed to be different before building it, since the
+new payments-only activity feed doesn't cover a whole practice
+check-in. Found the delete_stay RPC already exists in the shared
+schema, already enforces is_supervisor() (GM/Admin) at the database
+level, and already cascades correctly through order_items → orders →
+payments → stays in the right order. No new database logic
+required — the app just calls it. Lives in Folio as "Delete this
+booking," available regardless of whether the stay is live or already
+checked out, since training data can end up in either state.
+
+Both use the same sheet-based confirm pattern already established in
+Corrections, rather than a browser confirm() dialog.
