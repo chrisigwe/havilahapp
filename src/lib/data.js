@@ -844,3 +844,61 @@ export async function createStay({ staff, guestId, roomId, rateType, dailyRate,
   })
   if (error) throw error
 }
+
+// ---------- Folio, payments, checkout ----------
+// Same verified-not-inferred discipline as check-in. checkout itself
+// has no special trigger (any staff on the branch can check a live
+// stay out); reopening one is genuinely enforced server-side by
+// enforce_checkout_reversal() — same-day undo is open to anyone
+// active, an older one needs manager/gm/admin. This app's own
+// prediction of canReopen mirrors that trigger exactly so the button
+// doesn't invite an attempt that's certain to fail, but the trigger
+// is what actually protects it either way.
+
+export async function loadFolio(stayId) {
+  const [{ data: orders, error: e1 }, { data: payments, error: e2 }, { data: folio, error: e3 }] =
+    await Promise.all([
+      supabase.from('orders')
+        .select('id, business_date, order_items(id, category, description, qty, unit_price, amount)')
+        .eq('stay_id', stayId).order('business_date', { ascending: false }),
+      supabase.from('payments')
+        .select('id, business_date, method, amount, is_overstay, remark')
+        .eq('stay_id', stayId).order('business_date', { ascending: false }),
+      supabase.from('v_stay_folio').select('*').eq('stay_id', stayId).maybeSingle(),
+    ])
+  if (e1) throw e1
+  if (e2) throw e2
+  if (e3) throw e3
+  return { orders: orders || [], payments: payments || [], folio: folio || null }
+}
+
+// A guest paying part POS and part cash is one settlement but two
+// tenders in the ledger — same split-row pattern as everything else
+// in this app that supports split payment.
+export async function recordStayPayment({ staff, stayId, businessDate, cycle, pos, cash, isOverstay }) {
+  const rows = [['pos', pos], ['cash', cash]]
+    .filter(([, amt]) => Number(amt) > 0)
+    .map(([method, amt]) => ({
+      branch_id: staff.branch_id, stay_id: stayId, business_date: businessDate,
+      method, amount: Number(amt), is_overstay: !!isOverstay, cycle,
+      received_by: staff.id,
+    }))
+  if (!rows.length) return
+  const { error } = await supabase.from('payments').insert(rows)
+  if (error) throw error
+}
+
+export async function checkOutStay(stayId, actualOut) {
+  const { error } = await supabase.from('stays')
+    .update({ status: 'checked_out', actual_out: actualOut, updated_at: new Date().toISOString() })
+    .eq('id', stayId)
+  if (error) throw error
+}
+
+// Deliberately minimal — the trigger (enforce_checkout_reversal) sets
+// reopened_by/reopened_at/reopen_count and clears actual_out on its
+// own; sending anything more here would just be overwritten anyway.
+export async function reopenStay(stayId) {
+  const { error } = await supabase.from('stays').update({ status: 'occupied' }).eq('id', stayId)
+  if (error) throw error
+}

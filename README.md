@@ -1354,3 +1354,47 @@ values instead of ignoring them. Folded into the same query that was
 already fetching allowed_cycles (loadBranchStaySettings replaces
 loadBranchCycles), rather than add a second round trip to a table
 already being queried.
+
+
+## Phase 3 — Folio, payment, and checkout
+
+Same full-verification discipline as check-in: read the reference
+FolioDrawer completely (not the partial read from earlier in this
+build), then confirmed every real fact directly against the live
+database before writing anything —
+- payments' real columns (paid_at, is_overstay, cycle, remark —
+  not "note", approved_by/approved_by_label unused for now)
+- v_stay_folio's real columns, including overstay_charge
+- checkout itself has no special trigger (any staff on the branch,
+  same permissive RLS as everything else) — but REOPENING a
+  checked-out stay is genuinely enforced server-side
+  (enforce_checkout_reversal): same-day undo is open to any active
+  staff, an older one needs manager/gm/admin. Got the exact function
+  body rather than guess at matching the reference app's client-side
+  prediction of it.
+
+Scoped deliberately narrow, same as phases 1 and 2: view the folio
+(charges, payments, balance), record a payment (POS/cash split,
+over-stay flag), check out. Left out for later: mid-stay rate/cycle
+editing, overstay fee management, and guest-record deletion — each
+has its own role-restricted trigger (enforce_overstay_fee,
+stamp_rate_adjustment) worth verifying properly rather than folding
+into this pass.
+
+Caught a real gap before it shipped: Folio only ever opens from
+tapping a room card on the board, and v_occupancy_today only shows
+CURRENT occupancy — once checked out, a room reverts to vacant
+(stay_id becomes null) in that view. Built a whole "undo checkout"
+section, then realized it could never actually be reached through
+this entry point and removed it (the data function stays in data.js,
+tested and ready) rather than ship a button that looks real but isn't.
+Reaching an already-checked-out stay for reopening needs its own
+search, the same way check-in searches rooms and room-charging
+searches guests — a genuine follow-up, not done here.
+
+Also caught a second instance of the exact unbraced-effect bug that's
+hit this codebase before, in Folio's own refresh function — passed to
+useEffect(refresh, [...]) as a named function rather than inline,
+which the usual inline-only sweep didn't catch. Broadened the check
+to look for the pattern itself (an unbraced arrow returning a promise
+chain) rather than just its most common inline shape.

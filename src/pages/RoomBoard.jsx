@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { naira } from '../lib/format'
 import { loadOccupancy } from '../lib/data'
 import CheckIn from './CheckIn'
+import Folio from '../components/Folio'
 
 // Phase 2 of bringing the front-desk app's functionality into this
 // one: check-in and new bookings, alongside the view-only room status
@@ -25,6 +26,7 @@ function stateOf(room) {
 export default function RoomBoard({ boot }) {
   const { staff } = boot
   const [checkingIn, setCheckingIn] = useState(false)
+  const [openStay, setOpenStay] = useState(null)   // the room whose folio is open
   const [rooms, setRooms] = useState(null)
 
   const refresh = () => { loadOccupancy(staff.branch_id).then(setRooms).catch(() => setRooms([])) }
@@ -71,7 +73,9 @@ export default function RoomBoard({ boot }) {
         {rooms.map(room => {
           const s = STATE[stateOf(room)]
           return (
-            <div key={room.room_id} className="rounded-2xl border border-line bg-surface overflow-hidden flex">
+            <div key={room.room_id}
+              onClick={() => room.stay_id && setOpenStay(room)}
+              className={`rounded-2xl border border-line bg-surface overflow-hidden flex ${room.stay_id ? 'cursor-pointer active:opacity-70' : ''}`}>
               <div className={`w-1.5 shrink-0 ${s.bar}`} />
               <div className="px-3 py-3 min-w-0 flex-1">
                 <div className="flex items-baseline justify-between gap-2">
@@ -114,6 +118,12 @@ export default function RoomBoard({ boot }) {
           </div>
           <CheckIn boot={boot} onDone={() => { setCheckingIn(false); refresh() }} />
         </div>
+      )}
+
+      {openStay && (
+        <Folio boot={boot} room={openStay}
+          onClose={() => setOpenStay(null)}
+          onChanged={refresh} />
       )}
     </div>
   )
