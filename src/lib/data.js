@@ -872,17 +872,16 @@ export async function loadFolio(stayId) {
   return { orders: orders || [], payments: payments || [], folio: folio || null }
 }
 
-// A guest paying part POS and part cash is one settlement but two
-// tenders in the ledger — same split-row pattern as everything else
-// in this app that supports split payment.
-export async function recordStayPayment({ staff, stayId, businessDate, cycle, pos, cash, isOverstay }) {
-  const rows = [['pos', pos], ['cash', cash]]
-    .filter(([, amt]) => Number(amt) > 0)
-    .map(([method, amt]) => ({
-      branch_id: staff.branch_id, stay_id: stayId, business_date: businessDate,
-      method, amount: Number(amt), is_overstay: !!isOverstay, cycle,
-      received_by: staff.id,
-    }))
+// A guest paying part POS and part cash (or transfer) is one
+// settlement but several tenders in the ledger — same split-row
+// pattern as Credit's split repayments. parts is [{method, amount}],
+// already filtered to non-zero entries by the caller.
+export async function recordStayPayment({ staff, stayId, businessDate, cycle, parts, isOverstay }) {
+  const rows = parts.filter(p => Number(p.amount) > 0).map(p => ({
+    branch_id: staff.branch_id, stay_id: stayId, business_date: businessDate,
+    method: p.method, amount: Number(p.amount), is_overstay: !!isOverstay, cycle,
+    received_by: staff.id,
+  }))
   if (!rows.length) return
   const { error } = await supabase.from('payments').insert(rows)
   if (error) throw error

@@ -1,14 +1,16 @@
 import { useEffect, useState } from 'react'
-import { naira, lagosToday, friendlyStayError } from '../lib/format'
+import { naira, lagosToday, methodLabel, friendlyStayError } from '../lib/format'
 import { loadFolio, recordStayPayment, checkOutStay } from '../lib/data'
 import { useToast } from '../components/Toast'
 
+
 export default function Folio({ boot, room, onClose, onChanged }) {
   const { staff } = boot
+  const payMethods = ['pos', 'cash']   // deliberately fixed, not derived from branch config —
+                                        // Rooms payment is POS/Cash only, no Transfer
   const toast = useToast()
   const [data, setData] = useState(null)
-  const [pos, setPos] = useState('')
-  const [cash, setCash] = useState('')
+  const [pay, setPay] = useState({ amount: '', method: 'pos', split: null })
   const [isOverstay, setIsOverstay] = useState(false)
   const [busy, setBusy] = useState(false)
 
@@ -29,19 +31,22 @@ export default function Folio({ boot, room, onClose, onChanged }) {
   // out it no longer appears live on the board, so this component is
   // only ever opened for a currently-live stay; checkout/reopen state
   // is still handled below for completeness if reopened mid-view.
-  const payTotal = Number(pos || 0) + Number(cash || 0)
   const orderLines = orders.flatMap(o => (o.order_items || []).map(li => ({ ...li, date: o.business_date })))
+  const payParts = pay.split
+    ? Object.entries(pay.split).map(([method, amt]) => ({ method, amount: Number(amt || 0) }))
+    : [{ method: pay.method, amount: Number(pay.amount || 0) }]
+  const payAllocated = payParts.reduce((s, p) => s + p.amount, 0)
 
   async function submitPayment() {
-    if (payTotal <= 0) return
+    if (payAllocated <= 0) return
     setBusy(true)
     try {
       await recordStayPayment({
         staff, stayId: room.stay_id, businessDate: lagosToday(),
-        cycle: folio?.billing_cycle, pos, cash, isOverstay,
+        cycle: folio?.billing_cycle, parts: payParts, isOverstay,
       })
       toast('Payment recorded', 'success')
-      setPos(''); setCash(''); setIsOverstay(false)
+      setPay({ amount: '', method: 'pos', split: null }); setIsOverstay(false)
       refresh(); onChanged?.()
     } catch (e) { toast(friendlyStayError(e), 'error') }
     setBusy(false)
@@ -83,29 +88,66 @@ export default function Folio({ boot, room, onClose, onChanged }) {
         {live && (
           <div className="mt-4 rounded-2xl border border-line bg-surface p-4">
             <div className="text-dim mb-2">Record payment</div>
-            <div className="flex gap-3">
-              <input type="number" inputMode="decimal" placeholder="POS" value={pos}
-                onChange={e => setPos(e.target.value)}
-                className="h-12 flex-1 px-3 rounded-xl bg-raise border border-line tnum placeholder:text-dim" />
-              <input type="number" inputMode="decimal" placeholder="Cash" value={cash}
-                onChange={e => setCash(e.target.value)}
-                className="h-12 flex-1 px-3 rounded-xl bg-raise border border-line tnum placeholder:text-dim" />
+
+            <label className="block text-dim text-sm">Amount</label>
+            <div className="flex items-center gap-3 mt-1">
+              <input type="number" inputMode="decimal" value={pay.amount}
+                onChange={e => setPay(p => ({ ...p, amount: e.target.value }))}
+                className="h-12 flex-1 px-3 rounded-xl bg-raise border border-line tnum" />
+              {outstanding > 0 && (
+                <button onClick={() => setPay(p => ({ ...p, amount: String(outstanding) }))}
+                  className="text-dim text-sm underline whitespace-nowrap">Full balance</button>
+              )}
             </div>
-            {outstanding > 0 && (
-              <div className="flex gap-4 mt-2">
-                <button onClick={() => { setPos(String(outstanding)); setCash('') }}
-                  className="text-dim text-sm underline">All on POS</button>
-                <button onClick={() => { setCash(String(outstanding)); setPos('') }}
-                  className="text-dim text-sm underline">All cash</button>
+
+            <label className="block text-dim text-sm mt-3">Paid by</label>
+            <div className="flex flex-wrap gap-2 mt-1">
+              {payMethods.map(m => (
+                <button key={m} onClick={() => setPay(p => ({ ...p, method: m, split: null }))}
+                  className={`h-11 px-4 rounded-xl border font-semibold ${!pay.split && pay.method === m
+                    ? 'bg-amber text-bg border-amber' : 'border-line text-ink'}`}>
+                  {methodLabel[m] || m}
+                </button>
+              ))}
+              <button
+                onClick={() => setPay(p => ({ ...p,
+                  split: p.split || Object.fromEntries(payMethods.map(m => [m, ''])) }))}
+                className={`h-11 px-4 rounded-xl border font-semibold ${pay.split
+                  ? 'bg-amber text-bg border-amber' : 'border-line text-ink'}`}>
+                Split
+              </button>
+            </div>
+
+            {pay.split && (
+              <div className="mt-3">
+                {Object.keys(pay.split).map(m => (
+                  <div key={m} className="flex items-center gap-3 mt-2">
+                    <span className="w-20 text-dim">{methodLabel[m] || m}</span>
+                    <input type="number" inputMode="decimal" placeholder="0" value={pay.split[m]}
+                      onChange={e => setPay(p => ({ ...p, split: { ...p.split, [m]: e.target.value } }))}
+                      className="h-11 flex-1 px-3 rounded-xl bg-raise border border-line tnum" />
+                  </div>
+                ))}
+                {(() => {
+                  const target = Number(pay.amount) || 0
+                  const diff = target - payAllocated
+                  if (Math.abs(diff) < 0.01) return <p className="text-dim text-sm mt-2">Splits match the amount.</p>
+                  return (
+                    <p className="text-clay text-sm mt-2">
+                      {diff > 0 ? `${naira(diff)} still unallocated` : `${naira(-diff)} over the amount entered`}
+                    </p>
+                  )
+                })()}
               </div>
             )}
+
             <label className="flex items-center gap-2 text-dim mt-3">
               <input type="checkbox" checked={isOverstay} onChange={e => setIsOverstay(e.target.checked)} />
               Over-stay payment
             </label>
-            <button onClick={submitPayment} disabled={busy || payTotal <= 0}
+            <button onClick={submitPayment} disabled={busy || payAllocated <= 0}
               className="mt-3 w-full h-14 rounded-2xl bg-amber text-bg text-lg font-bold disabled:opacity-40">
-              {busy ? 'Recording…' : `Record ${naira(payTotal)}`}
+              {busy ? 'Recording…' : `Record ${naira(payAllocated)}`}
             </button>
           </div>
         )}

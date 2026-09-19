@@ -1398,3 +1398,38 @@ useEffect(refresh, [...]) as a named function rather than inline,
 which the usual inline-only sweep didn't catch. Broadened the check
 to look for the pattern itself (an unbraced arrow returning a promise
 chain) rather than just its most common inline shape.
+
+
+## Split payment for Rooms
+
+Rebuilt Folio's payment section to genuinely match Credit's pattern
+(single-method chips defaulting to one, "Split" revealing per-method
+inputs with a running match check) rather than the "always show two
+fields" approach it started with, which was functionally similar but
+a different interaction style — real inconsistency worth fixing, not
+cosmetic.
+
+Checked the real payments.method enum first rather than assume it
+matched the reference app's UI: pos, cash, transfer, AND credit.
+Transfer was genuinely missing before (the reference app's own folio
+drawer only ever exposed pos/cash). Credit excluded on purpose, same
+reasoning as Credit's own repayment picker — recording a "payment" by
+credit is a contradiction, credit means it hasn't been paid yet.
+
+Payment methods offered now come from the branch's own configured
+list (boot.methods, filtered), not a hardcoded array — matching how
+the rest of the app already respects per-branch configuration (the
+same care already given to allowed_cycles differing by branch).
+
+recordStayPayment generalized from named pos/cash parameters to a
+plain parts array, matching the same shape Credit's split submission
+already builds, rather than two separate purpose-built parameters.
+
+
+## Rooms payment: back to POS/Cash only
+
+Reverted the branch-config-derived method list — Rooms payment is now
+explicitly hardcoded to pos/cash, not Transfer, per direct
+instruction. Deliberately not deriving from boot.methods anymore for
+this screen, since the exact set was specified directly rather than
+left to branch configuration.
