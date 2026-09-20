@@ -3,7 +3,8 @@ import { naira, lagosToday, tierLabel, methodLabel, whoRecorded, paymentSummary 
 import { loadStockMap, loadPopular, loadToday, saveBasket, saveWriteoff,
          loadDailyFinancials, loadCustomers, createCustomer,
          loadOpeningDate, loadBalances, loadReceipt,
-         loadStaffForLocation, loadReceptionActivity, deleteEntry } from '../lib/data'
+         loadStaffForLocation, loadReceptionActivity, deleteEntry,
+         loadRestaurantRoomCharges, deleteOrderItem, saveRestaurantWriteoff } from '../lib/data'
 import { enqueue, flush, isConnectionError } from '../lib/outbox'
 import { useToast } from '../components/Toast'
 import ItemPicker from '../components/ItemPicker'
@@ -62,6 +63,7 @@ export default function SalesEntry({ boot }) {
   const [stockMap, setStockMap] = useState({})
   const [popular, setPopular] = useState({})
   const [today, setToday] = useState([])
+  const [roomCharges, setRoomCharges] = useState([])   // Restaurant only: food charged to rooms
   const [receptionActivity, setReceptionActivity] = useState([])
   // GM/Admin-only cleanup for training records, scoped specifically to
   // Restaurant here (Reception's version deletes a whole booking, not
@@ -69,11 +71,16 @@ export default function SalesEntry({ boot }) {
   const canDeleteTraining = isRestaurant && ['gm', 'admin'].includes(staff.role)
   const [deleteConfirm, setDeleteConfirm] = useState(null)
   const [deleteBusy, setDeleteBusy] = useState(false)
+  const [writeoffBusy, setWriteoffBusy] = useState(false)
 
   async function doDeleteEntry() {
     setDeleteBusy(true)
     try {
-      await deleteEntry({ kind: 'sale', id: deleteConfirm.id })
+      if (deleteConfirm.entryKind === 'roomCharge') {
+        await deleteOrderItem(deleteConfirm.id, deleteConfirm.order_id)
+      } else {
+        await deleteEntry({ kind: 'sale', id: deleteConfirm.id })
+      }
       toast('Deleted', 'success')
       setDeleteConfirm(null); refresh()
     } catch (e) { toast('Could not delete: ' + e.message, 'error') }
@@ -99,6 +106,19 @@ export default function SalesEntry({ boot }) {
   const [restaurantOrder, setRestaurantOrder] = useState(null)
 
   const itemById = useMemo(() => Object.fromEntries(items.map(i => [i.id, i])), [items])
+  // Restaurant food charged to a room never showed up here before —
+  // it lives in orders/order_items, not sales, so it's merged in
+  // specifically for this department rather than folded into
+  // loadToday itself, which every other department still uses as-is.
+  const combinedToday = useMemo(() => {
+    const sales = today.map(r => ({ ...r, entryKind: 'sale', sortAt: r.created_at }))
+    if (!isRestaurant) return sales
+    const charges = roomCharges.map(r => ({
+      ...r, entryKind: 'roomCharge', sortAt: r.orders?.created_at,
+      roomNumber: r.orders?.stays?.rooms?.room_number, guestName: r.orders?.stays?.guests?.full_name,
+    }))
+    return [...sales, ...charges].sort((a, b) => (b.sortAt || '').localeCompare(a.sortAt || ''))
+  }, [today, roomCharges, isRestaurant])
   const locById = useMemo(() =>
     Object.fromEntries((boot.allLocations || locations).map(l => [l.id, l])), [boot, locations])
 
@@ -114,6 +134,9 @@ export default function SalesEntry({ boot }) {
     loadToday(staff.branch_id, date, locationId).then(setToday).catch(() => {})
     if (isReception) {
       loadReceptionActivity(staff.branch_id, date).then(setReceptionActivity).catch(() => {})
+    }
+    if (isRestaurant) {
+      loadRestaurantRoomCharges(staff.branch_id, date).then(setRoomCharges).catch(() => {})
     }
     loadDailyFinancials(staff.branch_id, date, locationId).then(r => {
       setSummary({ byMethod: r.byMethod, nonRevenue: r.nonRevenue })
@@ -369,7 +392,8 @@ export default function SalesEntry({ boot }) {
       )}
 
       {!isReception && (
-        <button onClick={() => setRestaurantOrder({ description: '', qty: 1, unitPrice: '' })}
+        <button onClick={() => setRestaurantOrder({ description: '', qty: 1, unitPrice: '',
+          orderType: 'standard', damageReason: null, writeoffNote: '' })}
           className="mt-3 w-full h-12 rounded-xl border border-line text-ink font-semibold">
           Add a restaurant order
         </button>
@@ -539,18 +563,48 @@ export default function SalesEntry({ boot }) {
         )}
 
         <ul className="mt-3 divide-y divide-line/60">
-          {today.slice(0, 20).map(r => (
-            <li key={r.id} className="py-3 flex items-center gap-3"
-                onClick={() => openReceipt(r.receipt_id)}>
+          {combinedToday.slice(0, 20).map(r => (
+            <li key={`${r.entryKind}:${r.id}`} className="py-3 flex items-center gap-3"
+                onClick={() => r.entryKind === 'sale' && openReceipt(r.receipt_id)}>
               <div className="flex-1 min-w-0">
-                <div className="font-semibold truncate">{itemById[r.stock_item_id]?.name || r.description || '—'}</div>
-                <div className="text-dim text-sm">
-                  {tierLabel[r.tier] || r.tier} · {r.qty} × {naira(r.unit_price)}
-                  {r.business_date !== r.created_at?.slice(0, 10) && (
-                    <span className="ml-2 text-amber">backdated</span>
+                <div className="font-semibold truncate flex items-center gap-2">
+                  <span className="truncate">{itemById[r.stock_item_id]?.name || r.description || '—'}</span>
+                  {r.order_type === 'pr_damage' && (
+                    <span className="shrink-0 text-xs font-bold text-clay border border-clay rounded-full px-2 py-0.5">
+                      PR / Damage
+                    </span>
                   )}
-                  <br />{paymentSummary(r)} · {whoRecorded(r)}
+                  {r.order_type === 'staff' && (
+                    <span className="shrink-0 text-xs font-bold text-amber border border-amber rounded-full px-2 py-0.5">
+                      Staff
+                    </span>
+                  )}
                 </div>
+                {r.entryKind === 'roomCharge' ? (
+                  <div className="text-dim text-sm">
+                    {r.qty} × {naira(r.unit_price)}
+                    <br />Charged to Room {r.roomNumber || '—'}
+                    {r.guestName ? ` · ${r.guestName}` : ''}
+                    {r.order_type !== 'standard' && ' · not paid for'}
+                    {r.damage_reason && ` · ${r.damage_reason}`}
+                    {r.writeoff_note && ` · ${r.writeoff_note}`}
+                  </div>
+                ) : r.order_type !== 'standard' ? (
+                  <div className="text-dim text-sm">
+                    {r.qty} × {naira(r.unit_price)} · not paid for
+                    {r.damage_reason && ` · ${r.damage_reason}`}
+                    {r.writeoff_note && ` · ${r.writeoff_note}`}
+                    <br />{whoRecorded(r)}
+                  </div>
+                ) : (
+                  <div className="text-dim text-sm">
+                    {tierLabel[r.tier] || r.tier} · {r.qty} × {naira(r.unit_price)}
+                    {r.business_date !== r.created_at?.slice(0, 10) && (
+                      <span className="ml-2 text-amber">backdated</span>
+                    )}
+                    <br />{paymentSummary(r)} · {whoRecorded(r)}
+                  </div>
+                )}
               </div>
               <div className="tnum font-semibold">{naira(r.amount ?? r.qty * r.unit_price)}</div>
               {canDeleteTraining && (
@@ -561,7 +615,7 @@ export default function SalesEntry({ boot }) {
               )}
             </li>
           ))}
-          {!today.length && <li className="py-6 text-dim">No sales recorded yet — the first one goes on top.</li>}
+          {!combinedToday.length && <li className="py-6 text-dim">No sales recorded yet — the first one goes on top.</li>}
         </ul>
       </section>
       )}
@@ -797,15 +851,81 @@ export default function SalesEntry({ boot }) {
               onChange={e => setRestaurantOrder(r => ({ ...r, unitPrice: e.target.value }))}
               placeholder="0" className="h-12 w-36 px-3 rounded-xl bg-surface border border-line tnum" />
           </Row>
+
+          <label className="block mt-4 text-dim">Order type</label>
+          <div className="mt-2 flex gap-2">
+            {[['standard', 'Standard'], ['pr_damage', 'PR / Damage'], ['staff', 'Staff']].map(([k, label]) => (
+              <button key={k} onClick={() => setRestaurantOrder(r => ({ ...r, orderType: k }))}
+                className={`flex-1 h-12 rounded-xl border font-semibold ${restaurantOrder.orderType === k
+                  ? 'bg-amber text-bg border-amber' : 'border-line text-dim'}`}>
+                {label}
+              </button>
+            ))}
+          </div>
+
+          {restaurantOrder.orderType === 'pr_damage' && (
+            <>
+              <p className="text-dim text-sm mt-3">
+                Not paid for — pick a reason if this was damaged, or note who approved it as PR.
+              </p>
+              <Row label="Damage reason (if applicable)">
+                <select value={restaurantOrder.damageReason || ''}
+                  onChange={e => setRestaurantOrder(r => ({ ...r, damageReason: e.target.value || null }))}
+                  className="h-12 px-3 rounded-xl bg-surface border border-line">
+                  <option value="">Not damage — PR only</option>
+                  <option value="breakage">Breakage</option>
+                  <option value="expiry">Expiry</option>
+                  <option value="spillage">Spillage</option>
+                  <option value="theft">Theft</option>
+                  <option value="spoilage">Spoilage</option>
+                  <option value="other">Other</option>
+                </select>
+              </Row>
+              <label className="block mt-4 text-dim">Who approved this / note</label>
+              <input value={restaurantOrder.writeoffNote}
+                onChange={e => setRestaurantOrder(r => ({ ...r, writeoffNote: e.target.value }))}
+                placeholder="e.g. Approved by GM Chuka"
+                className="mt-2 h-12 w-full px-3 rounded-xl bg-surface border border-line placeholder:text-dim" />
+            </>
+          )}
+
+          {restaurantOrder.orderType === 'staff' && (
+            <>
+              <p className="text-dim text-sm mt-3">Not paid for — staff meal.</p>
+              <label className="block mt-2 text-dim">Note (optional)</label>
+              <input value={restaurantOrder.writeoffNote}
+                onChange={e => setRestaurantOrder(r => ({ ...r, writeoffNote: e.target.value }))}
+                className="mt-2 h-12 w-full px-3 rounded-xl bg-surface border border-line" />
+            </>
+          )}
+
           <button
-            onClick={() => {
-              addTypedOrder({ description: restaurantOrder.description.trim(),
-                qty: restaurantOrder.qty, unitPrice: Number(restaurantOrder.unitPrice) || 0 })
-              setRestaurantOrder(null)
+            onClick={async () => {
+              const desc = restaurantOrder.description.trim()
+              const qty = restaurantOrder.qty
+              const unitPrice = Number(restaurantOrder.unitPrice) || 0
+              if (restaurantOrder.orderType === 'standard') {
+                addTypedOrder({ description: desc, qty, unitPrice })
+                setRestaurantOrder(null)
+                return
+              }
+              setWriteoffBusy(true)
+              try {
+                const restaurant = (boot.allLocations || []).find(l => /restaurant/i.test(l.name))
+                await saveRestaurantWriteoff({
+                  staff, locationId: restaurant?.id, businessDate: lagosToday(),
+                  description: desc, qty, unitPrice,
+                  orderType: restaurantOrder.orderType, damageReason: restaurantOrder.damageReason,
+                  writeoffNote: restaurantOrder.writeoffNote,
+                })
+                toast('Recorded — not paid for', 'success')
+                setRestaurantOrder(null); refresh()
+              } catch (e) { toast('Not saved: ' + e.message, 'error') }
+              setWriteoffBusy(false)
             }}
-            disabled={!restaurantOrder.description.trim() || !Number(restaurantOrder.unitPrice)}
+            disabled={writeoffBusy || !restaurantOrder.description.trim() || !Number(restaurantOrder.unitPrice)}
             className="mt-8 w-full h-16 rounded-2xl bg-amber text-bg text-xl font-bold disabled:opacity-40">
-            Add to basket
+            {writeoffBusy ? 'Saving…' : restaurantOrder.orderType === 'standard' ? 'Add to basket' : 'Save — not paid for'}
           </button>
         </Sheet>
       )}

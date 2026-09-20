@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { naira, methodLabel, lagosToday } from '../lib/format'
-import { loadRecovery, updateRepayment, loadRoomPayments } from '../lib/data'
+import { loadRecovery, updateRepayment, loadRoomPayments, deleteRoomPayment } from '../lib/data'
 import { useToast } from '../components/Toast'
 
 // Deliberately excludes storekeeper — an explicit choice, not an
@@ -20,6 +20,19 @@ export default function Recovery({ boot }) {
   const [rows, setRows] = useState(null)
   const isReception = /reception/i.test(salesPoints.find(l => l.id === locId)?.name || '')
   const [roomPayments, setRoomPayments] = useState(null)
+  const canDeleteRoomPayment = ['gm', 'admin'].includes(staff.role)
+  const [deletingRoomPayment, setDeletingRoomPayment] = useState(null)
+  const [deleteBusy, setDeleteBusy] = useState(false)
+
+  async function doDeleteRoomPayment() {
+    setDeleteBusy(true)
+    try {
+      await deleteRoomPayment(deletingRoomPayment.id)
+      toast('Payment removed', 'success')
+      setDeletingRoomPayment(null); refreshRoomPayments()
+    } catch (e) { toast('Not deleted: ' + e.message, 'error') }
+    setDeleteBusy(false)
+  }
 
   // When the GM switches branch, the previously-selected location id
   // belongs to the old branch and matches no chip here — leaving
@@ -193,8 +206,15 @@ export default function Recovery({ boot }) {
                     </div>
                     <div className="text-dim text-sm mt-0.5">
                       {methodLabel[p.method] || p.method}{p.is_overstay ? ' · over-stay' : ''}
+                      {p.staff?.full_name && ` · collected by ${p.staff.full_name}`}
                       {p.remark && ` · ${p.remark}`}
                     </div>
+                    {canDeleteRoomPayment && (
+                      <button onClick={() => setDeletingRoomPayment(p)}
+                        className="mt-1.5 h-8 px-3 rounded-lg border border-clay text-clay text-sm font-semibold">
+                        Delete
+                      </button>
+                    )}
                   </li>
                 ))}
               </ul>
@@ -251,6 +271,25 @@ export default function Recovery({ boot }) {
             {busy ? 'Saving…' : 'Save changes'}
           </button>
           <button onClick={() => setEditing(null)} className="mt-3 w-full h-12 text-dim">Cancel</button>
+        </div>
+      )}
+
+      {deletingRoomPayment && (
+        <div className="fixed inset-0 z-50 bg-bg flex flex-col justify-center px-6">
+          <h2 className="text-2xl font-bold">Delete this payment?</h2>
+          <p className="text-dim mt-2">
+            {deletingRoomPayment.stays?.guests?.full_name || 'Guest'} · Room{' '}
+            {deletingRoomPayment.stays?.rooms?.room_number || '—'} · {naira(deletingRoomPayment.amount)}
+          </p>
+          <p className="text-dim text-sm mt-2">
+            For practice entries only. Removes just this one payment — the room's
+            actual booking and every other charge or payment on it are untouched.
+          </p>
+          <button onClick={doDeleteRoomPayment} disabled={deleteBusy}
+            className="mt-6 w-full h-14 rounded-2xl bg-clay text-bg text-lg font-bold disabled:opacity-40">
+            {deleteBusy ? 'Deleting…' : 'Delete payment'}
+          </button>
+          <button onClick={() => setDeletingRoomPayment(null)} className="mt-3 w-full h-12 text-dim">Cancel</button>
         </div>
       )}
     </div>

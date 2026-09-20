@@ -280,8 +280,25 @@ export default function Folio({ boot, room, onClose, onChanged }) {
                 <li key={li.id} className="py-3">
                   <div className="flex items-center gap-3">
                     <div className="flex-1 min-w-0">
-                      <div className="truncate">{li.description}</div>
-                      <div className="text-dim text-sm">{li.date} · {li.qty} × {naira(li.unit_price)}</div>
+                      <div className="truncate flex items-center gap-2">
+                        <span className="truncate">{li.description}</span>
+                        {li.order_type === 'pr_damage' && (
+                          <span className="shrink-0 text-xs font-bold text-clay border border-clay rounded-full px-2 py-0.5">
+                            PR / Damage
+                          </span>
+                        )}
+                        {li.order_type === 'staff' && (
+                          <span className="shrink-0 text-xs font-bold text-amber border border-amber rounded-full px-2 py-0.5">
+                            Staff
+                          </span>
+                        )}
+                      </div>
+                      <div className="text-dim text-sm">
+                        {li.date} · {li.qty} × {naira(li.unit_price)}
+                        {li.order_type !== 'standard' && ' · not charged to guest'}
+                        {li.damage_reason && ` · ${li.damage_reason}`}
+                        {li.writeoff_note && ` · ${li.writeoff_note}`}
+                      </div>
                     </div>
                     <span className="tnum font-semibold">{naira(li.amount)}</span>
                   </div>

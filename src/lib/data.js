@@ -115,7 +115,7 @@ export async function loadToday(branchId, date, locationId) {
   let q = supabase
     .from('sales')
     .select(`id, stock_item_id, description, location_id, tier, qty, unit_price, amount, created_at,
-             receipt_id, business_date, recorded_by, on_behalf_of,
+             receipt_id, business_date, recorded_by, on_behalf_of, order_type, damage_reason, writeoff_note,
              recorder:recorded_by(full_name), stood_in_for:on_behalf_of(full_name),
              sale_payments(method, amount)`)
     .eq('branch_id', branchId).eq('business_date', date)
@@ -871,7 +871,7 @@ export async function loadFolio(stayId) {
   const [{ data: orders, error: e1 }, { data: payments, error: e2 }, { data: folio, error: e3 },
          { data: stay, error: e4 }] = await Promise.all([
     supabase.from('orders')
-      .select('id, business_date, served_by, order_items(id, category, description, qty, unit_price, amount)')
+      .select('id, business_date, served_by, order_items(id, category, description, qty, unit_price, amount, order_type, damage_reason, writeoff_note)')
       .eq('stay_id', stayId).order('business_date', { ascending: false }),
     supabase.from('payments')
       .select('id, business_date, method, amount, is_overstay, remark')
@@ -1040,12 +1040,24 @@ export async function loadGuestBalances(branchId) {
 export async function loadRoomPayments(branchId, days = 60) {
   const since = new Date(Date.now() - days * 864e5).toISOString().slice(0, 10)
   const { data, error } = await supabase.from('payments')
-    .select(`id, business_date, method, amount, is_overstay, remark,
+    .select(`id, business_date, method, amount, is_overstay, remark, received_by,
+             staff:received_by(full_name),
              stays(rooms(room_number), guests(full_name))`)
     .eq('branch_id', branchId).gte('business_date', since)
     .order('business_date', { ascending: false })
   if (error) throw error
   return data || []
+}
+
+// GM/admin cleanup for a practice payment — a single, self-contained
+// delete. Unlike deleting a whole training booking (delete_stay),
+// this never touches the stay itself: if training happened against a
+// real, live room, the room's actual booking and every other real
+// charge/payment on it are completely untouched — only the one
+// erroneous payment row goes.
+export async function deleteRoomPayment(paymentId) {
+  const { error } = await supabase.from('payments').delete().eq('id', paymentId)
+  if (error) throw error
 }
 
 // ---------- Editing/deleting a room-charge order line ----------
@@ -1071,5 +1083,58 @@ export async function deleteOrderItem(orderItemId, orderId) {
   if (!remaining?.length) {
     const { error: e3 } = await supabase.from('orders').delete().eq('id', orderId)
     if (e3) throw e3
+  }
+}
+
+// Restaurant food charged to a room lives in orders/order_items, not
+// sales — a room-charged order was never shown on Restaurant's own
+// Today list at all, since that list only ever queried sales. Joins
+// through to the guest/room for display, same context the folio
+// itself shows.
+export async function loadRestaurantRoomCharges(branchId, date) {
+  const { data, error } = await supabase.from('order_items')
+    .select(`id, description, qty, unit_price, amount, order_id, order_type, damage_reason, writeoff_note,
+             orders!inner(id, business_date, branch_id, served_by, created_at,
+                          stays(rooms(room_number), guests(full_name)))`)
+    .eq('category', 'food').eq('orders.branch_id', branchId).eq('orders.business_date', date)
+  if (error) throw error
+  return data || []
+}
+
+// ---------- Restaurant order type: PR/Damage and Staff write-offs ----------
+// Standard orders are unchanged — they go through the normal basket/
+// payment flow. PR/Damage and Staff never collect payment at all, so
+// they're a direct save, the same way the existing catalog PR/Damage
+// write-off (saveWriteoff) bypasses the sales basket entirely rather
+// than trying to thread "no payment required" through it.
+
+export async function saveRestaurantWriteoff({ staff, locationId, businessDate,
+                                                description, qty, unitPrice,
+                                                orderType, damageReason, writeoffNote }) {
+  const { error } = await supabase.from('sales').insert({
+    branch_id: staff.branch_id, business_date: businessDate, occurred_at: new Date().toISOString(),
+    stock_item_id: null, description, location_id: locationId, tier: 'general',
+    qty, unit_price: unitPrice, recorded_by: staff.id,
+    order_type: orderType, damage_reason: damageReason || null, writeoff_note: writeoffNote || null,
+  })
+  if (error) throw error
+}
+
+export async function chargeWriteoffToRoom({ staff, stayId, businessDate,
+                                              description, qty, unitPrice,
+                                              orderType, damageReason, writeoffNote }) {
+  const { data: order, error: oErr } = await supabase.from('orders').insert({
+    branch_id: staff.branch_id, stay_id: stayId, business_date: businessDate,
+    settlement: 'charged_to_room', served_by: staff.id,
+  }).select('id').single()
+  if (oErr) throw oErr
+  const { error: iErr } = await supabase.from('order_items').insert({
+    order_id: order.id, category: 'food', stock_item_id: null, location_id: null,
+    description, qty, unit_price: unitPrice,
+    order_type: orderType, damage_reason: damageReason || null, writeoff_note: writeoffNote || null,
+  })
+  if (iErr) {
+    await supabase.from('orders').delete().eq('id', order.id)
+    throw iErr
   }
 }

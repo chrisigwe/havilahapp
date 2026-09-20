@@ -1696,3 +1696,76 @@ orphaned order behind.
 
 loadFolio now selects served_by on orders (needed for the permission
 check) — wasn't fetched before since nothing used it.
+
+
+## Recovery: who collected, and a delete for practice payments
+
+loadRoomPayments now selects received_by, joined to staff for a
+display name — shown on each room-payment row as "collected by X",
+matching how customer repayments already show a collector.
+
+Added a GM/admin-only delete for a single room payment — deliberately
+simpler than deleting a whole training booking (delete_stay), since
+this never touches the stay itself. If training happened against a
+real, live room, the room's actual booking and every other real
+charge or payment on it stay completely untouched — only the one
+erroneous payment row is removed, and nothing references a payment
+row elsewhere, so there's nothing else to clean up.
+
+## Restaurant: room-charged food now shows on the Today list
+
+Confirmed the actual gap first: a food order charged to a room lives
+in orders/order_items, never in sales, so Restaurant's own Today list
+(which only ever queried sales) never showed it at all — a real,
+confirmed blind spot, not a guess. Built loadRestaurantRoomCharges to
+pull today's category='food' order_items with their guest/room
+context, and merged it into the same Today list sales already
+populate, sorted together chronologically (using the parent order's
+created_at, since order_items themselves have no timestamp of their
+own).
+
+Room-charged entries render distinctly — "Charged to Room X · guest
+name" instead of a tier/payment summary, since neither applies to a
+room charge. The existing GM/admin training-delete button now handles
+both kinds correctly: deleteOrderItem for a room charge (reusing what
+was already built for Folio's own order editing, including its
+orphaned-parent-order cleanup), deleteEntry for a walk-in sale, same
+as before.
+
+
+## Restaurant order type: Standard, PR/Damage, Staff
+
+Applies to both walk-in restaurant orders and room-charged ones, per
+explicit confirmation both are needed — PR and Damage are one
+combined type with both an approver-note field and a damage-reason
+field available, rather than two separate types.
+
+The real risk, checked before writing any schema change: get_daily_
+financials computes creditRaised as gross sales minus received. A
+written-off order recorded with its real value and no payment would
+have silently inflated creditRaised, making it look like a customer
+owed money nobody actually owes. Fixed by excluding order_type <>
+'standard' from the gross-sales calculation — the row keeps its real
+value (useful for the Today list and future reporting), but the
+financial aggregate treats it the same way catalog PR/damage
+write-offs already sit in their own nonRevenue bucket rather than
+polluting the sales figures.
+
+Checked a second dependent that would have been easy to miss:
+v_stay_folio's orders_charge sums order_items.amount with no filter
+at all. A written-off room-charge would have silently overcharged the
+guest for something meant to be free — confirmed this against the
+view's real definition, not assumed, and fixed it the same way.
+
+Non-standard orders bypass the normal basket/payment flow entirely —
+a direct save with no sale_payments or guest charge created, the same
+shape the existing catalog PR/Damage write-off already uses rather
+than trying to thread "no payment required" through the ordinary
+payment machinery. damage_reason reuses stock_movements' exact fixed
+list; writeoff_note is free text for who approved a PR comp or any
+other note.
+
+Shown with a small colored tag (PR/Damage in clay, Staff in amber)
+everywhere a restaurant order appears — Sales' Today list, the
+room-charge summary, and Folio's order lines — so a write-off is
+never visually indistinguishable from a normal paid order.

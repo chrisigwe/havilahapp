@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { naira, lagosToday, orderableLocations } from '../lib/format'
-import { searchLiveStays, chargeItemToRoom } from '../lib/data'
+import { searchLiveStays, chargeItemToRoom, chargeWriteoffToRoom } from '../lib/data'
 import RoomItemPicker from './RoomItemPicker'
 
 // Charges items to a hotel room/guest stay — the front desk's own
@@ -53,13 +53,25 @@ export default function RoomChargeSheet({ boot, stockMap, onClose, toast }) {
     if (!typing || !typing.description.trim() || !Number(typing.unitPrice)) return
     setBusy(true)
     try {
-      await chargeItemToRoom({
-        staff, stayId: stay.id, description: typing.description.trim(),
-        qty: typing.qty, unitPrice: Number(typing.unitPrice), businessDate: lagosToday(),
-      })
-      setCharged(c => [{ description: typing.description.trim(), qty: typing.qty,
-                         unitPrice: Number(typing.unitPrice), typed: true, at: Date.now() }, ...c])
-      toast(`${typing.qty} × ${typing.description.trim()} charged to Room ${stay.rooms?.room_number}`, 'success')
+      const desc = typing.description.trim()
+      const qty = typing.qty
+      const unitPrice = Number(typing.unitPrice)
+      if (typing.orderType === 'standard') {
+        await chargeItemToRoom({
+          staff, stayId: stay.id, description: desc,
+          qty, unitPrice, businessDate: lagosToday(),
+        })
+      } else {
+        await chargeWriteoffToRoom({
+          staff, stayId: stay.id, description: desc, qty, unitPrice, businessDate: lagosToday(),
+          orderType: typing.orderType, damageReason: typing.damageReason, writeoffNote: typing.writeoffNote,
+        })
+      }
+      setCharged(c => [{ description: desc, qty, unitPrice, typed: true,
+                         orderType: typing.orderType, at: Date.now() }, ...c])
+      toast(typing.orderType === 'standard'
+        ? `${qty} × ${desc} charged to Room ${stay.rooms?.room_number}`
+        : `${qty} × ${desc} recorded — not paid for`, 'success')
       setTyping(null)
     } catch (e) { toast('Not saved: ' + e.message, 'error') }
     setBusy(false)
@@ -107,7 +119,8 @@ export default function RoomChargeSheet({ boot, stockMap, onClose, toast }) {
               className="mt-6 w-full h-14 rounded-2xl border-2 border-amber text-amber text-lg font-bold">
               + Add a drink or minimart item
             </button>
-            <button onClick={() => setTyping({ description: '', qty: 1, unitPrice: '' })}
+            <button onClick={() => setTyping({ description: '', qty: 1, unitPrice: '',
+              orderType: 'standard', damageReason: null, writeoffNote: '' })}
               className="mt-3 w-full h-14 rounded-2xl border-2 border-line text-ink text-lg font-bold">
               + Add a restaurant order
             </button>
@@ -155,10 +168,49 @@ export default function RoomChargeSheet({ boot, stockMap, onClose, toast }) {
                     placeholder="price per plate"
                     className="h-11 flex-1 px-3 rounded-xl bg-raise border border-line tnum text-right placeholder:text-dim" />
                 </div>
+
+                <div className="flex gap-2 mb-3">
+                  {[['standard', 'Standard'], ['pr_damage', 'PR / Damage'], ['staff', 'Staff']].map(([k, label]) => (
+                    <button key={k} onClick={() => setTyping(t => ({ ...t, orderType: k }))}
+                      className={`flex-1 h-10 rounded-lg border text-sm font-semibold ${typing.orderType === k
+                        ? 'bg-amber text-bg border-amber' : 'border-line text-dim'}`}>
+                      {label}
+                    </button>
+                  ))}
+                </div>
+
+                {typing.orderType === 'pr_damage' && (
+                  <>
+                    <select value={typing.damageReason || ''}
+                      onChange={e => setTyping(t => ({ ...t, damageReason: e.target.value || null }))}
+                      className="h-11 w-full px-3 mb-2 rounded-xl bg-raise border border-line">
+                      <option value="">Not damage — PR only</option>
+                      <option value="breakage">Breakage</option>
+                      <option value="expiry">Expiry</option>
+                      <option value="spillage">Spillage</option>
+                      <option value="theft">Theft</option>
+                      <option value="spoilage">Spoilage</option>
+                      <option value="other">Other</option>
+                    </select>
+                    <input value={typing.writeoffNote}
+                      onChange={e => setTyping(t => ({ ...t, writeoffNote: e.target.value }))}
+                      placeholder="Who approved this / note"
+                      className="h-11 w-full px-3 mb-3 rounded-xl bg-raise border border-line placeholder:text-dim" />
+                  </>
+                )}
+                {typing.orderType === 'staff' && (
+                  <input value={typing.writeoffNote}
+                    onChange={e => setTyping(t => ({ ...t, writeoffNote: e.target.value }))}
+                    placeholder="Note (optional)"
+                    className="h-11 w-full px-3 mb-3 rounded-xl bg-raise border border-line placeholder:text-dim" />
+                )}
+
                 <button onClick={confirmTypedCharge}
                   disabled={busy || !typing.description.trim() || !Number(typing.unitPrice)}
                   className="w-full h-14 rounded-2xl bg-amber text-bg text-lg font-bold disabled:opacity-40">
-                  {busy ? 'Charging…' : `Charge ${naira((typing.qty || 0) * (Number(typing.unitPrice) || 0))} to room`}
+                  {busy ? 'Saving…' : typing.orderType === 'standard'
+                    ? `Charge ${naira((typing.qty || 0) * (Number(typing.unitPrice) || 0))} to room`
+                    : 'Save — not paid for'}
                 </button>
               </div>
             )}
@@ -169,7 +221,11 @@ export default function RoomChargeSheet({ boot, stockMap, onClose, toast }) {
                 <ul className="divide-y divide-line/60">
                   {charged.map((c, i) => (
                     <li key={i} className="py-2 flex items-center gap-3">
-                      <span className="flex-1 min-w-0 truncate">{c.qty} × {c.item?.name || c.description}</span>
+                      <span className="flex-1 min-w-0 truncate">
+                        {c.qty} × {c.item?.name || c.description}
+                        {c.orderType === 'pr_damage' && <span className="text-clay text-sm"> · PR/Damage</span>}
+                        {c.orderType === 'staff' && <span className="text-amber text-sm"> · Staff</span>}
+                      </span>
                       <span className="tnum text-dim text-sm">{c.typed ? 'Restaurant' : c.loc.name}</span>
                       <span className="tnum font-semibold">{naira(c.qty * c.unitPrice)}</span>
                     </li>
