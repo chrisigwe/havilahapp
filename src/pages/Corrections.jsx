@@ -5,7 +5,7 @@ import { loadActivity, deleteEntry, updateEntry, loadAudit,
 import { useToast } from '../components/Toast'
 
 export default function Corrections({ boot }) {
-  const { staff, allLocations, items, methods } = boot
+  const { staff, allLocations, locations, items, methods } = boot
   const toast = useToast()
   const isEditor = ['storekeeper', 'manager', 'gm', 'admin'].includes(staff.role)
   const canEdit = isEditor || staff.role === 'bar' || staff.role === 'front_desk'
@@ -17,7 +17,15 @@ export default function Corrections({ boot }) {
   const [confirm, setConfirm] = useState(null)
   const [busy, setBusy] = useState(false)
   const [query, setQuery] = useState('')
-  const [deptFilter, setDeptFilter] = useState('all')
+  // Editors (storekeeper+) legitimately oversee every department, so
+  // they see all of them with an "All departments" option, same as
+  // Sales/Credit/Recovery. Departmental staff (bar/front_desk) should
+  // only ever see their OWN assigned department(s) — not every
+  // department in the branch, and not defaulted to a mixed "all of
+  // mine" view when they have more than one.
+  const deptChips = isEditor ? allLocations : (locations || [])
+  const [deptFilter, setDeptFilter] = useState(
+    isEditor ? 'all' : (staff.default_location_id || deptChips[0]?.id || 'all'))
 
   const itemById = useMemo(() => Object.fromEntries(items.map(i => [i.id, i])), [items])
   const locById  = useMemo(() => Object.fromEntries(allLocations.map(l => [l.id, l])), [allLocations])
@@ -46,11 +54,11 @@ export default function Corrections({ boot }) {
 
   const refresh = useCallback(() => {
     if (canEdit) {
-      loadActivity(staff.branch_id, 14, ownOnly ? staff.id : null)
+      loadActivity(staff.branch_id, 14, ownOnly ? staff.id : null, deptFilter !== 'all' ? deptFilter : null)
         .then(setRows).catch(e => toast(e.message, 'error'))
     }
     if (!ownOnly) loadAudit(staff.branch_id).then(setAudit).catch(() => setAudit([]))
-  }, [staff.branch_id, canEdit, ownOnly, staff.id])
+  }, [staff.branch_id, canEdit, ownOnly, staff.id, deptFilter])
   useEffect(refresh, [refresh])
 
   function describe(r) {
@@ -146,14 +154,16 @@ export default function Corrections({ boot }) {
         placeholder="Search by item, customer, department, or date (YYYY-MM-DD)"
         className="w-full h-12 px-4 mt-1 mb-2 rounded-xl bg-surface border border-line placeholder:text-dim" />
 
-      {view !== 'history' && allLocations.length > 1 && (
+      {view !== 'history' && deptChips.length > 1 && (
         <div className="flex gap-2 overflow-x-auto pb-2 -mx-1 px-1">
-          <button onClick={() => setDeptFilter('all')}
-            className={`shrink-0 h-9 px-3 rounded-full border text-sm ${deptFilter === 'all'
-              ? 'bg-raise border-amber text-amber font-bold' : 'border-line text-dim'}`}>
-            All departments
-          </button>
-          {allLocations.map(l => (
+          {isEditor && (
+            <button onClick={() => setDeptFilter('all')}
+              className={`shrink-0 h-9 px-3 rounded-full border text-sm ${deptFilter === 'all'
+                ? 'bg-raise border-amber text-amber font-bold' : 'border-line text-dim'}`}>
+              All departments
+            </button>
+          )}
+          {deptChips.map(l => (
             <button key={l.id} onClick={() => setDeptFilter(l.id)}
               className={`shrink-0 h-9 px-3 rounded-full border text-sm ${deptFilter === l.id
                 ? 'bg-raise border-amber text-amber font-bold' : 'border-line text-dim'}`}>

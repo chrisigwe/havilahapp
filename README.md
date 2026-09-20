@@ -1625,3 +1625,35 @@ been unnecessary complexity. Wired it into two places: Folio.jsx (a
 guestPay sheet (fetching the fuller breakdown via loadFolio — the
 same function Folio.jsx already calls — since guestPay's own state
 only carries what the payment form itself needs).
+
+
+## Corrections: departmental staff scoped to their own department(s)
+
+Checked the actual current behavior before assuming what was broken —
+Corrections already restricted bar/front_desk staff to their own
+RECORDED entries (via ownOnlyStaffId in loadActivity), which is a
+different axis than department scoping entirely. The real gap: its
+department chips were built from allLocations (every department in
+the branch) with no distinction by role, and defaulted to "All
+departments" for everyone. Harmless for someone with exactly one
+department, but for anyone assigned to more than one (Kate: Minimart
++ Reception), it meant seeing both mixed together by default with no
+way to view one at a time, and chips for departments they've never
+worked in cluttering the picker.
+
+Confirmed the intended scope first rather than guess: still their own
+entries only (unchanged), just correctly filterable to one department
+at a time when they have more than one. Editors (storekeeper and up)
+keep seeing every department with an explicit "All departments"
+option, matching their legitimate oversight role — this only tightens
+scoping for bar/front_desk specifically, using the same
+locations-vs-allLocations distinction Credit.jsx already established.
+Defaults to staff.default_location_id, matching every other
+department-scoped screen in the app.
+
+Wired the location filter into loadActivity's actual query too
+(added the parameter, then used it — a capability sitting unused
+would have been the wrong kind of finished), rather than leave it as
+purely client-side filtering. Kept the client-side filter as well,
+as the same defense against stale, out-of-order responses Credit.jsx
+already relies on for its own department switching.
