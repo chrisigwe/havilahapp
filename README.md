@@ -1823,3 +1823,36 @@ boxes could inherit text-amber from whatever styled them, but a
 four-color mark can't work that way. Removed the now-meaningless
 text-amber class from both places Logo is used (Shell's header,
 Login's screen) rather than leave dead styling sitting there.
+
+
+## Fixed: the update banner structurally could never fire
+
+Traced this rather than guess — browsers detect "a new service
+worker exists" purely by comparing sw.js's own bytes against what's
+already installed. public/sw.js is a static file Vite copies
+unchanged into every build (only the React bundle's own JS/CSS get
+hashed); on a normal feature deploy its bytes were always identical
+to what was already there, so the browser correctly saw "nothing
+changed" and never installed anything new, no matter how much the
+actual app underneath had changed. controllerchange — the event the
+whole update-banner mechanism depended on — could structurally never
+fire from a real deploy. Not a timing issue, not a platform quirk —
+the detection was watching for something that couldn't happen.
+
+Fixed with a small Vite plugin (stampServiceWorker in vite.config.js)
+that rewrites dist/sw.js right after every build, injecting a real
+build timestamp into the cache name. Verified directly, not just
+assumed: ran two builds back to back and confirmed the stamp
+genuinely differs each time, then diffed a normalized dist/sw.js
+against the source to confirm nothing else in the file was touched
+by the regex replacement. This also fixes a second, quieter bug as a
+side effect — the old-cache cleanup in activate() was comparing
+against a cache name that never changed, so it was silently a no-op;
+now that the name is genuinely unique per build, stale caches from
+previous deploys actually get evicted on update, as originally
+intended.
+
+This exact deploy is the first one where sw.js's bytes genuinely
+differ from whatever's currently installed on any device — so this
+push itself should be the first one people's already-open tabs
+actually detect and show the banner for.
