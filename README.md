@@ -1920,3 +1920,36 @@ already designed to expose pre-joined, flat columns directly
 (customer_name, location_name, recovered_by_name) rather than lean on
 PostgREST relationship embedding, so this was an isolated case, not a
 systemic one.
+
+
+## "Billed to" — a stay's payment responsibility, visible from check-in onward
+
+Built for the common case a long-term guest raised directly: one
+guest vouching for a friend/visitor in a separate room, paying at
+month-end. Deliberately free text on stays.bill_to rather than a
+structured link to another stay — the responsible party isn't always
+a hotel guest (a company, a relative not staying here), and a
+structured reference would need to handle that other stay being
+edited or deleted out from under the link. Free text covers every
+real case without that complexity; a structured link can be added
+later if a specific need for it shows up.
+
+Explicitly connected this to the exact lesson from the Alphonso/
+Obitex naming mess earlier in this build: the guest's own name field
+must stay the guest's real name, never "Friend of X" or "Room Y (for
+X)" — that's precisely the pattern that fragmented those two into
+duplicate, hard-to-reconcile records. "Billed to" is a genuinely
+separate field for exactly this purpose, so the relationship is
+recorded without corrupting the name.
+
+Confirmed v_occupancy_today's real definition before touching it
+(had only ever seen its column list before, never its actual SQL) —
+added s.bill_to as the one new column, nothing else changed. Visible
+in three places now: the check-in form itself (optional, plain-text,
+explained inline), Folio's header as a highlighted badge plus its
+edit sheet (can be set or changed anytime during the stay, not just
+at check-in), and Room Board's own room cards. Also extended
+loadGuestBalances (fixed last turn) to surface it on Credit's
+Reception list — the exact place staff would go to see who owes
+money, where knowing "this isn't actually their responsibility" is
+the whole point.

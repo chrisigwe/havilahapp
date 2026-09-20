@@ -108,6 +108,9 @@ export default function RoomBoard({ boot }) {
                     {Number(room.outstanding) < 0 && (
                       <p className="text-leaf text-xs font-semibold mt-0.5">{naira(-room.outstanding)} left</p>
                     )}
+                    {room.bill_to && (
+                      <p className="text-amber text-xs font-semibold mt-0.5 truncate">→ {room.bill_to}</p>
+                    )}
                   </>
                 ) : (
                   <p className="text-dim text-sm mt-2">Ready to let</p>

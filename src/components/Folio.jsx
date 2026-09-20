@@ -136,7 +136,7 @@ export default function Folio({ boot, room, onClose, onChanged }) {
       dailyRate: String(folio?.daily_rate ?? ''),
       billingCycle: folio?.billing_cycle || cycles[0]?.value,
       scheduledOut: folio?.scheduled_out || room.scheduled_out,
-      rateReason: '',
+      rateReason: '', billTo: stay?.bill_to || '',
     })
   }
 
@@ -146,7 +146,7 @@ export default function Folio({ boot, room, onClose, onChanged }) {
       await updateStayDetails({
         stayId: room.stay_id, dailyRate: Number(editing.dailyRate),
         billingCycle: editing.billingCycle, scheduledOut: editing.scheduledOut,
-        rateReason: editing.rateReason,
+        rateReason: editing.rateReason, billTo: editing.billTo.trim(),
       })
       toast('Stay updated', 'success')
       setEditing(null); refresh(); onChanged?.()
@@ -173,6 +173,11 @@ export default function Folio({ boot, room, onClose, onChanged }) {
           Room {room.room_number} · {room.check_in_date} to {folio?.scheduled_out || room.scheduled_out}
           {folio?.nights ? ` · ${folio.nights} night${folio.nights > 1 ? 's' : ''}` : ''}
         </p>
+        {stay?.bill_to && (
+          <p className="mt-2 inline-block px-3 py-1 rounded-full bg-amber/20 border border-amber text-amber text-sm font-semibold">
+            Billed to: {stay.bill_to}
+          </p>
+        )}
         {live && (
           <button onClick={openEdit} className="text-dim text-sm underline mt-1">
             Edit rate, cycle, or dates
@@ -412,6 +417,12 @@ export default function Folio({ boot, room, onClose, onChanged }) {
           <input value={editing.rateReason}
             onChange={e => setEditing(x => ({ ...x, rateReason: e.target.value }))}
             className="mt-1 h-14 w-full px-4 rounded-xl bg-surface border border-line" />
+
+          <label className="block mt-4 text-dim">Billed to (optional)</label>
+          <input value={editing.billTo}
+            onChange={e => setEditing(x => ({ ...x, billTo: e.target.value }))}
+            placeholder="Leave blank if the guest pays their own bill"
+            className="mt-1 h-14 w-full px-4 rounded-xl bg-surface border border-line placeholder:text-dim" />
 
           <button onClick={saveEdit} disabled={busy || !editing.dailyRate || !editing.scheduledOut}
             className="mt-6 w-full h-16 rounded-2xl bg-amber text-bg text-xl font-bold disabled:opacity-40">

@@ -22,6 +22,7 @@ export default function CheckIn({ boot, onDone }) {
   const [scheduledOut, setScheduledOut] = useState(addDays(lagosToday(), 1))
   const [cycle, setCycle] = useState('one_off')
   const [reserve, setReserve] = useState(false)
+  const [billTo, setBillTo] = useState('')
 
   useEffect(() => {
     loadFreeRooms(staff.branch_id).then(setRooms).catch(() => setRooms([]))
@@ -48,7 +49,7 @@ export default function CheckIn({ boot, onDone }) {
       const guestId = await findOrCreateGuest(staff.branch_id, name, phone)
       await createStay({
         staff, guestId, roomId, rateType, dailyRate: rate, reserve,
-        billingCycle: cycle, checkIn, scheduledOut,
+        billingCycle: cycle, checkIn, scheduledOut, billTo: billTo.trim(),
       })
       toast(reserve ? 'Reservation saved' : `Checked in — Room ${room?.room_number}`, 'success')
       onDone?.()
@@ -140,6 +141,18 @@ export default function CheckIn({ boot, onDone }) {
         <input type="checkbox" checked={reserve} onChange={e => setReserve(e.target.checked)} />
         Reservation only — guest has not arrived yet
       </label>
+
+      <div className="mt-4">
+        <div className="text-dim mb-1">Billed to (optional)</div>
+        <input value={billTo} onChange={e => setBillTo(e.target.value)}
+          placeholder="Leave blank if the guest pays their own bill"
+          className="h-14 w-full px-4 rounded-xl bg-surface border border-line placeholder:text-dim" />
+        <p className="text-dim text-sm mt-1">
+          If someone else is responsible for this bill — a long-term guest vouching
+          for a visitor, a company, a relative — note it here so it's visible from
+          check-in, not just discoverable later in a payment note.
+        </p>
+      </div>
 
       {room && nights > 0 && (
         <div className="mt-4 flex items-baseline justify-between rounded-xl bg-surface border border-line px-4 py-3">

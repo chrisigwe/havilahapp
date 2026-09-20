@@ -284,6 +284,9 @@ export default function Credit({ boot }) {
                     className="flex-1 min-w-0 text-left">
                     <div className="font-semibold truncate">{g.guest_name || 'Guest'}</div>
                     <div className="text-dim text-sm">Room {g.room_number}</div>
+                    {g.bill_to && (
+                      <div className="text-amber text-sm font-semibold">→ Billed to {g.bill_to}</div>
+                    )}
                   </button>
                   <span className="tnum font-bold text-clay">{naira(g.outstanding)}</span>
                 </li>

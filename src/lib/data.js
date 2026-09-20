@@ -854,13 +854,13 @@ export async function findOrCreateGuest(branchId, name, phone) {
 }
 
 export async function createStay({ staff, guestId, roomId, rateType, dailyRate,
-                                    reserve, billingCycle, checkIn, scheduledOut }) {
+                                    reserve, billingCycle, checkIn, scheduledOut, billTo }) {
   const { error } = await supabase.from('stays').insert({
     branch_id: staff.branch_id, guest_id: guestId, room_id: roomId,
     rate_applied: rateType, daily_rate: dailyRate,
     status: reserve ? 'reserved' : 'occupied',
     billing_cycle: billingCycle, check_in_date: checkIn, scheduled_out: scheduledOut,
-    created_by: staff.id,
+    created_by: staff.id, bill_to: billTo || null,
   })
   if (error) throw error
 }
@@ -888,7 +888,7 @@ export async function loadFolio(stayId) {
     // v_stay_folio has daily_rate/billing_cycle but not the raw
     // overstay_fee or rate_applied (the rate type) — both needed to
     // pre-fill the editing form correctly.
-    supabase.from('stays').select('overstay_fee, rate_applied').eq('id', stayId).maybeSingle(),
+    supabase.from('stays').select('overstay_fee, rate_applied, bill_to').eq('id', stayId).maybeSingle(),
   ])
   if (e1) throw e1
   if (e2) throw e2
@@ -954,10 +954,10 @@ export async function searchRecentCheckouts(branchId, query) {
 // Deliberately minimal, same reasoning as reopenStay — the trigger
 // (stamp_rate_adjustment) stamps who and when on its own if daily_rate
 // changed; sending it here would just be overwritten.
-export async function updateStayDetails({ stayId, dailyRate, billingCycle, scheduledOut, rateReason }) {
+export async function updateStayDetails({ stayId, dailyRate, billingCycle, scheduledOut, rateReason, billTo }) {
   const { error } = await supabase.from('stays').update({
     daily_rate: dailyRate, billing_cycle: billingCycle,
-    scheduled_out: scheduledOut, rate_reason: rateReason || null,
+    scheduled_out: scheduledOut, rate_reason: rateReason || null, bill_to: billTo || null,
   }).eq('id', stayId)
   if (error) throw error
 }
@@ -1045,7 +1045,7 @@ export async function loadGuestBalances(branchId) {
   if (!folios?.length) return []
 
   const { data: stays, error: e2 } = await supabase.from('stays')
-    .select('id, rooms(room_number), guests(full_name)')
+    .select('id, bill_to, rooms(room_number), guests(full_name)')
     .in('id', folios.map(f => f.stay_id))
   if (e2) throw e2
   const stayById = Object.fromEntries((stays || []).map(s => [s.id, s]))
@@ -1055,6 +1055,7 @@ export async function loadGuestBalances(branchId) {
       stay_id: f.stay_id, billing_cycle: f.billing_cycle, outstanding: Number(f.outstanding),
       room_number: stayById[f.stay_id]?.rooms?.room_number,
       guest_name: stayById[f.stay_id]?.guests?.full_name,
+      bill_to: stayById[f.stay_id]?.bill_to,
     }))
     .sort((a, b) => b.outstanding - a.outstanding)
 }
