@@ -1671,3 +1671,28 @@ the day-groupings there were already right without any change needed.
 Since every department's Credit view calls the same loadBalances
 function, this one fix applies uniformly across all of them, not just
 whichever department happened to be selected.
+
+
+## Edit and delete for room-charge orders
+
+Folio's Orders section was purely read-only until now. Added Edit for
+description/qty/unit price and Delete, with the exact permission
+split requested: Delete is GM/admin only; Edit is available to that
+same pair OR whoever originally placed the order (orders.served_by),
+for self-correction — mirrors the existing pattern in Corrections
+where the person who recorded something can fix their own mistake but
+only editors can remove entries outright. Deliberately left off a
+time-window restriction here, unlike Corrections' today/yesterday
+limit — a room charge can belong to a stay spanning several nights,
+so restricting self-correction to "yesterday" would have been wrong
+for this specific context.
+
+No new stock logic needed — sync_order_item_stock_movement (built
+when room charges first shipped) already handles update and delete
+symmetrically on its own. Delete also cleans up the parent order if
+the deleted line was its only item, since every order/order_item pair
+here is 1:1 — otherwise a single-item delete would leave an empty,
+orphaned order behind.
+
+loadFolio now selects served_by on orders (needed for the permission
+check) — wasn't fetched before since nothing used it.

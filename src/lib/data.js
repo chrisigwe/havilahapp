@@ -871,7 +871,7 @@ export async function loadFolio(stayId) {
   const [{ data: orders, error: e1 }, { data: payments, error: e2 }, { data: folio, error: e3 },
          { data: stay, error: e4 }] = await Promise.all([
     supabase.from('orders')
-      .select('id, business_date, order_items(id, category, description, qty, unit_price, amount)')
+      .select('id, business_date, served_by, order_items(id, category, description, qty, unit_price, amount)')
       .eq('stay_id', stayId).order('business_date', { ascending: false }),
     supabase.from('payments')
       .select('id, business_date, method, amount, is_overstay, remark')
@@ -1046,4 +1046,30 @@ export async function loadRoomPayments(branchId, days = 60) {
     .order('business_date', { ascending: false })
   if (error) throw error
   return data || []
+}
+
+// ---------- Editing/deleting a room-charge order line ----------
+// No new stock logic needed — sync_order_item_stock_movement (built
+// when room charges were first added) already handles update/delete
+// symmetrically, adjusting or removing the associated stock movement
+// on its own. Delete also cleans up the parent order if this was its
+// only line, so a single-item order doesn't leave an empty orphan
+// behind — every order/order_item pair here is 1:1, matching how the
+// front-desk app itself always created them.
+
+export async function updateOrderItem(orderItemId, patch) {
+  const { error } = await supabase.from('order_items').update(patch).eq('id', orderItemId)
+  if (error) throw error
+}
+
+export async function deleteOrderItem(orderItemId, orderId) {
+  const { error: e1 } = await supabase.from('order_items').delete().eq('id', orderItemId)
+  if (e1) throw e1
+  const { data: remaining, error: e2 } = await supabase.from('order_items')
+    .select('id').eq('order_id', orderId).limit(1)
+  if (e2) throw e2
+  if (!remaining?.length) {
+    const { error: e3 } = await supabase.from('orders').delete().eq('id', orderId)
+    if (e3) throw e3
+  }
 }

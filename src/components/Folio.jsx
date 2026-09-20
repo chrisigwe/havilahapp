@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react'
 import { naira, lagosToday, cyclesFor, nightsBetween, friendlyStayError } from '../lib/format'
 import { loadFolio, loadBranchStaySettings, recordStayPayment, checkOutStay,
-         reopenStay, updateStayDetails, updateOverstayFee, deleteStay } from '../lib/data'
+         reopenStay, updateStayDetails, updateOverstayFee, deleteStay,
+         updateOrderItem, deleteOrderItem } from '../lib/data'
 import { useToast } from '../components/Toast'
 import PaymentMethodPicker, { paymentParts, paymentAllocated } from './PaymentMethodPicker'
 import FolioStatement from './FolioStatement'
@@ -20,6 +21,9 @@ export default function Folio({ boot, room, onClose, onChanged }) {
   const [editing, setEditing] = useState(null)   // { dailyRate, billingCycle, scheduledOut, rateReason } while open
   const [overstayDraft, setOverstayDraft] = useState(null)   // amount string while editing
   const [confirmingDelete, setConfirmingDelete] = useState(false)
+  const [editingLine, setEditingLine] = useState(null)   // the order line being edited
+  const [lineDraft, setLineDraft] = useState(null)
+  const [deletingLine, setDeletingLine] = useState(null)  // the order line pending delete confirmation
   const [printing, setPrinting] = useState(false)
   const [busy, setBusy] = useState(false)
 
@@ -39,7 +43,8 @@ export default function Folio({ boot, room, onClose, onChanged }) {
   const { orders, payments, folio, stay } = data
   const outstanding = Number(folio?.outstanding ?? 0)
   const live = ['reserved', 'occupied'].includes(room.status) && !!room.stay_id
-  const orderLines = orders.flatMap(o => (o.order_items || []).map(li => ({ ...li, date: o.business_date })))
+  const orderLines = orders.flatMap(o => (o.order_items || [])
+    .map(li => ({ ...li, date: o.business_date, servedBy: o.served_by, orderId: o.id })))
   const payParts = paymentParts(pay, pay.amount)
   const payAllocated = paymentAllocated(pay, pay.amount)
   const cycles = cyclesFor(branchSettings?.allowedCycles)
@@ -96,6 +101,33 @@ export default function Folio({ boot, room, onClose, onChanged }) {
       toast('Booking deleted', 'success')
       onChanged?.(); onClose()
     } catch (e) { toast(friendlyStayError(e), 'error') }
+    setBusy(false)
+  }
+
+  function openEditLine(li) {
+    setEditingLine(li)
+    setLineDraft({ description: li.description, qty: String(li.qty), unitPrice: String(li.unit_price) })
+  }
+
+  async function saveEditLine() {
+    setBusy(true)
+    try {
+      await updateOrderItem(editingLine.id, {
+        description: lineDraft.description, qty: Number(lineDraft.qty), unit_price: Number(lineDraft.unitPrice),
+      })
+      toast('Order updated', 'success')
+      setEditingLine(null); refresh(); onChanged?.()
+    } catch (e) { toast('Not saved: ' + e.message, 'error') }
+    setBusy(false)
+  }
+
+  async function doDeleteLine() {
+    setBusy(true)
+    try {
+      await deleteOrderItem(deletingLine.id, deletingLine.orderId)
+      toast('Order removed', 'success')
+      setDeletingLine(null); refresh(); onChanged?.()
+    } catch (e) { toast('Not deleted: ' + e.message, 'error') }
     setBusy(false)
   }
 
@@ -245,12 +277,33 @@ export default function Folio({ boot, room, onClose, onChanged }) {
             <div className="text-dim mb-2">Orders</div>
             <ul className="divide-y divide-line/60 rounded-2xl border border-line bg-surface px-4">
               {orderLines.map(li => (
-                <li key={li.id} className="py-3 flex items-center gap-3">
-                  <div className="flex-1 min-w-0">
-                    <div className="truncate">{li.description}</div>
-                    <div className="text-dim text-sm">{li.date} · {li.qty} × {naira(li.unit_price)}</div>
+                <li key={li.id} className="py-3">
+                  <div className="flex items-center gap-3">
+                    <div className="flex-1 min-w-0">
+                      <div className="truncate">{li.description}</div>
+                      <div className="text-dim text-sm">{li.date} · {li.qty} × {naira(li.unit_price)}</div>
+                    </div>
+                    <span className="tnum font-semibold">{naira(li.amount)}</span>
                   </div>
-                  <span className="tnum font-semibold">{naira(li.amount)}</span>
+                  {(() => {
+                    const canDelete = ['gm', 'admin'].includes(staff.role)
+                    const canEdit = canDelete || li.servedBy === staff.id
+                    if (!canEdit) return null
+                    return (
+                      <div className="flex gap-2 mt-2">
+                        <button onClick={() => openEditLine(li)}
+                          className="h-9 px-3 rounded-lg border border-line text-sm font-semibold">
+                          Edit
+                        </button>
+                        {canDelete && (
+                          <button onClick={() => setDeletingLine(li)}
+                            className="h-9 px-3 rounded-lg border border-clay text-clay text-sm font-semibold">
+                            Delete
+                          </button>
+                        )}
+                      </div>
+                    )
+                  })()}
                 </li>
               ))}
             </ul>
@@ -370,6 +423,51 @@ export default function Folio({ boot, room, onClose, onChanged }) {
             {busy ? 'Deleting…' : 'Delete booking'}
           </button>
           <button onClick={() => setConfirmingDelete(false)} className="mt-3 w-full h-12 text-dim">Cancel</button>
+        </div>
+      )}
+
+      {editingLine && (
+        <div className="fixed inset-0 z-[60] bg-bg flex flex-col justify-center px-6">
+          <h2 className="text-2xl font-bold">Edit this order</h2>
+
+          <label className="block mt-6 text-dim">Description</label>
+          <input value={lineDraft.description}
+            onChange={e => setLineDraft(d => ({ ...d, description: e.target.value }))}
+            className="mt-2 h-14 w-full px-4 rounded-xl bg-surface border border-line" />
+
+          <label className="block mt-4 text-dim">Quantity</label>
+          <input type="number" inputMode="decimal" value={lineDraft.qty}
+            onChange={e => setLineDraft(d => ({ ...d, qty: e.target.value }))}
+            className="mt-2 h-14 w-full px-4 rounded-xl bg-surface border border-line tnum" />
+
+          <label className="block mt-4 text-dim">Unit price</label>
+          <input type="number" inputMode="decimal" value={lineDraft.unitPrice}
+            onChange={e => setLineDraft(d => ({ ...d, unitPrice: e.target.value }))}
+            className="mt-2 h-14 w-full px-4 rounded-xl bg-surface border border-line tnum" />
+
+          <button onClick={saveEditLine} disabled={busy || !lineDraft.description.trim() || !lineDraft.qty}
+            className="mt-8 w-full h-16 rounded-2xl bg-amber text-bg text-xl font-bold disabled:opacity-40">
+            {busy ? 'Saving…' : 'Save changes'}
+          </button>
+          <button onClick={() => setEditingLine(null)} className="mt-3 w-full h-12 text-dim">Cancel</button>
+        </div>
+      )}
+
+      {deletingLine && (
+        <div className="fixed inset-0 z-[60] bg-bg flex flex-col justify-center px-6">
+          <h2 className="text-2xl font-bold">Delete this order?</h2>
+          <p className="text-dim mt-2">
+            {deletingLine.description} — {deletingLine.qty} × {naira(deletingLine.unit_price)}
+          </p>
+          <p className="text-dim text-sm mt-2">
+            Removes this charge from the guest's bill and reverses any stock it
+            deducted. This cannot be undone.
+          </p>
+          <button onClick={doDeleteLine} disabled={busy}
+            className="mt-8 w-full h-16 rounded-2xl bg-clay text-bg text-xl font-bold disabled:opacity-40">
+            {busy ? 'Deleting…' : 'Delete order'}
+          </button>
+          <button onClick={() => setDeletingLine(null)} className="mt-3 w-full h-12 text-dim">Cancel</button>
         </div>
       )}
     </div>
