@@ -1,4 +1,4 @@
-// Havilah Inventory service worker.
+// Havilah App service worker.
 // Deliberately conservative: it makes the app launch reliably and
 // survive brief connection drops, but NEVER caches live data
 // (Supabase API calls, auth) — those always go to the network so

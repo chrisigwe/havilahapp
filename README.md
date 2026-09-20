@@ -1769,3 +1769,57 @@ Shown with a small colored tag (PR/Damage in clay, Staff in amber)
 everywhere a restaurant order appears — Sales' Today list, the
 room-charge summary, and Folio's order lines — so a write-off is
 never visually indistinguishable from a normal paid order.
+
+
+## Auto-update, and renaming to Havilah App
+
+Auto-update: checked the existing service worker first rather than
+assume what was missing — it was already well-designed for fetching
+fresh content (network-first, skipWaiting() on install), but nothing
+told an already-open tab to actually pick up a new version once
+installed. That's the real gap staff would have hit: leave the app
+open for a shift and silently keep running old code.
+
+Deliberately didn't build a forced silent reload — that risks losing
+someone's half-built sales basket or an open sheet mid-task, which is
+a real cost, not a hypothetical one. Built the safer version instead:
+swUpdate.js actively checks for a new version every 5 minutes (a
+long-open tab can't rely on the browser's own infrequent background
+checks) and detects the moment a new version has actually taken
+over, notifying UpdateBanner — a small one-tap "new version ready"
+banner, matching PendingBanner's exact existing pattern, so this
+class of notification stays consistent app-wide.
+
+Renamed user-facing branding from "Havilah Inventory" to "Havilah
+App" everywhere it appeared: the login screen, the browser tab title,
+and the PWA manifest (what shows on a home screen once installed).
+Deliberately left package.json's internal name and the deployed
+folder/repo name untouched — renaming those has real consequences
+(the Netlify site URL, git remotes) that weren't part of what was
+asked, and changing them silently could break your existing
+deployment setup.
+
+
+## Icon set: Concept D (Suite Grid), full production set
+
+Generated every required size from the chosen concept: icon.svg
+(rounded tile), icon-192/512.png, icon-maskable.svg and its 512px PNG
+(full-bleed, same safe-zone-shrink convention the original icon
+already used), apple-touch-icon.png at 180px (Apple's current
+standard). Verified the 512px and maskable renders visually before
+finalizing, not just trusted the rasterization blindly.
+
+Caught one detail that would have quietly broken: index.html's
+mask-icon (Safari's pinned-tab feature) requires a genuinely
+monochrome silhouette — the browser fills the whole shape with one
+color, ignoring anything else in the file. The new four-color icon
+would have rendered wrong there. Built mask-icon.svg as a proper
+single-color variant specifically for that one purpose, rather than
+point Safari at an SVG it can't use correctly.
+
+Logo.jsx (the in-app header mark) now bakes its four colors in
+directly rather than using currentColor — the original single-tone
+boxes could inherit text-amber from whatever styled them, but a
+four-color mark can't work that way. Removed the now-meaningless
+text-amber class from both places Logo is used (Shell's header,
+Login's screen) rather than leave dead styling sitting there.

@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { supabase } from '../lib/supabase'
 import Logo from './Logo'
 import PendingBanner from './PendingBanner'
+import UpdateBanner from './UpdateBanner'
 
 const STOCK_ROLES = ['storekeeper', 'manager', 'gm', 'admin']
 
@@ -23,7 +24,7 @@ export default function Shell({ staff, tab, onTab, children,
     <div className="min-h-dvh pb-24">
       <header className="px-5 pt-5 pb-3 flex items-center justify-between gap-3">
         <div className="flex items-center gap-2 min-w-0">
-          <Logo className="w-5 h-5 shrink-0 text-amber" />
+          <Logo className="w-5 h-5 shrink-0" />
           <span className="font-bold text-lg shrink-0">Havilah</span>
           <span className="text-dim text-sm truncate">· {staff.full_name}</span>
         </div>
@@ -43,6 +44,7 @@ export default function Shell({ staff, tab, onTab, children,
         </div>
       </header>
       <PendingBanner />
+      <UpdateBanner />
       {children}
       {confirmingSignOut && (
         <div className="fixed inset-0 z-[70] bg-bg flex flex-col justify-center px-6">

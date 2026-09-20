@@ -18,9 +18,9 @@ export default function Login() {
   return (
     <div className="min-h-dvh flex flex-col justify-center px-6 max-w-sm mx-auto">
       <div className="flex items-center gap-4">
-        <Logo className="w-14 h-14 shrink-0 text-amber" />
+        <Logo className="w-14 h-14 shrink-0" />
         <h1 className="text-[2.3rem] leading-none font-bold tracking-tight">
-          Havilah<span className="text-amber"> Inventory</span>
+          Havilah<span className="text-amber"> App</span>
         </h1>
       </div>
       <p className="mt-2 text-dim">Sign in to record sales and stock.</p>

@@ -2,17 +2,12 @@ import React from 'react'
 import { createRoot } from 'react-dom/client'
 import './index.css'
 import App from './App.jsx'
+import { initServiceWorker } from './lib/swUpdate'
 createRoot(document.getElementById('root')).render(<App />)
 
-// Register the service worker so the app shell loads reliably and
-// survives brief connection drops. It never caches live data (see
-// sw.js) — Supabase calls always hit the network. Registered after
-// load so it never delays first paint.
-if ('serviceWorker' in navigator) {
-  window.addEventListener('load', () => {
-    navigator.serviceWorker.register('/sw.js').catch(() => {
-      // registration failing is non-fatal — the app works without it,
-      // just without offline shell caching
-    })
-  })
-}
+// Registered after load so it never delays first paint. See
+// swUpdate.js for the full update-detection story — the service
+// worker itself makes the app shell load reliably and survive brief
+// connection drops, and never caches live data (Supabase calls
+// always hit the network).
+initServiceWorker()
