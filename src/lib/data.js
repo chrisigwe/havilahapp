@@ -361,7 +361,9 @@ export async function loadBalances(branchId, locationId, staffId) {
     .eq('branch_id', branchId)
   if (locationId) q = q.eq('location_id', locationId)
   if (staffId) q = q.eq('staff_id', staffId)
-  const { data, error } = await q.order('balance', { ascending: false })
+  // Most recent credit activity first — applies uniformly across
+  // every department's view, since they all call this same function.
+  const { data, error } = await q.order('last_credit_date', { ascending: false })
   if (error) throw error
   return data
 }

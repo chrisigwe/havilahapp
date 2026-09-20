@@ -1657,3 +1657,17 @@ would have been the wrong kind of finished), rather than leave it as
 purely client-side filtering. Kept the client-side filter as well,
 as the same defense against stale, out-of-order responses Credit.jsx
 already relies on for its own department switching.
+
+
+## Credit page: newest activity first
+
+loadBalances (the "Owed to [department]" list) was sorted by balance
+amount, not by date, despite each row already showing
+last_credit_date. Changed to order by last_credit_date descending.
+Checked Recovery's two queries too, since dates matter there just as
+much — both were already correctly newest-first, and since they get
+grouped into a Map afterward, JS preserves that insertion order, so
+the day-groupings there were already right without any change needed.
+Since every department's Credit view calls the same loadBalances
+function, this one fix applies uniformly across all of them, not just
+whichever department happened to be selected.
