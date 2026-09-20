@@ -1,6 +1,6 @@
 {
   "name": "Havilah App",
-  "short_name": "Havilah",
+  "short_name": "Havilah App",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",

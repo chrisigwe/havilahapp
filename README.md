@@ -1856,3 +1856,17 @@ This exact deploy is the first one where sw.js's bytes genuinely
 differ from whatever's currently installed on any device — so this
 push itself should be the first one people's already-open tabs
 actually detect and show the banner for.
+
+
+## Fixed: iPhone Add-to-Home-Screen label still said "Havilah"
+
+Found the actual cause rather than guess — iOS Safari has its own
+dedicated meta tag for this (apple-mobile-web-app-title), separate
+from and taking priority over the web manifest entirely. It was
+still set to "Havilah" from before the rename — updated the web
+manifest's name/short_name at the time but missed this iOS-specific
+one. Fixed it, and matched manifest.webmanifest's short_name too so
+Android's home-screen label is consistent with it. Swept the whole
+project afterward for any other bare "Havilah" (without "App") in
+every HTML/manifest/JSON file, rather than assume this was the only
+spot — confirmed clean.
