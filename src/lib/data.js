@@ -543,6 +543,14 @@ export async function updateRepayment(id, patch) {
   if (error) throw error
 }
 
+// Deleting one — narrower than editing: Admin/GM only, enforced by
+// its own RLS policy (repay_remove), confirmed and narrowed
+// specifically for this rather than assumed to already match.
+export async function deleteRepayment(id) {
+  const { error } = await supabase.from('credit_repayments').delete().eq('id', id)
+  if (error) throw error
+}
+
 export async function saveMovements(rows) {
   const { error } = await supabase.from('stock_movements').insert(rows)
   if (error) throw error

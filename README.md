@@ -1870,3 +1870,25 @@ Android's home-screen label is consistent with it. Swept the whole
 project afterward for any other bare "Havilah" (without "App") in
 every HTML/manifest/JSON file, rather than assume this was the only
 spot — confirmed clean.
+
+
+## Recovered Debt: delete button for customer repayments, Admin/GM only
+
+Checked the real current state first — Recovery already had a delete
+button, but only for room payments (Reception); regular customer
+repayments (OpenBar/MainBar/Minimart/Restaurant) had Edit but no
+Delete at all. That was the actual gap.
+
+Also checked RLS before touching anything rather than assume it
+matched: a DELETE policy (repay_remove) already existed on
+credit_repayments, but was scoped to app_is_editor() — confirmed as
+storekeeper/manager/gm/admin, genuinely broader than "Admin and GM
+only." Narrowed it to admin/gm specifically, in the same inline style
+the table's own UPDATE policy already uses, rather than leave the
+database permitting more than what was actually asked for.
+
+App side mirrors the existing room-payment delete exactly — same
+confirm-sheet pattern, same shared busy state — with wording specific
+to this context (a customer's balance going back up, not a training
+disclaimer) since this is for correcting a real mistake, not cleaning
+up practice entries.

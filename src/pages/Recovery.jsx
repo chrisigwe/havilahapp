@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { naira, methodLabel, lagosToday } from '../lib/format'
-import { loadRecovery, updateRepayment, loadRoomPayments, deleteRoomPayment } from '../lib/data'
+import { loadRecovery, updateRepayment, deleteRepayment, loadRoomPayments, deleteRoomPayment } from '../lib/data'
 import { useToast } from '../components/Toast'
 
 // Deliberately excludes storekeeper — an explicit choice, not an
@@ -21,7 +21,9 @@ export default function Recovery({ boot }) {
   const isReception = /reception/i.test(salesPoints.find(l => l.id === locId)?.name || '')
   const [roomPayments, setRoomPayments] = useState(null)
   const canDeleteRoomPayment = ['gm', 'admin'].includes(staff.role)
+  const canDeleteRepayment = ['gm', 'admin'].includes(staff.role)
   const [deletingRoomPayment, setDeletingRoomPayment] = useState(null)
+  const [deletingRepayment, setDeletingRepayment] = useState(null)
   const [deleteBusy, setDeleteBusy] = useState(false)
 
   async function doDeleteRoomPayment() {
@@ -30,6 +32,16 @@ export default function Recovery({ boot }) {
       await deleteRoomPayment(deletingRoomPayment.id)
       toast('Payment removed', 'success')
       setDeletingRoomPayment(null); refreshRoomPayments()
+    } catch (e) { toast('Not deleted: ' + e.message, 'error') }
+    setDeleteBusy(false)
+  }
+
+  async function doDeleteRepayment() {
+    setDeleteBusy(true)
+    try {
+      await deleteRepayment(deletingRepayment.id)
+      toast('Payment removed', 'success')
+      setDeletingRepayment(null); refresh()
     } catch (e) { toast('Not deleted: ' + e.message, 'error') }
     setDeleteBusy(false)
   }
@@ -165,6 +177,12 @@ export default function Recovery({ boot }) {
                   </div>
                 )}
                 {r.note && <div className="text-dim text-sm">{r.note}</div>}
+                {canDeleteRepayment && (
+                  <button onClick={() => setDeletingRepayment(r)}
+                    className="mt-1.5 h-8 px-3 rounded-lg border border-clay text-clay text-sm font-semibold">
+                    Delete
+                  </button>
+                )}
               </li>
             ))}
           </ul>
@@ -290,6 +308,24 @@ export default function Recovery({ boot }) {
             {deleteBusy ? 'Deleting…' : 'Delete payment'}
           </button>
           <button onClick={() => setDeletingRoomPayment(null)} className="mt-3 w-full h-12 text-dim">Cancel</button>
+        </div>
+      )}
+
+      {deletingRepayment && (
+        <div className="fixed inset-0 z-50 bg-bg flex flex-col justify-center px-6">
+          <h2 className="text-2xl font-bold">Delete this payment?</h2>
+          <p className="text-dim mt-2">
+            {deletingRepayment.customer_name} · {naira(deletingRepayment.amount)}
+          </p>
+          <p className="text-dim text-sm mt-2">
+            Removes this repayment permanently — the customer's outstanding balance
+            goes back up by this amount. This cannot be undone.
+          </p>
+          <button onClick={doDeleteRepayment} disabled={deleteBusy}
+            className="mt-6 w-full h-14 rounded-2xl bg-clay text-bg text-lg font-bold disabled:opacity-40">
+            {deleteBusy ? 'Deleting…' : 'Delete payment'}
+          </button>
+          <button onClick={() => setDeletingRepayment(null)} className="mt-3 w-full h-12 text-dim">Cancel</button>
         </div>
       )}
     </div>
