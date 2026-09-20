@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { naira, lagosToday, tierLabel, methodLabel, whoRecorded, paymentSummary } from '../lib/format'
-import { loadDailyFinancials, loadToday } from '../lib/data'
+import { loadDailyFinancials, loadToday, loadReceptionActivity } from '../lib/data'
 import { useToast } from '../components/Toast'
 
 // Read-only — browse any past day's sales by department. Built for
@@ -17,16 +17,22 @@ export default function DailySales({ boot }) {
   const [locId, setLocId] = useState('all')
   const [summary, setSummary] = useState(null)
   const [rows, setRows] = useState(null)
+  const [receptionActivity, setReceptionActivity] = useState(null)
 
   const itemById = useMemo(() => Object.fromEntries(items.map(i => [i.id, i])), [items])
   const locById = useMemo(() => Object.fromEntries(salesPoints.map(l => [l.id, l])), [salesPoints])
+  const isReception = /reception/i.test(salesPoints.find(l => l.id === locId)?.name || '')
 
   const refresh = useCallback(() => {
     const loc = locId === 'all' ? null : locId
-    setSummary(null); setRows(null)
+    setSummary(null); setRows(null); setReceptionActivity(null)
+    if (isReception) {
+      loadReceptionActivity(staff.branch_id, date).then(setReceptionActivity).catch(e => toast(e.message, 'error'))
+      return
+    }
     loadDailyFinancials(staff.branch_id, date, loc).then(setSummary).catch(e => toast(e.message, 'error'))
     loadToday(staff.branch_id, date, loc).then(setRows).catch(e => toast(e.message, 'error'))
-  }, [staff.branch_id, date, locId])
+  }, [staff.branch_id, date, locId, isReception])
   useEffect(refresh, [refresh])
 
   const total = (rows || []).reduce((s, r) => s + Number(r.amount ?? r.qty * r.unit_price), 0)
@@ -54,6 +60,40 @@ export default function DailySales({ boot }) {
         </div>
       )}
 
+      {isReception ? (
+        <>
+          <div className="flex items-baseline justify-between mt-4">
+            <h2 className="text-dim">
+              {receptionActivity?.length || 0} payment{receptionActivity?.length === 1 ? '' : 's'}
+            </h2>
+            <span className="tnum font-bold">
+              {naira((receptionActivity || []).reduce((s, p) => s + Number(p.amount || 0), 0))}
+            </span>
+          </div>
+          <ul className="mt-2 divide-y divide-line/60">
+            {(receptionActivity || []).map(p => (
+              <li key={p.id} className="py-3 flex items-center gap-3">
+                <div className="flex-1 min-w-0">
+                  <div className="font-semibold truncate">
+                    {p.stays?.guests?.full_name || 'Guest'} · Room {p.stays?.rooms?.room_number || '—'}
+                  </div>
+                  <div className="text-dim text-sm">
+                    {methodLabel[p.method] || p.method}{p.is_overstay ? ' · over-stay' : ''}
+                    {p.staff?.full_name && ` · collected by ${p.staff.full_name}`}
+                    {p.remark ? ` · ${p.remark}` : ''}
+                  </div>
+                </div>
+                <span className="tnum font-semibold">{naira(p.amount)}</span>
+              </li>
+            ))}
+            {receptionActivity && !receptionActivity.length && (
+              <li className="py-8 text-center text-dim">No payments that day.</li>
+            )}
+            {!receptionActivity && <li className="py-8 text-center text-dim">Loading…</li>}
+          </ul>
+        </>
+      ) : (
+      <>
       {summary && (
         <div className="mt-2 rounded-2xl border border-amber bg-surface p-4">
           <div className="grid grid-cols-3 gap-3 pb-3 mb-3 border-b border-line">
@@ -128,6 +168,8 @@ export default function DailySales({ boot }) {
         {rows && !rows.length && <li className="py-8 text-center text-dim">No sales that day.</li>}
         {!rows && <li className="py-8 text-center text-dim">Loading…</li>}
       </ul>
+      </>
+      )}
     </div>
   )
 }

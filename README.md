@@ -1892,3 +1892,31 @@ confirm-sheet pattern, same shared busy state — with wording specific
 to this context (a customer's balance going back up, not a training
 disclaimer) since this is for correcting a real mistake, not cleaning
 up practice entries.
+
+
+## Fixed: Credit's Reception tab was silently empty for everyone
+
+Found the real cause rather than accept my own earlier "this already
+works" claim once the user reported otherwise — loadGuestBalances
+tried to embed stays!inner(...) directly from v_stay_folio. That
+embedding mechanism only works when PostgREST can find a real foreign
+key to follow, and v_stay_folio is a view — views don't have foreign
+keys. This almost certainly broke for every guest, silently, since
+Credit.jsx's own .catch(() => setGuestBalances([])) swallowed
+whatever error resulted and just showed an empty list with no
+indication anything had failed.
+
+Fixed by splitting into two plain queries and merging client-side:
+v_stay_folio for the outstanding figures (no embedding, just flat
+columns), then stays — a real table, where the embed to rooms/guests
+works correctly — for just the matching stay ids. Same safe pattern
+loadFolio already uses elsewhere in this codebase for exactly this
+reason.
+
+Swept every other view query in the file afterward to check whether
+this was a repeated pattern — it wasn't. Every other view (v_debt_
+recovery, v_customer_balances_by_staff, v_sale_variances, etc.) was
+already designed to expose pre-joined, flat columns directly
+(customer_name, location_name, recovered_by_name) rather than lean on
+PostgREST relationship embedding, so this was an isolated case, not a
+systemic one.

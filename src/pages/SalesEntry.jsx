@@ -452,6 +452,7 @@ export default function SalesEntry({ boot }) {
                   </div>
                   <div className="text-dim text-sm">
                     {methodLabel[p.method] || p.method}{p.is_overstay ? ' · over-stay' : ''}
+                    {p.staff?.full_name && ` · collected by ${p.staff.full_name}`}
                     {p.remark ? ` · ${p.remark}` : ''}
                   </div>
                 </div>

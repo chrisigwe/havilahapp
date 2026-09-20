@@ -978,7 +978,8 @@ export async function updateOverstayFee(stayId, amount) {
 // and room for display, same way the folio itself shows a payment.
 export async function loadReceptionActivity(branchId, date) {
   const { data, error } = await supabase.from('payments')
-    .select(`id, method, amount, is_overstay, remark, created_at,
+    .select(`id, method, amount, is_overstay, remark, created_at, received_by,
+             staff:received_by(full_name),
              stays(id, rooms(room_number), guests(full_name))`)
     .eq('branch_id', branchId).eq('business_date', date)
     .order('created_at', { ascending: false })
@@ -1029,17 +1030,33 @@ export async function updateBranchOverstayDefault(branchId, amount) {
 // let those two screens represent it without merging two genuinely
 // different data models into one query.
 
+// v_stay_folio is a view, not a table — it has no foreign keys, so
+// PostgREST's embedded-relationship syntax (stays!inner(...)) has no
+// real path to follow from it. That silently broke this for every
+// guest, not just one — confirmed directly, not assumed. Fixed by
+// querying the view for the outstanding figures alone, then stays
+// (a real table, so its own embed to rooms/guests works correctly)
+// for just those stay ids, and merging client-side.
 export async function loadGuestBalances(branchId) {
-  const { data, error } = await supabase.from('v_stay_folio')
-    .select(`stay_id, branch_id, billing_cycle, outstanding,
-             stays!inner(room_id, guest_id, rooms(room_number), guests(full_name))`)
+  const { data: folios, error: e1 } = await supabase.from('v_stay_folio')
+    .select('stay_id, billing_cycle, outstanding')
     .eq('branch_id', branchId).gt('outstanding', 0.009)
-    .order('outstanding', { ascending: false })
-  if (error) throw error
-  return (data || []).map(r => ({
-    stay_id: r.stay_id, billing_cycle: r.billing_cycle, outstanding: Number(r.outstanding),
-    room_number: r.stays?.rooms?.room_number, guest_name: r.stays?.guests?.full_name,
-  }))
+  if (e1) throw e1
+  if (!folios?.length) return []
+
+  const { data: stays, error: e2 } = await supabase.from('stays')
+    .select('id, rooms(room_number), guests(full_name)')
+    .in('id', folios.map(f => f.stay_id))
+  if (e2) throw e2
+  const stayById = Object.fromEntries((stays || []).map(s => [s.id, s]))
+
+  return folios
+    .map(f => ({
+      stay_id: f.stay_id, billing_cycle: f.billing_cycle, outstanding: Number(f.outstanding),
+      room_number: stayById[f.stay_id]?.rooms?.room_number,
+      guest_name: stayById[f.stay_id]?.guests?.full_name,
+    }))
+    .sort((a, b) => b.outstanding - a.outstanding)
 }
 
 // Recent room payments across the branch — Recovery's Reception view,
