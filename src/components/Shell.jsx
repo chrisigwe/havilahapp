@@ -5,7 +5,7 @@ import PendingBanner from './PendingBanner'
 
 const STOCK_ROLES = ['storekeeper', 'manager', 'gm', 'admin']
 
-const MORE = ['dailysales', 'roomboard', 'credit', 'recovery', 'count', 'catalog', 'variance', 'fix']
+const MORE = ['dailysales', 'roomboard', 'credit', 'recovery', 'count', 'catalog', 'variance', 'fix', 'staysettings']
 
 export default function Shell({ staff, tab, onTab, children,
                                 branches = [], viewBranch, onBranch, pendingCount = 0 }) {

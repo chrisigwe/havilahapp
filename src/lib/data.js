@@ -976,3 +976,63 @@ export async function deleteStay(stayId) {
   const { error } = await supabase.rpc('delete_stay', { target: stayId })
   if (error) throw error
 }
+
+// ---------- Settings: room rates and the branch overstay default ----------
+// rooms UPDATE and branches UPDATE are both genuinely enforced at the
+// database level (can_manage_rooms(), is_supervisor()) — confirmed
+// directly, not assumed from the reference app's client-side checks.
+
+export async function loadRoomsForSettings(branchId) {
+  const { data, error } = await supabase.from('rooms')
+    .select('id, room_number, rate_standard, rate_alternate, rate_short, is_active, room_categories(name)')
+    .eq('branch_id', branchId)
+  if (error) throw error
+  return (data || []).sort((a, b) =>
+    String(a.room_number).localeCompare(String(b.room_number), undefined, { numeric: true }))
+}
+
+export async function updateRoomRates(roomId, patch) {
+  const { error } = await supabase.from('rooms').update(patch).eq('id', roomId)
+  if (error) throw error
+}
+
+export async function updateBranchOverstayDefault(branchId, amount) {
+  const { error } = await supabase.from('branches')
+    .update({ overstay_fee: amount }).eq('id', branchId)
+  if (error) throw error
+}
+
+// ---------- Reception's debt: guest room balances, not customer credit ----------
+// A completely different schema from the customers/credit_repayments
+// system every other department uses — guest debt lives in
+// stays/payments, tracked per stay rather than per named customer.
+// Credit and Recovery had never queried this before; these are what
+// let those two screens represent it without merging two genuinely
+// different data models into one query.
+
+export async function loadGuestBalances(branchId) {
+  const { data, error } = await supabase.from('v_stay_folio')
+    .select(`stay_id, branch_id, billing_cycle, outstanding,
+             stays!inner(room_id, guest_id, rooms(room_number), guests(full_name))`)
+    .eq('branch_id', branchId).gt('outstanding', 0.009)
+    .order('outstanding', { ascending: false })
+  if (error) throw error
+  return (data || []).map(r => ({
+    stay_id: r.stay_id, billing_cycle: r.billing_cycle, outstanding: Number(r.outstanding),
+    room_number: r.stays?.rooms?.room_number, guest_name: r.stays?.guests?.full_name,
+  }))
+}
+
+// Recent room payments across the branch — Recovery's Reception view,
+// same idea as its customer-repayment history but sourced from
+// payments/stays instead of credit_repayments/customers.
+export async function loadRoomPayments(branchId, days = 60) {
+  const since = new Date(Date.now() - days * 864e5).toISOString().slice(0, 10)
+  const { data, error } = await supabase.from('payments')
+    .select(`id, business_date, method, amount, is_overstay, remark,
+             stays(rooms(room_number), guests(full_name))`)
+    .eq('branch_id', branchId).gte('business_date', since)
+    .order('business_date', { ascending: false })
+  if (error) throw error
+  return data || []
+}

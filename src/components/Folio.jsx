@@ -1,8 +1,10 @@
 import { useEffect, useState } from 'react'
-import { naira, lagosToday, methodLabel, cyclesFor, nightsBetween, friendlyStayError } from '../lib/format'
+import { naira, lagosToday, cyclesFor, nightsBetween, friendlyStayError } from '../lib/format'
 import { loadFolio, loadBranchStaySettings, recordStayPayment, checkOutStay,
          reopenStay, updateStayDetails, updateOverstayFee, deleteStay } from '../lib/data'
 import { useToast } from '../components/Toast'
+import PaymentMethodPicker, { paymentParts, paymentAllocated } from './PaymentMethodPicker'
+import FolioStatement from './FolioStatement'
 
 const SUPERVISOR_ROLES = ['manager', 'gm', 'admin']
 
@@ -18,6 +20,7 @@ export default function Folio({ boot, room, onClose, onChanged }) {
   const [editing, setEditing] = useState(null)   // { dailyRate, billingCycle, scheduledOut, rateReason } while open
   const [overstayDraft, setOverstayDraft] = useState(null)   // amount string while editing
   const [confirmingDelete, setConfirmingDelete] = useState(false)
+  const [printing, setPrinting] = useState(false)
   const [busy, setBusy] = useState(false)
 
   const refresh = () => { loadFolio(room.stay_id).then(setData).catch(() => setData(null)) }
@@ -37,10 +40,8 @@ export default function Folio({ boot, room, onClose, onChanged }) {
   const outstanding = Number(folio?.outstanding ?? 0)
   const live = ['reserved', 'occupied'].includes(room.status) && !!room.stay_id
   const orderLines = orders.flatMap(o => (o.order_items || []).map(li => ({ ...li, date: o.business_date })))
-  const payParts = pay.split
-    ? Object.entries(pay.split).map(([method, amt]) => ({ method, amount: Number(amt || 0) }))
-    : [{ method: pay.method, amount: Number(pay.amount || 0) }]
-  const payAllocated = payParts.reduce((s, p) => s + p.amount, 0)
+  const payParts = paymentParts(pay, pay.amount)
+  const payAllocated = paymentAllocated(pay, pay.amount)
   const cycles = cyclesFor(branchSettings?.allowedCycles)
   const overstayDefault = branchSettings?.overstayDefault ?? null
   const currentOverstay = stay?.overstay_fee != null ? Number(stay.overstay_fee) : null
@@ -145,6 +146,9 @@ export default function Folio({ boot, room, onClose, onChanged }) {
             Edit rate, cycle, or dates
           </button>
         )}
+        <button onClick={() => setPrinting(true)} className="block text-dim text-sm underline mt-1">
+          Print guest statement
+        </button>
         {['gm', 'admin'].includes(staff.role) && (
           <button onClick={() => setConfirmingDelete(true)} className="block text-clay text-sm underline mt-1">
             Delete this booking — training records only
@@ -220,45 +224,10 @@ export default function Folio({ boot, room, onClose, onChanged }) {
             </div>
 
             <label className="block text-dim text-sm mt-3">Paid by</label>
-            <div className="flex flex-wrap gap-2 mt-1">
-              {payMethods.map(m => (
-                <button key={m} onClick={() => setPay(p => ({ ...p, method: m, split: null }))}
-                  className={`h-11 px-4 rounded-xl border font-semibold ${!pay.split && pay.method === m
-                    ? 'bg-amber text-bg border-amber' : 'border-line text-ink'}`}>
-                  {methodLabel[m] || m}
-                </button>
-              ))}
-              <button
-                onClick={() => setPay(p => ({ ...p,
-                  split: p.split || Object.fromEntries(payMethods.map(m => [m, ''])) }))}
-                className={`h-11 px-4 rounded-xl border font-semibold ${pay.split
-                  ? 'bg-amber text-bg border-amber' : 'border-line text-ink'}`}>
-                Split
-              </button>
+            <div className="mt-1">
+              <PaymentMethodPicker methods={payMethods} amount={pay.amount}
+                value={pay} onChange={v => setPay(p => ({ ...p, ...v }))} />
             </div>
-
-            {pay.split && (
-              <div className="mt-3">
-                {Object.keys(pay.split).map(m => (
-                  <div key={m} className="flex items-center gap-3 mt-2">
-                    <span className="w-20 text-dim">{methodLabel[m] || m}</span>
-                    <input type="number" inputMode="decimal" placeholder="0" value={pay.split[m]}
-                      onChange={e => setPay(p => ({ ...p, split: { ...p.split, [m]: e.target.value } }))}
-                      className="h-11 flex-1 px-3 rounded-xl bg-raise border border-line tnum" />
-                  </div>
-                ))}
-                {(() => {
-                  const target = Number(pay.amount) || 0
-                  const diff = target - payAllocated
-                  if (Math.abs(diff) < 0.01) return <p className="text-dim text-sm mt-2">Splits match the amount.</p>
-                  return (
-                    <p className="text-clay text-sm mt-2">
-                      {diff > 0 ? `${naira(diff)} still unallocated` : `${naira(-diff)} over the amount entered`}
-                    </p>
-                  )
-                })()}
-              </div>
-            )}
 
             <label className="flex items-center gap-2 text-dim mt-3">
               <input type="checkbox" checked={isOverstay} onChange={e => setIsOverstay(e.target.checked)} />
@@ -379,6 +348,11 @@ export default function Folio({ boot, room, onClose, onChanged }) {
             {busy ? 'Saving…' : 'Save changes'}
           </button>
         </div>
+      )}
+
+      {printing && (
+        <FolioStatement room={room} folio={folio} orderLines={orderLines} payments={payments}
+          branchName={boot.branchName} onClose={() => setPrinting(false)} />
       )}
 
       {confirmingDelete && (

@@ -8,6 +8,7 @@ import Store from './pages/Store'
 import Corrections from './pages/Corrections'
 import DailySales from './pages/DailySales'
 import RoomBoard from './pages/RoomBoard'
+import StaySettings from './pages/StaySettings'
 import Catalog from './pages/Catalog'
 import Variances from './pages/Variances'
 import Recovery from './pages/Recovery'
@@ -151,6 +152,7 @@ export default function App() {
         : tab === 'more' ? <More boot={boot} onGo={setTab} pendingCount={pendingCount} />
         : tab === 'dailysales' ? <DailySales boot={boot} />
         : tab === 'roomboard' ? <RoomBoard boot={boot} />
+        : tab === 'staysettings' ? <StaySettings boot={boot} />
         : tab === 'catalog' ? <Catalog boot={boot} onChanged={refresh} />
         : tab === 'variance' ? <Variances boot={boot} />
         : tab === 'recovery' ? <Recovery boot={boot} />

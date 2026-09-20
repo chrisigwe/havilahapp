@@ -1528,3 +1528,100 @@ checked out, since training data can end up in either state.
 
 Both use the same sheet-based confirm pattern already established in
 Corrections, rather than a browser confirm() dialog.
+
+
+## Phase 4 — Settings: room rates and the over-stay default
+
+Read the reference app's Settings screen completely before building
+anything — turned out narrower than the phase name suggested: no room
+creation, no category management, just rate editing per room and the
+branch-wide over-stay default. The database actually permits more
+(rooms_write, rooms_delete, and all of room_categories are real,
+enforced policies) but the reference app never built UI for any of
+it — matched that proven scope deliberately rather than silently
+build beyond what was shown to be needed, and flagged the gap rather
+than pretend it doesn't exist.
+
+Verified both real permission checks directly rather than trust the
+reference app's variable names: can_manage_rooms() is genuinely
+manager/gm/admin (matches canManageRooms exactly), while the
+overstay-fee default still requires is_supervisor() — gm/admin only,
+the same narrower set already confirmed for a stay's own overstay
+charge. Room rates need manager and up; the branch default needs GM
+or admin specifically. Both are real RLS policies, not app-side-only
+conventions — confirmed rooms UPDATE/INSERT/DELETE and branches
+UPDATE are all genuinely gated, not just permissively open like most
+of this shared schema.
+
+Reused loadBranchStaySettings (already fetching allowed_cycles and
+rate labels) for the overstay default too, rather than a fourth
+separate query. Named the page StaySettings, not Settings — this
+app's own More menu already functions as a settings surface in the
+broader sense, and a bare "Settings" page name would be ambiguous
+next to everything else already living there.
+
+Phase 5 — retiring the separate front-desk app — is the one piece of
+the original plan left, and only really makes sense once all of this
+has held up under real daily use for a while.
+
+
+## Reception and Restaurant represented in Credit and Recovered Debt
+
+Restaurant: verified rather than rebuilt. Both pages already filter
+departments purely off is_sales_point with nothing hardcoded, and
+loadBalances is a plain generic filter — a credit sale at Restaurant
+already flows through the exact same customers/sales/credit_repayments
+system as everywhere else. Worth a real test to confirm end to end,
+but nothing needed changing in the code.
+
+Reception: genuinely new work, since guest room debt lives entirely
+in stays/payments — a different schema Credit and Recovery had never
+queried. Both pages now branch on the selected department: Credit
+shows guests with an outstanding room balance and lets staff record a
+payment against it directly (reusing recordStayPayment, the same
+function Folio's own payment form calls); Recovery shows a history of
+room payments collected, same shape as its existing customer-repayment
+view. Reception's guest-payment sheet deliberately doesn't gain
+Recovery's Edit capability — that's built specifically around
+credit_repayments, a different table with different semantics, and
+extending it to payments wasn't asked for here.
+
+Building a fourth near-identical split-payment UI (Sales, Credit, and
+Folio each already had their own copy) was the point where duplicating
+further stopped making sense — extracted PaymentMethodPicker as a
+shared component and switched Credit's and Folio's existing inline
+versions over to it too, rather than leave three-going-on-four
+independent copies that could quietly drift apart from each other.
+
+Caught a real JSX bug while building Credit's Reception branch: wrapping
+two sibling elements in one conditional without a Fragment, which
+esbuild correctly refused to compile — fixed immediately, not a change
+that shipped broken.
+
+
+## Reception and Restaurant in Credit/Recovery — the real gap was narrower than expected
+
+Before building anything, checked the actual current state of both
+pages rather than assume from the request alone — and found most of
+this already built: Credit.jsx already had guestBalances,
+submitGuestPayment, and a full guestPay sheet using
+PaymentMethodPicker; Recovery.jsx already had loadRoomPayments and a
+complete day-grouped room-payment history. Restaurant needed nothing
+at all — it was already correctly represented via the same dynamic
+salesPoints filtering every other department uses.
+
+The one genuine gap, exactly matching what was reported: no way to
+print a guest's room statement anywhere. Credit.jsx's own customer
+statement printer (printStatement/id="statement-area") was complete
+and working — but nothing equivalent existed for a room stay.
+
+Built FolioStatement.jsx using this app's own proven print
+infrastructure (.invoice-print/.invoice-table, the same printOnly()
+toggle Receipt.jsx already uses) rather than the reference app's
+portal-based approach, which it only needed because of its own drawer
+nesting — this app doesn't have that problem, so a portal would have
+been unnecessary complexity. Wired it into two places: Folio.jsx (a
+"Print guest statement" link, alongside edit/delete), and Credit's
+guestPay sheet (fetching the fuller breakdown via loadFolio — the
+same function Folio.jsx already calls — since guestPay's own state
+only carries what the payment form itself needs).

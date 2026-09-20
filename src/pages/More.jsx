@@ -15,6 +15,8 @@ const ITEMS = [
     roles: ['storekeeper', 'manager', 'gm', 'admin', 'auditor'] },
   { key: 'fix',     label: 'Corrections', hint: 'Fix a mistake from today or yesterday',
     roles: ['bar', 'front_desk', 'storekeeper', 'manager', 'gm', 'admin'] },
+  { key: 'staysettings', label: 'Settings', hint: 'Room rates and the over-stay charge default',
+    roles: ['manager', 'gm', 'admin'] },
 ]
 
 export default function More({ boot, onGo, pendingCount = 0 }) {

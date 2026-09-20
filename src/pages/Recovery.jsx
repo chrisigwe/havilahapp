@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { naira, methodLabel, lagosToday } from '../lib/format'
-import { loadRecovery, updateRepayment } from '../lib/data'
+import { loadRecovery, updateRepayment, loadRoomPayments } from '../lib/data'
 import { useToast } from '../components/Toast'
 
 // Deliberately excludes storekeeper — an explicit choice, not an
@@ -18,6 +18,8 @@ export default function Recovery({ boot }) {
   const salesPoints = (locations || []).filter(l => l.is_sales_point && !l.is_store)
   const [locId, setLocId] = useState(staff.default_location_id || salesPoints[0]?.id || null)
   const [rows, setRows] = useState(null)
+  const isReception = /reception/i.test(salesPoints.find(l => l.id === locId)?.name || '')
+  const [roomPayments, setRoomPayments] = useState(null)
 
   // When the GM switches branch, the previously-selected location id
   // belongs to the old branch and matches no chip here — leaving
@@ -33,6 +35,15 @@ export default function Recovery({ boot }) {
     loadRecovery(staff.branch_id, locId).then(setRows).catch(e => toast(e.message, 'error'))
   }, [staff.branch_id, locId])
   useEffect(refresh, [refresh])
+
+  // Reception's recovered debt is room payments, not credit
+  // repayments — a different table entirely, so a separate load
+  // rather than folded into the one above.
+  const refreshRoomPayments = useCallback(() => {
+    if (!isReception) return
+    loadRoomPayments(staff.branch_id).then(setRoomPayments).catch(() => setRoomPayments([]))
+  }, [staff.branch_id, isReception])
+  useEffect(refreshRoomPayments, [refreshRoomPayments])
 
   function openEdit(r) {
     setEditing(r)
@@ -61,10 +72,22 @@ export default function Recovery({ boot }) {
     return [...m.entries()]
   }, [rows])
 
+  const roomByDay = useMemo(() => {
+    const m = new Map()
+    for (const p of (roomPayments || [])) {
+      if (!m.has(p.business_date)) m.set(p.business_date, [])
+      m.get(p.business_date).push(p)
+    }
+    return [...m.entries()]
+  }, [roomPayments])
+
   if (!rows) return <p className="px-5 text-dim">Loading…</p>
   const total = rows.reduce((s, r) => s + Number(r.amount), 0)
   const byMethod = {}
   for (const r of rows) byMethod[r.method] = (byMethod[r.method] || 0) + Number(r.amount)
+  const roomTotal = (roomPayments || []).reduce((s, p) => s + Number(p.amount), 0)
+  const roomByMethod = {}
+  for (const p of (roomPayments || [])) roomByMethod[p.method] = (roomByMethod[p.method] || 0) + Number(p.amount)
 
   return (
     <div className="px-5">
@@ -80,6 +103,8 @@ export default function Recovery({ boot }) {
         </div>
       )}
 
+      {!isReception && (
+      <>
       <div className="rounded-2xl border border-leaf bg-surface p-4 my-2">
         <div className="text-dim text-sm">Recovered in the last 60 days</div>
         <div className="tnum text-2xl font-bold text-leaf">{naira(total)}</div>
@@ -134,6 +159,54 @@ export default function Recovery({ boot }) {
       ))}
 
       {!rows.length && <p className="py-8 text-center text-dim">No payments recorded yet.</p>}
+      </>
+      )}
+
+      {isReception && (
+        <>
+          <div className="rounded-2xl border border-leaf bg-surface p-4 my-2">
+            <div className="text-dim text-sm">Recovered at Reception, last 60 days</div>
+            <div className="tnum text-2xl font-bold text-leaf">{naira(roomTotal)}</div>
+            <div className="flex gap-4 mt-2 text-sm">
+              {Object.entries(roomByMethod).map(([m, amt]) => (
+                <span key={m} className="text-dim">
+                  {methodLabel[m] || m} <span className="tnum text-ink">{naira(amt)}</span>
+                </span>
+              ))}
+            </div>
+          </div>
+
+          {roomByDay.map(([day, items]) => (
+            <section key={day} className="mt-4">
+              <h3 className="text-dim text-sm">
+                {new Date(day + 'T12:00:00').toLocaleDateString('en-NG',
+                  { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })}
+              </h3>
+              <ul className="divide-y divide-line/60">
+                {items.map(p => (
+                  <li key={p.id} className="py-3">
+                    <div className="flex items-baseline gap-3">
+                      <span className="flex-1 min-w-0 truncate font-semibold">
+                        {p.stays?.guests?.full_name || 'Guest'} · Room {p.stays?.rooms?.room_number || '—'}
+                      </span>
+                      <span className="tnum font-bold text-leaf">{naira(p.amount)}</span>
+                    </div>
+                    <div className="text-dim text-sm mt-0.5">
+                      {methodLabel[p.method] || p.method}{p.is_overstay ? ' · over-stay' : ''}
+                      {p.remark && ` · ${p.remark}`}
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          ))}
+
+          {roomPayments !== null && !roomPayments.length && (
+            <p className="py-8 text-center text-dim">No room payments recorded yet.</p>
+          )}
+          {roomPayments === null && <p className="py-8 text-center text-dim">Loading…</p>}
+        </>
+      )}
 
       {editing && (
         <div className="fixed inset-0 z-50 bg-bg flex flex-col justify-center px-6">

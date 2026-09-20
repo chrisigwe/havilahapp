@@ -2,8 +2,10 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useToast } from '../components/Toast'
 import { naira, lagosToday, methodLabel, tierLabel } from '../lib/format'
 import { loadBalances, loadCustomerLedger, saveRepayment, loadStaffForLocation,
-         deleteCustomer, deactivateCustomer } from '../lib/data'
+         deleteCustomer, deactivateCustomer, loadGuestBalances, recordStayPayment, loadFolio } from '../lib/data'
 import { enqueue, flush, isConnectionError } from '../lib/outbox'
+import PaymentMethodPicker, { paymentParts, paymentAllocated } from '../components/PaymentMethodPicker'
+import FolioStatement from '../components/FolioStatement'
 
 function printStatement() {
   document.querySelectorAll('.invoice-print').forEach(el => {
@@ -58,12 +60,17 @@ export default function Credit({ boot }) {
   const requestKeyRef = useRef(requestKey)
   requestKeyRef.current = requestKey
   const [rows, setRows] = useState(null)
+  const [guestBalances, setGuestBalances] = useState(null)
+  const [guestPay, setGuestPay] = useState(null)   // { stayId, guestName, roomNumber, outstanding, billingCycle, amount, method, split, isOverstay }
+  const [guestStatement, setGuestStatement] = useState(null)   // { room, folio, orderLines, payments } once loaded
+  const [statementBusy, setStatementBusy] = useState(false)
   const toast = useToast()
   const [open, setOpen] = useState(null)       // { customer, ledger }
   const [pay, setPay] = useState(null)
   const [busy, setBusy] = useState(false)
   const itemById = useMemo(() => Object.fromEntries(items.map(i => [i.id, i])), [items])
   const locById = useMemo(() => Object.fromEntries((allLocations || []).map(l => [l.id, l])), [allLocations])
+  const isReception = /reception/i.test(locById[locId]?.name || '')
 
   const refresh = useCallback(() => {
     const requestedFor = requestKey   // snapshot at the moment this fetch was started
@@ -72,6 +79,14 @@ export default function Credit({ boot }) {
       .catch(e => toast(e.message, 'error'))
   }, [staff.branch_id, locId, staffFilter, isEditor, requestKey])
   useEffect(refresh, [refresh])
+
+  // Reception's guest balances — a different data model entirely, so
+  // a separate load rather than folded into the customer refresh above.
+  const refreshGuestBalances = useCallback(() => {
+    if (!isReception) return
+    loadGuestBalances(staff.branch_id).then(setGuestBalances).catch(() => setGuestBalances([]))
+  }, [staff.branch_id, isReception])
+  useEffect(refreshGuestBalances, [refreshGuestBalances])
 
   // Load the department-scoped staff list once per department change,
   // NOT on every refresh — because the auto-clear inside would also
@@ -105,11 +120,7 @@ export default function Credit({ boot }) {
     // one row per method, same as it's always been for a single
     // payment. "Split" just means saving more than one row for the
     // same repayment, one per method with a non-zero amount.
-    const parts = pay.split
-      ? Object.entries(pay.split)
-          .map(([method, amt]) => ({ method, amount: Number(amt || 0) }))
-          .filter(p => p.amount > 0)
-      : [{ method: pay.method, amount: Number(pay.amount) }]
+    const parts = paymentParts(pay, pay.amount).filter(p => p.amount > 0)
     try {
       for (const part of parts) {
         const args = { ...base, amount: part.amount, method: part.method }
@@ -125,6 +136,39 @@ export default function Credit({ boot }) {
       setPay(null); setOpen(null); refresh()
     } catch (e) { toast('Not saved: ' + e.message, 'error') }
     setBusy(false)
+  }
+
+  async function submitGuestPayment() {
+    setBusy(true)
+    try {
+      await recordStayPayment({
+        staff, stayId: guestPay.stayId, businessDate: lagosToday(),
+        cycle: guestPay.billingCycle, parts: paymentParts(guestPay, guestPay.amount),
+        isOverstay: guestPay.isOverstay,
+      })
+      toast('Payment recorded', 'success')
+      setGuestPay(null); refreshGuestBalances()
+    } catch (e) { toast('Not saved: ' + e.message, 'error') }
+    setBusy(false)
+  }
+
+  // guestPay only carries what the payment form needs (outstanding,
+  // billing cycle) — the full charge/payment breakdown a printed
+  // statement needs lives in loadFolio, the same function Folio.jsx
+  // already uses, so this fetches it fresh rather than duplicate
+  // that query's shape here.
+  async function printGuestStatement() {
+    setStatementBusy(true)
+    try {
+      const { orders, payments, folio } = await loadFolio(guestPay.stayId)
+      const orderLines = orders.flatMap(o => (o.order_items || []).map(li => ({ ...li, date: o.business_date })))
+      setGuestStatement({
+        room: { room_number: guestPay.roomNumber, guest_name: guestPay.guestName,
+                check_in_date: folio?.check_in_date, scheduled_out: folio?.scheduled_out },
+        folio, orderLines, payments,
+      })
+    } catch (e) { toast('Could not load statement: ' + e.message, 'error') }
+    setStatementBusy(false)
   }
 
   if (!rows) return <p className="px-5 text-dim">Loading…</p>
@@ -171,6 +215,8 @@ export default function Credit({ boot }) {
         </div>
       )}
 
+      {!isReception && (
+      <>
       <div className="flex items-baseline justify-between py-2">
         <h2 className="text-dim">
           Owed to {locById[locId]?.name || 'this department'}
@@ -209,6 +255,47 @@ export default function Credit({ boot }) {
         ))}
         {!owing.length && <li className="py-8 text-center text-dim">Nobody owes anything.</li>}
       </ul>
+      </>
+      )}
+
+      {isReception && (() => {
+        const gb = guestBalances || []
+        const gbTotal = gb.reduce((s, r) => s + r.outstanding, 0)
+        return (
+          <>
+            <div className="flex items-baseline justify-between py-2">
+              <h2 className="text-dim">
+                Owed to Reception
+                <span className="ml-2 text-sm">
+                  ({gb.length} room{gb.length === 1 ? '' : 's'})
+                </span>
+              </h2>
+              <span className="tnum font-bold text-lg text-clay">{naira(gbTotal)}</span>
+            </div>
+            <ul className="divide-y divide-line/60">
+              {gb.map(g => (
+                <li key={g.stay_id} className="py-3 flex items-center gap-3">
+                  <button
+                    onClick={() => setGuestPay({
+                      stayId: g.stay_id, guestName: g.guest_name, roomNumber: g.room_number,
+                      outstanding: g.outstanding, billingCycle: g.billing_cycle,
+                      amount: String(g.outstanding), method: 'pos', split: null, isOverstay: false,
+                    })}
+                    className="flex-1 min-w-0 text-left">
+                    <div className="font-semibold truncate">{g.guest_name || 'Guest'}</div>
+                    <div className="text-dim text-sm">Room {g.room_number}</div>
+                  </button>
+                  <span className="tnum font-bold text-clay">{naira(g.outstanding)}</span>
+                </li>
+              ))}
+              {guestBalances !== null && !gb.length && (
+                <li className="py-8 text-center text-dim">No room balances outstanding.</li>
+              )}
+              {guestBalances === null && <li className="py-8 text-center text-dim">Loading…</li>}
+            </ul>
+          </>
+        )
+      })()}
 
       {open && (
         <div className="fixed inset-0 z-50 bg-bg flex flex-col">
@@ -406,47 +493,10 @@ export default function Credit({ boot }) {
               className="mt-2 h-14 w-full px-4 rounded-xl bg-surface border border-line tnum" />
 
             <label className="block mt-4 text-dim">Paid by</label>
-            <div className="mt-2 flex flex-wrap gap-2">
-              {methods.filter(m => m !== 'credit').map(m => (
-                <button key={m} onClick={() => setPay(p => ({ ...p, method: m, split: null }))}
-                  className={`h-12 px-4 rounded-xl border font-semibold ${!pay.split && pay.method === m
-                    ? 'bg-amber text-bg border-amber' : 'border-line text-ink'}`}>
-                  {methodLabel[m] || m}
-                </button>
-              ))}
-              <button
-                onClick={() => setPay(p => ({ ...p,
-                  split: p.split || Object.fromEntries(
-                    methods.filter(m => m !== 'credit').map(m => [m, ''])) }))}
-                className={`h-12 px-4 rounded-xl border font-semibold ${pay.split
-                  ? 'bg-amber text-bg border-amber' : 'border-line text-ink'}`}>
-                Split
-              </button>
+            <div className="mt-2">
+              <PaymentMethodPicker methods={methods.filter(m => m !== 'credit')} amount={pay.amount}
+                value={pay} onChange={v => setPay(p => ({ ...p, ...v }))} />
             </div>
-
-            {pay.split && (
-              <div className="mt-3">
-                {Object.keys(pay.split).map(m => (
-                  <div key={m} className="flex items-center gap-3 mt-2">
-                    <span className="w-24 text-dim">{methodLabel[m] || m}</span>
-                    <input type="number" inputMode="decimal" placeholder="0" value={pay.split[m]}
-                      onChange={e => setPay(p => ({ ...p, split: { ...p.split, [m]: e.target.value } }))}
-                      className="h-12 flex-1 px-3 rounded-xl bg-surface border border-line tnum" />
-                  </div>
-                ))}
-                {(() => {
-                  const allocated = Object.values(pay.split).reduce((s, v) => s + Number(v || 0), 0)
-                  const target = Number(pay.amount) || 0
-                  const diff = target - allocated
-                  if (Math.abs(diff) < 0.01) return <p className="text-dim text-sm mt-2">Splits match the amount.</p>
-                  return (
-                    <p className="text-clay text-sm mt-2">
-                      {diff > 0 ? `${naira(diff)} still unallocated` : `${naira(-diff)} over the amount entered`}
-                    </p>
-                  )
-                })()}
-              </div>
-            )}
 
             <label className="block mt-4 text-dim">Date received</label>
             <input type="date" value={pay.paidOn}
@@ -464,9 +514,7 @@ export default function Credit({ boot }) {
               </p>
             )}
             {(() => {
-              const splitOk = pay.split
-                && Object.values(pay.split).reduce((s, v) => s + Number(v || 0), 0) > 0
-              const canSave = pay.split ? splitOk : Number(pay.amount) > 0
+              const canSave = pay.split ? paymentAllocated(pay, pay.amount) > 0 : Number(pay.amount) > 0
               return (
                 <button onClick={submitPayment} disabled={busy || !canSave}
                   className="w-full h-16 rounded-2xl bg-amber text-bg text-xl font-bold disabled:opacity-40">
@@ -476,6 +524,58 @@ export default function Credit({ boot }) {
             })()}
           </div>
         </div>
+      )}
+      {guestPay && (
+        <div className="fixed inset-0 z-[60] bg-bg flex flex-col">
+          <div className="p-5 flex-1 overflow-y-auto">
+            <button onClick={() => setGuestPay(null)} className="text-dim">Back</button>
+            <h2 className="mt-3 text-2xl font-bold">{guestPay.guestName || 'Guest'}</h2>
+            <p className="text-dim">Room {guestPay.roomNumber}</p>
+
+            <p className="text-dim mt-4">
+              Owing {naira(guestPay.outstanding)}. Enter less than this for a part payment —
+              the rest stays on the bill.
+            </p>
+
+            <label className="block mt-6 text-dim">Amount</label>
+            <input type="number" inputMode="decimal" value={guestPay.amount}
+              onChange={e => setGuestPay(p => ({ ...p, amount: e.target.value }))}
+              className="mt-2 h-14 w-full px-4 rounded-xl bg-surface border border-line tnum" />
+
+            <label className="block mt-4 text-dim">Paid by</label>
+            <div className="mt-2">
+              <PaymentMethodPicker methods={['pos', 'cash']} amount={guestPay.amount}
+                value={guestPay} onChange={v => setGuestPay(p => ({ ...p, ...v }))} />
+            </div>
+
+            <label className="flex items-center gap-2 text-dim mt-4">
+              <input type="checkbox" checked={guestPay.isOverstay}
+                onChange={e => setGuestPay(p => ({ ...p, isOverstay: e.target.checked }))} />
+              Over-stay payment
+            </label>
+
+            <button onClick={printGuestStatement} disabled={statementBusy}
+              className="mt-4 text-dim text-sm underline disabled:opacity-40">
+              {statementBusy ? 'Loading…' : 'Print guest statement'}
+            </button>
+          </div>
+          <div className="p-5 border-t border-line">
+            {Number(guestPay.amount) > guestPay.outstanding + 0.01 && (
+              <p className="mb-4 text-clay">That is more than is owed. It will leave a credit balance.</p>
+            )}
+            <button onClick={submitGuestPayment}
+              disabled={busy || paymentAllocated(guestPay, guestPay.amount) <= 0}
+              className="w-full h-16 rounded-2xl bg-amber text-bg text-xl font-bold disabled:opacity-40">
+              {busy ? 'Saving…' : 'Save payment'}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {guestStatement && (
+        <FolioStatement room={guestStatement.room} folio={guestStatement.folio}
+          orderLines={guestStatement.orderLines} payments={guestStatement.payments}
+          branchName={boot.branchName} onClose={() => setGuestStatement(null)} />
       )}
     </div>
   )
