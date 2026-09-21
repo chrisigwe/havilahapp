@@ -199,11 +199,13 @@ export default function SalesEntry({ boot }) {
   // attributed to Restaurant's own daily figures regardless of which
   // bar rings it up, matching the earlier decision on how that
   // revenue should count.
-  function addTypedOrder({ description, qty, unitPrice }) {
+  function addTypedOrder({ description, qty, unitPrice, orderType, writeoffNote }) {
     const restaurant = (boot.allLocations || []).find(l => /restaurant/i.test(l.name))
     setBasket(b => [...b, { key: crypto.randomUUID(), item: null, description,
                             tier: 'general', qty, unitPrice, priceOverridden: true,
-                            locationId: restaurant?.id, locationName: restaurant?.name || 'Restaurant' }])
+                            locationId: restaurant?.id, locationName: restaurant?.name || 'Restaurant',
+                            orderType: orderType === 'staff' ? 'staff' : 'standard',
+                            writeoffNote: writeoffNote || null }])
   }
 
   // switching the basket tier reprices everything already in it, EXCEPT
@@ -262,7 +264,8 @@ export default function SalesEntry({ boot }) {
         lines: basket.map(l => ({
           item: l.item ? { id: l.item.id, name: l.item.name } : null,
           description: l.description || null,
-          tier: l.tier, qty: l.qty, unitPrice: l.unitPrice, locationId: l.locationId })),
+          tier: l.tier, qty: l.qty, unitPrice: l.unitPrice, locationId: l.locationId,
+          orderType: l.orderType, writeoffNote: l.writeoffNote })),
         payments, backdateReason, onBehalfOf,
       }
       try {
@@ -586,16 +589,22 @@ export default function SalesEntry({ boot }) {
                     {r.qty} × {naira(r.unit_price)}
                     <br />Charged to Room {r.roomNumber || '—'}
                     {r.guestName ? ` · ${r.guestName}` : ''}
-                    {r.order_type !== 'standard' && ' · not paid for'}
+                    {r.order_type === 'pr_damage' && ' · not paid for'}
                     {r.damage_reason && ` · ${r.damage_reason}`}
                     {r.writeoff_note && ` · ${r.writeoff_note}`}
                   </div>
-                ) : r.order_type !== 'standard' ? (
+                ) : r.order_type === 'pr_damage' ? (
                   <div className="text-dim text-sm">
                     {r.qty} × {naira(r.unit_price)} · not paid for
                     {r.damage_reason && ` · ${r.damage_reason}`}
                     {r.writeoff_note && ` · ${r.writeoff_note}`}
                     <br />{whoRecorded(r)}
+                  </div>
+                ) : r.order_type === 'staff' ? (
+                  <div className="text-dim text-sm">
+                    {tierLabel[r.tier] || r.tier} · {r.qty} × {naira(r.unit_price)}
+                    {r.writeoff_note && ` · ${r.writeoff_note}`}
+                    <br />{paymentSummary(r)} · {whoRecorded(r)}
                   </div>
                 ) : (
                   <div className="text-dim text-sm">
@@ -892,7 +901,9 @@ export default function SalesEntry({ boot }) {
 
           {restaurantOrder.orderType === 'staff' && (
             <>
-              <p className="text-dim text-sm mt-3">Not paid for — staff meal.</p>
+              <p className="text-dim text-sm mt-3">
+                Staff meal — still paid for like a normal order, just tracked separately for reporting.
+              </p>
               <label className="block mt-2 text-dim">Note (optional)</label>
               <input value={restaurantOrder.writeoffNote}
                 onChange={e => setRestaurantOrder(r => ({ ...r, writeoffNote: e.target.value }))}
@@ -905,8 +916,14 @@ export default function SalesEntry({ boot }) {
               const desc = restaurantOrder.description.trim()
               const qty = restaurantOrder.qty
               const unitPrice = Number(restaurantOrder.unitPrice) || 0
-              if (restaurantOrder.orderType === 'standard') {
-                addTypedOrder({ description: desc, qty, unitPrice })
+              // Standard and Staff are both real, paid orders — only
+              // PR/Damage is a genuine write-off with no payment at
+              // all. Staff still needs order_type carried through
+              // for reporting, so it goes into the basket the same
+              // way Standard does, just tagged.
+              if (restaurantOrder.orderType !== 'pr_damage') {
+                addTypedOrder({ description: desc, qty, unitPrice, orderType: restaurantOrder.orderType,
+                                writeoffNote: restaurantOrder.writeoffNote })
                 setRestaurantOrder(null)
                 return
               }
@@ -926,7 +943,7 @@ export default function SalesEntry({ boot }) {
             }}
             disabled={writeoffBusy || !restaurantOrder.description.trim() || !Number(restaurantOrder.unitPrice)}
             className="mt-8 w-full h-16 rounded-2xl bg-amber text-bg text-xl font-bold disabled:opacity-40">
-            {writeoffBusy ? 'Saving…' : restaurantOrder.orderType === 'standard' ? 'Add to basket' : 'Save — not paid for'}
+            {writeoffBusy ? 'Saving…' : restaurantOrder.orderType !== 'pr_damage' ? 'Add to basket' : 'Save — not paid for'}
           </button>
         </Sheet>
       )}

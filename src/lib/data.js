@@ -156,6 +156,11 @@ export async function saveBasket({ staff, locationId, lines, payments, date, cus
       receipt_id: receipt,
       on_behalf_of: onBehalfOf || null,
       recorded_by: staff.id,
+      // only ever non-'standard' for a typed Staff order carried
+      // through the basket — every other line (the vast majority)
+      // gets the column's own default
+      order_type: line.orderType || 'standard',
+      writeoff_note: line.writeoffNote || null,
     }).select('id').single()
     if (error) throw error
 
@@ -751,7 +756,8 @@ export async function searchLiveStays(branchId, query) {
 // order — always category 'food', no stock link, matching how
 // walk-in restaurant orders work in the normal Sales flow.
 export async function chargeItemToRoom({ staff, stayId, item, locationId, locationName,
-                                          description, qty, unitPrice, businessDate }) {
+                                          description, qty, unitPrice, businessDate,
+                                          orderType, writeoffNote }) {
   const category = item
     ? (/restaurant/i.test(locationName || '') ? 'food'
        : /minimart/i.test(locationName || '') ? 'minimart' : 'drink')
@@ -765,6 +771,7 @@ export async function chargeItemToRoom({ staff, stayId, item, locationId, locati
     order_id: order.id, category,
     stock_item_id: item?.id || null, location_id: item ? locationId : null,
     description: item ? item.name : description, qty, unit_price: unitPrice,
+    order_type: orderType === 'staff' ? 'staff' : 'standard', writeoff_note: writeoffNote || null,
   })
   if (iErr) {
     await supabase.from('orders').delete().eq('id', order.id)

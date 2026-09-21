@@ -1999,3 +1999,42 @@ exactly: "Mark out of service" (with an optional reason) only offered
 on vacant rooms, gated to manager/gm/admin; "Back in service" on rooms
 already marked out. The room-has-a-guest and permission checks are
 the database's own enforcement, not just UI hiding.
+
+
+## Correction: Staff order type is actually paid, not a write-off
+
+Original design treated "Staff" identically to "PR/Damage" — a
+direct-save write-off with no payment at all. Per explicit
+correction, staff meals genuinely are paid for; only PR/Damage is a
+true write-off with nothing collected. Standard and Staff should
+behave identically for payment purposes, differing only in the
+order_type tag kept for reporting.
+
+App side: both SalesEntry's "Add a restaurant order" sheet and
+RoomChargeSheet's typed-order path now branch on
+order_type !== 'pr_damage' (not === 'standard') to decide basket vs
+write-off — so Staff now goes through the exact same POS/Cash/Credit/
+Split flow as Standard. Threaded order_type and writeoff_note through
+addTypedOrder, saveBasket, chargeItemToRoom, and the offline-outbox
+payload, none of which previously had any way to carry a Staff tag
+through the normal payment path at all.
+
+Found and fixed the same display bug in three separate places
+(SalesEntry's Today list, Folio's order lines) — each was checking
+"is this NOT standard" to decide whether to show "not paid for" and
+skip the real payment summary, which was correct for PR/Damage but
+wrong for Staff now that it has genuine payment info. Narrowed each
+to check specifically for pr_damage instead.
+
+Database side: narrowed every exclusion built when Staff was
+originally (incorrectly) treated as a write-off — get_daily_
+financials' gross sales and nonRevenue bucket, v_sale_variances, and
+v_stay_folio's orders_charge — from "anything non-standard" to
+specifically "pr_damage only". Staff orders now correctly count as
+real gross sales, can show up as a genuine variance if underpaid, and
+correctly bill a guest's room if charged there.
+
+Swept the whole codebase afterward for any remaining
+order_type === 'standard' / !== 'standard' comparison tied to this
+logic — none found, confirming the fix is complete rather than
+partial.

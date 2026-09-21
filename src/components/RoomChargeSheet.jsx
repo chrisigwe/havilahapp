@@ -56,10 +56,13 @@ export default function RoomChargeSheet({ boot, stockMap, onClose, toast }) {
       const desc = typing.description.trim()
       const qty = typing.qty
       const unitPrice = Number(typing.unitPrice)
-      if (typing.orderType === 'standard') {
+      // Standard and Staff are both real, paid charges — only
+      // PR/Damage is a genuine write-off with nothing collected.
+      if (typing.orderType !== 'pr_damage') {
         await chargeItemToRoom({
           staff, stayId: stay.id, description: desc,
           qty, unitPrice, businessDate: lagosToday(),
+          orderType: typing.orderType, writeoffNote: typing.writeoffNote,
         })
       } else {
         await chargeWriteoffToRoom({
@@ -69,7 +72,7 @@ export default function RoomChargeSheet({ boot, stockMap, onClose, toast }) {
       }
       setCharged(c => [{ description: desc, qty, unitPrice, typed: true,
                          orderType: typing.orderType, at: Date.now() }, ...c])
-      toast(typing.orderType === 'standard'
+      toast(typing.orderType !== 'pr_damage'
         ? `${qty} × ${desc} charged to Room ${stay.rooms?.room_number}`
         : `${qty} × ${desc} recorded — not paid for`, 'success')
       setTyping(null)
@@ -208,7 +211,7 @@ export default function RoomChargeSheet({ boot, stockMap, onClose, toast }) {
                 <button onClick={confirmTypedCharge}
                   disabled={busy || !typing.description.trim() || !Number(typing.unitPrice)}
                   className="w-full h-14 rounded-2xl bg-amber text-bg text-lg font-bold disabled:opacity-40">
-                  {busy ? 'Saving…' : typing.orderType === 'standard'
+                  {busy ? 'Saving…' : typing.orderType !== 'pr_damage'
                     ? `Charge ${naira((typing.qty || 0) * (Number(typing.unitPrice) || 0))} to room`
                     : 'Save — not paid for'}
                 </button>

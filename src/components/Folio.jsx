@@ -300,7 +300,7 @@ export default function Folio({ boot, room, onClose, onChanged }) {
                       </div>
                       <div className="text-dim text-sm">
                         {li.date} · {li.qty} × {naira(li.unit_price)}
-                        {li.order_type !== 'standard' && ' · not charged to guest'}
+                        {li.order_type === 'pr_damage' && ' · not charged to guest'}
                         {li.damage_reason && ` · ${li.damage_reason}`}
                         {li.writeoff_note && ` · ${li.writeoff_note}`}
                       </div>
