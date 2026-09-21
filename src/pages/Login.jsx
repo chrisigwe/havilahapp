@@ -16,31 +16,36 @@ export default function Login() {
   }
 
   return (
-    <div className="min-h-dvh flex flex-col justify-center px-6 max-w-sm mx-auto">
-      <div className="flex items-center gap-4">
-        <Logo className="w-14 h-14 shrink-0" />
-        <h1 className="text-[2.3rem] leading-none font-bold tracking-tight">
-          Havilah<span className="text-amber"> App</span>
-        </h1>
+    <div className="min-h-dvh flex flex-col px-6 max-w-sm mx-auto">
+      <div className="flex-1 flex flex-col justify-center">
+        <div className="flex items-center gap-4">
+          <Logo className="w-14 h-14 shrink-0" />
+          <h1 className="text-[2.3rem] leading-none font-bold tracking-tight">
+            Havilah<span className="text-amber"> App</span>
+          </h1>
+        </div>
+        <p className="mt-2 text-dim">
+          One app for rooms, the bar, the restaurant, stock, and credit —
+          sign in to get started.
+        </p>
+        <div className="mt-10 space-y-4">
+          <input value={email} onChange={e => setEmail(e.target.value)} type="email" inputMode="email"
+            autoComplete="username" placeholder="Email"
+            className="w-full h-14 px-4 rounded-xl bg-surface border border-line placeholder:text-dim" />
+          <input value={password} onChange={e => setPassword(e.target.value)} type="password"
+            autoComplete="current-password" placeholder="Password"
+            onKeyDown={e => e.key === 'Enter' && submit()}
+            className="w-full h-14 px-4 rounded-xl bg-surface border border-line placeholder:text-dim" />
+          {err && <p className="text-clay">{err}</p>}
+          <button onClick={submit} disabled={busy || !email || !password}
+            className="w-full h-14 rounded-xl bg-amber text-bg font-bold text-lg disabled:opacity-40">
+            {busy ? 'Signing in…' : 'Sign in'}
+          </button>
+        </div>
       </div>
-      <p className="mt-2 text-dim">
-        One app for rooms, the bar, the restaurant, stock, and credit —
-        sign in to get started.
+      <p className="pb-6 text-center text-dim text-sm">
+        © 2026 HyTek Hub IT Support & Services
       </p>
-      <div className="mt-10 space-y-4">
-        <input value={email} onChange={e => setEmail(e.target.value)} type="email" inputMode="email"
-          autoComplete="username" placeholder="Email"
-          className="w-full h-14 px-4 rounded-xl bg-surface border border-line placeholder:text-dim" />
-        <input value={password} onChange={e => setPassword(e.target.value)} type="password"
-          autoComplete="current-password" placeholder="Password"
-          onKeyDown={e => e.key === 'Enter' && submit()}
-          className="w-full h-14 px-4 rounded-xl bg-surface border border-line placeholder:text-dim" />
-        {err && <p className="text-clay">{err}</p>}
-        <button onClick={submit} disabled={busy || !email || !password}
-          className="w-full h-14 rounded-xl bg-amber text-bg font-bold text-lg disabled:opacity-40">
-          {busy ? 'Signing in…' : 'Sign in'}
-        </button>
-      </div>
     </div>
   )
 }
