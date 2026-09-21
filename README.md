@@ -1953,3 +1953,49 @@ loadGuestBalances (fixed last turn) to surface it on Credit's
 Reception list — the exact place staff would go to see who owes
 money, where knowing "this isn't actually their responsibility" is
 the whole point.
+
+
+## Daily Sales: Restaurant room-charges merged in
+
+Same gap as the Sales screen's own Today list, just never carried
+over to this page — Restaurant food charged to a room lives in
+orders/order_items, never sales, so it never showed here for any
+past date either. Reused loadRestaurantRoomCharges (already supports
+any date, not just today) and merged it into the same list sales
+already populate, sorted together chronologically. Deliberately left
+the financial summary above untouched — stays sales-only by design,
+same reasoning as the Sales screen.
+
+## Credit: Reception's staff filter now actually filters
+
+Confirmed directly in the code rather than guessed: refreshGuestBalances
+was calling loadGuestBalances with only branchId, never passing
+staffFilter at all — so picking a specific person while viewing
+Reception silently did nothing. Extended loadGuestBalances to accept
+a staffId and filter by stays.created_by (who checked the guest in —
+the closest real equivalent to served_by/credit_staff_id for a room
+stay, since guest balances aren't tied to a "serving staff" the way
+customer credit is).
+
+## Credit and Recovery: "Restaurant tab missing details" — confirmed
+## not a bug
+
+Checked both underlying views' real definitions before assuming
+anything was broken (v_customer_balances_by_staff,
+v_debt_recovery) — both are structurally sound, plain flat columns,
+no embedding issues like the one that broke Reception's guest
+balances earlier. Then checked directly whether any credit sale or
+repayment actually exists at Restaurant on either branch — zero rows,
+confirmed. The empty list is correct; there's simply no data there
+yet. No code changes made here, since there was nothing to fix.
+
+## Rooms: out-of-service activated
+
+Confirmed set_room_service_status's real body before building against
+it — already enforces can_manage_rooms() (manager and up) at the
+database level, and already refuses to take an occupied room out of
+service, naming the guest specifically. Built the app side to match
+exactly: "Mark out of service" (with an optional reason) only offered
+on vacant rooms, gated to manager/gm/admin; "Back in service" on rooms
+already marked out. The room-has-a-guest and permission checks are
+the database's own enforcement, not just UI hiding.

@@ -84,8 +84,9 @@ export default function Credit({ boot }) {
   // a separate load rather than folded into the customer refresh above.
   const refreshGuestBalances = useCallback(() => {
     if (!isReception) return
-    loadGuestBalances(staff.branch_id).then(setGuestBalances).catch(() => setGuestBalances([]))
-  }, [staff.branch_id, isReception])
+    loadGuestBalances(staff.branch_id, isEditor ? staffFilter : null)
+      .then(setGuestBalances).catch(() => setGuestBalances([]))
+  }, [staff.branch_id, isReception, isEditor, staffFilter])
   useEffect(refreshGuestBalances, [refreshGuestBalances])
 
   // Load the department-scoped staff list once per department change,

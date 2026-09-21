@@ -1037,7 +1037,7 @@ export async function updateBranchOverstayDefault(branchId, amount) {
 // querying the view for the outstanding figures alone, then stays
 // (a real table, so its own embed to rooms/guests works correctly)
 // for just those stay ids, and merging client-side.
-export async function loadGuestBalances(branchId) {
+export async function loadGuestBalances(branchId, staffId) {
   const { data: folios, error: e1 } = await supabase.from('v_stay_folio')
     .select('stay_id, billing_cycle, outstanding')
     .eq('branch_id', branchId).gt('outstanding', 0.009)
@@ -1045,12 +1045,13 @@ export async function loadGuestBalances(branchId) {
   if (!folios?.length) return []
 
   const { data: stays, error: e2 } = await supabase.from('stays')
-    .select('id, bill_to, rooms(room_number), guests(full_name)')
+    .select('id, bill_to, created_by, rooms(room_number), guests(full_name)')
     .in('id', folios.map(f => f.stay_id))
   if (e2) throw e2
   const stayById = Object.fromEntries((stays || []).map(s => [s.id, s]))
 
   return folios
+    .filter(f => !staffId || stayById[f.stay_id]?.created_by === staffId)
     .map(f => ({
       stay_id: f.stay_id, billing_cycle: f.billing_cycle, outstanding: Number(f.outstanding),
       room_number: stayById[f.stay_id]?.rooms?.room_number,
@@ -1163,4 +1164,15 @@ export async function chargeWriteoffToRoom({ staff, stayId, businessDate,
     await supabase.from('orders').delete().eq('id', order.id)
     throw iErr
   }
+}
+
+// Out-of-service toggle for maintenance — the RPC itself already
+// enforces can_manage_rooms() and refuses to take an occupied room
+// out of service (naming the guest), confirmed against its real body
+// rather than assumed. This just calls it.
+export async function setRoomServiceStatus(roomId, outOfService, reason) {
+  const { error } = await supabase.rpc('set_room_service_status', {
+    target: roomId, out_of_svc: outOfService, reason: reason || null,
+  })
+  if (error) throw error
 }

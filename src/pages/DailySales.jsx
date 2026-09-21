@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { naira, lagosToday, tierLabel, methodLabel, whoRecorded, paymentSummary } from '../lib/format'
-import { loadDailyFinancials, loadToday, loadReceptionActivity } from '../lib/data'
+import { loadDailyFinancials, loadToday, loadReceptionActivity, loadRestaurantRoomCharges } from '../lib/data'
 import { useToast } from '../components/Toast'
 
 // Read-only — browse any past day's sales by department. Built for
@@ -18,24 +18,46 @@ export default function DailySales({ boot }) {
   const [summary, setSummary] = useState(null)
   const [rows, setRows] = useState(null)
   const [receptionActivity, setReceptionActivity] = useState(null)
+  const [roomCharges, setRoomCharges] = useState([])
 
   const itemById = useMemo(() => Object.fromEntries(items.map(i => [i.id, i])), [items])
   const locById = useMemo(() => Object.fromEntries(salesPoints.map(l => [l.id, l])), [salesPoints])
   const isReception = /reception/i.test(salesPoints.find(l => l.id === locId)?.name || '')
+  const isRestaurant = /restaurant/i.test(salesPoints.find(l => l.id === locId)?.name || '')
 
   const refresh = useCallback(() => {
     const loc = locId === 'all' ? null : locId
-    setSummary(null); setRows(null); setReceptionActivity(null)
+    setSummary(null); setRows(null); setReceptionActivity(null); setRoomCharges([])
     if (isReception) {
       loadReceptionActivity(staff.branch_id, date).then(setReceptionActivity).catch(e => toast(e.message, 'error'))
       return
     }
     loadDailyFinancials(staff.branch_id, date, loc).then(setSummary).catch(e => toast(e.message, 'error'))
     loadToday(staff.branch_id, date, loc).then(setRows).catch(e => toast(e.message, 'error'))
-  }, [staff.branch_id, date, locId, isReception])
+    if (isRestaurant) {
+      loadRestaurantRoomCharges(staff.branch_id, date).then(setRoomCharges).catch(e => toast(e.message, 'error'))
+    }
+  }, [staff.branch_id, date, locId, isReception, isRestaurant])
   useEffect(refresh, [refresh])
 
-  const total = (rows || []).reduce((s, r) => s + Number(r.amount ?? r.qty * r.unit_price), 0)
+  // Restaurant food charged to a room lives in orders/order_items, not
+  // sales — merged into the same list sales already populate, sorted
+  // together chronologically, same as the Sales screen's own Today
+  // list already does. Deliberately doesn't touch summary/grossSales
+  // above — those stay sales-only by design, since a room charge
+  // settles through the guest's folio, not this department's own
+  // till figures.
+  const combinedRows = useMemo(() => {
+    const sales = (rows || []).map(r => ({ ...r, entryKind: 'sale', sortAt: r.created_at }))
+    if (!isRestaurant) return sales
+    const charges = roomCharges.map(r => ({
+      ...r, entryKind: 'roomCharge', sortAt: r.orders?.created_at,
+      roomNumber: r.orders?.stays?.rooms?.room_number, guestName: r.orders?.stays?.guests?.full_name,
+    }))
+    return [...sales, ...charges].sort((a, b) => (b.sortAt || '').localeCompare(a.sortAt || ''))
+  }, [rows, roomCharges, isRestaurant])
+
+  const total = combinedRows.reduce((s, r) => s + Number(r.amount ?? r.qty * r.unit_price), 0)
 
   return (
     <div className="px-5">
@@ -152,20 +174,27 @@ export default function DailySales({ boot }) {
       </div>
 
       <ul className="mt-2 divide-y divide-line/60">
-        {(rows || []).map(r => (
-          <li key={r.id} className="py-3 flex items-center gap-3">
+        {combinedRows.map(r => (
+          <li key={`${r.entryKind}:${r.id}`} className="py-3 flex items-center gap-3">
             <div className="flex-1 min-w-0">
               <div className="font-semibold truncate">{itemById[r.stock_item_id]?.name || r.description || '—'}</div>
-              <div className="text-dim text-sm">
-                {tierLabel[r.tier] || r.tier} · {r.qty} × {naira(r.unit_price)}
-                {locId === 'all' && locById[r.location_id] ? ` · ${locById[r.location_id].name}` : ''}
-                <br />{paymentSummary(r)} · {whoRecorded(r)}
-              </div>
+              {r.entryKind === 'roomCharge' ? (
+                <div className="text-dim text-sm">
+                  {r.qty} × {naira(r.unit_price)}
+                  <br />Charged to Room {r.roomNumber || '—'}{r.guestName ? ` · ${r.guestName}` : ''}
+                </div>
+              ) : (
+                <div className="text-dim text-sm">
+                  {tierLabel[r.tier] || r.tier} · {r.qty} × {naira(r.unit_price)}
+                  {locId === 'all' && locById[r.location_id] ? ` · ${locById[r.location_id].name}` : ''}
+                  <br />{paymentSummary(r)} · {whoRecorded(r)}
+                </div>
+              )}
             </div>
             <div className="tnum font-semibold">{naira(r.amount ?? r.qty * r.unit_price)}</div>
           </li>
         ))}
-        {rows && !rows.length && <li className="py-8 text-center text-dim">No sales that day.</li>}
+        {rows && !combinedRows.length && <li className="py-8 text-center text-dim">No sales that day.</li>}
         {!rows && <li className="py-8 text-center text-dim">Loading…</li>}
       </ul>
       </>

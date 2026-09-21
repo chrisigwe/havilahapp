@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react'
 import { naira } from '../lib/format'
-import { loadOccupancy } from '../lib/data'
+import { loadOccupancy, setRoomServiceStatus } from '../lib/data'
 import CheckIn from './CheckIn'
 import Folio from '../components/Folio'
 import ReopenSearch from '../components/ReopenSearch'
+import { useToast } from '../components/Toast'
 
 // Phase 2 of bringing the front-desk app's functionality into this
 // one: check-in and new bookings, alongside the view-only room status
@@ -26,13 +27,38 @@ function stateOf(room) {
 
 export default function RoomBoard({ boot }) {
   const { staff } = boot
+  const toast = useToast()
+  const canManageRooms = ['manager', 'gm', 'admin'].includes(staff.role)
   const [checkingIn, setCheckingIn] = useState(false)
   const [openStay, setOpenStay] = useState(null)   // the room whose folio is open
   const [reopenSearching, setReopenSearching] = useState(false)
+  const [markingOOS, setMarkingOOS] = useState(null)   // the room being marked out of service
+  const [oosReason, setOosReason] = useState('')
+  const [oosBusy, setOosBusy] = useState(false)
   const [rooms, setRooms] = useState(null)
 
   const refresh = () => { loadOccupancy(staff.branch_id).then(setRooms).catch(() => setRooms([])) }
   useEffect(refresh, [staff.branch_id])
+
+  async function confirmMarkOOS() {
+    setOosBusy(true)
+    try {
+      await setRoomServiceStatus(markingOOS.room_id, true, oosReason)
+      toast(`Room ${markingOOS.room_number} marked out of service`, 'success')
+      setMarkingOOS(null); setOosReason(''); refresh()
+    } catch (e) { toast(e.message, 'error') }
+    setOosBusy(false)
+  }
+
+  async function markBackInService(room) {
+    setOosBusy(true)
+    try {
+      await setRoomServiceStatus(room.room_id, false)
+      toast(`Room ${room.room_number} back in service`, 'success')
+      refresh()
+    } catch (e) { toast(e.message, 'error') }
+    setOosBusy(false)
+  }
 
   if (rooms === null) return <p className="px-5 text-dim">Loading…</p>
 
@@ -92,7 +118,16 @@ export default function RoomBoard({ boot }) {
                 <p className="text-dim text-xs mt-0.5 truncate">{room.category}</p>
 
                 {room.out_of_service ? (
-                  <p className="text-dim text-sm mt-2 truncate">{room.oos_reason || 'Out of service'}</p>
+                  <>
+                    <p className="text-dim text-sm mt-2 truncate">{room.oos_reason || 'Out of service'}</p>
+                    {canManageRooms && (
+                      <button onClick={(e) => { e.stopPropagation(); markBackInService(room) }}
+                        disabled={oosBusy}
+                        className="mt-2 h-8 px-3 rounded-lg border border-leaf text-leaf text-sm font-semibold disabled:opacity-40">
+                        Back in service
+                      </button>
+                    )}
+                  </>
                 ) : room.guest_name ? (
                   <>
                     <p className="text-sm font-semibold mt-2 truncate">{room.guest_name}</p>
@@ -113,7 +148,15 @@ export default function RoomBoard({ boot }) {
                     )}
                   </>
                 ) : (
-                  <p className="text-dim text-sm mt-2">Ready to let</p>
+                  <>
+                    <p className="text-dim text-sm mt-2">Ready to let</p>
+                    {canManageRooms && (
+                      <button onClick={(e) => { e.stopPropagation(); setMarkingOOS(room); setOosReason('') }}
+                        className="mt-2 h-8 px-3 rounded-lg border border-clay text-clay text-sm font-semibold">
+                        Mark out of service
+                      </button>
+                    )}
+                  </>
                 )}
               </div>
             </div>
@@ -140,6 +183,22 @@ export default function RoomBoard({ boot }) {
         <ReopenSearch boot={boot}
           onClose={() => setReopenSearching(false)}
           onPick={(stayLike) => { setReopenSearching(false); setOpenStay(stayLike) }} />
+      )}
+
+      {markingOOS && (
+        <div className="fixed inset-0 z-50 bg-bg flex flex-col justify-center px-6">
+          <h2 className="text-2xl font-bold">Mark Room {markingOOS.room_number} out of service?</h2>
+          <p className="text-dim mt-2">It won't be selectable for new bookings until brought back.</p>
+          <label className="block mt-4 text-dim">Reason (optional)</label>
+          <input value={oosReason} onChange={e => setOosReason(e.target.value)} autoFocus
+            placeholder="e.g. AC repair, plumbing fault"
+            className="mt-2 h-14 w-full px-4 rounded-xl bg-surface border border-line placeholder:text-dim" />
+          <button onClick={confirmMarkOOS} disabled={oosBusy}
+            className="mt-6 w-full h-16 rounded-2xl bg-clay text-bg text-xl font-bold disabled:opacity-40">
+            {oosBusy ? 'Saving…' : 'Mark out of service'}
+          </button>
+          <button onClick={() => setMarkingOOS(null)} className="mt-3 w-full h-12 text-dim">Cancel</button>
+        </div>
       )}
     </div>
   )
