@@ -1,8 +1,16 @@
-# Havilah Inventory
+# Havilah App
 
-Mobile-first inventory & bar sales app for Havilah Suite Ltd (Awka & Nnewi).
-Shares the Supabase project with the front desk register: same staff, same
-branches, one stock ledger.
+The all-in-one operations app for Havilah Suite Ltd (Awka & Nnewi) —
+rooms and front desk, the bar, the restaurant, stock, and credit, all
+in one place, so inventory ties directly to income rather than living
+in a separate system. Started as a bar/stock inventory app; grew into
+covering the full guest stay (check-in through checkout), restaurant
+orders (walk-in and charged to a room), and every department's credit
+and cash reconciliation, once it became clear these were never really
+separate problems.
+
+Shares the Supabase project with the front desk register: same staff,
+same branches, one stock ledger.
 
 ## Setup
 

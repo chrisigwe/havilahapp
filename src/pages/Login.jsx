@@ -23,7 +23,10 @@ export default function Login() {
           Havilah<span className="text-amber"> App</span>
         </h1>
       </div>
-      <p className="mt-2 text-dim">Sign in to record sales and stock.</p>
+      <p className="mt-2 text-dim">
+        One app for rooms, the bar, the restaurant, stock, and credit —
+        sign in to get started.
+      </p>
       <div className="mt-10 space-y-4">
         <input value={email} onChange={e => setEmail(e.target.value)} type="email" inputMode="email"
           autoComplete="username" placeholder="Email"
