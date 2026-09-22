@@ -1125,14 +1125,24 @@ export async function deleteOrderItem(orderItemId, orderId) {
 // Today list at all, since that list only ever queried sales. Joins
 // through to the guest/room for display, same context the folio
 // itself shows.
-export async function loadRestaurantRoomCharges(branchId, date) {
+// Room-charged items belonging to one department's category — food
+// (Restaurant), minimart (Minimart), or drink (bar departments).
+// location_id is only ever set on catalog-item charges, never on
+// typed ones, so category is the one field that reliably identifies
+// which department a room charge belongs to.
+export async function loadRoomCharges(branchId, date, category) {
   const { data, error } = await supabase.from('order_items')
     .select(`id, description, qty, unit_price, amount, order_id, order_type, damage_reason, writeoff_note,
              orders!inner(id, business_date, branch_id, served_by, created_at,
                           stays(rooms(room_number), guests(full_name)))`)
-    .eq('category', 'food').eq('orders.branch_id', branchId).eq('orders.business_date', date)
+    .eq('category', category).eq('orders.branch_id', branchId).eq('orders.business_date', date)
   if (error) throw error
   return data || []
+}
+
+// Backward-compatible alias — Restaurant's own category.
+export async function loadRestaurantRoomCharges(branchId, date) {
+  return loadRoomCharges(branchId, date, 'food')
 }
 
 // ---------- Restaurant order type: PR/Damage and Staff write-offs ----------

@@ -2046,3 +2046,17 @@ Swept the whole codebase afterward for any remaining
 order_type === 'standard' / !== 'standard' comparison tied to this
 logic — none found, confirming the fix is complete rather than
 partial.
+
+
+## Charge-to-room visibility generalized to every department
+
+Confirmed the gap directly rather than assumed: loadRestaurantRoomCharges
+was hardcoded to category='food', wired only into Restaurant's branch
+of both SalesEntry and DailySales. A minimart item or a bar drink
+charged to a room never showed on its own department's sales list at
+all — only Restaurant had this. Generalized into loadRoomCharges(branchId,
+date, category), mapping whichever department is actually selected to
+its matching category (food/minimart/drink), with loadRestaurantRoomCharges
+kept as a thin backward-compatible alias. Same merge/render logic as
+before, now driven by roomChargeCategory instead of an isRestaurant-only
+check.

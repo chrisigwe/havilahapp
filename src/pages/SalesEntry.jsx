@@ -4,7 +4,7 @@ import { loadStockMap, loadPopular, loadToday, saveBasket, saveWriteoff,
          loadDailyFinancials, loadCustomers, createCustomer,
          loadOpeningDate, loadBalances, loadReceipt,
          loadStaffForLocation, loadReceptionActivity, deleteEntry,
-         loadRestaurantRoomCharges, deleteOrderItem, saveRestaurantWriteoff } from '../lib/data'
+         loadRoomCharges, deleteOrderItem, saveRestaurantWriteoff } from '../lib/data'
 import { enqueue, flush, isConnectionError } from '../lib/outbox'
 import { useToast } from '../components/Toast'
 import ItemPicker from '../components/ItemPicker'
@@ -53,6 +53,15 @@ export default function SalesEntry({ boot }) {
   const currentDept = salesPoints.find(l => l.id === locationId)
   const isRestaurant = /restaurant/i.test(currentDept?.name || '')
   const isReception = /reception/i.test(currentDept?.name || '')
+  // Which order_items.category a room charge from THIS department
+  // lands under — null for Reception, which has no charges of its
+  // own. Any department can have items charged to a room, not just
+  // Restaurant, so this drives loading and merging generically
+  // rather than special-casing one department.
+  const roomChargeCategory = isReception ? null
+    : isRestaurant ? 'food'
+    : /minimart/i.test(currentDept?.name || '') ? 'minimart'
+    : 'drink'
   // Re-sync selected department on branch switch (GM) — otherwise the
   // old branch's location id stays selected, matching no chip here,
   // so nothing highlights until a manual tap.
@@ -112,13 +121,13 @@ export default function SalesEntry({ boot }) {
   // loadToday itself, which every other department still uses as-is.
   const combinedToday = useMemo(() => {
     const sales = today.map(r => ({ ...r, entryKind: 'sale', sortAt: r.created_at }))
-    if (!isRestaurant) return sales
+    if (!roomChargeCategory) return sales
     const charges = roomCharges.map(r => ({
       ...r, entryKind: 'roomCharge', sortAt: r.orders?.created_at,
       roomNumber: r.orders?.stays?.rooms?.room_number, guestName: r.orders?.stays?.guests?.full_name,
     }))
     return [...sales, ...charges].sort((a, b) => (b.sortAt || '').localeCompare(a.sortAt || ''))
-  }, [today, roomCharges, isRestaurant])
+  }, [today, roomCharges, roomChargeCategory])
   const locById = useMemo(() =>
     Object.fromEntries((boot.allLocations || locations).map(l => [l.id, l])), [boot, locations])
 
@@ -135,8 +144,8 @@ export default function SalesEntry({ boot }) {
     if (isReception) {
       loadReceptionActivity(staff.branch_id, date).then(setReceptionActivity).catch(() => {})
     }
-    if (isRestaurant) {
-      loadRestaurantRoomCharges(staff.branch_id, date).then(setRoomCharges).catch(() => {})
+    if (roomChargeCategory) {
+      loadRoomCharges(staff.branch_id, date, roomChargeCategory).then(setRoomCharges).catch(() => {})
     }
     loadDailyFinancials(staff.branch_id, date, locationId).then(r => {
       setSummary({ byMethod: r.byMethod, nonRevenue: r.nonRevenue })

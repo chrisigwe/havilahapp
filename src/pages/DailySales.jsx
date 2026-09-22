@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { naira, lagosToday, tierLabel, methodLabel, whoRecorded, paymentSummary } from '../lib/format'
-import { loadDailyFinancials, loadToday, loadReceptionActivity, loadRestaurantRoomCharges } from '../lib/data'
+import { loadDailyFinancials, loadToday, loadReceptionActivity, loadRoomCharges } from '../lib/data'
 import { useToast } from '../components/Toast'
 
 // Read-only — browse any past day's sales by department. Built for
@@ -24,6 +24,12 @@ export default function DailySales({ boot }) {
   const locById = useMemo(() => Object.fromEntries(salesPoints.map(l => [l.id, l])), [salesPoints])
   const isReception = /reception/i.test(salesPoints.find(l => l.id === locId)?.name || '')
   const isRestaurant = /restaurant/i.test(salesPoints.find(l => l.id === locId)?.name || '')
+  const currentDept = salesPoints.find(l => l.id === locId)
+  const roomChargeCategory = isReception ? null
+    : isRestaurant ? 'food'
+    : /minimart/i.test(currentDept?.name || '') ? 'minimart'
+    : locId === 'all' ? null // "All" has no single category to filter by
+    : 'drink'
 
   const refresh = useCallback(() => {
     const loc = locId === 'all' ? null : locId
@@ -34,28 +40,28 @@ export default function DailySales({ boot }) {
     }
     loadDailyFinancials(staff.branch_id, date, loc).then(setSummary).catch(e => toast(e.message, 'error'))
     loadToday(staff.branch_id, date, loc).then(setRows).catch(e => toast(e.message, 'error'))
-    if (isRestaurant) {
-      loadRestaurantRoomCharges(staff.branch_id, date).then(setRoomCharges).catch(e => toast(e.message, 'error'))
+    if (roomChargeCategory) {
+      loadRoomCharges(staff.branch_id, date, roomChargeCategory).then(setRoomCharges).catch(e => toast(e.message, 'error'))
     }
-  }, [staff.branch_id, date, locId, isReception, isRestaurant])
+  }, [staff.branch_id, date, locId, isReception, roomChargeCategory])
   useEffect(refresh, [refresh])
 
-  // Restaurant food charged to a room lives in orders/order_items, not
-  // sales — merged into the same list sales already populate, sorted
-  // together chronologically, same as the Sales screen's own Today
-  // list already does. Deliberately doesn't touch summary/grossSales
-  // above — those stay sales-only by design, since a room charge
-  // settles through the guest's folio, not this department's own
-  // till figures.
+  // A room charge from any department lives in orders/order_items,
+  // not sales — merged into the same list sales already populate,
+  // sorted together chronologically, same as the Sales screen's own
+  // Today list already does. Deliberately doesn't touch summary/
+  // grossSales above — those stay sales-only by design, since a room
+  // charge settles through the guest's folio, not this department's
+  // own till figures.
   const combinedRows = useMemo(() => {
     const sales = (rows || []).map(r => ({ ...r, entryKind: 'sale', sortAt: r.created_at }))
-    if (!isRestaurant) return sales
+    if (!roomChargeCategory) return sales
     const charges = roomCharges.map(r => ({
       ...r, entryKind: 'roomCharge', sortAt: r.orders?.created_at,
       roomNumber: r.orders?.stays?.rooms?.room_number, guestName: r.orders?.stays?.guests?.full_name,
     }))
     return [...sales, ...charges].sort((a, b) => (b.sortAt || '').localeCompare(a.sortAt || ''))
-  }, [rows, roomCharges, isRestaurant])
+  }, [rows, roomCharges, roomChargeCategory])
 
   const total = combinedRows.reduce((s, r) => s + Number(r.amount ?? r.qty * r.unit_price), 0)
 
