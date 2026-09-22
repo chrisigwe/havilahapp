@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { naira, lagosToday, nightsBetween, addDays, cyclesFor, friendlyStayError } from '../lib/format'
-import { loadFreeRooms, loadBranchStaySettings, findOrCreateGuest, createStay } from '../lib/data'
+import { loadFreeRooms, loadBranchStaySettings, findOrCreateGuest, createStay, searchSimilarGuests } from '../lib/data'
 import { useToast } from '../components/Toast'
 
 const RATE_FIELDS = { standard: 'rate_standard', alternate: 'rate_alternate', short: 'rate_short' }
@@ -23,6 +23,19 @@ export default function CheckIn({ boot, onDone }) {
   const [cycle, setCycle] = useState('one_off')
   const [reserve, setReserve] = useState(false)
   const [billTo, setBillTo] = useState('')
+  const [similarGuests, setSimilarGuests] = useState([])
+  const [suggestionsOpen, setSuggestionsOpen] = useState(false)
+
+  // Debounced — a similar-name search on every keystroke would be
+  // wasteful and flickery. 400ms is enough to wait for a pause in
+  // typing without feeling laggy.
+  useEffect(() => {
+    if (!suggestionsOpen) return
+    const t = setTimeout(() => {
+      searchSimilarGuests(staff.branch_id, name).then(setSimilarGuests)
+    }, 400)
+    return () => clearTimeout(t)
+  }, [name, staff.branch_id, suggestionsOpen])
 
   useEffect(() => {
     loadFreeRooms(staff.branch_id).then(setRooms).catch(() => setRooms([]))
@@ -65,8 +78,29 @@ export default function CheckIn({ boot, onDone }) {
 
       <div className="mt-5">
         <div className="text-dim mb-1">Guest name</div>
-        <input value={name} onChange={e => setName(e.target.value)} autoFocus
+        <input value={name} onChange={e => { setName(e.target.value); setSuggestionsOpen(true) }}
+          onFocus={() => setSuggestionsOpen(true)} autoFocus
           className="h-14 w-full px-4 rounded-xl bg-surface border border-line" />
+        {suggestionsOpen && !!similarGuests.length && (
+          <div className="mt-2 rounded-xl border border-amber bg-surface divide-y divide-line overflow-hidden">
+            <div className="px-4 py-2 text-dim text-sm">Similar guest already exists — same person?</div>
+            {similarGuests.map(g => (
+              <button key={g.id} type="button"
+                onClick={() => {
+                  setName(g.full_name); setPhone(g.phone || '')
+                  setSuggestionsOpen(false); setSimilarGuests([])
+                }}
+                className="block w-full text-left px-4 py-3 hover:bg-raise">
+                <div className="font-semibold">{g.full_name}</div>
+                {g.phone && <div className="text-dim text-sm">{g.phone}</div>}
+              </button>
+            ))}
+            <button type="button" onClick={() => { setSuggestionsOpen(false); setSimilarGuests([]) }}
+              className="block w-full text-center px-4 py-2 text-dim text-sm">
+              No, this is a different person
+            </button>
+          </div>
+        )}
       </div>
       <div className="mt-4">
         <div className="text-dim mb-1">Phone number</div>

@@ -2060,3 +2060,28 @@ its matching category (food/minimart/drink), with loadRestaurantRoomCharges
 kept as a thin backward-compatible alias. Same merge/render logic as
 before, now driven by roomChargeCategory instead of an isRestaurant-only
 check.
+
+
+## Guest deduplication — both pieces built
+
+Preventive: CheckIn now debounce-searches existing guests as the name
+field is typed (plain ILIKE substring match — this app's guest list
+is small enough that real fuzzy matching isn't needed, and a simple
+substring reliably catches shared-prefix misspellings like Alphonso/
+Alphonsus in practice). Tapping a suggestion pre-fills name/phone to
+match exactly, so findOrCreateGuest's existing matching naturally
+reuses that same guest rather than creating a new one. A nudge, not a
+hard block — staff can still dismiss and proceed if it's genuinely a
+different person.
+
+Retroactive: a new merge_guests() RPC, gated to is_supervisor()
+(gm/admin only — the strictest tier already used elsewhere in this
+app, given how hard this is to undo if the wrong two guests get
+merged). Reassigns every stay from one or more duplicates onto a
+chosen survivor, then marks the duplicate record clearly rather than
+deleting it outright, so the merge stays reversible-by-inspection
+even though the RPC itself doesn't undo. App side: MergeGuestsSheet,
+a new two-step component (pick survivor, then pick duplicates, each
+step showing stay counts so staff can tell which record actually has
+the real history), reached from a new "Guest records" section on
+StaySettings, same gm/admin gate.

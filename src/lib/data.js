@@ -834,6 +834,45 @@ export async function loadBranchStaySettings(branchId) {
 // same normalized name (so "Mr. Alphonso" and "alphonso" match)
 // reuses the existing record rather than creating a duplicate, and
 // backfills a phone number the earlier visit didn't capture.
+// A lightweight "similar guests already exist" search, so staff
+// typing a slightly different spelling (Alphonso vs Alphonsus) sees
+// the existing guest instead of silently creating a duplicate. Plain
+// substring match — this app's guest list is small enough that it
+// doesn't need real fuzzy matching, and a simple ILIKE reliably
+// catches the shared-prefix misspellings that actually happen in
+// practice.
+export async function searchSimilarGuests(branchId, query) {
+  const q = query.trim()
+  if (q.length < 3) return []
+  const { data, error } = await supabase.from('guests')
+    .select('id, full_name, phone')
+    .eq('branch_id', branchId).ilike('full_name', `%${q}%`)
+    .order('full_name').limit(5)
+  if (error) return []
+  return data || []
+}
+
+// For the merge-guests tool — same substring search as above, but
+// also returns each guest's stay count, so staff can see at a
+// glance which record has the real history worth keeping.
+export async function searchGuestsForMerge(branchId, query) {
+  const q = query.trim()
+  if (q.length < 2) return []
+  const { data, error } = await supabase.from('guests')
+    .select('id, full_name, phone, stays(count)')
+    .eq('branch_id', branchId).ilike('full_name', `%${q}%`)
+    .order('full_name').limit(10)
+  if (error) return []
+  return (data || []).map(g => ({ ...g, stayCount: g.stays?.[0]?.count ?? 0 }))
+}
+
+export async function mergeGuests(survivorId, duplicateIds) {
+  const { error } = await supabase.rpc('merge_guests', {
+    survivor_id: survivorId, duplicate_ids: duplicateIds,
+  })
+  if (error) throw error
+}
+
 export async function findOrCreateGuest(branchId, name, phone) {
   const digits = (phone || '').replace(/\D/g, '')
   if (digits) {

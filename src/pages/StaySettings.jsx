@@ -3,6 +3,7 @@ import { naira } from '../lib/format'
 import { loadRoomsForSettings, loadBranchStaySettings, updateRoomRates,
          updateBranchOverstayDefault } from '../lib/data'
 import { useToast } from '../components/Toast'
+import MergeGuestsSheet from '../components/MergeGuestsSheet'
 
 const RATE_FIELDS = { standard: 'rate_standard', alternate: 'rate_alternate', short: 'rate_short' }
 
@@ -25,6 +26,7 @@ export default function StaySettings({ boot }) {
 
   const canManageRooms = ['manager', 'gm', 'admin'].includes(staff.role)
   const canSetOverstayDefault = ['gm', 'admin'].includes(staff.role)
+  const [mergingGuests, setMergingGuests] = useState(false)
 
   useEffect(() => {
     if (!canManageRooms) return
@@ -105,6 +107,21 @@ export default function StaySettings({ boot }) {
         </section>
       )}
 
+      {canSetOverstayDefault && (
+        <section className="mt-5 rounded-2xl border border-line bg-surface p-4">
+          <h3 className="font-semibold">Guest records</h3>
+          <p className="text-dim text-sm mt-1 mb-3">
+            If the same guest ended up with more than one record — different
+            spellings of their name over time — merge them into one so their
+            full history and current balance live in a single place.
+          </p>
+          <button onClick={() => setMergingGuests(true)}
+            className="h-12 px-5 rounded-xl border border-amber text-amber font-semibold">
+            Merge duplicate guests
+          </button>
+        </section>
+      )}
+
       <section className="mt-5">
         <h3 className="font-semibold">Room rates</h3>
         <p className="text-dim text-sm mt-1 mb-3">
@@ -153,6 +170,8 @@ export default function StaySettings({ boot }) {
           {!rooms.length && <p className="p-6 text-dim">No rooms set up for this branch yet.</p>}
         </div>
       </section>
+
+      {mergingGuests && <MergeGuestsSheet boot={boot} onClose={() => setMergingGuests(false)} />}
     </div>
   )
 }
