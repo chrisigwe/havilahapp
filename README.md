@@ -2085,3 +2085,26 @@ a new two-step component (pick survivor, then pick duplicates, each
 step showing stay counts so staff can tell which record actually has
 the real history), reached from a new "Guest records" section on
 StaySettings, same gm/admin gate.
+
+
+## Fixed: print/PDF had ~half an A4 page blank before content
+
+Traced the real cause rather than guess — every sheet/modal in this
+app (Folio, Receipt, FolioStatement, etc.) is a position:fixed
+wrapper. .invoice-print's own CSS was already explicitly set to
+position:absolute; inset:0 auto auto 0 to pin it to the page's top-
+left, but absolute positioning resolves against the nearest
+POSITIONED ancestor — and that fixed wrapper was it, not the actual
+page. position:fixed during print is a well-documented source of
+exactly this kind of blank-space/offset bug across browsers.
+
+Fixed by neutralizing position:fixed on every wrapper specifically
+during print (.fixed { position: static !important }), so
+.invoice-print's absolute positioning correctly resolves against the
+page instead. Confirmed this has no visual side effects — everything
+under those wrappers is already visibility:hidden during print, so
+changing their positioning doesn't make anything newly visible, it
+only fixes the containing-block chain. Confirmed Receipt.jsx shares
+the identical fixed-wrapper structure, so this was very likely
+affecting receipt printing too, not just guest statements — one
+shared fix covers both rather than patching FolioStatement alone.

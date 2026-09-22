@@ -64,6 +64,16 @@ input[type="date"]::-webkit-calendar-picker-indicator:hover { opacity: 0.75; }
   html, body { background: #fff !important; }
   body * { visibility: hidden; }
   .invoice-print, .invoice-print * { visibility: visible; }
+  /* Every sheet/modal in this app is a position:fixed wrapper — a
+     known source of blank space and inconsistent positioning during
+     print across browsers. .invoice-print's own absolute positioning
+     is meant to resolve relative to the actual printed page, but a
+     fixed ancestor becomes its containing block instead, so it was
+     pinning against that instead of the page. Neutralizing every
+     fixed wrapper here breaks that chain correctly. Everything under
+     them is already visibility:hidden, so this has no visual effect
+     beyond fixing the containing-block chain. */
+  .fixed { position: static !important; inset: auto !important; }
   .invoice-print {
     position: absolute; inset: 0 auto auto 0; width: 100%;
     padding: 0 !important; color: #000 !important; background: #fff !important;
