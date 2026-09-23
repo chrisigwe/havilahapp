@@ -12,7 +12,7 @@ function printOnly(id) {
 // infrastructure Receipt.jsx already uses, not the reference app's
 // separate portal-based printing (which it needed only because of its
 // own drawer nesting; this app doesn't have that problem).
-export default function FolioStatement({ room, folio, orderLines, payments, branchName, onClose }) {
+export default function FolioStatement({ room, folio, orderLines, payments, branchName, departmentCredit, onClose }) {
   const roomCharge = Number(folio?.room_charge ?? 0)
   const overstay = Number(folio?.overstay_charge ?? 0)
   const orderTotal = orderLines.reduce((s, li) => s + Number(li.amount), 0)
@@ -103,6 +103,18 @@ export default function FolioStatement({ room, folio, orderLines, payments, bran
             <span>{balance > 0 ? 'Balance due' : 'Balance'}</span>
             <span className="tnum">{naira(Math.abs(balance))}</span>
           </div>
+
+          {!!departmentCredit?.length && (
+            <div className="mt-4 pt-4" style={{ borderTop: '1px solid #ccc' }}>
+              <p className="font-semibold text-sm">Also owed at other departments (not included above):</p>
+              {departmentCredit.map(d => (
+                <div key={d.location_id} className="flex justify-between text-sm mt-1">
+                  <span>{d.location_name}</span>
+                  <span className="tnum">{naira(d.balance)}</span>
+                </div>
+              ))}
+            </div>
+          )}
 
           <p className="text-dim text-sm mt-6 invoice-foot">
             Thank you for staying with us.<br />Received by _______________________

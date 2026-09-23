@@ -2108,3 +2108,28 @@ only fixes the containing-block chain. Confirmed Receipt.jsx shares
 the identical fixed-wrapper structure, so this was very likely
 affecting receipt printing too, not just guest statements — one
 shared fix covers both rather than patching FolioStatement alone.
+
+
+## Option B: the workaround customer-credit system linked to real guests
+
+Built now that guest dedup is confirmed solid — linking to guests
+(customers.linked_guest_id), not a specific stay, so the connection
+survives checkout and any future re-checkin rather than expiring the
+moment a stay closes.
+
+New view v_guest_department_credit consolidates a linked customer's
+balance per department, summed across any staff_id split (the same
+kind of split that briefly happened during the Alphonso
+reconciliation) into one clean total per department per guest.
+
+Linking UI: a "Link to a guest" action on Credit's customer statement
+sheet, reusing the same debounced name search built for check-in's
+similar-guest suggestions. Display: threaded through loadFolio (one
+extra query, not duplicated per consumer) into Folio itself, the
+printable FolioStatement, and Credit's Reception guest-balance list —
+the three places a guest's real total actually matters. Always shown
+as a clearly separate figure, explicitly labeled as not part of the
+room bill — a room charge and department credit settle through
+completely different mechanisms (room payments vs credit_repayments),
+and folding them into one number would be misleading for
+reconciliation even though they're genuinely the same person's debt.

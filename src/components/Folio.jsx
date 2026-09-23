@@ -40,7 +40,7 @@ export default function Folio({ boot, room, onClose, onChanged }) {
     </div>
   )
 
-  const { orders, payments, folio, stay } = data
+  const { orders, payments, folio, stay, departmentCredit } = data
   const outstanding = Number(folio?.outstanding ?? 0)
   const live = ['reserved', 'occupied'].includes(room.status) && !!room.stay_id
   const orderLines = orders.flatMap(o => (o.order_items || [])
@@ -177,6 +177,17 @@ export default function Folio({ boot, room, onClose, onChanged }) {
           <p className="mt-2 inline-block px-3 py-1 rounded-full bg-amber/20 border border-amber text-amber text-sm font-semibold">
             Billed to: {stay.bill_to}
           </p>
+        )}
+        {!!departmentCredit?.length && (
+          <div className="mt-2 px-3 py-2 rounded-xl bg-clay/10 border border-clay">
+            <p className="text-clay text-sm font-semibold">Also owed at other departments:</p>
+            {departmentCredit.map(d => (
+              <p key={d.location_id} className="text-clay text-sm">
+                {d.location_name}: {naira(d.balance)}
+              </p>
+            ))}
+            <p className="text-dim text-xs mt-1">Not part of the room bill — settled separately on Credit.</p>
+          </div>
         )}
         {live && (
           <button onClick={openEdit} className="text-dim text-sm underline mt-1">
@@ -433,7 +444,7 @@ export default function Folio({ boot, room, onClose, onChanged }) {
 
       {printing && (
         <FolioStatement room={room} folio={folio} orderLines={orderLines} payments={payments}
-          branchName={boot.branchName} onClose={() => setPrinting(false)} />
+          departmentCredit={departmentCredit} branchName={boot.branchName} onClose={() => setPrinting(false)} />
       )}
 
       {confirmingDelete && (

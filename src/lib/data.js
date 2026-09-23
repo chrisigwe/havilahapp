@@ -873,6 +873,25 @@ export async function mergeGuests(survivorId, duplicateIds) {
   if (error) throw error
 }
 
+// Option B — bridges the workaround customer-credit system to a
+// guest's real, stable identity, now that guest dedup means one
+// guest is one clean record. Linked to guests, not a specific stay,
+// so the connection survives checkout and any future re-checkin.
+export async function linkCustomerToGuest(customerId, guestId) {
+  const { error } = await supabase.from('customers')
+    .update({ linked_guest_id: guestId }).eq('id', customerId)
+  if (error) throw error
+}
+
+export async function loadGuestDepartmentCredit(guestId) {
+  if (!guestId) return []
+  const { data, error } = await supabase.from('v_guest_department_credit')
+    .select('location_id, location_name, balance')
+    .eq('guest_id', guestId)
+  if (error) return []
+  return data || []
+}
+
 export async function findOrCreateGuest(branchId, name, phone) {
   const digits = (phone || '').replace(/\D/g, '')
   if (digits) {
@@ -934,13 +953,21 @@ export async function loadFolio(stayId) {
     // v_stay_folio has daily_rate/billing_cycle but not the raw
     // overstay_fee or rate_applied (the rate type) — both needed to
     // pre-fill the editing form correctly.
-    supabase.from('stays').select('overstay_fee, rate_applied, bill_to').eq('id', stayId).maybeSingle(),
+    supabase.from('stays').select('overstay_fee, rate_applied, bill_to, guest_id').eq('id', stayId).maybeSingle(),
   ])
   if (e1) throw e1
   if (e2) throw e2
   if (e3) throw e3
   if (e4) throw e4
-  return { orders: orders || [], payments: payments || [], folio: folio || null, stay: stay || null }
+  // Option B — department credit recorded through the workaround
+  // customer system, for departments that linked their customer
+  // record to this same guest. Kept as a clearly separate figure,
+  // never folded into total_due — a room bill and department credit
+  // settle through completely different mechanisms (room payments
+  // vs credit_repayments), and conflating them would be misleading
+  // for reconciliation even though they're the same person's debt.
+  const departmentCredit = await loadGuestDepartmentCredit(stay?.guest_id)
+  return { orders: orders || [], payments: payments || [], folio: folio || null, stay: stay || null, departmentCredit }
 }
 
 // A guest paying part POS and part cash (or transfer) is one
@@ -1091,10 +1118,23 @@ export async function loadGuestBalances(branchId, staffId) {
   if (!folios?.length) return []
 
   const { data: stays, error: e2 } = await supabase.from('stays')
-    .select('id, bill_to, created_by, rooms(room_number), guests(full_name)')
+    .select('id, guest_id, bill_to, created_by, rooms(room_number), guests(full_name)')
     .in('id', folios.map(f => f.stay_id))
   if (e2) throw e2
   const stayById = Object.fromEntries((stays || []).map(s => [s.id, s]))
+
+  // Option B — a batched lookup of department credit for every guest
+  // in this list at once, not one query per guest, merged client-side
+  // into a single total per guest (the full per-department breakdown
+  // lives on that guest's own folio/statement instead).
+  const guestIds = [...new Set((stays || []).map(s => s.guest_id).filter(Boolean))]
+  const { data: deptCredit } = guestIds.length
+    ? await supabase.from('v_guest_department_credit').select('guest_id, balance').in('guest_id', guestIds)
+    : { data: [] }
+  const deptTotalByGuest = {}
+  for (const d of deptCredit || []) {
+    deptTotalByGuest[d.guest_id] = (deptTotalByGuest[d.guest_id] || 0) + Number(d.balance)
+  }
 
   return folios
     .filter(f => !staffId || stayById[f.stay_id]?.created_by === staffId)
@@ -1103,6 +1143,7 @@ export async function loadGuestBalances(branchId, staffId) {
       room_number: stayById[f.stay_id]?.rooms?.room_number,
       guest_name: stayById[f.stay_id]?.guests?.full_name,
       bill_to: stayById[f.stay_id]?.bill_to,
+      departmentCredit: deptTotalByGuest[stayById[f.stay_id]?.guest_id] || 0,
     }))
     .sort((a, b) => b.outstanding - a.outstanding)
 }

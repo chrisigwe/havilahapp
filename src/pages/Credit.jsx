@@ -2,7 +2,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useToast } from '../components/Toast'
 import { naira, lagosToday, methodLabel, tierLabel } from '../lib/format'
 import { loadBalances, loadCustomerLedger, saveRepayment, loadStaffForLocation,
-         deleteCustomer, deactivateCustomer, loadGuestBalances, recordStayPayment, loadFolio } from '../lib/data'
+         deleteCustomer, deactivateCustomer, loadGuestBalances, recordStayPayment, loadFolio,
+         linkCustomerToGuest, searchSimilarGuests } from '../lib/data'
 import { enqueue, flush, isConnectionError } from '../lib/outbox'
 import PaymentMethodPicker, { paymentParts, paymentAllocated } from '../components/PaymentMethodPicker'
 import FolioStatement from '../components/FolioStatement'
@@ -66,6 +67,10 @@ export default function Credit({ boot }) {
   const [statementBusy, setStatementBusy] = useState(false)
   const toast = useToast()
   const [open, setOpen] = useState(null)       // { customer, ledger }
+  const [linking, setLinking] = useState(false)
+  const [linkQuery, setLinkQuery] = useState('')
+  const [linkResults, setLinkResults] = useState([])
+  const [linkBusy, setLinkBusy] = useState(false)
   const [pay, setPay] = useState(null)
   const [busy, setBusy] = useState(false)
   const itemById = useMemo(() => Object.fromEntries(items.map(i => [i.id, i])), [items])
@@ -108,6 +113,24 @@ export default function Credit({ boot }) {
         isEditor ? (c.staff_id || null) : null)
       setOpen({ customer: c, ledger })
     } catch (e) { toast(e.message, 'error') }
+  }
+
+  useEffect(() => {
+    if (!linking) return
+    const t = setTimeout(() => {
+      searchSimilarGuests(staff.branch_id, linkQuery).then(setLinkResults)
+    }, 350)
+    return () => clearTimeout(t)
+  }, [linkQuery, linking, staff.branch_id])
+
+  async function confirmLink(guest) {
+    setLinkBusy(true)
+    try {
+      await linkCustomerToGuest(open.customer.customer_id, guest.id)
+      toast(`Linked to ${guest.full_name}`, 'success')
+      setLinking(false); setLinkQuery(''); setLinkResults([])
+    } catch (e) { toast(e.message, 'error') }
+    setLinkBusy(false)
   }
 
   async function submitPayment() {
@@ -161,12 +184,12 @@ export default function Credit({ boot }) {
   async function printGuestStatement() {
     setStatementBusy(true)
     try {
-      const { orders, payments, folio } = await loadFolio(guestPay.stayId)
+      const { orders, payments, folio, departmentCredit } = await loadFolio(guestPay.stayId)
       const orderLines = orders.flatMap(o => (o.order_items || []).map(li => ({ ...li, date: o.business_date })))
       setGuestStatement({
         room: { room_number: guestPay.roomNumber, guest_name: guestPay.guestName,
                 check_in_date: folio?.check_in_date, scheduled_out: folio?.scheduled_out },
-        folio, orderLines, payments,
+        folio, orderLines, payments, departmentCredit,
       })
     } catch (e) { toast('Could not load statement: ' + e.message, 'error') }
     setStatementBusy(false)
@@ -288,6 +311,9 @@ export default function Credit({ boot }) {
                     {g.bill_to && (
                       <div className="text-amber text-sm font-semibold">→ Billed to {g.bill_to}</div>
                     )}
+                    {g.departmentCredit > 0 && (
+                      <div className="text-clay text-sm">+ {naira(g.departmentCredit)} at other departments</div>
+                    )}
                   </button>
                   <span className="tnum font-bold text-clay">{naira(g.outstanding)}</span>
                 </li>
@@ -304,8 +330,11 @@ export default function Credit({ boot }) {
       {open && (
         <div className="fixed inset-0 z-50 bg-bg flex flex-col">
           <div className="flex-1 overflow-y-auto">
-            <div className="p-5 print:hidden">
+            <div className="p-5 print:hidden flex items-center justify-between">
               <button onClick={() => setOpen(null)} className="text-dim">Back</button>
+              <button onClick={() => setLinking(true)} className="text-amber text-sm font-semibold">
+                Link to a guest
+              </button>
             </div>
 
             <div id="statement-area" className="invoice-print px-5 pb-6">
@@ -579,7 +608,33 @@ export default function Credit({ boot }) {
       {guestStatement && (
         <FolioStatement room={guestStatement.room} folio={guestStatement.folio}
           orderLines={guestStatement.orderLines} payments={guestStatement.payments}
+          departmentCredit={guestStatement.departmentCredit}
           branchName={boot.branchName} onClose={() => setGuestStatement(null)} />
+      )}
+
+      {linking && (
+        <div className="fixed inset-0 z-[80] bg-bg flex flex-col px-6 pt-6">
+          <button onClick={() => { setLinking(false); setLinkQuery(''); setLinkResults([]) }}
+            className="text-dim self-start">Close</button>
+          <h2 className="mt-3 text-2xl font-bold">Link to a guest</h2>
+          <p className="text-dim mt-2">
+            Connects {open?.customer?.name} to a real guest record, so their
+            department credit shows up on that guest's own folio and
+            statement — not just here.
+          </p>
+          <input value={linkQuery} onChange={e => setLinkQuery(e.target.value)} autoFocus
+            placeholder="Search by name"
+            className="mt-4 h-14 w-full px-4 rounded-xl bg-surface border border-line placeholder:text-dim" />
+          <div className="mt-2 divide-y divide-line">
+            {linkResults.map(g => (
+              <button key={g.id} disabled={linkBusy} onClick={() => confirmLink(g)}
+                className="block w-full text-left py-3">
+                <div className="font-semibold">{g.full_name}</div>
+                {g.phone && <div className="text-dim text-sm">{g.phone}</div>}
+              </button>
+            ))}
+          </div>
+        </div>
       )}
     </div>
   )
