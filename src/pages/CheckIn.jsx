@@ -23,6 +23,9 @@ export default function CheckIn({ boot, onDone }) {
   const [cycle, setCycle] = useState('one_off')
   const [reserve, setReserve] = useState(false)
   const [billTo, setBillTo] = useState('')
+  const [billToGuestId, setBillToGuestId] = useState(null)
+  const [billToSuggestions, setBillToSuggestions] = useState([])
+  const [billToOpen, setBillToOpen] = useState(false)
   const [similarGuests, setSimilarGuests] = useState([])
   const [suggestionsOpen, setSuggestionsOpen] = useState(false)
 
@@ -36,6 +39,14 @@ export default function CheckIn({ boot, onDone }) {
     }, 400)
     return () => clearTimeout(t)
   }, [name, staff.branch_id, suggestionsOpen])
+
+  useEffect(() => {
+    if (!billToOpen) return
+    const t = setTimeout(() => {
+      searchSimilarGuests(staff.branch_id, billTo).then(setBillToSuggestions)
+    }, 400)
+    return () => clearTimeout(t)
+  }, [billTo, staff.branch_id, billToOpen])
 
   useEffect(() => {
     loadFreeRooms(staff.branch_id).then(setRooms).catch(() => setRooms([]))
@@ -62,7 +73,7 @@ export default function CheckIn({ boot, onDone }) {
       const guestId = await findOrCreateGuest(staff.branch_id, name, phone)
       await createStay({
         staff, guestId, roomId, rateType, dailyRate: rate, reserve,
-        billingCycle: cycle, checkIn, scheduledOut, billTo: billTo.trim(),
+        billingCycle: cycle, checkIn, scheduledOut, billTo: billTo.trim(), billToGuestId,
       })
       toast(reserve ? 'Reservation saved' : `Checked in — Room ${room?.room_number}`, 'success')
       onDone?.()
@@ -178,13 +189,36 @@ export default function CheckIn({ boot, onDone }) {
 
       <div className="mt-4">
         <div className="text-dim mb-1">Billed to (optional)</div>
-        <input value={billTo} onChange={e => setBillTo(e.target.value)}
+        <input value={billTo}
+          onChange={e => { setBillTo(e.target.value); setBillToGuestId(null); setBillToOpen(true) }}
+          onFocus={() => setBillToOpen(true)}
           placeholder="Leave blank if the guest pays their own bill"
           className="h-14 w-full px-4 rounded-xl bg-surface border border-line placeholder:text-dim" />
+        {billToOpen && !!billToSuggestions.length && (
+          <div className="mt-2 rounded-xl border border-amber bg-surface divide-y divide-line overflow-hidden">
+            <div className="px-4 py-2 text-dim text-sm">Is this an existing guest?</div>
+            {billToSuggestions.map(g => (
+              <button key={g.id} type="button"
+                onClick={() => {
+                  setBillTo(g.full_name); setBillToGuestId(g.id)
+                  setBillToOpen(false); setBillToSuggestions([])
+                }}
+                className="block w-full text-left px-4 py-3 hover:bg-raise">
+                <div className="font-semibold">{g.full_name}</div>
+                {g.phone && <div className="text-dim text-sm">{g.phone}</div>}
+              </button>
+            ))}
+            <button type="button" onClick={() => { setBillToOpen(false); setBillToSuggestions([]) }}
+              className="block w-full text-center px-4 py-2 text-dim text-sm">
+              No — not a guest (company, relative, etc.)
+            </button>
+          </div>
+        )}
         <p className="text-dim text-sm mt-1">
           If someone else is responsible for this bill — a long-term guest vouching
           for a visitor, a company, a relative — note it here so it's visible from
           check-in, not just discoverable later in a payment note.
+          {billToGuestId && ' Linked — this amount will also show on their own folio.'}
         </p>
       </div>
 

@@ -730,7 +730,7 @@ export async function searchLiveStays(branchId, query) {
   const q = (query || '').trim()
   let req = supabase.from('stays')
     .select(`id, status, check_in_date, scheduled_out,
-             guests(full_name, phone), rooms(room_number)`)
+             guests!guest_id(full_name, phone), rooms(room_number)`)
     .eq('branch_id', branchId)
     .in('status', ['reserved', 'occupied'])
     .order('check_in_date', { ascending: false })
@@ -859,7 +859,7 @@ export async function searchGuestsForMerge(branchId, query) {
   const q = query.trim()
   if (q.length < 2) return []
   const { data, error } = await supabase.from('guests')
-    .select('id, full_name, phone, stays(count)')
+    .select('id, full_name, phone, stays!guest_id(count)')
     .eq('branch_id', branchId).ilike('full_name', `%${q}%`)
     .order('full_name').limit(10)
   if (error) return []
@@ -892,6 +892,30 @@ export async function loadGuestDepartmentCredit(guestId) {
   return data || []
 }
 
+// Other stays whose bill_to_guest_id points at this guest — the
+// structured half of Bill To (see createStay/updateStayDetails).
+// Only stays with a real outstanding balance are worth surfacing;
+// an already-settled one billed-to someone doesn't need chasing.
+export async function loadBilledToYou(guestId) {
+  if (!guestId) return []
+  const { data: stays, error: e1 } = await supabase.from('stays')
+    .select('id, guests!guest_id(full_name), rooms(room_number)')
+    .eq('bill_to_guest_id', guestId)
+  if (e1 || !stays?.length) return []
+
+  const { data: folios, error: e2 } = await supabase.from('v_stay_folio')
+    .select('stay_id, outstanding').in('stay_id', stays.map(s => s.id)).gt('outstanding', 0.009)
+  if (e2) return []
+  const folioByStay = Object.fromEntries((folios || []).map(f => [f.stay_id, f]))
+
+  return stays
+    .filter(s => folioByStay[s.id])
+    .map(s => ({
+      stay_id: s.id, guest_name: s.guests?.full_name, room_number: s.rooms?.room_number,
+      outstanding: Number(folioByStay[s.id].outstanding),
+    }))
+}
+
 export async function findOrCreateGuest(branchId, name, phone) {
   const digits = (phone || '').replace(/\D/g, '')
   if (digits) {
@@ -919,13 +943,13 @@ export async function findOrCreateGuest(branchId, name, phone) {
 }
 
 export async function createStay({ staff, guestId, roomId, rateType, dailyRate,
-                                    reserve, billingCycle, checkIn, scheduledOut, billTo }) {
+                                    reserve, billingCycle, checkIn, scheduledOut, billTo, billToGuestId }) {
   const { error } = await supabase.from('stays').insert({
     branch_id: staff.branch_id, guest_id: guestId, room_id: roomId,
     rate_applied: rateType, daily_rate: dailyRate,
     status: reserve ? 'reserved' : 'occupied',
     billing_cycle: billingCycle, check_in_date: checkIn, scheduled_out: scheduledOut,
-    created_by: staff.id, bill_to: billTo || null,
+    created_by: staff.id, bill_to: billTo || null, bill_to_guest_id: billToGuestId || null,
   })
   if (error) throw error
 }
@@ -953,7 +977,7 @@ export async function loadFolio(stayId) {
     // v_stay_folio has daily_rate/billing_cycle but not the raw
     // overstay_fee or rate_applied (the rate type) — both needed to
     // pre-fill the editing form correctly.
-    supabase.from('stays').select('overstay_fee, rate_applied, bill_to, guest_id').eq('id', stayId).maybeSingle(),
+    supabase.from('stays').select('overstay_fee, rate_applied, bill_to, bill_to_guest_id, guest_id').eq('id', stayId).maybeSingle(),
   ])
   if (e1) throw e1
   if (e2) throw e2
@@ -966,8 +990,12 @@ export async function loadFolio(stayId) {
   // settle through completely different mechanisms (room payments
   // vs credit_repayments), and conflating them would be misleading
   // for reconciliation even though they're the same person's debt.
-  const departmentCredit = await loadGuestDepartmentCredit(stay?.guest_id)
-  return { orders: orders || [], payments: payments || [], folio: folio || null, stay: stay || null, departmentCredit }
+  const [departmentCredit, billedToYou] = await Promise.all([
+    loadGuestDepartmentCredit(stay?.guest_id),
+    loadBilledToYou(stay?.guest_id),
+  ])
+  return { orders: orders || [], payments: payments || [], folio: folio || null, stay: stay || null,
+           departmentCredit, billedToYou }
 }
 
 // A guest paying part POS and part cash (or transfer) is one
@@ -1012,7 +1040,7 @@ export async function searchRecentCheckouts(branchId, query) {
   const since = new Date(Date.now() - 14 * 864e5).toISOString().slice(0, 10)
   const { data, error } = await supabase.from('stays')
     .select(`id, check_in_date, scheduled_out, actual_out,
-             rooms(room_number), guests(full_name)`)
+             rooms(room_number), guests!guest_id(full_name)`)
     .eq('branch_id', branchId).eq('status', 'checked_out')
     .gte('actual_out', since)
     .order('actual_out', { ascending: false }).limit(30)
@@ -1027,10 +1055,11 @@ export async function searchRecentCheckouts(branchId, query) {
 // Deliberately minimal, same reasoning as reopenStay — the trigger
 // (stamp_rate_adjustment) stamps who and when on its own if daily_rate
 // changed; sending it here would just be overwritten.
-export async function updateStayDetails({ stayId, dailyRate, billingCycle, scheduledOut, rateReason, billTo }) {
+export async function updateStayDetails({ stayId, dailyRate, billingCycle, scheduledOut, rateReason, billTo, billToGuestId }) {
   const { error } = await supabase.from('stays').update({
     daily_rate: dailyRate, billing_cycle: billingCycle,
-    scheduled_out: scheduledOut, rate_reason: rateReason || null, bill_to: billTo || null,
+    scheduled_out: scheduledOut, rate_reason: rateReason || null,
+    bill_to: billTo || null, bill_to_guest_id: billToGuestId || null,
   }).eq('id', stayId)
   if (error) throw error
 }
@@ -1053,7 +1082,7 @@ export async function loadReceptionActivity(branchId, date) {
   const { data, error } = await supabase.from('payments')
     .select(`id, method, amount, is_overstay, remark, created_at, received_by,
              staff:received_by(full_name),
-             stays(id, rooms(room_number), guests(full_name))`)
+             stays(id, rooms(room_number), guests!guest_id(full_name))`)
     .eq('branch_id', branchId).eq('business_date', date)
     .order('created_at', { ascending: false })
   if (error) throw error
@@ -1119,7 +1148,7 @@ export async function loadGuestBalances(branchId, staffId) {
   const stayIds = (folios || []).map(f => f.stay_id)
   const { data: stays, error: e2 } = stayIds.length
     ? await supabase.from('stays')
-        .select('id, guest_id, bill_to, created_by, rooms(room_number), guests(full_name)')
+        .select('id, guest_id, bill_to, created_by, rooms(room_number), guests!guest_id(full_name)')
         .in('id', stayIds)
     : { data: [] }
   if (e2) throw e2
@@ -1138,6 +1167,25 @@ export async function loadGuestBalances(branchId, staffId) {
     deptTotalByGuest[d.guest_id] = (deptTotalByGuest[d.guest_id] || 0) + Number(d.balance)
   }
 
+  // Other stays whose bill_to_guest_id points at a guest — the
+  // structured half of Bill To. Same reasoning as department credit:
+  // this list is where staff actually look for who owes what, so it
+  // needs the full picture, not just what shows on a folio someone
+  // has to think to open.
+  const { data: billToStays } = await supabase.from('stays')
+    .select('id, bill_to_guest_id').eq('branch_id', branchId).not('bill_to_guest_id', 'is', null)
+  const billToTotalByGuest = {}
+  if (billToStays?.length) {
+    const { data: billToFolios } = await supabase.from('v_stay_folio')
+      .select('stay_id, outstanding').in('stay_id', billToStays.map(s => s.id)).gt('outstanding', 0.009)
+    const folioByStay = Object.fromEntries((billToFolios || []).map(f => [f.stay_id, f]))
+    for (const s of billToStays) {
+      const f = folioByStay[s.id]
+      if (!f) continue
+      billToTotalByGuest[s.bill_to_guest_id] = (billToTotalByGuest[s.bill_to_guest_id] || 0) + Number(f.outstanding)
+    }
+  }
+
   const rows = folios.map(f => ({
     stay_id: f.stay_id, billing_cycle: f.billing_cycle, outstanding: Number(f.outstanding),
     room_number: stayById[f.stay_id]?.rooms?.room_number,
@@ -1145,15 +1193,18 @@ export async function loadGuestBalances(branchId, staffId) {
     bill_to: stayById[f.stay_id]?.bill_to,
     created_by: stayById[f.stay_id]?.created_by,
     departmentCredit: deptTotalByGuest[stayById[f.stay_id]?.guest_id] || 0,
+    billedToYou: billToTotalByGuest[stayById[f.stay_id]?.guest_id] || 0,
   }))
 
-  // A guest whose room is fully paid but who still owes at another
-  // department shouldn't silently disappear from this list — find
-  // their most recent stay just for display (room number, name).
-  const extraGuestIds = Object.keys(deptTotalByGuest).filter(gid => !coveredGuestIds.has(gid))
+  // A guest whose own room is fully paid but who still owes via
+  // department credit or someone else's bill shouldn't silently
+  // disappear from this list — find their most recent stay just for
+  // display (room number, name).
+  const extraGuestIds = [...new Set([...Object.keys(deptTotalByGuest), ...Object.keys(billToTotalByGuest)])]
+    .filter(gid => !coveredGuestIds.has(gid))
   if (extraGuestIds.length) {
     const { data: extraStays } = await supabase.from('stays')
-      .select('id, guest_id, bill_to, created_by, created_at, rooms(room_number), guests(full_name)')
+      .select('id, guest_id, bill_to, created_by, created_at, rooms(room_number), guests!guest_id(full_name)')
       .in('guest_id', extraGuestIds).order('created_at', { ascending: false })
     const seen = new Set()
     for (const s of extraStays || []) {
@@ -1164,17 +1215,19 @@ export async function loadGuestBalances(branchId, staffId) {
         room_number: s.rooms?.room_number, guest_name: s.guests?.full_name,
         bill_to: s.bill_to, created_by: s.created_by,
         departmentCredit: deptTotalByGuest[s.guest_id] || 0,
+        billedToYou: billToTotalByGuest[s.guest_id] || 0,
       })
     }
   }
 
-  // Total (room + department) decides both what's shown and the sort
-  // order, per explicit correction — a guest owing heavily at another
-  // department shouldn't rank behind one who owes a small room
-  // balance just because the room figure alone used to be the sort key.
+  // Total (room + department + other bills) decides both what's
+  // shown and the sort order, per explicit correction — a guest
+  // owing heavily elsewhere shouldn't rank behind one who owes a
+  // small room balance just because the room figure alone used to be
+  // the sort key.
   return rows
     .filter(r => !staffId || r.created_by === staffId)
-    .sort((a, b) => (b.outstanding + b.departmentCredit) - (a.outstanding + a.departmentCredit))
+    .sort((a, b) => (b.outstanding + b.departmentCredit + b.billedToYou) - (a.outstanding + a.departmentCredit + a.billedToYou))
 }
 
 // Recent room payments across the branch — Recovery's Reception view,
@@ -1185,7 +1238,7 @@ export async function loadRoomPayments(branchId, days = 60) {
   const { data, error } = await supabase.from('payments')
     .select(`id, business_date, method, amount, is_overstay, remark, received_by,
              staff:received_by(full_name),
-             stays(rooms(room_number), guests(full_name))`)
+             stays(rooms(room_number), guests!guest_id(full_name))`)
     .eq('branch_id', branchId).gte('business_date', since)
     .order('business_date', { ascending: false })
   if (error) throw error
@@ -1243,7 +1296,7 @@ export async function loadRoomCharges(branchId, date, category) {
   const { data, error } = await supabase.from('order_items')
     .select(`id, description, qty, unit_price, amount, order_id, order_type, damage_reason, writeoff_note, pr_meal,
              orders!inner(id, business_date, branch_id, served_by, created_at,
-                          stays(rooms(room_number), guests(full_name)))`)
+                          stays(rooms(room_number), guests!guest_id(full_name)))`)
     .eq('category', category).eq('orders.branch_id', branchId).eq('orders.business_date', date)
   if (error) throw error
   return data || []

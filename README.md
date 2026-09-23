@@ -2186,3 +2186,75 @@ came up. Removed that gate for this one button specifically; the
 other three live-only actions on Folio (record payment, checkout,
 etc.) stay exactly as they were, since those genuinely don't make
 sense on an already-closed stay.
+
+
+## Bill To: now a real structural link, not just a display badge
+
+Explained the actual gap when asked why Anthony's bill wasn't showing
+on Alphonso's own folio: bill_to was always one-way, free-text-only —
+it annotated the stay being paid for, but nothing pulled that amount
+back into the payer's own totals. Different from Option B's
+department-credit link, which does have a real foreign key behind it.
+
+Added stays.bill_to_guest_id as an OPTIONAL structured link alongside
+the existing free text — when the payer is an actual guest, this
+becomes real and queryable; when it's a company or someone not
+staying here, free text is still all there is, exactly as originally
+designed. Both CheckIn and Folio's edit sheet now search existing
+guests as "Bill to" is typed (same debounced pattern as the
+similar-guest suggestions), linking both the text and the structured
+id together when a suggestion is picked.
+
+loadFolio now also fetches loadBilledToYou() — other stays whose
+bill_to_guest_id points at this guest, with a real outstanding
+balance. Threaded through Folio, FolioStatement, and Credit's guest
+statement the same way departmentCredit already was: included in the
+headline Outstanding total, with its own separate detail box showing
+which guest/room each amount belongs to.
+
+Also extended loadGuestBalances (Credit's Reception list) to include
+billedToYou per guest, same as it already did for department credit —
+this is the list staff actually check first, so it needed the same
+full-picture treatment rather than leaving this only visible on a
+folio someone has to think to open. A guest who owes nothing on their
+own room but has bills assigned to them from elsewhere now correctly
+appears here too, using their most recent stay for display.
+
+Linked Anthony's specific stay to Alphonso's real guest_id (migration
+181), looked up from his known current stay rather than assumed —
+the structural piece that makes this specific case actually work end
+to end, on top of the text label already set in 179.
+
+
+## Fixed: a real, widespread regression from adding bill_to_guest_id
+
+Traced "Recently checked out shows no results" to its actual root
+cause rather than patching the symptom. Adding stays.bill_to_guest_id
+(for the Bill To structural link) gave stays TWO separate foreign
+keys to guests — guest_id and bill_to_guest_id — confirmed directly
+against pg_constraint, not assumed. Every plain guests(...) embed
+from stays became ambiguous to PostgREST the moment that second FK
+existed, since it had no way to know which relationship to follow.
+ReopenSearch's .catch(() => setRows([])) silently swallowed the
+resulting error and showed "no results" instead — genuinely
+indistinguishable from an empty result without checking the error
+directly, which is why the raw data (confirmed to exist, plenty of
+recent checkouts on both branches) didn't match what the app showed.
+
+Found and fixed eight separate broken embeds in data.js — not just
+ReopenSearch, but loadBilledToYou, loadGuestBalances (both its main
+query and its extra-guests query), loadReceptionActivity,
+loadRoomPayments, loadRoomCharges, and a stays search function — all
+now explicitly disambiguated to guests!guest_id(...), since all of
+them want the stay's actual occupant, never the bill-to party. Found
+a second instance of the same regression in the reverse direction too
+— searchGuestsForMerge embeds stays(count) FROM guests, which is
+ambiguous for the identical reason (both FKs point at guests, so
+counting "this guest's stays" doesn't know which relationship to
+use); fixed to stays!guest_id(count).
+
+Also fixed the silent error-swallowing in ReopenSearch specifically,
+since this whole bug was invisible only because the real error never
+surfaced — it now shows a toast with the actual error message instead
+of quietly presenting an empty list as if it were a genuine zero
+result.

@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { searchRecentCheckouts } from '../lib/data'
+import { useToast } from './Toast'
 
 // Finds a stay checked out in the last two weeks, since checked-out
 // stays don't appear in v_occupancy_today (the room just reverts to
@@ -8,12 +9,14 @@ import { searchRecentCheckouts } from '../lib/data'
 // from.
 export default function ReopenSearch({ boot, onPick, onClose }) {
   const { staff } = boot
+  const toast = useToast()
   const [q, setQ] = useState('')
   const [rows, setRows] = useState(null)
 
   useEffect(() => {
     const t = setTimeout(() => {
-      searchRecentCheckouts(staff.branch_id, q).then(setRows).catch(() => setRows([]))
+      searchRecentCheckouts(staff.branch_id, q).then(setRows)
+        .catch(e => { toast(e.message, 'error'); setRows([]) })
     }, 200)
     return () => clearTimeout(t)
   }, [q, staff.branch_id])

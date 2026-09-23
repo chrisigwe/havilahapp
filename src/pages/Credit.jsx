@@ -184,12 +184,12 @@ export default function Credit({ boot }) {
   async function printGuestStatement() {
     setStatementBusy(true)
     try {
-      const { orders, payments, folio, departmentCredit } = await loadFolio(guestPay.stayId)
+      const { orders, payments, folio, departmentCredit, billedToYou } = await loadFolio(guestPay.stayId)
       const orderLines = orders.flatMap(o => (o.order_items || []).map(li => ({ ...li, date: o.business_date })))
       setGuestStatement({
         room: { room_number: guestPay.roomNumber, guest_name: guestPay.guestName,
                 check_in_date: folio?.check_in_date, scheduled_out: folio?.scheduled_out },
-        folio, orderLines, payments, departmentCredit,
+        folio, orderLines, payments, departmentCredit, billedToYou,
       })
     } catch (e) { toast('Could not load statement: ' + e.message, 'error') }
     setStatementBusy(false)
@@ -316,8 +316,15 @@ export default function Credit({ boot }) {
                         incl. {naira(g.departmentCredit)} at other departments
                       </div>
                     )}
+                    {g.billedToYou > 0 && (
+                      <div className="text-clay text-sm">
+                        incl. {naira(g.billedToYou)} from other bills
+                      </div>
+                    )}
                   </button>
-                  <span className="tnum font-bold text-clay">{naira(g.outstanding + g.departmentCredit)}</span>
+                  <span className="tnum font-bold text-clay">
+                    {naira(g.outstanding + g.departmentCredit + g.billedToYou)}
+                  </span>
                 </li>
               ))}
               {guestBalances !== null && !gb.length && (
@@ -610,7 +617,7 @@ export default function Credit({ boot }) {
       {guestStatement && (
         <FolioStatement room={guestStatement.room} folio={guestStatement.folio}
           orderLines={guestStatement.orderLines} payments={guestStatement.payments}
-          departmentCredit={guestStatement.departmentCredit}
+          departmentCredit={guestStatement.departmentCredit} billedToYou={guestStatement.billedToYou}
           branchName={boot.branchName} onClose={() => setGuestStatement(null)} />
       )}
 

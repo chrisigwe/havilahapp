@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { naira, lagosToday, cyclesFor, nightsBetween, friendlyStayError } from '../lib/format'
 import { loadFolio, loadBranchStaySettings, recordStayPayment, checkOutStay,
          reopenStay, updateStayDetails, updateOverstayFee, deleteStay,
-         updateOrderItem, deleteOrderItem } from '../lib/data'
+         updateOrderItem, deleteOrderItem, searchSimilarGuests } from '../lib/data'
 import { useToast } from '../components/Toast'
 import PaymentMethodPicker, { paymentParts, paymentAllocated } from './PaymentMethodPicker'
 import FolioStatement from './FolioStatement'
@@ -19,6 +19,8 @@ export default function Folio({ boot, room, onClose, onChanged }) {
   const [pay, setPay] = useState({ amount: '', method: 'pos', split: null })
   const [isOverstay, setIsOverstay] = useState(false)
   const [editing, setEditing] = useState(null)   // { dailyRate, billingCycle, scheduledOut, rateReason } while open
+  const [billToSuggestions, setBillToSuggestions] = useState([])
+  const [billToOpen, setBillToOpen] = useState(false)
   const [overstayDraft, setOverstayDraft] = useState(null)   // amount string while editing
   const [confirmingDelete, setConfirmingDelete] = useState(false)
   const [editingLine, setEditingLine] = useState(null)   // the order line being edited
@@ -32,6 +34,13 @@ export default function Folio({ boot, room, onClose, onChanged }) {
   useEffect(() => {
     loadBranchStaySettings(staff.branch_id).then(setBranchSettings).catch(() => setBranchSettings(null))
   }, [staff.branch_id])
+  useEffect(() => {
+    if (!billToOpen) return
+    const t = setTimeout(() => {
+      searchSimilarGuests(staff.branch_id, editing?.billTo || '').then(setBillToSuggestions)
+    }, 400)
+    return () => clearTimeout(t)
+  }, [editing?.billTo, staff.branch_id, billToOpen])
 
   if (!data) return (
     <div className="fixed inset-0 z-50 bg-bg p-5">
@@ -40,17 +49,19 @@ export default function Folio({ boot, room, onClose, onChanged }) {
     </div>
   )
 
-  const { orders, payments, folio, stay, departmentCredit } = data
+  const { orders, payments, folio, stay, departmentCredit, billedToYou } = data
   const outstanding = Number(folio?.outstanding ?? 0)
   // The room's own balance — used for the pay-button default and
   // checkout logic below, which are genuinely room-specific
   // operations (a room payment can't settle a separate department's
   // credit ledger, so those stay scoped to the room alone).
   const departmentCreditTotal = (departmentCredit || []).reduce((s, d) => s + Number(d.balance), 0)
+  const billedToYouTotal = (billedToYou || []).reduce((s, b) => s + Number(b.outstanding), 0)
   // What's actually shown as "Outstanding" — per explicit correction,
-  // linked department credit belongs in this headline figure, not
-  // just displayed separately alongside it.
-  const totalOutstanding = outstanding + departmentCreditTotal
+  // linked department credit AND other stays billed to this guest
+  // both belong in this headline figure, not just displayed
+  // separately alongside it.
+  const totalOutstanding = outstanding + departmentCreditTotal + billedToYouTotal
   const live = ['reserved', 'occupied'].includes(room.status) && !!room.stay_id
   const orderLines = orders.flatMap(o => (o.order_items || [])
     .map(li => ({ ...li, date: o.business_date, servedBy: o.served_by, orderId: o.id })))
@@ -145,7 +156,7 @@ export default function Folio({ boot, room, onClose, onChanged }) {
       dailyRate: String(folio?.daily_rate ?? ''),
       billingCycle: folio?.billing_cycle || cycles[0]?.value,
       scheduledOut: folio?.scheduled_out || room.scheduled_out,
-      rateReason: '', billTo: stay?.bill_to || '',
+      rateReason: '', billTo: stay?.bill_to || '', billToGuestId: stay?.bill_to_guest_id || null,
     })
   }
 
@@ -155,7 +166,7 @@ export default function Folio({ boot, room, onClose, onChanged }) {
       await updateStayDetails({
         stayId: room.stay_id, dailyRate: Number(editing.dailyRate),
         billingCycle: editing.billingCycle, scheduledOut: editing.scheduledOut,
-        rateReason: editing.rateReason, billTo: editing.billTo.trim(),
+        rateReason: editing.rateReason, billTo: editing.billTo.trim(), billToGuestId: editing.billToGuestId,
       })
       toast('Stay updated', 'success')
       setEditing(null); refresh(); onChanged?.()
@@ -200,6 +211,19 @@ export default function Folio({ boot, room, onClose, onChanged }) {
             </p>
           </div>
         )}
+        {!!billedToYou?.length && (
+          <div className="mt-2 px-3 py-2 rounded-xl bg-clay/10 border border-clay">
+            <p className="text-clay text-sm font-semibold">Included above — other bills:</p>
+            {billedToYou.map(b => (
+              <p key={b.stay_id} className="text-clay text-sm">
+                {b.guest_name} (Room {b.room_number || '—'}): {naira(b.outstanding)}
+              </p>
+            ))}
+            <p className="text-dim text-xs mt-1">
+              Settle these on that guest's own folio — this room's payment doesn't clear them.
+            </p>
+          </div>
+        )}
         <button onClick={openEdit} className="text-dim text-sm underline mt-1">
           Edit rate, cycle, or dates
         </button>
@@ -217,6 +241,7 @@ export default function Folio({ boot, room, onClose, onChanged }) {
           <Row label="Orders" value={folio?.orders_charge} />
           {Number(folio?.overstay_charge) > 0 && <Row label="Over-stay charge" value={folio?.overstay_charge} />}
           {departmentCreditTotal > 0 && <Row label="Other departments" value={departmentCreditTotal} />}
+          {billedToYouTotal > 0 && <Row label="Other bills (billed to you)" value={billedToYouTotal} />}
           <Row label="Paid" value={folio?.total_paid} />
           <div className="flex items-baseline justify-between pt-3 mt-3 border-t border-line">
             <span className="font-semibold">{totalOutstanding < 0 ? 'Deposit remaining' : 'Outstanding'}</span>
@@ -441,9 +466,33 @@ export default function Folio({ boot, room, onClose, onChanged }) {
 
           <label className="block mt-4 text-dim">Billed to (optional)</label>
           <input value={editing.billTo}
-            onChange={e => setEditing(x => ({ ...x, billTo: e.target.value }))}
+            onChange={e => { setEditing(x => ({ ...x, billTo: e.target.value, billToGuestId: null })); setBillToOpen(true) }}
+            onFocus={() => setBillToOpen(true)}
             placeholder="Leave blank if the guest pays their own bill"
             className="mt-1 h-14 w-full px-4 rounded-xl bg-surface border border-line placeholder:text-dim" />
+          {billToOpen && !!billToSuggestions.length && (
+            <div className="mt-2 rounded-xl border border-amber bg-surface divide-y divide-line overflow-hidden">
+              <div className="px-4 py-2 text-dim text-sm">Is this an existing guest?</div>
+              {billToSuggestions.map(g => (
+                <button key={g.id} type="button"
+                  onClick={() => {
+                    setEditing(x => ({ ...x, billTo: g.full_name, billToGuestId: g.id }))
+                    setBillToOpen(false); setBillToSuggestions([])
+                  }}
+                  className="block w-full text-left px-4 py-3 hover:bg-raise">
+                  <div className="font-semibold">{g.full_name}</div>
+                  {g.phone && <div className="text-dim text-sm">{g.phone}</div>}
+                </button>
+              ))}
+              <button type="button" onClick={() => { setBillToOpen(false); setBillToSuggestions([]) }}
+                className="block w-full text-center px-4 py-2 text-dim text-sm">
+                No — not a guest
+              </button>
+            </div>
+          )}
+          {editing.billToGuestId && (
+            <p className="text-dim text-xs mt-1">Linked — this amount will also show on their own folio.</p>
+          )}
 
           <button onClick={saveEdit} disabled={busy || !editing.dailyRate || !editing.scheduledOut}
             className="mt-6 w-full h-16 rounded-2xl bg-amber text-bg text-xl font-bold disabled:opacity-40">
@@ -454,7 +503,8 @@ export default function Folio({ boot, room, onClose, onChanged }) {
 
       {printing && (
         <FolioStatement room={room} folio={folio} orderLines={orderLines} payments={payments}
-          departmentCredit={departmentCredit} branchName={boot.branchName} onClose={() => setPrinting(false)} />
+          departmentCredit={departmentCredit} billedToYou={billedToYou}
+          branchName={boot.branchName} onClose={() => setPrinting(false)} />
       )}
 
       {confirmingDelete && (

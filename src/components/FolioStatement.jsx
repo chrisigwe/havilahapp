@@ -12,15 +12,17 @@ function printOnly(id) {
 // infrastructure Receipt.jsx already uses, not the reference app's
 // separate portal-based printing (which it needed only because of its
 // own drawer nesting; this app doesn't have that problem).
-export default function FolioStatement({ room, folio, orderLines, payments, branchName, departmentCredit, onClose }) {
+export default function FolioStatement({ room, folio, orderLines, payments, branchName, departmentCredit, billedToYou, onClose }) {
   const roomCharge = Number(folio?.room_charge ?? 0)
   const overstay = Number(folio?.overstay_charge ?? 0)
   const orderTotal = orderLines.reduce((s, li) => s + Number(li.amount), 0)
   const paid = Number(folio?.total_paid ?? 0)
   const departmentCreditTotal = (departmentCredit || []).reduce((s, d) => s + Number(d.balance), 0)
-  // Per explicit correction, linked department credit belongs in the
-  // headline balance, not just shown separately below it.
-  const balance = roomCharge + overstay + orderTotal - paid + departmentCreditTotal
+  const billedToYouTotal = (billedToYou || []).reduce((s, b) => s + Number(b.outstanding), 0)
+  // Per explicit correction, linked department credit and other
+  // guests' bills billed to this guest both belong in the headline
+  // balance, not just shown separately below it.
+  const balance = roomCharge + overstay + orderTotal - paid + departmentCreditTotal + billedToYouTotal
 
   return (
     <div className="fixed inset-0 z-[70] bg-bg flex flex-col">
@@ -114,6 +116,17 @@ export default function FolioStatement({ room, folio, orderLines, payments, bran
                 <div key={d.location_id} className="flex justify-between text-sm mt-1">
                   <span>{d.location_name}</span>
                   <span className="tnum">{naira(d.balance)}</span>
+                </div>
+              ))}
+            </div>
+          )}
+          {!!billedToYou?.length && (
+            <div className="mt-4 pt-4" style={{ borderTop: '1px solid #ccc' }}>
+              <p className="font-semibold text-sm">Included above — other bills:</p>
+              {billedToYou.map(b => (
+                <div key={b.stay_id} className="flex justify-between text-sm mt-1">
+                  <span>{b.guest_name} (Room {b.room_number || '—'})</span>
+                  <span className="tnum">{naira(b.outstanding)}</span>
                 </div>
               ))}
             </div>
