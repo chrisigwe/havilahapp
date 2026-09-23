@@ -200,11 +200,9 @@ export default function Folio({ boot, room, onClose, onChanged }) {
             </p>
           </div>
         )}
-        {live && (
-          <button onClick={openEdit} className="text-dim text-sm underline mt-1">
-            Edit rate, cycle, or dates
-          </button>
-        )}
+        <button onClick={openEdit} className="text-dim text-sm underline mt-1">
+          Edit rate, cycle, or dates
+        </button>
         <button onClick={() => setPrinting(true)} className="block text-dim text-sm underline mt-1">
           Print guest statement
         </button>

@@ -2174,3 +2174,15 @@ saveRestaurantWriteoff/chargeWriteoffToRoom and every place damage_
 reason is displayed (Today list, Folio's order lines) — confirmed all
 three underlying select queries actually fetch the new column, not
 just that the display code was updated to show it.
+
+
+## Bill To now editable on checked-out stays, not just live ones
+
+Found while doing a real retroactive bill-to assignment: the "Edit
+rate, cycle, or dates" button (which is also where bill_to lives) was
+gated to live stays only, so a checked-out stay couldn't have bill_to
+set at all through the normal screen — exactly the situation that
+came up. Removed that gate for this one button specifically; the
+other three live-only actions on Folio (record payment, checkout,
+etc.) stay exactly as they were, since those genuinely don't make
+sense on an already-closed stay.
