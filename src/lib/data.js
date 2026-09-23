@@ -115,7 +115,7 @@ export async function loadToday(branchId, date, locationId) {
   let q = supabase
     .from('sales')
     .select(`id, stock_item_id, description, location_id, tier, qty, unit_price, amount, created_at,
-             receipt_id, business_date, recorded_by, on_behalf_of, order_type, damage_reason, writeoff_note,
+             receipt_id, business_date, recorded_by, on_behalf_of, order_type, damage_reason, writeoff_note, pr_meal,
              recorder:recorded_by(full_name), stood_in_for:on_behalf_of(full_name),
              sale_payments(method, amount)`)
     .eq('branch_id', branchId).eq('business_date', date)
@@ -944,7 +944,7 @@ export async function loadFolio(stayId) {
   const [{ data: orders, error: e1 }, { data: payments, error: e2 }, { data: folio, error: e3 },
          { data: stay, error: e4 }] = await Promise.all([
     supabase.from('orders')
-      .select('id, business_date, served_by, order_items(id, category, description, qty, unit_price, amount, order_type, damage_reason, writeoff_note)')
+      .select('id, business_date, served_by, order_items(id, category, description, qty, unit_price, amount, order_type, damage_reason, writeoff_note, pr_meal)')
       .eq('stay_id', stayId).order('business_date', { ascending: false }),
     supabase.from('payments')
       .select('id, business_date, method, amount, is_overstay, remark')
@@ -1115,37 +1115,66 @@ export async function loadGuestBalances(branchId, staffId) {
     .select('stay_id, billing_cycle, outstanding')
     .eq('branch_id', branchId).gt('outstanding', 0.009)
   if (e1) throw e1
-  if (!folios?.length) return []
 
-  const { data: stays, error: e2 } = await supabase.from('stays')
-    .select('id, guest_id, bill_to, created_by, rooms(room_number), guests(full_name)')
-    .in('id', folios.map(f => f.stay_id))
+  const stayIds = (folios || []).map(f => f.stay_id)
+  const { data: stays, error: e2 } = stayIds.length
+    ? await supabase.from('stays')
+        .select('id, guest_id, bill_to, created_by, rooms(room_number), guests(full_name)')
+        .in('id', stayIds)
+    : { data: [] }
   if (e2) throw e2
   const stayById = Object.fromEntries((stays || []).map(s => [s.id, s]))
+  const coveredGuestIds = new Set((stays || []).map(s => s.guest_id).filter(Boolean))
 
-  // Option B — a batched lookup of department credit for every guest
-  // in this list at once, not one query per guest, merged client-side
-  // into a single total per guest (the full per-department breakdown
-  // lives on that guest's own folio/statement instead).
-  const guestIds = [...new Set((stays || []).map(s => s.guest_id).filter(Boolean))]
-  const { data: deptCredit } = guestIds.length
-    ? await supabase.from('v_guest_department_credit').select('guest_id, balance').in('guest_id', guestIds)
-    : { data: [] }
+  // Every guest at this branch with linked department credit — not
+  // just the ones already picked up above with an outstanding room
+  // balance. Filters on branch_id directly (a plain column on the
+  // view) rather than embedding guests from it, which PostgREST
+  // can't reliably do from a view (no foreign key to follow).
+  const { data: deptRows } = await supabase.from('v_guest_department_credit')
+    .select('guest_id, balance').eq('branch_id', branchId)
   const deptTotalByGuest = {}
-  for (const d of deptCredit || []) {
+  for (const d of deptRows || []) {
     deptTotalByGuest[d.guest_id] = (deptTotalByGuest[d.guest_id] || 0) + Number(d.balance)
   }
 
-  return folios
-    .filter(f => !staffId || stayById[f.stay_id]?.created_by === staffId)
-    .map(f => ({
-      stay_id: f.stay_id, billing_cycle: f.billing_cycle, outstanding: Number(f.outstanding),
-      room_number: stayById[f.stay_id]?.rooms?.room_number,
-      guest_name: stayById[f.stay_id]?.guests?.full_name,
-      bill_to: stayById[f.stay_id]?.bill_to,
-      departmentCredit: deptTotalByGuest[stayById[f.stay_id]?.guest_id] || 0,
-    }))
-    .sort((a, b) => b.outstanding - a.outstanding)
+  const rows = folios.map(f => ({
+    stay_id: f.stay_id, billing_cycle: f.billing_cycle, outstanding: Number(f.outstanding),
+    room_number: stayById[f.stay_id]?.rooms?.room_number,
+    guest_name: stayById[f.stay_id]?.guests?.full_name,
+    bill_to: stayById[f.stay_id]?.bill_to,
+    created_by: stayById[f.stay_id]?.created_by,
+    departmentCredit: deptTotalByGuest[stayById[f.stay_id]?.guest_id] || 0,
+  }))
+
+  // A guest whose room is fully paid but who still owes at another
+  // department shouldn't silently disappear from this list — find
+  // their most recent stay just for display (room number, name).
+  const extraGuestIds = Object.keys(deptTotalByGuest).filter(gid => !coveredGuestIds.has(gid))
+  if (extraGuestIds.length) {
+    const { data: extraStays } = await supabase.from('stays')
+      .select('id, guest_id, bill_to, created_by, created_at, rooms(room_number), guests(full_name)')
+      .in('guest_id', extraGuestIds).order('created_at', { ascending: false })
+    const seen = new Set()
+    for (const s of extraStays || []) {
+      if (seen.has(s.guest_id)) continue   // only the most recent stay per guest
+      seen.add(s.guest_id)
+      rows.push({
+        stay_id: s.id, billing_cycle: null, outstanding: 0,
+        room_number: s.rooms?.room_number, guest_name: s.guests?.full_name,
+        bill_to: s.bill_to, created_by: s.created_by,
+        departmentCredit: deptTotalByGuest[s.guest_id] || 0,
+      })
+    }
+  }
+
+  // Total (room + department) decides both what's shown and the sort
+  // order, per explicit correction — a guest owing heavily at another
+  // department shouldn't rank behind one who owes a small room
+  // balance just because the room figure alone used to be the sort key.
+  return rows
+    .filter(r => !staffId || r.created_by === staffId)
+    .sort((a, b) => (b.outstanding + b.departmentCredit) - (a.outstanding + a.departmentCredit))
 }
 
 // Recent room payments across the branch — Recovery's Reception view,
@@ -1212,7 +1241,7 @@ export async function deleteOrderItem(orderItemId, orderId) {
 // which department a room charge belongs to.
 export async function loadRoomCharges(branchId, date, category) {
   const { data, error } = await supabase.from('order_items')
-    .select(`id, description, qty, unit_price, amount, order_id, order_type, damage_reason, writeoff_note,
+    .select(`id, description, qty, unit_price, amount, order_id, order_type, damage_reason, writeoff_note, pr_meal,
              orders!inner(id, business_date, branch_id, served_by, created_at,
                           stays(rooms(room_number), guests(full_name)))`)
     .eq('category', category).eq('orders.branch_id', branchId).eq('orders.business_date', date)
@@ -1234,19 +1263,20 @@ export async function loadRestaurantRoomCharges(branchId, date) {
 
 export async function saveRestaurantWriteoff({ staff, locationId, businessDate,
                                                 description, qty, unitPrice,
-                                                orderType, damageReason, writeoffNote }) {
+                                                orderType, damageReason, writeoffNote, prMeal }) {
   const { error } = await supabase.from('sales').insert({
     branch_id: staff.branch_id, business_date: businessDate, occurred_at: new Date().toISOString(),
     stock_item_id: null, description, location_id: locationId, tier: 'general',
     qty, unit_price: unitPrice, recorded_by: staff.id,
     order_type: orderType, damage_reason: damageReason || null, writeoff_note: writeoffNote || null,
+    pr_meal: prMeal || null,
   })
   if (error) throw error
 }
 
 export async function chargeWriteoffToRoom({ staff, stayId, businessDate,
                                               description, qty, unitPrice,
-                                              orderType, damageReason, writeoffNote }) {
+                                              orderType, damageReason, writeoffNote, prMeal }) {
   const { data: order, error: oErr } = await supabase.from('orders').insert({
     branch_id: staff.branch_id, stay_id: stayId, business_date: businessDate,
     settlement: 'charged_to_room', served_by: staff.id,
@@ -1256,6 +1286,7 @@ export async function chargeWriteoffToRoom({ staff, stayId, businessDate,
     order_id: order.id, category: 'food', stock_item_id: null, location_id: null,
     description, qty, unit_price: unitPrice,
     order_type: orderType, damage_reason: damageReason || null, writeoff_note: writeoffNote || null,
+    pr_meal: prMeal || null,
   })
   if (iErr) {
     await supabase.from('orders').delete().eq('id', order.id)

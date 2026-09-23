@@ -68,6 +68,7 @@ export default function RoomChargeSheet({ boot, stockMap, onClose, toast }) {
         await chargeWriteoffToRoom({
           staff, stayId: stay.id, description: desc, qty, unitPrice, businessDate: lagosToday(),
           orderType: typing.orderType, damageReason: typing.damageReason, writeoffNote: typing.writeoffNote,
+          prMeal: typing.prMeal,
         })
       }
       setCharged(c => [{ description: desc, qty, unitPrice, typed: true,
@@ -123,7 +124,7 @@ export default function RoomChargeSheet({ boot, stockMap, onClose, toast }) {
               + Add a drink or minimart item
             </button>
             <button onClick={() => setTyping({ description: '', qty: 1, unitPrice: '',
-              orderType: 'standard', damageReason: null, writeoffNote: '' })}
+              orderType: 'standard', damageReason: null, writeoffNote: '', prMeal: null })}
               className="mt-3 w-full h-14 rounded-2xl border-2 border-line text-ink text-lg font-bold">
               + Add a restaurant order
             </button>
@@ -195,6 +196,16 @@ export default function RoomChargeSheet({ boot, stockMap, onClose, toast }) {
                       <option value="spoilage">Spoilage</option>
                       <option value="other">Other</option>
                     </select>
+                    {!typing.damageReason && (
+                      <select value={typing.prMeal || ''}
+                        onChange={e => setTyping(t => ({ ...t, prMeal: e.target.value || null }))}
+                        className="h-11 w-full px-3 mb-2 rounded-xl bg-raise border border-line">
+                        <option value="">Which meal — not specified</option>
+                        <option value="breakfast">Breakfast</option>
+                        <option value="lunch">Lunch</option>
+                        <option value="dinner">Dinner</option>
+                      </select>
+                    )}
                     <input value={typing.writeoffNote}
                       onChange={e => setTyping(t => ({ ...t, writeoffNote: e.target.value }))}
                       placeholder="Who approved this / note"

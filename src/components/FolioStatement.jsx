@@ -17,7 +17,10 @@ export default function FolioStatement({ room, folio, orderLines, payments, bran
   const overstay = Number(folio?.overstay_charge ?? 0)
   const orderTotal = orderLines.reduce((s, li) => s + Number(li.amount), 0)
   const paid = Number(folio?.total_paid ?? 0)
-  const balance = roomCharge + overstay + orderTotal - paid
+  const departmentCreditTotal = (departmentCredit || []).reduce((s, d) => s + Number(d.balance), 0)
+  // Per explicit correction, linked department credit belongs in the
+  // headline balance, not just shown separately below it.
+  const balance = roomCharge + overstay + orderTotal - paid + departmentCreditTotal
 
   return (
     <div className="fixed inset-0 z-[70] bg-bg flex flex-col">
@@ -106,7 +109,7 @@ export default function FolioStatement({ room, folio, orderLines, payments, bran
 
           {!!departmentCredit?.length && (
             <div className="mt-4 pt-4" style={{ borderTop: '1px solid #ccc' }}>
-              <p className="font-semibold text-sm">Also owed at other departments (not included above):</p>
+              <p className="font-semibold text-sm">Included above — other departments:</p>
               {departmentCredit.map(d => (
                 <div key={d.location_id} className="flex justify-between text-sm mt-1">
                   <span>{d.location_name}</span>

@@ -2133,3 +2133,44 @@ room bill — a room charge and department credit settle through
 completely different mechanisms (room payments vs credit_repayments),
 and folding them into one number would be misleading for
 reconciliation even though they're genuinely the same person's debt.
+
+
+## Invoice: Outstanding balance now genuinely includes linked department credit
+
+Reverses my earlier deliberate design choice (keeping room and
+department debt as separate, clearly-excluded figures) per explicit
+correction. The headline "Outstanding"/"Balance due" figure on Folio,
+FolioStatement, and Credit's Reception list now includes linked
+department credit, with the per-department breakdown still shown
+underneath (now labeled "Included above" rather than "not part of
+the room bill"). Room-specific mechanics stay untouched on purpose —
+the Pay sheet's default amount and checkout logic still use the
+room's own balance alone, since a room payment genuinely can't settle
+a separate department's credit ledger; only the display total changed.
+
+Also closed a deeper gap found while fixing this: a guest whose room
+was fully paid but who still owed at another department would
+previously vanish from Credit's Reception list entirely, since the
+underlying query only ever started from stays with an outstanding
+room balance. loadGuestBalances now also surfaces guests who owe
+*only* department credit, using their most recent stay for display.
+Sort order now reflects the combined total too.
+
+Added branch_id as a plain column on v_guest_department_credit rather
+than embedding guests from it — the exact view-embedding trap that
+broke this function once already (views have no foreign keys for
+PostgREST to follow).
+
+## Restaurant: PR dropdown now has meal options (Breakfast/Lunch/Dinner)
+
+New, genuinely separate pr_meal column on sales and order_items —
+deliberately not reusing damage_reason, since a value like
+'breakfast' isn't a damage reason and would corrupt any future
+reporting that counts damage incidents by reason. Shown as its own
+dropdown, specifically when "Not damage — PR only" is selected, in
+both entry points (SalesEntry's walk-in restaurant orders and
+RoomChargeSheet's room-charged ones). Threaded through
+saveRestaurantWriteoff/chargeWriteoffToRoom and every place damage_
+reason is displayed (Today list, Folio's order lines) — confirmed all
+three underlying select queries actually fetch the new column, not
+just that the display code was updated to show it.

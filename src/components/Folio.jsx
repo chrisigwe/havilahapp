@@ -42,6 +42,15 @@ export default function Folio({ boot, room, onClose, onChanged }) {
 
   const { orders, payments, folio, stay, departmentCredit } = data
   const outstanding = Number(folio?.outstanding ?? 0)
+  // The room's own balance — used for the pay-button default and
+  // checkout logic below, which are genuinely room-specific
+  // operations (a room payment can't settle a separate department's
+  // credit ledger, so those stay scoped to the room alone).
+  const departmentCreditTotal = (departmentCredit || []).reduce((s, d) => s + Number(d.balance), 0)
+  // What's actually shown as "Outstanding" — per explicit correction,
+  // linked department credit belongs in this headline figure, not
+  // just displayed separately alongside it.
+  const totalOutstanding = outstanding + departmentCreditTotal
   const live = ['reserved', 'occupied'].includes(room.status) && !!room.stay_id
   const orderLines = orders.flatMap(o => (o.order_items || [])
     .map(li => ({ ...li, date: o.business_date, servedBy: o.served_by, orderId: o.id })))
@@ -180,13 +189,15 @@ export default function Folio({ boot, room, onClose, onChanged }) {
         )}
         {!!departmentCredit?.length && (
           <div className="mt-2 px-3 py-2 rounded-xl bg-clay/10 border border-clay">
-            <p className="text-clay text-sm font-semibold">Also owed at other departments:</p>
+            <p className="text-clay text-sm font-semibold">Included above — other departments:</p>
             {departmentCredit.map(d => (
               <p key={d.location_id} className="text-clay text-sm">
                 {d.location_name}: {naira(d.balance)}
               </p>
             ))}
-            <p className="text-dim text-xs mt-1">Not part of the room bill — settled separately on Credit.</p>
+            <p className="text-dim text-xs mt-1">
+              Settled separately on Credit — paying the room balance doesn't clear this.
+            </p>
           </div>
         )}
         {live && (
@@ -207,11 +218,12 @@ export default function Folio({ boot, room, onClose, onChanged }) {
           <Row label="Room charge" value={folio?.room_charge} />
           <Row label="Orders" value={folio?.orders_charge} />
           {Number(folio?.overstay_charge) > 0 && <Row label="Over-stay charge" value={folio?.overstay_charge} />}
+          {departmentCreditTotal > 0 && <Row label="Other departments" value={departmentCreditTotal} />}
           <Row label="Paid" value={folio?.total_paid} />
           <div className="flex items-baseline justify-between pt-3 mt-3 border-t border-line">
-            <span className="font-semibold">{outstanding < 0 ? 'Deposit remaining' : 'Outstanding'}</span>
-            <span className={`text-xl font-bold tnum ${outstanding > 0 ? 'text-clay' : 'text-leaf'}`}>
-              {naira(Math.abs(outstanding))}
+            <span className="font-semibold">{totalOutstanding < 0 ? 'Deposit remaining' : 'Outstanding'}</span>
+            <span className={`text-xl font-bold tnum ${totalOutstanding > 0 ? 'text-clay' : 'text-leaf'}`}>
+              {naira(Math.abs(totalOutstanding))}
             </span>
           </div>
         </div>
@@ -312,7 +324,7 @@ export default function Folio({ boot, room, onClose, onChanged }) {
                       <div className="text-dim text-sm">
                         {li.date} · {li.qty} × {naira(li.unit_price)}
                         {li.order_type === 'pr_damage' && ' · not charged to guest'}
-                        {li.damage_reason && ` · ${li.damage_reason}`}
+                        {(li.damage_reason || li.pr_meal) && ` · ${li.damage_reason || li.pr_meal}`}
                         {li.writeoff_note && ` · ${li.writeoff_note}`}
                       </div>
                     </div>

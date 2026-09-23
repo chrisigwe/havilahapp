@@ -405,7 +405,7 @@ export default function SalesEntry({ boot }) {
 
       {!isReception && (
         <button onClick={() => setRestaurantOrder({ description: '', qty: 1, unitPrice: '',
-          orderType: 'standard', damageReason: null, writeoffNote: '' })}
+          orderType: 'standard', damageReason: null, writeoffNote: '', prMeal: null })}
           className="mt-3 w-full h-12 rounded-xl border border-line text-ink font-semibold">
           Add a restaurant order
         </button>
@@ -599,13 +599,13 @@ export default function SalesEntry({ boot }) {
                     <br />Charged to Room {r.roomNumber || '—'}
                     {r.guestName ? ` · ${r.guestName}` : ''}
                     {r.order_type === 'pr_damage' && ' · not paid for'}
-                    {r.damage_reason && ` · ${r.damage_reason}`}
+                    {(r.damage_reason || r.pr_meal) && ` · ${r.damage_reason || r.pr_meal}`}
                     {r.writeoff_note && ` · ${r.writeoff_note}`}
                   </div>
                 ) : r.order_type === 'pr_damage' ? (
                   <div className="text-dim text-sm">
                     {r.qty} × {naira(r.unit_price)} · not paid for
-                    {r.damage_reason && ` · ${r.damage_reason}`}
+                    {(r.damage_reason || r.pr_meal) && ` · ${r.damage_reason || r.pr_meal}`}
                     {r.writeoff_note && ` · ${r.writeoff_note}`}
                     <br />{whoRecorded(r)}
                   </div>
@@ -900,6 +900,18 @@ export default function SalesEntry({ boot }) {
                   <option value="other">Other</option>
                 </select>
               </Row>
+              {!restaurantOrder.damageReason && (
+                <Row label="Which meal">
+                  <select value={restaurantOrder.prMeal || ''}
+                    onChange={e => setRestaurantOrder(r => ({ ...r, prMeal: e.target.value || null }))}
+                    className="h-12 px-3 rounded-xl bg-surface border border-line">
+                    <option value="">Not specified</option>
+                    <option value="breakfast">Breakfast</option>
+                    <option value="lunch">Lunch</option>
+                    <option value="dinner">Dinner</option>
+                  </select>
+                </Row>
+              )}
               <label className="block mt-4 text-dim">Who approved this / note</label>
               <input value={restaurantOrder.writeoffNote}
                 onChange={e => setRestaurantOrder(r => ({ ...r, writeoffNote: e.target.value }))}
@@ -943,7 +955,7 @@ export default function SalesEntry({ boot }) {
                   staff, locationId: restaurant?.id, businessDate: lagosToday(),
                   description: desc, qty, unitPrice,
                   orderType: restaurantOrder.orderType, damageReason: restaurantOrder.damageReason,
-                  writeoffNote: restaurantOrder.writeoffNote,
+                  writeoffNote: restaurantOrder.writeoffNote, prMeal: restaurantOrder.prMeal,
                 })
                 toast('Recorded — not paid for', 'success')
                 setRestaurantOrder(null); refresh()

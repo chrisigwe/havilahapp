@@ -312,10 +312,12 @@ export default function Credit({ boot }) {
                       <div className="text-amber text-sm font-semibold">→ Billed to {g.bill_to}</div>
                     )}
                     {g.departmentCredit > 0 && (
-                      <div className="text-clay text-sm">+ {naira(g.departmentCredit)} at other departments</div>
+                      <div className="text-clay text-sm">
+                        incl. {naira(g.departmentCredit)} at other departments
+                      </div>
                     )}
                   </button>
-                  <span className="tnum font-bold text-clay">{naira(g.outstanding)}</span>
+                  <span className="tnum font-bold text-clay">{naira(g.outstanding + g.departmentCredit)}</span>
                 </li>
               ))}
               {guestBalances !== null && !gb.length && (
