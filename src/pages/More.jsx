@@ -9,16 +9,6 @@ const ITEMS = [
     roles: ['bar', 'front_desk', 'storekeeper', 'manager', 'gm', 'admin', 'auditor'] },
   { key: 'recovery', label: 'Recovered debt', hint: 'Payments collected, who paid and who recovered it',
     roles: ['bar', 'front_desk', 'storekeeper', 'manager', 'gm', 'admin', 'auditor'] },
-  { key: 'count',   label: 'Stock count', hint: 'Count your stock at end of shift',
-    roles: ['bar', 'front_desk', 'storekeeper', 'manager', 'gm', 'admin', 'auditor'] },
-  { key: 'catalog', label: 'Catalog', hint: 'Items, prices and what is active',
-    roles: ['gm', 'admin'] },
-  { key: 'variance', label: 'Variances', hint: 'Sales where collection did not match the goods sold',
-    roles: ['storekeeper', 'manager', 'gm', 'admin', 'auditor'] },
-  { key: 'fix',     label: 'Corrections', hint: 'Fix a mistake from today or yesterday',
-    roles: ['bar', 'front_desk', 'storekeeper', 'manager', 'gm', 'admin'] },
-  { key: 'staysettings', label: 'Settings', hint: 'Room rates and the over-stay charge default',
-    roles: ['manager', 'gm', 'admin'] },
   // Sales/Store/Stock are direct tabs for every department-scoped
   // role already (storekeeper, bar, front_desk) — these three only
   // exist here for oversight roles, who have Daily Sales/Rooms/Credit
@@ -29,6 +19,16 @@ const ITEMS = [
     roles: OVERSIGHT_ROLES },
   { key: 'stock', label: 'Stock', hint: 'Current stock on hand by department',
     roles: OVERSIGHT_ROLES },
+  { key: 'count',   label: 'Stock count', hint: 'Count your stock at end of shift',
+    roles: ['bar', 'front_desk', 'storekeeper', 'manager', 'gm', 'admin', 'auditor'] },
+  { key: 'catalog', label: 'Catalog', hint: 'Items, prices and what is active',
+    roles: ['gm', 'admin'] },
+  { key: 'variance', label: 'Variances', hint: 'Sales where collection did not match the goods sold',
+    roles: ['storekeeper', 'manager', 'gm', 'admin', 'auditor'] },
+  { key: 'fix',     label: 'Corrections', hint: 'Fix a mistake from today or yesterday',
+    roles: ['bar', 'front_desk', 'storekeeper', 'manager', 'gm', 'admin'] },
+  { key: 'staysettings', label: 'Settings', hint: 'Room rates and the over-stay charge default',
+    roles: ['manager', 'gm', 'admin'] },
 ]
 
 export default function More({ boot, onGo, pendingCount = 0 }) {

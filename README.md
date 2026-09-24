@@ -2333,3 +2333,19 @@ migration runs — no separate data patch needed on top of the view fix.
 
 Also relabeled the cycle picker from bare "PR" to "PR (free)", since
 the whole bug was ambiguity about what selecting it actually meant.
+
+
+## More menu reordered for GM/Admin/Manager
+
+Sales/Store/Stock moved to right after Recovered debt in the shared
+ITEMS array: Recovered debt, Sales, Store, Stock, Stock count,
+Catalog, Variances, Corrections, Settings. Confirmed before making
+this change that it only actually affects oversight roles — every
+other role that sees this menu (storekeeper, bar, front_desk,
+auditor) either doesn't have access to Sales/Store/Stock in More at
+all (storekeeper has them as its own direct tabs) or never did, so
+moving those three items' position in the shared array has no visible
+effect for them. Confirmed explicitly with the user that Catalog
+stays GM/admin only rather than extending it to Manager, so Manager's
+own list correctly skips it while GM/admin's includes it — same
+shared order, each role's own access still governs what actually shows.
