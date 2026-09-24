@@ -2349,3 +2349,29 @@ effect for them. Confirmed explicitly with the user that Catalog
 stays GM/admin only rather than extending it to Manager, so Manager's
 own list correctly skips it while GM/admin's includes it — same
 shared order, each role's own access still governs what actually shows.
+
+
+## Fixed: landing tab on sign-in now correct for every role, not just oversight
+
+Root cause: tab's initial state was hardcoded useState('sales'), a
+leftover from before oversight roles had their own separate tab
+structure — for manager/gm/admin, 'sales' isn't even one of their
+direct tabs anymore, so the bottom nav landed on "More" as the
+highlighted item instead of their actual primary screen (Daily Sales).
+
+Fixed with a role-aware effect that sets the correct starting tab
+once identity is actually known, verified against Shell.jsx's real
+tab-building logic for the complete, confirmed set of seven roles
+(front_desk, bar, storekeeper, manager, gm, admin, auditor) — not
+assumed from memory. Every role now lands on its own genuine first
+tab: Sales for front_desk/bar/storekeeper, Daily Sales for manager/
+gm/admin/auditor.
+
+Guarded with a ref so this only ever applies once, on the actual
+first sign-in — identity gets a new object reference on every auth
+token refresh too, and without the guard this would have yanked
+anyone back to their default tab mid-session every time that
+happens, not just on a genuine fresh sign-in. Also resets that guard
+specifically on sign-out, so a different role signing in on the same
+device without a full page reload still gets correctly landed on
+their own tab, not whatever the previous person was last on.

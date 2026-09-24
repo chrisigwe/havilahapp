@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, useRef } from 'react'
 import { supabase } from './lib/supabase'
 import { loadBootstrap, loadStaffIdentity, loadBranchData } from './lib/data'
 import Login from './pages/Login'
@@ -36,6 +36,12 @@ export default function App() {
   const [unfinished, setUnfinished] = useState([])
 
   const ALERT_ROLES = ['auditor', 'storekeeper', 'manager', 'gm', 'admin']
+  const OVERSIGHT_ROLES = ['manager', 'gm', 'admin']
+  // Guards the role-based default-tab effect below so it applies
+  // only once per real sign-in, not on every identity object
+  // refresh (e.g. an auth token refresh) — declared here, before any
+  // effect references it.
+  const landedRef = useRef(false)
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => setSession(data.session))
@@ -46,10 +52,27 @@ export default function App() {
   // identity (auth check + staff row) only needs to run once per
   // session — not once per branch switch
   useEffect(() => {
-    if (!session) { setIdentity(undefined); setBoot(null); return }
+    if (!session) { setIdentity(undefined); setBoot(null); landedRef.current = false; return }
     loadStaffIdentity().then(staff => setIdentity(staff === undefined ? null : (staff || false)))
       .catch(e => setErr(e.message))
   }, [session])
+
+  // Lands each role on ITS OWN first tab — hardcoding a single
+  // default (previously always 'sales') meant oversight roles landed
+  // on a tab that isn't even one of their own direct tabs anymore,
+  // showing "More" as the highlighted nav item on sign-in instead of
+  // their actual primary screen. Guarded to apply once, on the first
+  // real sign-in only — identity gets a new object reference on every
+  // auth token refresh too, and without the guard this would yank
+  // someone back to their default tab mid-session every time that
+  // happens, not just on an actual fresh sign-in.
+  useEffect(() => {
+    if (!identity || landedRef.current) return
+    landedRef.current = true
+    if (OVERSIGHT_ROLES.includes(identity.role)) setTab('dailysales')
+    else if (identity.role === 'auditor') setTab('dailysales')
+    else setTab('sales')
+  }, [identity])
 
   const refresh = useCallback(() => {
     if (identity === undefined) return          // still loading identity
