@@ -66,7 +66,7 @@ export const addDays = (iso, n) => {
   return d.toISOString().slice(0, 10)
 }
 
-const CYCLE_LABELS = { one_off: 'One-off', daily: 'Daily', monthly: 'Monthly', pr: 'PR' }
+const CYCLE_LABELS = { one_off: 'One-off', daily: 'Daily', monthly: 'Monthly', pr: 'PR (free)' }
 const CYCLE_ORDER = ['one_off', 'daily', 'monthly', 'pr']
 // Which billing cycles a branch actually offers — confirmed directly
 // against the live database rather than assumed: Nnewi has no

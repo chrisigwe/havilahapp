@@ -2314,3 +2314,22 @@ Nnewi: Reception, OpenBar, Restaurant, Minimart, Lounge. This is a
 sort_order change (migration 197), so it applies universally — same
 order for every role who sees these chips, department-scoped staff
 included.
+
+
+## PR billing cycle now actually free
+
+'pr' already existed as a valid billing_cycle value, but v_stay_folio
+never treated it specially — it still computed room_charge = daily_
+rate * nights like any other cycle, exactly the bug reported. Found
+the specific guest before assuming: "Owner of Havila", Room Suite,
+Awka, showing ₦150,000 outstanding despite billing_cycle = pr.
+
+Fixed at the view level, scoped specifically to room_charge — orders_
+charge (food/drinks) and overstay_charge (a penalty for a different
+behavior) stay untouched, since PR governs the room rate itself, not
+every possible charge on the stay. Because v_stay_folio is computed
+live, this guest's balance corrects automatically the moment the
+migration runs — no separate data patch needed on top of the view fix.
+
+Also relabeled the cycle picker from bare "PR" to "PR (free)", since
+the whole bug was ambiguity about what selecting it actually meant.
