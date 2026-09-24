@@ -1,3 +1,5 @@
+const OVERSIGHT_ROLES = ['manager', 'gm', 'admin']
+
 const ITEMS = [
   { key: 'dailysales', label: 'Daily sales', hint: 'Any past day, by department',
     roles: ['auditor', 'storekeeper', 'manager', 'gm', 'admin'] },
@@ -17,17 +19,30 @@ const ITEMS = [
     roles: ['bar', 'front_desk', 'storekeeper', 'manager', 'gm', 'admin'] },
   { key: 'staysettings', label: 'Settings', hint: 'Room rates and the over-stay charge default',
     roles: ['manager', 'gm', 'admin'] },
+  // Sales/Store/Stock are direct tabs for every department-scoped
+  // role already (storekeeper, bar, front_desk) — these three only
+  // exist here for oversight roles, who have Daily Sales/Rooms/Credit
+  // promoted to direct tabs instead.
+  { key: 'sales', label: 'Sales', hint: 'Record a sale for any department',
+    roles: OVERSIGHT_ROLES },
+  { key: 'store', label: 'Store', hint: 'Receive stock and record transfers',
+    roles: OVERSIGHT_ROLES },
+  { key: 'stock', label: 'Stock', hint: 'Current stock on hand by department',
+    roles: OVERSIGHT_ROLES },
 ]
 
 export default function More({ boot, onGo, pendingCount = 0 }) {
-  // dailysales/roomboard are dedicated top-level tabs for auditor/
-  // front_desk respectively, not More-menu destinations for THEM —
-  // hidden here so each doesn't appear in two places at once; every
-  // other role that has access still reaches them through this menu
+  // dailysales/roomboard/credit are dedicated top-level tabs for
+  // auditor/front_desk/oversight roles respectively, not More-menu
+  // destinations for THEM — hidden here so each doesn't appear in two
+  // places at once; every other role that has access still reaches
+  // them through this menu
+  const isOversight = OVERSIGHT_ROLES.includes(boot.staff.role)
   const allowed = ITEMS.filter(i =>
     i.roles.includes(boot.staff.role)
-    && !(i.key === 'dailysales' && boot.staff.role === 'auditor')
-    && !(i.key === 'roomboard' && boot.staff.role === 'front_desk'))
+    && !(i.key === 'dailysales' && (boot.staff.role === 'auditor' || isOversight))
+    && !(i.key === 'roomboard' && (boot.staff.role === 'front_desk' || isOversight))
+    && !(i.key === 'credit' && isOversight))
   return (
     <div className="px-5">
       <ul className="divide-y divide-line/60">

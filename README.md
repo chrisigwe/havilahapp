@@ -2286,3 +2286,31 @@ money received in the moment, not administrative record-keeping
 entered after the fact. Left these as-is since they're outside what
 was reported, but flagging them as a real, separate thing worth a
 decision if backdating a room payment is ever a genuine need.
+
+
+## Navigation restructure: bottom tabs promoted for GM/Admin/Manager, department chips reordered
+
+Bottom tabs: oversight roles (manager/gm/admin) now get Daily Sales,
+Rooms, Credit, More as their four direct tabs — their genuinely
+load-bearing, cross-department screens — with Sales, Store, and Stock
+moved into More for them specifically. Storekeeper and every other
+department-scoped role keep their existing direct tabs unchanged;
+this only restructures the three oversight roles.
+
+Replaced the old hardcoded per-role exclusion list on the More-tab
+highlighting logic (which needed a new line added by hand every time
+a role's direct tabs changed) with one derived from the tabs array
+itself — More only highlights for a key that isn't already that
+role's own direct tab, computed automatically rather than maintained
+by hand. Confirmed App.jsx's tab routing is purely key-based, not
+role-based, so no changes were needed there — Sales/Store/Stock render
+identically whether reached via a direct tab or through More.
+
+Department chips (the top tabs): confirmed Store/Housekeeping/Others
+are is_sales_point=false and never show as chips regardless of sort
+order, so only the five real sales-point locations per branch needed
+reordering. Awka: Reception, OpenBar, Restaurant, Minimart, MainBar.
+Nnewi: Reception, OpenBar, Restaurant, Minimart, Lounge. This is a
+sort_order change (migration 197), so it applies universally — same
+order for every role who sees these chips, department-scoped staff
+included.
