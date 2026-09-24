@@ -2258,3 +2258,31 @@ since this whole bug was invisible only because the real error never
 surfaced — it now shows a toast with the actual error message instead
 of quietly presenting an empty list as if it were a genuine zero
 result.
+
+
+## PR/Damage backdating fixed — Restaurant and room-charged versions
+
+Confirmed the actual gap before assuming scope: the REGULAR stock-item
+PR/Damage writeoff sheet (Minimart/OpenBar/MainBar, via Store.jsx and
+SalesEntry's own writeoff sheet) already had its own date picker and
+correctly supported backdating — that part was never broken. The gap
+was specifically the newer typed-order sheets built later: Restaurant's
+"Add a restaurant order" (SalesEntry.jsx) and its room-charged
+equivalent (RoomChargeSheet.jsx) both hardcoded businessDate: lagosToday(),
+so a PR/Damage entry always posted today regardless of when it actually
+happened.
+
+Fixed both with the same Date field the existing writeoff sheet
+already uses, scoped specifically to the PR/Damage path in each —
+Standard and Staff orders go through the basket (SalesEntry) or the
+paid charge-to-room path (RoomChargeSheet), both of which already
+have their own separate date handling, so they didn't need this.
+
+Checked every other hardcoded lagosToday() used as a save-date across
+the whole codebase rather than stopping at the two reported spots.
+Found two more, in Folio.jsx and Credit.jsx — both are recordStayPayment
+(room payments), a genuinely different category from PR/Damage: real
+money received in the moment, not administrative record-keeping
+entered after the fact. Left these as-is since they're outside what
+was reported, but flagging them as a real, separate thing worth a
+decision if backdating a room payment is ever a genuine need.

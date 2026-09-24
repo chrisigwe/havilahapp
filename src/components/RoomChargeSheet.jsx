@@ -66,7 +66,7 @@ export default function RoomChargeSheet({ boot, stockMap, onClose, toast }) {
         })
       } else {
         await chargeWriteoffToRoom({
-          staff, stayId: stay.id, description: desc, qty, unitPrice, businessDate: lagosToday(),
+          staff, stayId: stay.id, description: desc, qty, unitPrice, businessDate: typing.date || lagosToday(),
           orderType: typing.orderType, damageReason: typing.damageReason, writeoffNote: typing.writeoffNote,
           prMeal: typing.prMeal,
         })
@@ -124,7 +124,7 @@ export default function RoomChargeSheet({ boot, stockMap, onClose, toast }) {
               + Add a drink or minimart item
             </button>
             <button onClick={() => setTyping({ description: '', qty: 1, unitPrice: '',
-              orderType: 'standard', damageReason: null, writeoffNote: '', prMeal: null })}
+              orderType: 'standard', damageReason: null, writeoffNote: '', prMeal: null, date: null })}
               className="mt-3 w-full h-14 rounded-2xl border-2 border-line text-ink text-lg font-bold">
               + Add a restaurant order
             </button>
@@ -206,6 +206,9 @@ export default function RoomChargeSheet({ boot, stockMap, onClose, toast }) {
                         <option value="dinner">Dinner</option>
                       </select>
                     )}
+                    <input type="date" value={typing.date || lagosToday()} max={lagosToday()}
+                      onChange={e => setTyping(t => ({ ...t, date: e.target.value }))}
+                      className="h-11 w-full px-3 mb-2 rounded-xl bg-raise border border-line tnum" />
                     <input value={typing.writeoffNote}
                       onChange={e => setTyping(t => ({ ...t, writeoffNote: e.target.value }))}
                       placeholder="Who approved this / note"

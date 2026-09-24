@@ -405,7 +405,7 @@ export default function SalesEntry({ boot }) {
 
       {!isReception && (
         <button onClick={() => setRestaurantOrder({ description: '', qty: 1, unitPrice: '',
-          orderType: 'standard', damageReason: null, writeoffNote: '', prMeal: null })}
+          orderType: 'standard', damageReason: null, writeoffNote: '', prMeal: null, date: null })}
           className="mt-3 w-full h-12 rounded-xl border border-line text-ink font-semibold">
           Add a restaurant order
         </button>
@@ -900,6 +900,11 @@ export default function SalesEntry({ boot }) {
                   <option value="other">Other</option>
                 </select>
               </Row>
+              <Row label="Date">
+                <input type="date" value={restaurantOrder.date || date} max={todayDate}
+                  onChange={e => setRestaurantOrder(r => ({ ...r, date: e.target.value }))}
+                  className="h-12 px-3 rounded-xl bg-surface border border-line tnum" />
+              </Row>
               {!restaurantOrder.damageReason && (
                 <Row label="Which meal">
                   <select value={restaurantOrder.prMeal || ''}
@@ -952,7 +957,7 @@ export default function SalesEntry({ boot }) {
               try {
                 const restaurant = (boot.allLocations || []).find(l => /restaurant/i.test(l.name))
                 await saveRestaurantWriteoff({
-                  staff, locationId: restaurant?.id, businessDate: lagosToday(),
+                  staff, locationId: restaurant?.id, businessDate: restaurantOrder.date || date,
                   description: desc, qty, unitPrice,
                   orderType: restaurantOrder.orderType, damageReason: restaurantOrder.damageReason,
                   writeoffNote: restaurantOrder.writeoffNote, prMeal: restaurantOrder.prMeal,
