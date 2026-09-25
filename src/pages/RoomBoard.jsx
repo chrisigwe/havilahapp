@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { naira } from '../lib/format'
+import { naira, lagosToday } from '../lib/format'
 import { loadOccupancy, setRoomServiceStatus } from '../lib/data'
 import CheckIn from './CheckIn'
 import Folio from '../components/Folio'
@@ -14,6 +14,7 @@ const STATE = {
   vacant:   { label: 'Vacant',      bar: 'bg-line',  text: 'text-dim' },
   occupied: { label: 'Occupied',    bar: 'bg-leaf',  text: 'text-leaf' },
   reserved: { label: 'Reserved',    bar: 'bg-amber', text: 'text-amber' },
+  reserved_due: { label: 'Reserved — due',  bar: 'bg-clay',  text: 'text-clay' },
   overdue:  { label: 'Past due',    bar: 'bg-clay',  text: 'text-clay' },
   service:  { label: 'Maintenance', bar: 'bg-dim',   text: 'text-dim' },
 }
@@ -22,7 +23,13 @@ function stateOf(room) {
   if (room.out_of_service) return 'service'
   if (!room.stay_id) return 'vacant'
   if (room.is_overdue) return 'overdue'
-  return room.status === 'reserved' ? 'reserved' : 'occupied'
+  if (room.status === 'reserved') {
+    // The whole point of letting a future reservation not block the
+    // room early is that staff still need a clear, unmissable signal
+    // once its actual date arrives — this is that signal.
+    return room.check_in_date <= lagosToday() ? 'reserved_due' : 'reserved'
+  }
+  return 'occupied'
 }
 
 export default function RoomBoard({ boot }) {
@@ -102,9 +109,29 @@ export default function RoomBoard({ boot }) {
 
       {!rooms.length && <p className="py-8 text-center text-dim">No rooms set up for this branch yet.</p>}
 
+      {(() => {
+        const dueToday = (rooms || []).filter(r => stateOf(r) === 'reserved_due')
+        if (!dueToday.length) return null
+        return (
+          <div className="mb-4 rounded-2xl border-2 border-clay bg-clay/10 p-4">
+            <p className="text-clay font-bold">
+              {dueToday.length} reservation{dueToday.length === 1 ? '' : 's'} due — keep {dueToday.length === 1 ? 'this room' : 'these rooms'} free
+            </p>
+            <div className="mt-2 space-y-1">
+              {dueToday.map(r => (
+                <p key={r.room_id} className="text-clay text-sm">
+                  Room {r.room_number} — {r.guest_name}
+                </p>
+              ))}
+            </div>
+          </div>
+        )
+      })()}
+
       <div className="grid grid-cols-2 gap-3">
         {rooms.map(room => {
-          const s = STATE[stateOf(room)]
+          const stateKey = stateOf(room)
+          const s = STATE[stateKey]
           return (
             <div key={room.room_id}
               onClick={() => room.stay_id && setOpenStay(room)}
@@ -131,6 +158,18 @@ export default function RoomBoard({ boot }) {
                 ) : room.guest_name ? (
                   <>
                     <p className="text-sm font-semibold mt-2 truncate">{room.guest_name}</p>
+                    {stateKey === 'reserved_due' && (
+                      <p className="text-clay text-xs font-bold mt-0.5">
+                        Reserved for {room.check_in_date === lagosToday() ? 'today' : 'since ' +
+                          new Date(room.check_in_date).toLocaleDateString('en-NG', { day: 'numeric', month: 'short' })}
+                        — keep it free
+                      </p>
+                    )}
+                    {stateKey === 'reserved' && (
+                      <p className="text-dim text-xs mt-0.5">
+                        from {new Date(room.check_in_date).toLocaleDateString('en-NG', { day: 'numeric', month: 'short' })}
+                      </p>
+                    )}
                     <p className="text-dim text-xs tnum mt-0.5">
                       out {new Date(room.scheduled_out).toLocaleDateString('en-NG',
                         { day: 'numeric', month: 'short' })}

@@ -49,7 +49,15 @@ export default function CheckIn({ boot, onDone }) {
   }, [billTo, staff.branch_id, billToOpen])
 
   useEffect(() => {
-    loadFreeRooms(staff.branch_id).then(setRooms).catch(() => setRooms([]))
+    loadFreeRooms(staff.branch_id, checkIn, scheduledOut).then(list => {
+      setRooms(list)
+      // The previously-picked room may no longer be free for the
+      // newly-selected dates — don't let a stale selection through.
+      setRoomId(cur => list.some(r => r.id === cur) ? cur : null)
+    }).catch(() => setRooms([]))
+  }, [staff.branch_id, checkIn, scheduledOut])
+
+  useEffect(() => {
     loadBranchStaySettings(staff.branch_id).then(s => {
       setAllowedCycles(s.allowedCycles)
       setRateLabels(s.rateLabels)

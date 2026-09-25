@@ -2403,3 +2403,40 @@ Per explicit correction — loadAdvancePayments had no status filter at
 all, so an old overpayment sitting on an already-checked-out stay
 would show up alongside genuinely current advance balances. Now
 restricted to occupied/reserved stays specifically.
+
+
+## Rooms: reservations no longer block the room until they're actually due
+
+Real architectural change, built carefully given the risk of a
+constraint change around double-booking. Replaced stays_one_live_per_
+room (a simple "at most one live stay per room, ever" unique index,
+with zero awareness of dates) with a date-range-aware exclusion
+constraint (stays_no_date_overlap, requires btree_gist). A future
+reservation now only blocks its own actual date range — the room
+stays bookable for any nights before that.
+
+Occupied stays deliberately get an UNBOUNDED upper range rather than
+using scheduled_out as the boundary — an overstaying guest must keep
+blocking the room indefinitely until they actually check out, and
+CURRENT_DATE can't be used inside a constraint at all (constraints
+must be immutable expressions). Reserved stays get a bounded range
+(check_in_date to scheduled_out), since a reservation's whole point
+is to only block its own planned window. Confirmed this migration is
+safe to apply to existing data without any risk of failing: the old
+constraint was strictly tighter than the new one, so every existing
+row already satisfies the looser rule automatically.
+
+App side: loadFreeRooms rewritten to accept the actually-requested
+check-in/scheduled-out dates and check for real overlap (mirroring the
+DB constraint's own logic in JS), rather than "is there any live stay
+on this room at all." CheckIn now re-fetches availability whenever
+either date changes, and clears a previously-picked room if it's no
+longer free for the newly-selected dates rather than letting a stale
+selection through.
+
+The reminder half: Room Board now distinguishes a reservation whose
+date has actually arrived (or passed) from one still weeks away — a
+new "Reserved — due" state, shown as a clear per-room badge on the
+card itself, plus a prominent banner at the top of the page listing
+every room due today by name, so it can't be missed by someone
+quickly scanning the board.

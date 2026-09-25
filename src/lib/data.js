@@ -798,18 +798,36 @@ export async function loadOccupancy(branchId) {
 // live database (constraints, generated columns, RLS) before writing
 // any of this, not inferred from the reference app's frontend code.
 
-export async function loadFreeRooms(branchId) {
-  const [{ data: occ, error: e1 }, { data: rooms, error: e2 }] = await Promise.all([
-    supabase.from('v_occupancy_today').select('room_id')
-      .eq('branch_id', branchId).is('stay_id', null).eq('out_of_service', false),
+// A room is available for a REQUESTED date range if no existing
+// reserved/occupied stay on it overlaps that range — not "no stay at
+// all", which is what made any future reservation block a room for
+// every night before it too. Mirrors the DB constraint's own logic:
+// an occupied stay blocks indefinitely (open-ended, since an
+// overstay means we don't actually know when it ends), a reserved
+// stay only blocks its own planned window.
+export async function loadFreeRooms(branchId, checkIn, scheduledOut) {
+  const [{ data: liveStays, error: e1 }, { data: rooms, error: e2 }] = await Promise.all([
+    supabase.from('stays')
+      .select('room_id, status, check_in_date, scheduled_out')
+      .eq('branch_id', branchId).in('status', ['reserved', 'occupied']),
     supabase.from('rooms')
-      .select('id, room_number, rate_standard, rate_alternate, rate_short, room_categories(name)')
+      .select('id, room_number, rate_standard, rate_alternate, rate_short, out_of_service, room_categories(name)')
       .eq('branch_id', branchId).eq('is_active', true),
   ])
   if (e1) throw e1
   if (e2) throw e2
-  const freeIds = new Set((occ || []).map(r => r.room_id))
-  return (rooms || []).filter(r => freeIds.has(r.id))
+
+  const reqStart = new Date(checkIn), reqEnd = new Date(scheduledOut)
+  const blockedRoomIds = new Set()
+  for (const s of liveStays || []) {
+    const start = new Date(s.check_in_date)
+    const end = s.status === 'occupied' ? null : new Date(s.scheduled_out)   // null = unbounded
+    const overlaps = start < reqEnd && (end === null || reqStart < end)
+    if (overlaps) blockedRoomIds.add(s.room_id)
+  }
+
+  return (rooms || [])
+    .filter(r => !r.out_of_service && !blockedRoomIds.has(r.id))
     .sort((a, b) => String(a.room_number).localeCompare(String(b.room_number), undefined, { numeric: true }))
 }
 
