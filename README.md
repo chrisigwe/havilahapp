@@ -2463,3 +2463,27 @@ plain note explains this when a past date is selected instead of
 silently showing nothing. Branch-scoped by staff.branch_id like
 everything else in this app, so this is already correct for GM/admin
 switching between Awka and Nnewi without any special handling needed.
+
+
+## Fixed: a real design flaw in the date-aware room availability constraint
+
+The constraint from last turn was correctly built and deployed, but
+gave occupied stays an unbounded upper range specifically to handle
+overstays safely — meaning any new check-in today was treated as
+potentially lasting forever, which then always conflicted with any
+future reservation on the same room. Confirmed directly against the
+live constraint definition before concluding this, not assumed —
+reproduced exactly the reported symptom (a reservation for the 30th
+blocking a check-in today) by tracing through the actual logic.
+
+Corrected: both reserved and occupied stays now use their real
+scheduled_out as the boundary — a planned window, not an infinite
+one. The overstay case moved to the app side instead
+(loadFreeRooms), which can compare against today dynamically; an
+occupied stay whose scheduled_out has already passed still blocks at
+least through today even though its stored value says otherwise —
+something a database constraint fundamentally can't do, since it
+can't reference the current date at all. Confirmed this correction is
+still safe against existing data for the same reason the original
+migration was: strictly looser than what's currently active, so
+nothing existing can violate it.

@@ -1,5 +1,5 @@
 import { supabase } from './supabase'
-import { lagosDaysAgo, nameKey } from './format'
+import { lagosDaysAgo, lagosToday, nameKey } from './format'
 import { normalizeCustomerName } from './customerName'
 
 export async function loadBranches() {
@@ -805,6 +805,16 @@ export async function loadOccupancy(branchId) {
 // an occupied stay blocks indefinitely (open-ended, since an
 // overstay means we don't actually know when it ends), a reserved
 // stay only blocks its own planned window.
+// A room is available for a REQUESTED date range if no existing
+// reserved/occupied stay on it overlaps that range — not "no stay at
+// all", which is what made any future reservation block a room for
+// every night before it too. Mirrors the DB constraint's own logic
+// (daterange(check_in_date, scheduled_out)), with one addition the
+// constraint itself can't make: an occupied stay whose scheduled_out
+// has already passed (an overstay, not yet checked out) still needs
+// to block at least through today, even though its stored
+// scheduled_out says otherwise — this app-side check can compare
+// against "today" dynamically; a database constraint can't.
 export async function loadFreeRooms(branchId, checkIn, scheduledOut) {
   const [{ data: liveStays, error: e1 }, { data: rooms, error: e2 }] = await Promise.all([
     supabase.from('stays')
@@ -817,12 +827,14 @@ export async function loadFreeRooms(branchId, checkIn, scheduledOut) {
   if (e1) throw e1
   if (e2) throw e2
 
+  const today = new Date(lagosToday())
   const reqStart = new Date(checkIn), reqEnd = new Date(scheduledOut)
   const blockedRoomIds = new Set()
   for (const s of liveStays || []) {
     const start = new Date(s.check_in_date)
-    const end = s.status === 'occupied' ? null : new Date(s.scheduled_out)   // null = unbounded
-    const overlaps = start < reqEnd && (end === null || reqStart < end)
+    let end = new Date(s.scheduled_out)
+    if (s.status === 'occupied' && end <= today) end = new Date(today.getTime() + 864e5)   // still blocks at least through today
+    const overlaps = start < reqEnd && reqStart < end
     if (overlaps) blockedRoomIds.add(s.room_id)
   }
 
