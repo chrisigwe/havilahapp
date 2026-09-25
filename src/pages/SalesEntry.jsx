@@ -3,7 +3,7 @@ import { naira, lagosToday, tierLabel, methodLabel, whoRecorded, paymentSummary 
 import { loadStockMap, loadPopular, loadToday, saveBasket, saveWriteoff,
          loadDailyFinancials, loadCustomers, createCustomer,
          loadOpeningDate, loadBalances, loadReceipt,
-         loadStaffForLocation, loadReceptionActivity, deleteEntry,
+         loadStaffForLocation, loadReceptionActivity, loadReceptionDashboard, deleteEntry,
          loadRoomCharges, deleteOrderItem, saveRestaurantWriteoff } from '../lib/data'
 import { enqueue, flush, isConnectionError } from '../lib/outbox'
 import { useToast } from '../components/Toast'
@@ -74,6 +74,7 @@ export default function SalesEntry({ boot }) {
   const [today, setToday] = useState([])
   const [roomCharges, setRoomCharges] = useState([])   // Restaurant only: food charged to rooms
   const [receptionActivity, setReceptionActivity] = useState([])
+  const [receptionDashboard, setReceptionDashboard] = useState(null)
   // GM/Admin-only cleanup for training records, scoped specifically to
   // Restaurant here (Reception's version deletes a whole booking, not
   // a single row, so it lives separately in Folio)
@@ -143,6 +144,7 @@ export default function SalesEntry({ boot }) {
     loadToday(staff.branch_id, date, locationId).then(setToday).catch(() => {})
     if (isReception) {
       loadReceptionActivity(staff.branch_id, date).then(setReceptionActivity).catch(() => {})
+      loadReceptionDashboard(staff.branch_id, date).then(setReceptionDashboard).catch(() => {})
     }
     if (roomChargeCategory) {
       loadRoomCharges(staff.branch_id, date, roomChargeCategory).then(setRoomCharges).catch(() => {})
@@ -445,6 +447,63 @@ export default function SalesEntry({ boot }) {
           className="mt-3 w-full h-16 rounded-2xl bg-amber text-bg text-xl font-bold active:bg-amber-deep">
           + Sell Item
         </button>
+      )}
+
+      {isReception && receptionDashboard && (
+        <div className="mt-3 rounded-2xl border border-amber bg-surface p-4">
+          <p className="font-semibold">Close of day</p>
+          <div className="grid grid-cols-3 gap-3 mt-3 pb-3 border-b border-line">
+            <div>
+              <div className="text-dim text-sm">POS</div>
+              <div className="tnum font-bold">{naira(receptionDashboard.pos)}</div>
+            </div>
+            <div>
+              <div className="text-dim text-sm">Cash</div>
+              <div className="tnum font-bold">{naira(receptionDashboard.cash)}</div>
+            </div>
+            <div>
+              <div className="text-dim text-sm">Credit</div>
+              <div className="tnum font-bold text-clay">{naira(receptionDashboard.deferredTotal)}</div>
+            </div>
+          </div>
+
+          <div className="mt-3 flex items-baseline justify-between">
+            <span className="text-dim">Deferred — owed across every live stay</span>
+            <span className="tnum font-bold text-clay">{naira(receptionDashboard.deferredTotal)}</span>
+          </div>
+          <div className="mt-1 space-y-1">
+            {receptionDashboard.deferred.map(g => (
+              <div key={g.stay_id} className="flex justify-between text-sm">
+                <span className="text-dim truncate">{g.guest_name || 'Guest'} · Room {g.room_number}</span>
+                <span className="tnum">{naira(g.outstanding + g.departmentCredit + g.billedToYou)}</span>
+              </div>
+            ))}
+            {!receptionDashboard.deferred.length && (
+              <p className="text-dim text-sm">Nothing deferred right now.</p>
+            )}
+          </div>
+
+          <div className="mt-4 pt-3 border-t border-line flex items-baseline justify-between">
+            <span className="text-dim">Advance payments — balance remaining</span>
+            <span className="tnum font-bold text-leaf">{naira(receptionDashboard.advanceTotal)}</span>
+          </div>
+          <div className="mt-1 space-y-1">
+            {receptionDashboard.advances.map(a => (
+              <div key={a.stay_id} className="text-sm">
+                <div className="flex justify-between">
+                  <span className="text-dim truncate">{a.guest_name || 'Guest'} · Room {a.room_number}</span>
+                  <span className="tnum text-leaf">{naira(a.balance)} left</span>
+                </div>
+                <div className="text-dim text-xs">
+                  Paid {naira(a.paid)} · used {naira(a.usedUp)}
+                </div>
+              </div>
+            ))}
+            {!receptionDashboard.advances.length && (
+              <p className="text-dim text-sm">No advance balances right now.</p>
+            )}
+          </div>
+        </div>
       )}
 
       {isReception && (

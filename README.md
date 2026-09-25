@@ -2375,3 +2375,23 @@ happens, not just on a genuine fresh sign-in. Also resets that guard
 specifically on sign-out, so a different role signing in on the same
 device without a full page reload still gets correctly landed on
 their own tab, not whatever the previous person was last on.
+
+
+## Reception: default department fixed, plus a new close-of-day dashboard
+
+Confirmed the actual root cause before fixing rather than trusting the
+attributed one: default_location_id was explicitly set to Minimart
+for every front_desk account at both branches, predating the recent
+chip reordering entirely (that column takes priority over sort_order,
+so reordering the chips was never going to change this). Corrected to
+Reception for every front_desk account at both branches.
+
+New Reception dashboard, shown above the existing activity list:
+POS/Cash/Credit summary for today, a full breakdown of what's
+deferred (confirmed with the user this means the complete current
+outstanding across every live Reception stay, not just today's
+accrual — reuses loadGuestBalances, including its department-credit
+and other-bills totals from the recent Outstanding fix), and a
+breakdown of advance payments — guests who've paid ahead of what they
+currently owe, showing how much of that advance has been used up by
+charges so far versus what's genuinely still left as a credit.

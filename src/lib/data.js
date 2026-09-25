@@ -1139,6 +1139,51 @@ export async function updateBranchOverstayDefault(branchId, amount) {
 // querying the view for the outstanding figures alone, then stays
 // (a real table, so its own embed to rooms/guests works correctly)
 // for just those stay ids, and merging client-side.
+// Guests who've paid ahead of what they actually owe (a negative
+// outstanding) — how much of that advance has been used up by
+// charges so far, and what's genuinely still left as a credit.
+export async function loadAdvancePayments(branchId) {
+  const { data: folios, error: e1 } = await supabase.from('v_stay_folio')
+    .select('stay_id, total_due, total_paid, outstanding')
+    .eq('branch_id', branchId).lt('outstanding', -0.009)
+  if (e1) throw e1
+  if (!folios?.length) return []
+
+  const { data: stays, error: e2 } = await supabase.from('stays')
+    .select('id, rooms(room_number), guests!guest_id(full_name)')
+    .in('id', folios.map(f => f.stay_id))
+  if (e2) throw e2
+  const stayById = Object.fromEntries((stays || []).map(s => [s.id, s]))
+
+  return folios.map(f => ({
+    stay_id: f.stay_id,
+    room_number: stayById[f.stay_id]?.rooms?.room_number,
+    guest_name: stayById[f.stay_id]?.guests?.full_name,
+    paid: Number(f.total_paid), usedUp: Number(f.total_due), balance: Math.abs(Number(f.outstanding)),
+  }))
+}
+
+// Reception's own daily-close dashboard — POS/cash collected today,
+// plus the full deferred (outstanding) and advance pictures. Kept as
+// one call so the page loads it in one round trip rather than piecing
+// it together from three separate fetches inline.
+export async function loadReceptionDashboard(branchId, date) {
+  const { data: todayPayments, error: e1 } = await supabase.from('payments')
+    .select('method, amount').eq('branch_id', branchId).eq('business_date', date)
+  if (e1) throw e1
+  const pos = (todayPayments || []).filter(p => p.method === 'pos').reduce((s, p) => s + Number(p.amount), 0)
+  const cash = (todayPayments || []).filter(p => p.method === 'cash').reduce((s, p) => s + Number(p.amount), 0)
+
+  const [deferred, advances] = await Promise.all([
+    loadGuestBalances(branchId),
+    loadAdvancePayments(branchId),
+  ])
+  const deferredTotal = deferred.reduce((s, g) => s + g.outstanding + g.departmentCredit + g.billedToYou, 0)
+  const advanceTotal = advances.reduce((s, a) => s + a.balance, 0)
+
+  return { pos, cash, deferred, deferredTotal, advances, advanceTotal }
+}
+
 export async function loadGuestBalances(branchId, staffId) {
   const { data: folios, error: e1 } = await supabase.from('v_stay_folio')
     .select('stay_id, billing_cycle, outstanding')
