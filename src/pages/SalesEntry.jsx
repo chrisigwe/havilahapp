@@ -152,7 +152,8 @@ export default function SalesEntry({ boot }) {
     loadDailyFinancials(staff.branch_id, date, locationId).then(r => {
       setSummary({ byMethod: r.byMethod, nonRevenue: r.nonRevenue })
       setRecon({ grossSales: r.grossSales, received: r.received, creditRaised: r.creditRaised,
-                 debtRecovered: r.debtRecovered, recoveredBy: r.recoveredBy, totalMoneyIn: r.totalMoneyIn })
+                 debtRecovered: r.debtRecovered, recoveredBy: r.recoveredBy, totalMoneyIn: r.totalMoneyIn,
+                 unqualifiedCredit: r.unqualifiedCredit })
     }).catch(() => {})
     loadOpeningDate(staff.branch_id).then(setOpeningDate).catch(() => {})
 
@@ -595,6 +596,12 @@ export default function SalesEntry({ boot }) {
               <Line label="Received at sale (POS + Cash)" value={recon.received} />
               <Line label="Credit raised" value={recon.creditRaised}
                 tone={recon.creditRaised > 0 ? 'text-clay' : ''} />
+              {recon.unqualifiedCredit > 0 && (
+                <div className="flex justify-between text-clay">
+                  <span>Not repaid by noon next day — excluded from sales above</span>
+                  <span className="tnum">{naira(recon.unqualifiedCredit)}</span>
+                </div>
+              )}
               <Line label="Debt recovered (earlier sales)" value={recon.debtRecovered} tone="text-leaf" />
               {Object.entries(recon.recoveredBy || {}).map(([m, amt]) => (
                 <div key={m} className="flex justify-between pl-4">

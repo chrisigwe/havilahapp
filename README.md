@@ -2516,3 +2516,51 @@ Also linked Alphonso's workaround customer record to his real guest
 identity — it was never linked at all, unlike Obitex's, confirmed
 directly rather than assumed, which meant his balance wasn't even
 visible on his folio before this.
+
+
+## Recovered Debt: room payments now show stay context
+
+Extended loadRoomPayments to pull check_in_date/scheduled_out/actual_out
+alongside what it already had. Each room payment on Recovery's
+Reception tab now shows the stay's start date and how many nights,
+computed the same way v_stay_folio itself does (through actual_out,
+scheduled_out, or today, in that priority).
+
+## Credit: guest statement now shows date and department per charge
+
+li.date and li.category were already present in the data flowing
+through Folio and FolioStatement — they just weren't being displayed.
+The itemized charges table (reached via a guest's payment sheet →
+"Print guest statement", already existing) now shows a Date column
+and which department each order line came from, alongside what it
+already had (item, quantity, amount).
+
+
+## Sales: the 12PM credit deadline rule
+
+A credit sale only counts toward that day's gross sales / daily sales
+figure if the customer has SOME repayment activity recorded between
+the sale and noon the following day (Lagos time) — confirmed with the
+user this doesn't need to be the full amount. If nothing is recorded
+by the deadline, the sale is pulled out of that day's gross sales and
+counted purely as credit instead. Confirmed this is a live,
+dynamically re-evaluated rule, not a one-time snapshot taken at the
+time of sale — get_daily_financials reflects the current state of
+repayments whenever it's called, for any date, so a sale can move
+categories after the fact as repayment activity does or doesn't
+happen.
+
+Checked credit_repayments.sale_id before relying on it for precise
+matching — it exists as a column but saveRepayment never populates
+it, always null in practice. Used "any repayment for this customer
+between the sale's own timestamp and the deadline" instead, the most
+defensible proxy the schema actually supports given repayments aren't
+linked to specific sales. Noon cutoff built using Lagos time
+specifically (AT TIME ZONE 'Africa/Lagos'), matching this app's
+existing business_date convention, not UTC noon.
+
+Surfaced the new unqualifiedCredit figure on both the Sales screen's
+own daily summary and Daily Sales — a genuinely new, separate line
+under Credit raised, not a sub-item of it (gross sales is already net
+of this amount before credit raised gets computed, so mislabeling it
+as "included in credit raised" would have been actively wrong).

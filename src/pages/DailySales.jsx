@@ -213,6 +213,12 @@ export default function DailySales({ boot }) {
               <span className="text-dim">Credit raised</span>
               <span className={`tnum ${summary.creditRaised > 0 ? 'text-clay' : ''}`}>{naira(summary.creditRaised)}</span>
             </div>
+            {summary.unqualifiedCredit > 0 && (
+              <div className="flex justify-between text-clay">
+                <span>Not repaid by noon next day — excluded from sales above</span>
+                <span className="tnum">{naira(summary.unqualifiedCredit)}</span>
+              </div>
+            )}
             <div className="flex justify-between">
               <span className="text-dim">Debt recovered</span>
               <span className="tnum text-leaf">{naira(summary.debtRecovered)}</span>

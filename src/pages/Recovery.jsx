@@ -227,6 +227,17 @@ export default function Recovery({ boot }) {
                       {p.staff?.full_name && ` · collected by ${p.staff.full_name}`}
                       {p.remark && ` · ${p.remark}`}
                     </div>
+                    {p.stays?.check_in_date && (
+                      <div className="text-dim text-xs mt-0.5">
+                        Stay since {p.stays.check_in_date}
+                        {(() => {
+                          const start = new Date(p.stays.check_in_date)
+                          const end = new Date(p.stays.actual_out || p.stays.scheduled_out || lagosToday())
+                          const nights = Math.max(Math.round((end - start) / 864e5), 1)
+                          return ` · ${nights} night${nights === 1 ? '' : 's'}${p.stays.actual_out ? ` (out ${p.stays.actual_out})` : ''}`
+                        })()}
+                      </div>
+                    )}
                     {canDeleteRoomPayment && (
                       <button onClick={() => setDeletingRoomPayment(p)}
                         className="mt-1.5 h-8 px-3 rounded-lg border border-clay text-clay text-sm font-semibold">

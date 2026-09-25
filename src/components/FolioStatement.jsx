@@ -56,24 +56,32 @@ export default function FolioStatement({ room, folio, orderLines, payments, bran
           </div>
 
           <table className="invoice-table mt-6">
-            <thead><tr><th>Charges</th><th className="num">Amount</th></tr></thead>
+            <thead><tr><th>Date</th><th>Charges</th><th className="num">Amount</th></tr></thead>
             <tbody>
               <tr>
+                <td>{room.check_in_date}</td>
                 <td>{folio?.nights} night{folio?.nights > 1 ? 's' : ''} at {naira(folio?.daily_rate)}</td>
                 <td className="num tnum">{naira(roomCharge)}</td>
               </tr>
               {overstay > 0 && (
-                <tr><td>Over-stay charge</td><td className="num tnum">{naira(overstay)}</td></tr>
+                <tr><td></td><td>Over-stay charge</td><td className="num tnum">{naira(overstay)}</td></tr>
               )}
               {orderLines.map(li => (
                 <tr key={li.id}>
-                  <td>{li.description} <span className="text-dim">× {li.qty}</span></td>
+                  <td>{li.date}</td>
+                  <td>
+                    {li.description} <span className="text-dim">× {li.qty}</span>
+                    <span className="text-dim">
+                      {' · '}{li.category === 'food' ? 'Restaurant' : li.category === 'minimart' ? 'Minimart' : 'Bar'}
+                    </span>
+                  </td>
                   <td className="num tnum">{naira(li.amount)}</td>
                 </tr>
               ))}
             </tbody>
             <tfoot>
               <tr>
+                <td></td>
                 <td className="num font-bold">Total due</td>
                 <td className="num tnum font-bold">{naira(roomCharge + overstay + orderTotal)}</td>
               </tr>

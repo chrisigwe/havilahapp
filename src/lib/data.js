@@ -1329,7 +1329,7 @@ export async function loadRoomPayments(branchId, days = 60) {
   const { data, error } = await supabase.from('payments')
     .select(`id, business_date, method, amount, is_overstay, remark, received_by,
              staff:received_by(full_name),
-             stays(rooms(room_number), guests!guest_id(full_name))`)
+             stays(check_in_date, scheduled_out, actual_out, rooms(room_number), guests!guest_id(full_name))`)
     .eq('branch_id', branchId).gte('business_date', since)
     .order('business_date', { ascending: false })
   if (error) throw error
