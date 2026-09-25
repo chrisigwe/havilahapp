@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { naira, lagosToday, tierLabel, methodLabel, whoRecorded, paymentSummary } from '../lib/format'
-import { loadDailyFinancials, loadToday, loadReceptionActivity, loadRoomCharges } from '../lib/data'
+import { loadDailyFinancials, loadToday, loadReceptionActivity, loadReceptionDashboard, loadRoomCharges } from '../lib/data'
 import { useToast } from '../components/Toast'
 
 // Read-only — browse any past day's sales by department. Built for
@@ -18,6 +18,7 @@ export default function DailySales({ boot }) {
   const [summary, setSummary] = useState(null)
   const [rows, setRows] = useState(null)
   const [receptionActivity, setReceptionActivity] = useState(null)
+  const [receptionDashboard, setReceptionDashboard] = useState(null)
   const [roomCharges, setRoomCharges] = useState([])
 
   const itemById = useMemo(() => Object.fromEntries(items.map(i => [i.id, i])), [items])
@@ -33,9 +34,15 @@ export default function DailySales({ boot }) {
 
   const refresh = useCallback(() => {
     const loc = locId === 'all' ? null : locId
-    setSummary(null); setRows(null); setReceptionActivity(null); setRoomCharges([])
+    setSummary(null); setRows(null); setReceptionActivity(null); setRoomCharges([]); setReceptionDashboard(null)
     if (isReception) {
       loadReceptionActivity(staff.branch_id, date).then(setReceptionActivity).catch(e => toast(e.message, 'error'))
+      // Deferred/advance are computed from CURRENT balances (v_stay_
+      // folio has no historical snapshot for a past date) — only
+      // meaningful, and only shown, when actually looking at today.
+      if (date === lagosToday()) {
+        loadReceptionDashboard(staff.branch_id, date).then(setReceptionDashboard).catch(e => toast(e.message, 'error'))
+      }
       return
     }
     loadDailyFinancials(staff.branch_id, date, loc).then(setSummary).catch(e => toast(e.message, 'error'))
@@ -90,6 +97,69 @@ export default function DailySales({ boot }) {
 
       {isReception ? (
         <>
+          {receptionDashboard && (
+            <div className="mt-4 rounded-2xl border border-amber bg-surface p-4">
+              <p className="font-semibold">Close of day</p>
+              <div className="grid grid-cols-3 gap-3 mt-3 pb-3 border-b border-line">
+                <div>
+                  <div className="text-dim text-sm">POS</div>
+                  <div className="tnum font-bold">{naira(receptionDashboard.pos)}</div>
+                </div>
+                <div>
+                  <div className="text-dim text-sm">Cash</div>
+                  <div className="tnum font-bold">{naira(receptionDashboard.cash)}</div>
+                </div>
+                <div>
+                  <div className="text-dim text-sm">Credit</div>
+                  <div className="tnum font-bold text-clay">{naira(receptionDashboard.deferredTotal)}</div>
+                </div>
+              </div>
+
+              <div className="mt-3 flex items-baseline justify-between">
+                <span className="text-dim">Deferred — owed across every live stay</span>
+                <span className="tnum font-bold text-clay">{naira(receptionDashboard.deferredTotal)}</span>
+              </div>
+              <div className="mt-1 space-y-1">
+                {receptionDashboard.deferred.map(g => (
+                  <div key={g.stay_id} className="flex justify-between text-sm">
+                    <span className="text-dim truncate">{g.guest_name || 'Guest'} · Room {g.room_number}</span>
+                    <span className="tnum">{naira(g.outstanding + g.departmentCredit + g.billedToYou)}</span>
+                  </div>
+                ))}
+                {!receptionDashboard.deferred.length && (
+                  <p className="text-dim text-sm">Nothing deferred right now.</p>
+                )}
+              </div>
+
+              <div className="mt-4 pt-3 border-t border-line flex items-baseline justify-between">
+                <span className="text-dim">Advance payments — balance remaining</span>
+                <span className="tnum font-bold text-leaf">{naira(receptionDashboard.advanceTotal)}</span>
+              </div>
+              <div className="mt-1 space-y-1">
+                {receptionDashboard.advances.map(a => (
+                  <div key={a.stay_id} className="text-sm">
+                    <div className="flex justify-between">
+                      <span className="text-dim truncate">{a.guest_name || 'Guest'} · Room {a.room_number}</span>
+                      <span className="tnum text-leaf">{naira(a.balance)} left</span>
+                    </div>
+                    <div className="text-dim text-xs">
+                      Paid {naira(a.paid)} · used {naira(a.usedUp)}
+                    </div>
+                  </div>
+                ))}
+                {!receptionDashboard.advances.length && (
+                  <p className="text-dim text-sm">No advance balances right now.</p>
+                )}
+              </div>
+            </div>
+          )}
+          {date !== lagosToday() && (
+            <p className="text-dim text-sm mt-4">
+              Deferred and advance figures only show for today — they reflect current
+              balances, not a snapshot of {date}.
+            </p>
+          )}
+
           <div className="flex items-baseline justify-between mt-4">
             <h2 className="text-dim">
               {receptionActivity?.length || 0} payment{receptionActivity?.length === 1 ? '' : 's'}

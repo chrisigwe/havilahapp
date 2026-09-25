@@ -2440,3 +2440,26 @@ new "Reserved — due" state, shown as a clear per-room badge on the
 card itself, plus a prominent banner at the top of the page listing
 every room due today by name, so it can't be missed by someone
 quickly scanning the board.
+
+
+## Daily Sales: Reception now shows the same deferred/advance breakdown
+
+Checked Alphonso and Obitex's real, current numbers directly rather
+than trust stale memory — both genuinely have positive outstanding
+right now (₦9,500 and ₦30,000), so they'd have correctly appeared in
+the dashboard's Deferred list. The actual gap was that this dashboard
+only ever existed on the live Sales screen (SalesEntry.jsx) — Daily
+Sales (the separate page for browsing any past day) never got it at
+all, and its Reception view only ever showed payments actually made
+on the selected date. A long-term guest who isn't paying daily simply
+never appears on a payments-only list, no matter how much they owe.
+
+Extended with the same loadReceptionDashboard data, deliberately
+scoped to only show when the selected date is actually today —
+v_stay_folio's outstanding is always a CURRENT balance, not a
+historical snapshot for a given past day, so showing it against, say,
+last Tuesday would misrepresent what was actually owed back then. A
+plain note explains this when a past date is selected instead of
+silently showing nothing. Branch-scoped by staff.branch_id like
+everything else in this app, so this is already correct for GM/admin
+switching between Awka and Nnewi without any special handling needed.
