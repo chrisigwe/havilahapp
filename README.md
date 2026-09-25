@@ -2487,3 +2487,32 @@ can't reference the current date at all. Confirmed this correction is
 still safe against existing data for the same reason the original
 migration was: strictly looser than what's currently active, so
 nothing existing can violate it.
+
+
+## New: "Move to room charge" tool for the workaround credit system
+
+Built because this kept recurring throughout this project — a real
+purchase recorded through the workaround customer-credit system
+instead of the proper "Charge to a Room" feature, leaving it stuck
+in the wrong ledger. Verified this wasn't a code bug before building
+anything: chargeItemToRoom and Folio's display both already work
+correctly for every department, confirmed directly against real data
+(minimart and bar room-charges already exist and display fine) — the
+actual gap was purely that these specific purchases were never
+recorded the proper way in the first place.
+
+New RPC (move_workaround_credit_to_room), gated to is_supervisor()
+matching merge_guests — this permanently moves real money between two
+ledgers. Requires the customer already be linked to a guest and that
+guest have a live stay; creates a real order_items charge on that
+stay and zeros the workaround balance via credit_repayments, correctly
+handling a balance split across multiple staff-attribution rows (same
+lesson learned from the earlier Alphonso/Chef mismatch) — one
+repayment per staff_id, not a single lump sum that could land under
+the wrong person's ledger. New button on Credit's customer statement,
+gated the same way, with a confirm step given the stakes.
+
+Also linked Alphonso's workaround customer record to his real guest
+identity — it was never linked at all, unlike Obitex's, confirmed
+directly rather than assumed, which meant his balance wasn't even
+visible on his folio before this.

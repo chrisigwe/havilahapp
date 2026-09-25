@@ -3,7 +3,7 @@ import { useToast } from '../components/Toast'
 import { naira, lagosToday, methodLabel, tierLabel } from '../lib/format'
 import { loadBalances, loadCustomerLedger, saveRepayment, loadStaffForLocation,
          deleteCustomer, deactivateCustomer, loadGuestBalances, recordStayPayment, loadFolio,
-         linkCustomerToGuest, searchSimilarGuests } from '../lib/data'
+         linkCustomerToGuest, searchSimilarGuests, moveWorkaroundToRoom } from '../lib/data'
 import { enqueue, flush, isConnectionError } from '../lib/outbox'
 import PaymentMethodPicker, { paymentParts, paymentAllocated } from '../components/PaymentMethodPicker'
 import FolioStatement from '../components/FolioStatement'
@@ -71,6 +71,8 @@ export default function Credit({ boot }) {
   const [linkQuery, setLinkQuery] = useState('')
   const [linkResults, setLinkResults] = useState([])
   const [linkBusy, setLinkBusy] = useState(false)
+  const [movingToRoom, setMovingToRoom] = useState(null)   // { customerId, locationId, amount }
+  const [moveBusy, setMoveBusy] = useState(false)
   const [pay, setPay] = useState(null)
   const [busy, setBusy] = useState(false)
   const itemById = useMemo(() => Object.fromEntries(items.map(i => [i.id, i])), [items])
@@ -131,6 +133,16 @@ export default function Credit({ boot }) {
       setLinking(false); setLinkQuery(''); setLinkResults([])
     } catch (e) { toast(e.message, 'error') }
     setLinkBusy(false)
+  }
+
+  async function confirmMoveToRoom() {
+    setMoveBusy(true)
+    try {
+      await moveWorkaroundToRoom(movingToRoom.customerId, movingToRoom.locationId)
+      toast('Moved to room charge', 'success')
+      setMovingToRoom(null); setOpen(null); refresh()
+    } catch (e) { toast(e.message, 'error') }
+    setMoveBusy(false)
   }
 
   async function submitPayment() {
@@ -437,6 +449,14 @@ export default function Credit({ boot }) {
                 <span className="tnum">{naira(open.customer.balance)}</span>
               </div>
 
+              {open.customer.balance > 0.009 && (
+                <button onClick={() => setMovingToRoom({ customerId: open.customer.customer_id, locationId: locId,
+                                                            amount: open.customer.balance })}
+                  className="print:hidden mt-3 h-11 px-4 rounded-xl border border-amber text-amber text-sm font-semibold">
+                  Move this balance to a room charge
+                </button>
+              )}
+
               <p className="text-dim text-sm mt-6 invoice-foot">
                 Prepared from the Havilah inventory system. Please settle at the front desk
                 or with the store manager.
@@ -643,6 +663,24 @@ export default function Credit({ boot }) {
               </button>
             ))}
           </div>
+        </div>
+      )}
+
+      {movingToRoom && (
+        <div className="fixed inset-0 z-[80] bg-bg flex flex-col justify-center px-6">
+          <h2 className="text-2xl font-bold">Move {naira(movingToRoom.amount)} to a room charge?</h2>
+          <p className="text-dim mt-2">
+            Creates a real charge on this guest's current room, and clears this
+            department balance since it's no longer owed here separately.
+            The guest must already be linked and have a live stay — if not,
+            this will tell you which.
+          </p>
+          <p className="text-clay mt-3 font-semibold">This cannot be undone.</p>
+          <button onClick={confirmMoveToRoom} disabled={moveBusy}
+            className="mt-6 w-full h-16 rounded-2xl bg-amber text-bg text-xl font-bold disabled:opacity-40">
+            {moveBusy ? 'Moving…' : 'Move to room charge'}
+          </button>
+          <button onClick={() => setMovingToRoom(null)} className="mt-3 w-full h-12 text-dim">Cancel</button>
         </div>
       )}
     </div>

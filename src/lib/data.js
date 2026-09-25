@@ -913,6 +913,18 @@ export async function linkCustomerToGuest(customerId, guestId) {
   if (error) throw error
 }
 
+// Converts a linked customer's balance at this one department into a
+// real room charge on their current live stay, zeroing out the
+// workaround balance — the RPC itself enforces the link exists and
+// the guest has a live stay, and handles a balance split across
+// multiple staff-attribution rows correctly.
+export async function moveWorkaroundToRoom(customerId, locationId) {
+  const { error } = await supabase.rpc('move_workaround_credit_to_room', {
+    p_customer_id: customerId, p_location_id: locationId,
+  })
+  if (error) throw error
+}
+
 export async function loadGuestDepartmentCredit(guestId) {
   if (!guestId) return []
   const { data, error } = await supabase.from('v_guest_department_credit')
