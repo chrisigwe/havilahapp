@@ -2395,3 +2395,11 @@ and other-bills totals from the recent Outstanding fix), and a
 breakdown of advance payments — guests who've paid ahead of what they
 currently owe, showing how much of that advance has been used up by
 charges so far versus what's genuinely still left as a credit.
+
+
+## Advance payments dashboard: restricted to live stays only
+
+Per explicit correction — loadAdvancePayments had no status filter at
+all, so an old overpayment sitting on an already-checked-out stay
+would show up alongside genuinely current advance balances. Now
+restricted to occupied/reserved stays specifically.

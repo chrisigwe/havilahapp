@@ -1142,10 +1142,14 @@ export async function updateBranchOverstayDefault(branchId, amount) {
 // Guests who've paid ahead of what they actually owe (a negative
 // outstanding) — how much of that advance has been used up by
 // charges so far, and what's genuinely still left as a credit.
+// Restricted to live stays (occupied/reserved) — an old overpayment
+// sitting on an already-checked-out stay isn't a current advance,
+// it's historical, so it stays out of this list.
 export async function loadAdvancePayments(branchId) {
   const { data: folios, error: e1 } = await supabase.from('v_stay_folio')
     .select('stay_id, total_due, total_paid, outstanding')
     .eq('branch_id', branchId).lt('outstanding', -0.009)
+    .in('status', ['occupied', 'reserved'])
   if (e1) throw e1
   if (!folios?.length) return []
 
