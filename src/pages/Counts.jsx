@@ -166,7 +166,7 @@ export default function Counts({ boot }) {
           {canManageAny ? (
             <input type="date" value={newDate} max={lagosToday()}
               onChange={e => setNewDate(e.target.value)}
-              className="w-full h-12 px-3 mb-2 rounded-xl bg-surface border border-line tnum" />
+              className="h-12 px-3 mb-2 rounded-xl bg-surface border border-line tnum" />
           ) : (
             <p className="text-dim text-sm mb-2">
               Dated today ({lagosToday()}) — submitted to your department's history

@@ -563,7 +563,7 @@ export default function Credit({ boot }) {
             <label className="block mt-4 text-dim">Date received</label>
             <input type="date" value={pay.paidOn}
               onChange={e => setPay(p => ({ ...p, paidOn: e.target.value }))}
-              className="mt-2 h-14 w-full px-4 rounded-xl bg-surface border border-line" />
+              className="mt-2 h-14 px-4 rounded-xl bg-surface border border-line tnum" />
 
             <label className="block mt-4 text-dim">Note (optional)</label>
             <input value={pay.note} onChange={e => setPay(p => ({ ...p, note: e.target.value }))}

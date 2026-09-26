@@ -90,7 +90,7 @@ export default function DailySales({ boot }) {
     <div className="px-5">
       <input type="date" value={date} max={lagosToday()}
         onChange={e => setDate(e.target.value)}
-        className="w-full h-12 px-3 mt-1 mb-2 rounded-xl bg-surface border border-line tnum" />
+        className="h-12 px-3 mt-1 mb-2 rounded-xl bg-surface border border-line tnum" />
 
       {salesPoints.length > 1 && (
         <div className="flex gap-2 overflow-x-auto pb-2 -mx-1 px-1">

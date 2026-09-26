@@ -208,7 +208,7 @@ export default function RoomChargeSheet({ boot, stockMap, onClose, toast }) {
                     )}
                     <input type="date" value={typing.date || lagosToday()} max={lagosToday()}
                       onChange={e => setTyping(t => ({ ...t, date: e.target.value }))}
-                      className="h-11 w-full px-3 mb-2 rounded-xl bg-raise border border-line tnum" />
+                      className="h-11 px-3 mb-2 rounded-xl bg-raise border border-line tnum" />
                     <input value={typing.writeoffNote}
                       onChange={e => setTyping(t => ({ ...t, writeoffNote: e.target.value }))}
                       placeholder="Who approved this / note"

@@ -167,13 +167,13 @@ export default function CheckIn({ boot, onDone }) {
           <div className="text-dim mb-1">Check-in date</div>
           <input type="date" value={checkIn}
             onChange={e => setCheckIn(e.target.value)}
-            className="h-14 w-full px-3 rounded-xl bg-surface border border-line tnum" />
+            className="h-14 px-3 rounded-xl bg-surface border border-line tnum" />
         </div>
         <div className="flex-1">
           <div className="text-dim mb-1">Scheduled check-out</div>
           <input type="date" value={scheduledOut} min={checkIn}
             onChange={e => setScheduledOut(e.target.value)}
-            className="h-14 w-full px-3 rounded-xl bg-surface border border-line tnum" />
+            className="h-14 px-3 rounded-xl bg-surface border border-line tnum" />
         </div>
       </div>
 

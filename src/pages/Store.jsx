@@ -244,7 +244,7 @@ export default function Store({ boot }) {
             </div>
             <input type="date" value={date} max={lagosToday()}
               onChange={e => setDate(e.target.value)}
-              className="h-12 w-full px-3 rounded-xl bg-surface border border-line tnum" />
+              className="h-12 px-3 rounded-xl bg-surface border border-line tnum" />
           </div>
           {mode !== 'receive' && (
             <div className="flex-1">

@@ -507,7 +507,7 @@ export default function Folio({ boot, room, onClose, onChanged }) {
           <label className="block mt-4 text-dim">Scheduled check-out</label>
           <input type="date" value={editing.scheduledOut} min={room.check_in_date}
             onChange={e => setEditing(x => ({ ...x, scheduledOut: e.target.value }))}
-            className="mt-1 h-14 w-full px-4 rounded-xl bg-surface border border-line tnum" />
+            className="mt-1 h-14 px-4 rounded-xl bg-surface border border-line tnum" />
 
           <label className="block mt-4 text-dim">Reason for the change (optional, but worth noting)</label>
           <input value={editing.rateReason}

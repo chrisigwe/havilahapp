@@ -2787,3 +2787,27 @@ time rather than being silently rewritten.
   digits-only input, defaults to 10000 for a fresh post and prefills
   from the current post when editing. Posting is blocked if it's
   empty, same as the name field.
+
+
+## Fix: Daily Sales date input was stretched full-width
+
+DailySales.jsx's date input had `w-full`, which SalesEntry.jsx's
+equivalent never had — that one just sizes to content. Dropped
+`w-full` so Daily Sales now matches Sales' compact, natural width.
+
+
+## All date inputs normalized to the same compact width
+
+Found seven more date inputs still using w-full, beyond the Daily
+Sales one already fixed: RoomChargeSheet.jsx (backdated pr_damage
+entry), Folio.jsx (scheduled check-out edit), Store.jsx (receive/
+transfer date), Counts.jsx (new count date), Credit.jsx (repayment
+date received), and both of CheckIn.jsx's fields (check-in date,
+scheduled check-out). Removed w-full from every one so they all size
+to content like Sales' date field does, including the two spots where
+a date sits in a side-by-side flex-1 column with a sibling field
+(CheckIn's pair, Store's date+receiver row) — the sibling still fills
+its column, only the date itself is now compact, since the ask was
+specifically about date-width consistency, not the layout around it.
+Also added the missing `tnum` (tabular figures) to Credit.jsx's date
+input, which every other one already had.
