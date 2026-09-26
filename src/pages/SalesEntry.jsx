@@ -53,13 +53,6 @@ export default function SalesEntry({ boot }) {
   const currentDept = salesPoints.find(l => l.id === locationId)
   const isRestaurant = /restaurant/i.test(currentDept?.name || '')
   const isReception = /reception/i.test(currentDept?.name || '')
-  // Room 209 (GM Office) and the monthly rooms-sold count are both
-  // GM/admin-only visibility on the reception dashboard — matches
-  // is_supervisor()'s own role set, not the broader oversight group.
-  const isGmOrAdmin = ['gm', 'admin'].includes(staff.role)
-  const visibleRoomRateProgress = (receptionDashboard?.roomRateProgress || [])
-    .filter(r => isGmOrAdmin || r.room_number !== '209')
-  const visibleRoomRateRemainingTotal = visibleRoomRateProgress.reduce((s, r) => s + r.remaining, 0)
   // Which order_items.category a room charge from THIS department
   // lands under — null for Reception, which has no charges of its
   // own. Any department can have items charged to a room, not just
@@ -83,6 +76,13 @@ export default function SalesEntry({ boot }) {
   const [receptionActivity, setReceptionActivity] = useState([])
   const [receptionDashboard, setReceptionDashboard] = useState(null)
   const [roomsSold, setRoomsSold] = useState(null)
+  // Room 209 (GM Office) and the monthly rooms-sold count are both
+  // GM/admin-only visibility on the reception dashboard — matches
+  // is_supervisor()'s own role set, not the broader oversight group.
+  const isGmOrAdmin = ['gm', 'admin'].includes(staff.role)
+  const visibleRoomRateProgress = (receptionDashboard?.roomRateProgress || [])
+    .filter(r => isGmOrAdmin || r.room_number !== '209')
+  const visibleRoomRateRemainingTotal = visibleRoomRateProgress.reduce((s, r) => s + r.remaining, 0)
   const [showYesterday, setShowYesterday] = useState(false)
   const [yesterdaySummary, setYesterdaySummary] = useState(null)
   const [yesterdayActivity, setYesterdayActivity] = useState(null)

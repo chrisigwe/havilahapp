@@ -2715,3 +2715,25 @@ this app already relies on, including GM/admin's branch switcher).
 Settings reloads the form when the viewed branch changes, so GM/admin
 switching branches sees that branch's own winner, not stale data from
 the one they just left.
+
+
+## Fix: "Cannot access before initialization" crash on load
+
+Real bug, not cosmetic — SalesEntry.jsx declared visibleRoomRateProgress
+(and its total) using receptionDashboard several lines before
+receptionDashboard's own `useState(null)` call executed further down
+in the same function body. That's a temporal dead zone violation:
+referencing a const/let before its declaration line runs throws at
+render time, and since Shell renders unconditionally on every screen
+and Sales is most roles' landing tab, this crashed the entire app on
+load for anyone hitting that code path — dev server didn't catch it
+because the exact function-body ordering that triggers a TDZ error
+doesn't always surface as a build-time warning.
+
+Moved the isGmOrAdmin/visibleRoomRateProgress/visibleRoomRateRemainingTotal
+block to right after the receptionDashboard state declaration instead
+of near the top of the component. Checked every other file touched
+this session (Folio.jsx, DailySales.jsx, StaySettings.jsx, Shell.jsx,
+StaffOfMonthBanner.jsx) for the same pattern — DailySales.jsx already
+had the correct ordering, the rest never referenced a not-yet-declared
+value at all.
