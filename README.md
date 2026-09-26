@@ -2564,3 +2564,16 @@ own daily summary and Daily Sales — a genuinely new, separate line
 under Credit raised, not a sub-item of it (gross sales is already net
 of this amount before credit raised gets computed, so mislabeling it
 as "included in credit raised" would have been actively wrong).
+
+
+## Reception dashboard: yesterday's snapshot
+
+New collapsible "Show yesterday's snapshot" toggle below the advance-
+payments section — lazy-loaded, only fetched once actually expanded,
+not on every page load. Reuses loadDailyFinancials and loadReceptionActivity
+for the prior day (both already supported arbitrary dates), showing
+POS/Cash/Credit raised plus the actual list of payments collected that
+day. Deliberately doesn't include deferred/advance figures for
+yesterday — those are always current-moment balances (v_stay_folio has
+no historical snapshot capability), so showing "yesterday's" deferred
+would just be today's number mislabeled.

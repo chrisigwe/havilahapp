@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { naira, lagosToday, tierLabel, methodLabel, whoRecorded, paymentSummary } from '../lib/format'
+import { naira, lagosToday, lagosDaysAgo, tierLabel, methodLabel, whoRecorded, paymentSummary } from '../lib/format'
 import { loadStockMap, loadPopular, loadToday, saveBasket, saveWriteoff,
          loadDailyFinancials, loadCustomers, createCustomer,
          loadOpeningDate, loadBalances, loadReceipt,
@@ -75,6 +75,9 @@ export default function SalesEntry({ boot }) {
   const [roomCharges, setRoomCharges] = useState([])   // Restaurant only: food charged to rooms
   const [receptionActivity, setReceptionActivity] = useState([])
   const [receptionDashboard, setReceptionDashboard] = useState(null)
+  const [showYesterday, setShowYesterday] = useState(false)
+  const [yesterdaySummary, setYesterdaySummary] = useState(null)
+  const [yesterdayActivity, setYesterdayActivity] = useState(null)
   // GM/Admin-only cleanup for training records, scoped specifically to
   // Restaurant here (Reception's version deletes a whole booking, not
   // a single row, so it lives separately in Folio)
@@ -179,6 +182,14 @@ export default function SalesEntry({ boot }) {
       })
       .catch(() => setCustomers([]))
   }, [staff.branch_id, date, locationId])
+
+  // Lazy — only fetched when actually asked for, not on every load.
+  useEffect(() => {
+    if (!isReception || !showYesterday) return
+    const y = lagosDaysAgo(1)
+    loadDailyFinancials(staff.branch_id, y, locationId).then(setYesterdaySummary).catch(() => {})
+    loadReceptionActivity(staff.branch_id, y).then(setYesterdayActivity).catch(() => {})
+  }, [isReception, showYesterday, staff.branch_id, locationId])
   useEffect(refresh, [refresh])
 
   const priceFor = (item, tier) =>
@@ -504,6 +515,50 @@ export default function SalesEntry({ boot }) {
               <p className="text-dim text-sm">No advance balances right now.</p>
             )}
           </div>
+        </div>
+      )}
+
+      {isReception && (
+        <div className="mt-3">
+          <button onClick={() => setShowYesterday(x => !x)}
+            className="w-full h-11 rounded-xl border border-line text-dim font-semibold text-sm">
+            {showYesterday ? 'Hide' : 'Show'} yesterday's snapshot ({lagosDaysAgo(1)})
+          </button>
+          {showYesterday && (
+            <div className="mt-2 rounded-2xl border border-line bg-surface p-4">
+              {yesterdaySummary ? (
+                <div className="grid grid-cols-3 gap-3 pb-3 mb-3 border-b border-line">
+                  <div>
+                    <div className="text-dim text-sm">POS</div>
+                    <div className="tnum font-bold">{naira((yesterdaySummary.byMethod || {}).pos || 0)}</div>
+                  </div>
+                  <div>
+                    <div className="text-dim text-sm">Cash</div>
+                    <div className="tnum font-bold">{naira((yesterdaySummary.byMethod || {}).cash || 0)}</div>
+                  </div>
+                  <div>
+                    <div className="text-dim text-sm">Credit raised</div>
+                    <div className="tnum font-bold text-clay">{naira(yesterdaySummary.creditRaised)}</div>
+                  </div>
+                </div>
+              ) : <p className="text-dim text-sm">Loading…</p>}
+
+              <p className="text-dim text-sm mb-1">Payments collected</p>
+              {(yesterdayActivity || []).map(p => (
+                <div key={p.id} className="flex justify-between text-sm py-1 border-b border-line/60 last:border-0">
+                  <span className="truncate">
+                    {p.stays?.guests?.full_name || 'Guest'} · Room {p.stays?.rooms?.room_number || '—'}
+                    <span className="text-dim"> · {methodLabel[p.method] || p.method}</span>
+                  </span>
+                  <span className="tnum font-semibold">{naira(p.amount)}</span>
+                </div>
+              ))}
+              {yesterdayActivity && !yesterdayActivity.length && (
+                <p className="text-dim text-sm">No payments that day.</p>
+              )}
+              {!yesterdayActivity && <p className="text-dim text-sm">Loading…</p>}
+            </div>
+          )}
         </div>
       )}
 
