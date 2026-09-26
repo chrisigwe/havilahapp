@@ -1515,13 +1515,15 @@ export async function setRoomServiceStatus(roomId, outOfService, reason) {
 }
 
 // ---------- Staff of the Month ----------
-// Per branch — each branch recognizes its own ₦10,000 grand-prize
-// winner independently, not one shared across both. The banner only
-// shows for 7 days after being posted; older rows stay in the table
-// as history but the app treats them as expired, not deleted.
+// Per branch — each branch recognizes its own winner independently,
+// not one shared across both. The banner only shows for 7 days after
+// being posted; older rows stay in the table as history but the app
+// treats them as expired, not deleted. Prize amount is editable per
+// post (not a standing branch setting) so a past post keeps showing
+// whatever was actually paid at the time, even if the amount changes later.
 export async function loadStaffOfMonth(branchId) {
   const { data, error } = await supabase.from('staff_of_month')
-    .select('id, staff_name, photo_url, posted_at')
+    .select('id, staff_name, photo_url, posted_at, prize_amount')
     .eq('branch_id', branchId)
     .order('posted_at', { ascending: false }).order('created_at', { ascending: false })
     .limit(1).maybeSingle()
@@ -1537,7 +1539,7 @@ export async function loadStaffOfMonth(branchId) {
 // the 7-day countdown — that's what "posting" a new winner means.
 // Scoped to branchId throughout, so each branch's own latest post is
 // what gets found and updated, never the other branch's.
-export async function postStaffOfMonth({ branchId, staffId, staffName, photoFile, removePhoto, currentPhotoUrl }) {
+export async function postStaffOfMonth({ branchId, staffId, staffName, prizeAmount, photoFile, removePhoto, currentPhotoUrl }) {
   let photoUrl = removePhoto ? null : (currentPhotoUrl || null)
   if (photoFile) {
     const ext = (photoFile.name.split('.').pop() || 'jpg').toLowerCase()
@@ -1558,11 +1560,12 @@ export async function postStaffOfMonth({ branchId, staffId, staffName, photoFile
 
   if (existing && existing.posted_at === today) {
     const { error } = await supabase.from('staff_of_month')
-      .update({ staff_name: staffName, photo_url: photoUrl }).eq('id', existing.id)
+      .update({ staff_name: staffName, photo_url: photoUrl, prize_amount: prizeAmount }).eq('id', existing.id)
     if (error) throw error
   } else {
     const { error } = await supabase.from('staff_of_month')
-      .insert({ branch_id: branchId, staff_name: staffName, photo_url: photoUrl, posted_at: today, posted_by: staffId })
+      .insert({ branch_id: branchId, staff_name: staffName, photo_url: photoUrl,
+                prize_amount: prizeAmount, posted_at: today, posted_by: staffId })
     if (error) throw error
   }
 }

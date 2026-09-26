@@ -2752,3 +2752,38 @@ this app (Folio's booking delete, Shell's sign-out). Deleting clears
 the local form too, so a leftover "test" name doesn't sit in the input
 waiting to be accidentally re-posted. Once deleted, that branch's
 banner goes back to showing nothing until a new one is posted.
+
+
+## Appearance: bottom nav redesigned (glass, floating, WhatsApp-style)
+
+Replaced the old full-width, opaque bottom bar with a floating pill:
+inset from the screen edges (bottom-3, inset-3), rounded corners,
+backdrop-blur-xl + backdrop-saturate-150 over a semi-transparent
+surface color, a faint white border for the glass edge highlight, and
+a soft drop shadow for lift — the "liquid glass" look. Functionally,
+each tab now has an icon above its label (six small hand-written SVGs
+in new NavIcon.jsx — no icon library added for just six glyphs), and
+the active tab gets a rounded pill highlight behind it rather than
+just a color change, matching the newer WhatsApp/Material 3 bottom-nav
+pattern. The "More" badge count still works, repositioned to sit over
+the icon instead of the old text label.
+
+No new dependency, no migration — purely CSS/markup in Shell.jsx plus
+the new NavIcon.jsx.
+
+## Staff of the Month: prize amount is now editable
+
+Migration 223_staff_of_month_prize_amount.sql adds a prize_amount
+column (numeric, defaults to 10000) to staff_of_month. Stored per
+post rather than as a standing branch setting, so if the prize amount
+ever changes, older posts keep showing what was actually paid at the
+time rather than being silently rewritten.
+
+- loadStaffOfMonth()/postStaffOfMonth() in data.js both carry
+  prize_amount/prizeAmount through now.
+- StaffOfMonthBanner.jsx shows naira(entry.prize_amount) instead of
+  the old hardcoded "₦10,000".
+- Settings: new "Prize amount (₦)" field next to the name field,
+  digits-only input, defaults to 10000 for a fresh post and prefills
+  from the current post when editing. Posting is blocked if it's
+  empty, same as the name field.

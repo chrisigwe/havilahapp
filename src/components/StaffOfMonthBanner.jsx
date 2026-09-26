@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { loadStaffOfMonth } from '../lib/data'
+import { naira } from '../lib/format'
 
 // Per branch — shows THIS branch's own winner, not a shared one.
 // Fetches once per mount for the current branch (the banner doesn't
@@ -26,7 +27,7 @@ export default function StaffOfMonthBanner({ branchId }) {
       )}
       <div className="min-w-0">
         <p className="font-bold truncate">{entry.staff_name} — Staff of the Month</p>
-        <p className="text-dim text-sm">Winner of the ₦10,000 grand prize — great job!</p>
+        <p className="text-dim text-sm">Winner of the {naira(entry.prize_amount)} grand prize — great job!</p>
       </div>
     </div>
   )

@@ -4,6 +4,7 @@ import Logo from './Logo'
 import PendingBanner from './PendingBanner'
 import UpdateBanner from './UpdateBanner'
 import StaffOfMonthBanner from './StaffOfMonthBanner'
+import NavIcon from './NavIcon'
 
 const STOCK_ROLES = ['storekeeper', 'manager', 'gm', 'admin']
 // GM/admin/manager oversee everything rather than doing one
@@ -82,22 +83,32 @@ export default function Shell({ staff, tab, onTab, children,
             className="mt-3 w-full h-12 text-dim">Cancel</button>
         </div>
       )}
-      <nav className="fixed bottom-0 inset-x-0 bg-surface border-t border-line flex"
-        style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}>
-        {tabs.map(([k, label]) => (
-          <button key={k} onClick={() => onTab(k)}
-            className={`relative flex-1 h-16 text-lg font-semibold ${
-              tab === k || (k === 'more' && MORE.includes(tab) && !directTabKeys.has(tab))
-              ? 'text-amber' : 'text-dim'}`}>
-            {label}
-            {k === 'more' && pendingCount > 0 && (
-              <span className="absolute top-2 right-1/2 translate-x-4 min-w-[1.25rem] h-5 px-1
-                                rounded-full bg-clay text-bg text-xs font-bold flex items-center justify-center">
-                {pendingCount > 9 ? '9+' : pendingCount}
-              </span>
-            )}
-          </button>
-        ))}
+      <nav className="fixed bottom-3 inset-x-3 z-40"
+        style={{ marginBottom: 'env(safe-area-inset-bottom)' }}>
+        <div className="mx-auto max-w-md flex gap-1 p-1.5 rounded-[28px]
+                         bg-surface/70 backdrop-blur-xl backdrop-saturate-150
+                         border border-white/10 shadow-[0_8px_32px_rgba(0,0,0,0.45)]">
+          {tabs.map(([k, label]) => {
+            const active = tab === k || (k === 'more' && MORE.includes(tab) && !directTabKeys.has(tab))
+            return (
+              <button key={k} onClick={() => onTab(k)}
+                className="relative flex-1 flex flex-col items-center justify-center gap-0.5 py-2 rounded-[20px] transition-colors">
+                <span className={`absolute inset-0 rounded-[20px] transition-opacity ${
+                  active ? 'opacity-100 bg-amber/20' : 'opacity-0'}`} />
+                <NavIcon tab={k} className={`relative w-5 h-5 ${active ? 'text-amber' : 'text-dim'}`} />
+                <span className={`relative text-xs font-semibold ${active ? 'text-amber' : 'text-dim'}`}>
+                  {label}
+                </span>
+                {k === 'more' && pendingCount > 0 && (
+                  <span className="absolute top-1 right-1/2 translate-x-3.5 min-w-[1.1rem] h-[1.1rem] px-1
+                                    rounded-full bg-clay text-bg text-[0.6rem] font-bold flex items-center justify-center">
+                    {pendingCount > 9 ? '9+' : pendingCount}
+                  </span>
+                )}
+              </button>
+            )
+          })}
+        </div>
       </nav>
     </div>
   )

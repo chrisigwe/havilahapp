@@ -35,6 +35,7 @@ export default function StaySettings({ boot }) {
   const canPostStaffOfMonth = canSetOverstayDefault
   const [somEntry, setSomEntry] = useState(null)
   const [somName, setSomName] = useState('')
+  const [somPrizeAmount, setSomPrizeAmount] = useState('10000')
   const [somPhotoFile, setSomPhotoFile] = useState(null)
   const [somPhotoPreview, setSomPhotoPreview] = useState(null)
   const [somRemovePhoto, setSomRemovePhoto] = useState(false)
@@ -52,7 +53,7 @@ export default function StaySettings({ boot }) {
 
   useEffect(() => {
     if (!canPostStaffOfMonth) return
-    loadStaffOfMonth(staff.branch_id).then(e => { setSomEntry(e); setSomName(e?.staff_name || '') }).catch(() => setSomEntry(null))
+    loadStaffOfMonth(staff.branch_id).then(e => { setSomEntry(e); setSomName(e?.staff_name || ''); setSomPrizeAmount(e ? String(e.prize_amount) : '10000') }).catch(() => setSomEntry(null))
   }, [canPostStaffOfMonth, staff.branch_id])
 
   if (!canManageRooms) {
@@ -110,12 +111,13 @@ export default function StaySettings({ boot }) {
     try {
       await postStaffOfMonth({
         branchId: staff.branch_id, staffId: staff.id, staffName: somName.trim(),
+        prizeAmount: Number(somPrizeAmount) || 0,
         photoFile: somPhotoFile, removePhoto: somRemovePhoto,
         currentPhotoUrl: somEntry?.photo_url || null,
       })
       toast('Staff of the Month posted', 'success')
       setSomPhotoFile(null); setSomPhotoPreview(null); setSomRemovePhoto(false)
-      loadStaffOfMonth(staff.branch_id).then(e => { setSomEntry(e); setSomName(e?.staff_name || '') })
+      loadStaffOfMonth(staff.branch_id).then(e => { setSomEntry(e); setSomName(e?.staff_name || ''); setSomPrizeAmount(e ? String(e.prize_amount) : '10000') })
     } catch (e) { toast('Not saved: ' + e.message, 'error') }
     setSomBusy(false)
   }
@@ -127,7 +129,7 @@ export default function StaySettings({ boot }) {
       await deleteStaffOfMonth(somEntry.id)
       toast('Post deleted', 'success')
       setConfirmingSomDelete(false)
-      setSomEntry(null); setSomName(''); setSomPhotoFile(null); setSomPhotoPreview(null); setSomRemovePhoto(false)
+      setSomEntry(null); setSomName(''); setSomPrizeAmount('10000'); setSomPhotoFile(null); setSomPhotoPreview(null); setSomRemovePhoto(false)
     } catch (e) { toast('Not deleted: ' + e.message, 'error') }
     setSomBusy(false)
   }
@@ -206,6 +208,11 @@ export default function StaySettings({ boot }) {
             placeholder="Full name" autoComplete="off"
             className="h-12 w-full px-3 rounded-xl bg-raise border border-line" />
 
+          <div className="text-dim text-sm mt-3 mb-1">Prize amount (₦)</div>
+          <input value={somPrizeAmount} onChange={e => setSomPrizeAmount(e.target.value.replace(/[^0-9]/g, ''))}
+            inputMode="numeric" placeholder="10000"
+            className="h-12 w-full px-3 rounded-xl bg-raise border border-line tnum" />
+
           <div className="text-dim text-sm mt-3 mb-1">Photo (optional)</div>
           <input type="file" accept="image/*" onChange={pickSomPhoto} className="w-full text-sm" />
           {(somPhotoPreview || (somEntry?.photo_url && !somRemovePhoto)) && (
@@ -219,7 +226,7 @@ export default function StaySettings({ boot }) {
             </div>
           )}
 
-          <button onClick={saveStaffOfMonth} disabled={somBusy || !somName.trim()}
+          <button onClick={saveStaffOfMonth} disabled={somBusy || !somName.trim() || !somPrizeAmount}
             className="mt-4 h-12 px-5 rounded-xl bg-amber text-bg font-bold disabled:opacity-40">
             {somBusy ? 'Posting…' : 'Post'}
           </button>
