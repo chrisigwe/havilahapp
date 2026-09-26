@@ -1567,6 +1567,15 @@ export async function postStaffOfMonth({ branchId, staffId, staffName, photoFile
   }
 }
 
+// Removes a post outright — e.g. a test entry — rather than letting
+// it expire on its own. Only GM/admin can call this (is_supervisor()
+// on the table); deleting the CURRENT post means the banner for that
+// branch simply goes back to showing nothing until a new one is posted.
+export async function deleteStaffOfMonth(id) {
+  const { error } = await supabase.from('staff_of_month').delete().eq('id', id)
+  if (error) throw error
+}
+
 // ---------- Rooms sold in a month (GM/admin only, enforced in the UI) ----------
 // Counts bookings whose check-in falls in the same calendar month as
 // the given date — the whole month if it's already fully past, or up

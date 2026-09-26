@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react'
 import { naira } from '../lib/format'
 import { loadRoomsForSettings, loadBranchStaySettings, updateRoomRates,
-         updateBranchOverstayDefault, loadStaffOfMonth, postStaffOfMonth } from '../lib/data'
+         updateBranchOverstayDefault, loadStaffOfMonth, postStaffOfMonth,
+         deleteStaffOfMonth } from '../lib/data'
 import { useToast } from '../components/Toast'
 import MergeGuestsSheet from '../components/MergeGuestsSheet'
 
@@ -38,6 +39,7 @@ export default function StaySettings({ boot }) {
   const [somPhotoPreview, setSomPhotoPreview] = useState(null)
   const [somRemovePhoto, setSomRemovePhoto] = useState(false)
   const [somBusy, setSomBusy] = useState(false)
+  const [confirmingSomDelete, setConfirmingSomDelete] = useState(false)
 
   useEffect(() => {
     if (!canManageRooms) return
@@ -118,6 +120,18 @@ export default function StaySettings({ boot }) {
     setSomBusy(false)
   }
 
+  async function removeStaffOfMonth() {
+    if (!somEntry) return
+    setSomBusy(true)
+    try {
+      await deleteStaffOfMonth(somEntry.id)
+      toast('Post deleted', 'success')
+      setConfirmingSomDelete(false)
+      setSomEntry(null); setSomName(''); setSomPhotoFile(null); setSomPhotoPreview(null); setSomRemovePhoto(false)
+    } catch (e) { toast('Not deleted: ' + e.message, 'error') }
+    setSomBusy(false)
+  }
+
   return (
     <div className="px-5 pb-8">
       <h2 className="text-2xl font-bold mt-2">Settings</h2>
@@ -156,14 +170,35 @@ export default function StaySettings({ boot }) {
             currently viewing.
           </p>
           {somEntry?.isActive && (
-            <p className="text-leaf text-sm mb-3">
+            <p className="text-leaf text-sm mb-1">
               Currently live · {7 - somEntry.daysSince} day{7 - somEntry.daysSince === 1 ? '' : 's'} left
             </p>
           )}
           {somEntry && !somEntry.isActive && (
-            <p className="text-dim text-sm mb-3">
+            <p className="text-dim text-sm mb-1">
               No banner showing right now — the last post has expired.
             </p>
+          )}
+          {somEntry && !confirmingSomDelete && (
+            <button onClick={() => setConfirmingSomDelete(true)} className="text-clay text-sm underline mb-3">
+              Delete this post
+            </button>
+          )}
+          {somEntry && confirmingSomDelete && (
+            <div className="mb-3 px-3 py-2 rounded-xl bg-clay/10 border border-clay">
+              <p className="text-clay text-sm mb-2">
+                Delete "{somEntry.staff_name}"'s post for good? This can't be undone.
+              </p>
+              <div className="flex gap-3">
+                <button onClick={removeStaffOfMonth} disabled={somBusy}
+                  className="h-10 px-4 rounded-lg bg-clay text-bg font-semibold text-sm disabled:opacity-40">
+                  {somBusy ? 'Deleting…' : 'Yes, delete it'}
+                </button>
+                <button onClick={() => setConfirmingSomDelete(false)} className="text-dim text-sm">
+                  Cancel
+                </button>
+              </div>
+            </div>
           )}
 
           <div className="text-dim text-sm mb-1">Staff name</div>

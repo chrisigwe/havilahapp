@@ -2737,3 +2737,18 @@ this session (Folio.jsx, DailySales.jsx, StaySettings.jsx, Shell.jsx,
 StaffOfMonthBanner.jsx) for the same pattern — DailySales.jsx already
 had the correct ordering, the rest never referenced a not-yet-declared
 value at all.
+
+
+## Staff of the Month: delete a post
+
+Added deleteStaffOfMonth(id) in data.js — a straight delete, RLS
+already restricted to GM/admin (is_supervisor()) from migration 221,
+untouched by 222's per-branch correction.
+
+Settings shows "Delete this post" next to the current post's status
+(live or expired), with an inline confirm/cancel step before it
+actually deletes — same two-step pattern already used elsewhere in
+this app (Folio's booking delete, Shell's sign-out). Deleting clears
+the local form too, so a leftover "test" name doesn't sit in the input
+waiting to be accidentally re-posted. Once deleted, that branch's
+banner goes back to showing nothing until a new one is posted.
