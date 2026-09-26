@@ -1515,13 +1515,14 @@ export async function setRoomServiceStatus(roomId, outOfService, reason) {
 }
 
 // ---------- Staff of the Month ----------
-// Company-wide, not branch-scoped — one ₦10,000 grand-prize winner
-// recognized across both branches. The banner only shows for 7 days
-// after being posted; older rows stay in the table as history but
-// the app treats them as expired, not deleted.
-export async function loadStaffOfMonth() {
+// Per branch — each branch recognizes its own ₦10,000 grand-prize
+// winner independently, not one shared across both. The banner only
+// shows for 7 days after being posted; older rows stay in the table
+// as history but the app treats them as expired, not deleted.
+export async function loadStaffOfMonth(branchId) {
   const { data, error } = await supabase.from('staff_of_month')
     .select('id, staff_name, photo_url, posted_at')
+    .eq('branch_id', branchId)
     .order('posted_at', { ascending: false }).order('created_at', { ascending: false })
     .limit(1).maybeSingle()
   if (error) throw error
@@ -1534,11 +1535,13 @@ export async function loadStaffOfMonth() {
 // post in place (a same-day correction — e.g. a typo, doesn't reset
 // the week) or creates a fresh row, which is what actually restarts
 // the 7-day countdown — that's what "posting" a new winner means.
-export async function postStaffOfMonth({ staffId, staffName, photoFile, removePhoto, currentPhotoUrl }) {
+// Scoped to branchId throughout, so each branch's own latest post is
+// what gets found and updated, never the other branch's.
+export async function postStaffOfMonth({ branchId, staffId, staffName, photoFile, removePhoto, currentPhotoUrl }) {
   let photoUrl = removePhoto ? null : (currentPhotoUrl || null)
   if (photoFile) {
     const ext = (photoFile.name.split('.').pop() || 'jpg').toLowerCase()
-    const path = `${Date.now()}.${ext}`
+    const path = `${branchId}/${Date.now()}.${ext}`
     const { error: upErr } = await supabase.storage.from('staff-photos')
       .upload(path, photoFile, { upsert: true })
     if (upErr) throw upErr
@@ -1548,7 +1551,8 @@ export async function postStaffOfMonth({ staffId, staffName, photoFile, removePh
 
   const today = lagosToday()
   const { data: existing, error: e1 } = await supabase.from('staff_of_month')
-    .select('id, posted_at').order('posted_at', { ascending: false }).order('created_at', { ascending: false })
+    .select('id, posted_at').eq('branch_id', branchId)
+    .order('posted_at', { ascending: false }).order('created_at', { ascending: false })
     .limit(1).maybeSingle()
   if (e1) throw e1
 
@@ -1558,7 +1562,7 @@ export async function postStaffOfMonth({ staffId, staffName, photoFile, removePh
     if (error) throw error
   } else {
     const { error } = await supabase.from('staff_of_month')
-      .insert({ staff_name: staffName, photo_url: photoUrl, posted_at: today, posted_by: staffId })
+      .insert({ branch_id: branchId, staff_name: staffName, photo_url: photoUrl, posted_at: today, posted_by: staffId })
     if (error) throw error
   }
 }

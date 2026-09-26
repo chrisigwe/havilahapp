@@ -1,17 +1,19 @@
 import { useEffect, useState } from 'react'
 import { loadStaffOfMonth } from '../lib/data'
 
-// Company-wide, not branch-scoped — shows the same winner to every
-// branch and role. Fetches once per mount (the banner doesn't need to
-// live-update mid-session); disappears entirely once posted_at is
-// more than 7 days old, per the explicit "up for only a week" rule —
-// the underlying row stays in the table as history, this just stops
-// rendering it.
-export default function StaffOfMonthBanner() {
+// Per branch — shows THIS branch's own winner, not a shared one.
+// Fetches once per mount for the current branch (the banner doesn't
+// need to live-update mid-session, and re-fetches naturally on a
+// branch switch since Shell re-renders with a new branchId then);
+// disappears entirely once posted_at is more than 7 days old, per the
+// explicit "up for only a week" rule — the underlying row stays in
+// the table as history, this just stops rendering it.
+export default function StaffOfMonthBanner({ branchId }) {
   const [entry, setEntry] = useState(null)
   useEffect(() => {
-    loadStaffOfMonth().then(setEntry).catch(() => setEntry(null))
-  }, [])
+    if (!branchId) return
+    loadStaffOfMonth(branchId).then(setEntry).catch(() => setEntry(null))
+  }, [branchId])
 
   if (!entry || !entry.isActive) return null
 

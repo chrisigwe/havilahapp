@@ -2685,3 +2685,33 @@ is_supervisor()'s own role set:
   when browsing history — deferred/advance/in-house genuinely have no
   historical snapshot, but a rooms-sold count is a real historical
   count and works for any date.
+
+
+## Correction: Staff of the Month is per branch, not company-wide
+
+Reversed the earlier assumption. Each branch now recognizes its own
+₦10,000 winner independently — Awka and Nnewi each have their own
+current post, their own 7-day clock, and their own history.
+
+Migration 222_staff_of_month_per_branch.sql (run after 221, or
+instead of it if 221 hasn't been applied yet): adds a required
+branch_id column, and rewrites the select policy so a regular staff
+member only sees their own branch's post while GM/admin (via
+is_supervisor()) can see any branch's — matching how they already
+view either branch elsewhere in the app.
+
+loadStaffOfMonth(branchId) and postStaffOfMonth({ branchId, ... }) are
+now branch-scoped throughout — the "is there already a post today"
+check that decides same-day-edit vs fresh-post is scoped per branch
+too, so one branch posting today doesn't affect the other's. Uploaded
+photos are now stored under a branchId-prefixed path in the bucket,
+just to keep them organized per branch (not a security boundary —
+the bucket's RLS already restricts writes to GM/admin regardless).
+
+StaffOfMonthBanner now takes a branchId prop (Shell passes
+staff.branch_id, which already reflects whichever branch is currently
+being viewed — the same value every other branch-scoped screen in
+this app already relies on, including GM/admin's branch switcher).
+Settings reloads the form when the viewed branch changes, so GM/admin
+switching branches sees that branch's own winner, not stale data from
+the one they just left.

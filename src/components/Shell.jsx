@@ -65,7 +65,7 @@ export default function Shell({ staff, tab, onTab, children,
       </header>
       <PendingBanner />
       <UpdateBanner />
-      <StaffOfMonthBanner />
+      <StaffOfMonthBanner branchId={staff.branch_id} />
       {children}
       {confirmingSignOut && (
         <div className="fixed inset-0 z-[70] bg-bg flex flex-col justify-center px-6">

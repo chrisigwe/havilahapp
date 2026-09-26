@@ -50,8 +50,8 @@ export default function StaySettings({ boot }) {
 
   useEffect(() => {
     if (!canPostStaffOfMonth) return
-    loadStaffOfMonth().then(e => { setSomEntry(e); setSomName(e?.staff_name || '') }).catch(() => setSomEntry(null))
-  }, [canPostStaffOfMonth])
+    loadStaffOfMonth(staff.branch_id).then(e => { setSomEntry(e); setSomName(e?.staff_name || '') }).catch(() => setSomEntry(null))
+  }, [canPostStaffOfMonth, staff.branch_id])
 
   if (!canManageRooms) {
     return (
@@ -107,13 +107,13 @@ export default function StaySettings({ boot }) {
     setSomBusy(true)
     try {
       await postStaffOfMonth({
-        staffId: staff.id, staffName: somName.trim(),
+        branchId: staff.branch_id, staffId: staff.id, staffName: somName.trim(),
         photoFile: somPhotoFile, removePhoto: somRemovePhoto,
         currentPhotoUrl: somEntry?.photo_url || null,
       })
       toast('Staff of the Month posted', 'success')
       setSomPhotoFile(null); setSomPhotoPreview(null); setSomRemovePhoto(false)
-      loadStaffOfMonth().then(e => { setSomEntry(e); setSomName(e?.staff_name || '') })
+      loadStaffOfMonth(staff.branch_id).then(e => { setSomEntry(e); setSomName(e?.staff_name || '') })
     } catch (e) { toast('Not saved: ' + e.message, 'error') }
     setSomBusy(false)
   }
@@ -149,9 +149,11 @@ export default function StaySettings({ boot }) {
         <section className="mt-5 rounded-2xl border border-line bg-surface p-4">
           <h3 className="font-semibold">Staff of the Month</h3>
           <p className="text-dim text-sm mt-1 mb-3">
-            Shown as a banner across the app to everyone, at both branches, for
-            7 days after posting. Recognizes the ₦10,000 grand-prize winner for
-            great customer service, teamwork, and performance.
+            Shown as a banner to everyone at this branch for 7 days after
+            posting. Recognizes the ₦10,000 grand-prize winner for great
+            customer service, teamwork, and performance. Nnewi and Awka each
+            have their own winner — this only posts for the branch you're
+            currently viewing.
           </p>
           {somEntry?.isActive && (
             <p className="text-leaf text-sm mb-3">
