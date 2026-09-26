@@ -1210,15 +1210,42 @@ export async function loadAdvancePayments(branchId) {
 }
 
 // Reception's own daily-close dashboard — POS/cash collected today,
-// plus the full deferred (outstanding) and advance pictures. Kept as
-// one call so the page loads it in one round trip rather than piecing
-// it together from three separate fetches inline.
+// the full deferred (outstanding) and advance pictures, and a roster
+// of everyone actually in-house right now. That last part matters:
+// deferred only lists guests with a positive balance and advances
+// only those with a negative one, so a guest sitting at exactly zero
+// (fully settled — an advance guest mid-stay with no new charges, or
+// someone who simply made no payment or order today) falls through
+// both lists and would otherwise be invisible on this screen, easily
+// mistaken for having checked out.
 export async function loadReceptionDashboard(branchId, date) {
-  const { data: todayPayments, error: e1 } = await supabase.from('payments')
-    .select('method, amount').eq('branch_id', branchId).eq('business_date', date)
+  const [{ data: todayPayments, error: e1 }, { data: occ, error: e5 }] = await Promise.all([
+    supabase.from('payments')
+      .select('method, amount, stay_id').eq('branch_id', branchId).eq('business_date', date),
+    supabase.from('v_occupancy_today')
+      .select('stay_id, room_number, guest_name, outstanding')
+      .eq('branch_id', branchId).eq('status', 'occupied'),
+  ])
   if (e1) throw e1
+  if (e5) throw e5
   const pos = (todayPayments || []).filter(p => p.method === 'pos').reduce((s, p) => s + Number(p.amount), 0)
   const cash = (todayPayments || []).filter(p => p.method === 'cash').reduce((s, p) => s + Number(p.amount), 0)
+
+  const paidTodayByStay = {}
+  for (const p of (todayPayments || [])) {
+    if (!p.stay_id) continue
+    paidTodayByStay[p.stay_id] = (paidTodayByStay[p.stay_id] || 0) + Number(p.amount)
+  }
+  // 'paid' — settled something today. 'credit' — still owes and paid
+  // nothing today (silently accruing). 'settled' — zero balance and
+  // no activity today (e.g. mid-stay on an advance); still shown, not
+  // dropped, precisely so the room doesn't read as vacant.
+  const inHouse = (occ || []).map(o => {
+    const paidToday = paidTodayByStay[o.stay_id] || 0
+    const outstanding = Number(o.outstanding || 0)
+    const status = paidToday > 0 ? 'paid' : outstanding > 0.009 ? 'credit' : 'settled'
+    return { stay_id: o.stay_id, room_number: o.room_number, guest_name: o.guest_name, outstanding, paidToday, status }
+  }).sort((a, b) => String(a.room_number).localeCompare(String(b.room_number), undefined, { numeric: true }))
 
   const [deferred, advances] = await Promise.all([
     loadGuestBalances(branchId),
@@ -1227,7 +1254,7 @@ export async function loadReceptionDashboard(branchId, date) {
   const deferredTotal = deferred.reduce((s, g) => s + g.outstanding + g.departmentCredit + g.billedToYou, 0)
   const advanceTotal = advances.reduce((s, a) => s + a.balance, 0)
 
-  return { pos, cash, deferred, deferredTotal, advances, advanceTotal }
+  return { pos, cash, deferred, deferredTotal, advances, advanceTotal, inHouse }
 }
 
 export async function loadGuestBalances(branchId, staffId) {

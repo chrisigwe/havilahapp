@@ -515,6 +515,34 @@ export default function SalesEntry({ boot }) {
               <p className="text-dim text-sm">No advance balances right now.</p>
             )}
           </div>
+
+          <div className="mt-4 pt-3 border-t border-line flex items-baseline justify-between">
+            <span className="text-dim">In-house today — every occupied room</span>
+            <span className="tnum font-bold">{receptionDashboard.inHouse.length}</span>
+          </div>
+          <p className="text-dim text-xs mt-0.5">
+            Everyone stays listed here whether they paid, are on credit, or had no
+            activity today — nobody drops off this list just for not transacting.
+          </p>
+          <div className="mt-2 space-y-1.5">
+            {receptionDashboard.inHouse.map(g => (
+              <div key={g.stay_id} className="flex justify-between text-sm">
+                <span className="text-dim truncate">{g.guest_name || 'Guest'} · Room {g.room_number}</span>
+                {g.status === 'paid' && (
+                  <span className="tnum text-leaf">Paid {naira(g.paidToday)} today</span>
+                )}
+                {g.status === 'credit' && (
+                  <span className="tnum text-clay">On credit · {naira(g.outstanding)} owing</span>
+                )}
+                {g.status === 'settled' && (
+                  <span className="text-dim">Settled · no activity today</span>
+                )}
+              </div>
+            ))}
+            {!receptionDashboard.inHouse.length && (
+              <p className="text-dim text-sm">No occupied rooms right now.</p>
+            )}
+          </div>
         </div>
       )}
 

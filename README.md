@@ -2590,3 +2590,25 @@ own consumption of the booked period, not whether it's been paid for
 or whether other departments have added extra charges on top (see
 Alphonso: room rate is fully covered by his advance regardless of the
 separate ₦9,500 he owes for food/drinks — those are different things).
+
+
+## Reception dashboard: in-house roster (closes the "look checked out" gap)
+
+loadReceptionDashboard now also returns `inHouse` — every currently
+occupied room (from v_occupancy_today), each tagged 'paid' (had a
+payment today), 'credit' (owes and paid nothing today), or 'settled'
+(zero balance, no activity today — e.g. a monthly-advance guest
+mid-stay). Rendered on both SalesEntry.jsx and DailySales.jsx, right
+after Advance payments.
+
+The gap this closes: Deferred only lists guests with outstanding > 0
+and Advances only those with outstanding < 0, so a guest sitting at
+exactly zero — fully settled, nothing new charged or paid today —
+fell through both lists and had zero footprint on the dashboard,
+indistinguishable from having checked out. The in-house roster is
+built from actual occupancy (v_occupancy_today, status='occupied'),
+not from transaction activity, so every occupied room shows up
+regardless of whether money moved for it today.
+
+Scoped to today only, same as Deferred/Advances — v_occupancy_today
+is current-moment, no historical snapshot for past dates.
