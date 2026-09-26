@@ -1,5 +1,5 @@
 import { supabase } from './supabase'
-import { lagosDaysAgo, lagosToday, nameKey } from './format'
+import { lagosDaysAgo, lagosToday, addDays, nameKey } from './format'
 import { normalizeCustomerName } from './customerName'
 
 export async function loadBranches() {
@@ -1512,4 +1512,83 @@ export async function setRoomServiceStatus(roomId, outOfService, reason) {
     target: roomId, out_of_svc: outOfService, reason: reason || null,
   })
   if (error) throw error
+}
+
+// ---------- Staff of the Month ----------
+// Company-wide, not branch-scoped — one ₦10,000 grand-prize winner
+// recognized across both branches. The banner only shows for 7 days
+// after being posted; older rows stay in the table as history but
+// the app treats them as expired, not deleted.
+export async function loadStaffOfMonth() {
+  const { data, error } = await supabase.from('staff_of_month')
+    .select('id, staff_name, photo_url, posted_at')
+    .order('posted_at', { ascending: false }).order('created_at', { ascending: false })
+    .limit(1).maybeSingle()
+  if (error) throw error
+  if (!data) return null
+  const daysSince = Math.round((new Date(lagosToday()) - new Date(data.posted_at)) / 864e5)
+  return { ...data, isActive: daysSince >= 0 && daysSince < 7, daysSince }
+}
+
+// Uploads a new photo if one was given, then either updates today's
+// post in place (a same-day correction — e.g. a typo, doesn't reset
+// the week) or creates a fresh row, which is what actually restarts
+// the 7-day countdown — that's what "posting" a new winner means.
+export async function postStaffOfMonth({ staffId, staffName, photoFile, removePhoto, currentPhotoUrl }) {
+  let photoUrl = removePhoto ? null : (currentPhotoUrl || null)
+  if (photoFile) {
+    const ext = (photoFile.name.split('.').pop() || 'jpg').toLowerCase()
+    const path = `${Date.now()}.${ext}`
+    const { error: upErr } = await supabase.storage.from('staff-photos')
+      .upload(path, photoFile, { upsert: true })
+    if (upErr) throw upErr
+    const { data: pub } = supabase.storage.from('staff-photos').getPublicUrl(path)
+    photoUrl = pub.publicUrl
+  }
+
+  const today = lagosToday()
+  const { data: existing, error: e1 } = await supabase.from('staff_of_month')
+    .select('id, posted_at').order('posted_at', { ascending: false }).order('created_at', { ascending: false })
+    .limit(1).maybeSingle()
+  if (e1) throw e1
+
+  if (existing && existing.posted_at === today) {
+    const { error } = await supabase.from('staff_of_month')
+      .update({ staff_name: staffName, photo_url: photoUrl }).eq('id', existing.id)
+    if (error) throw error
+  } else {
+    const { error } = await supabase.from('staff_of_month')
+      .insert({ staff_name: staffName, photo_url: photoUrl, posted_at: today, posted_by: staffId })
+    if (error) throw error
+  }
+}
+
+// ---------- Rooms sold in a month (GM/admin only, enforced in the UI) ----------
+// Counts bookings whose check-in falls in the same calendar month as
+// the given date — the whole month if it's already fully past, or up
+// to today if it's the current, still-ongoing month. Excludes GM
+// Office (room 209, wherever it exists at this branch) since that's a
+// permanent zero-rate placeholder stay blocking the room for internal
+// use, not an actual booking — counting it would overstate real sales.
+function firstOfNextMonth(dateStr) {
+  const [y, m] = dateStr.split('-').map(Number)
+  const nextY = m === 12 ? y + 1 : y
+  const nextM = m === 12 ? 1 : m + 1
+  return `${nextY}-${String(nextM).padStart(2, '0')}-01`
+}
+export async function loadRoomsSoldInMonth(branchId, date) {
+  const monthStart = date.slice(0, 7) + '-01'
+  const today = lagosToday()
+  const upperBoundExclusive = date.slice(0, 7) === today.slice(0, 7)
+    ? addDays(today, 1) : firstOfNextMonth(monthStart)
+
+  const { data: gmOfficeRoom } = await supabase.from('rooms')
+    .select('id').eq('branch_id', branchId).eq('room_number', '209').maybeSingle()
+
+  let q = supabase.from('stays').select('id', { count: 'exact', head: true })
+    .eq('branch_id', branchId).gte('check_in_date', monthStart).lt('check_in_date', upperBoundExclusive)
+  if (gmOfficeRoom?.id) q = q.neq('room_id', gmOfficeRoom.id)
+  const { count, error } = await q
+  if (error) throw error
+  return count || 0
 }

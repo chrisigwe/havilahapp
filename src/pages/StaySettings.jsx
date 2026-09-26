@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { naira } from '../lib/format'
 import { loadRoomsForSettings, loadBranchStaySettings, updateRoomRates,
-         updateBranchOverstayDefault } from '../lib/data'
+         updateBranchOverstayDefault, loadStaffOfMonth, postStaffOfMonth } from '../lib/data'
 import { useToast } from '../components/Toast'
 import MergeGuestsSheet from '../components/MergeGuestsSheet'
 
@@ -28,6 +28,17 @@ export default function StaySettings({ boot }) {
   const canSetOverstayDefault = ['gm', 'admin'].includes(staff.role)
   const [mergingGuests, setMergingGuests] = useState(false)
 
+  // Staff of the Month — GM/admin only, matches canSetOverstayDefault
+  // exactly (is_supervisor()'s own role set), kept as a separate name
+  // here since the two features have nothing to do with each other.
+  const canPostStaffOfMonth = canSetOverstayDefault
+  const [somEntry, setSomEntry] = useState(null)
+  const [somName, setSomName] = useState('')
+  const [somPhotoFile, setSomPhotoFile] = useState(null)
+  const [somPhotoPreview, setSomPhotoPreview] = useState(null)
+  const [somRemovePhoto, setSomRemovePhoto] = useState(false)
+  const [somBusy, setSomBusy] = useState(false)
+
   useEffect(() => {
     if (!canManageRooms) return
     loadRoomsForSettings(staff.branch_id).then(setRooms).catch(() => setRooms([]))
@@ -36,6 +47,11 @@ export default function StaySettings({ boot }) {
       setFee(s.overstayDefault != null ? String(s.overstayDefault) : '')
     }).catch(() => setBranchSettings(null))
   }, [staff.branch_id, canManageRooms])
+
+  useEffect(() => {
+    if (!canPostStaffOfMonth) return
+    loadStaffOfMonth().then(e => { setSomEntry(e); setSomName(e?.staff_name || '') }).catch(() => setSomEntry(null))
+  }, [canPostStaffOfMonth])
 
   if (!canManageRooms) {
     return (
@@ -80,6 +96,28 @@ export default function StaySettings({ boot }) {
     setBusy(false)
   }
 
+  function pickSomPhoto(e) {
+    const file = e.target.files?.[0] || null
+    setSomPhotoFile(file)
+    setSomRemovePhoto(false)
+    setSomPhotoPreview(file ? URL.createObjectURL(file) : null)
+  }
+
+  async function saveStaffOfMonth() {
+    setSomBusy(true)
+    try {
+      await postStaffOfMonth({
+        staffId: staff.id, staffName: somName.trim(),
+        photoFile: somPhotoFile, removePhoto: somRemovePhoto,
+        currentPhotoUrl: somEntry?.photo_url || null,
+      })
+      toast('Staff of the Month posted', 'success')
+      setSomPhotoFile(null); setSomPhotoPreview(null); setSomRemovePhoto(false)
+      loadStaffOfMonth().then(e => { setSomEntry(e); setSomName(e?.staff_name || '') })
+    } catch (e) { toast('Not saved: ' + e.message, 'error') }
+    setSomBusy(false)
+  }
+
   return (
     <div className="px-5 pb-8">
       <h2 className="text-2xl font-bold mt-2">Settings</h2>
@@ -104,6 +142,50 @@ export default function StaySettings({ boot }) {
               Save
             </button>
           </div>
+        </section>
+      )}
+
+      {canPostStaffOfMonth && (
+        <section className="mt-5 rounded-2xl border border-line bg-surface p-4">
+          <h3 className="font-semibold">Staff of the Month</h3>
+          <p className="text-dim text-sm mt-1 mb-3">
+            Shown as a banner across the app to everyone, at both branches, for
+            7 days after posting. Recognizes the ₦10,000 grand-prize winner for
+            great customer service, teamwork, and performance.
+          </p>
+          {somEntry?.isActive && (
+            <p className="text-leaf text-sm mb-3">
+              Currently live · {7 - somEntry.daysSince} day{7 - somEntry.daysSince === 1 ? '' : 's'} left
+            </p>
+          )}
+          {somEntry && !somEntry.isActive && (
+            <p className="text-dim text-sm mb-3">
+              No banner showing right now — the last post has expired.
+            </p>
+          )}
+
+          <div className="text-dim text-sm mb-1">Staff name</div>
+          <input value={somName} onChange={e => setSomName(e.target.value)}
+            placeholder="Full name" autoComplete="off"
+            className="h-12 w-full px-3 rounded-xl bg-raise border border-line" />
+
+          <div className="text-dim text-sm mt-3 mb-1">Photo (optional)</div>
+          <input type="file" accept="image/*" onChange={pickSomPhoto} className="w-full text-sm" />
+          {(somPhotoPreview || (somEntry?.photo_url && !somRemovePhoto)) && (
+            <div className="flex items-center gap-3 mt-2">
+              <img src={somPhotoPreview || somEntry.photo_url} alt=""
+                className="w-16 h-16 rounded-full object-cover border border-line" />
+              <button onClick={() => { setSomPhotoFile(null); setSomPhotoPreview(null); setSomRemovePhoto(true) }}
+                className="text-clay text-sm underline">
+                Remove photo
+              </button>
+            </div>
+          )}
+
+          <button onClick={saveStaffOfMonth} disabled={somBusy || !somName.trim()}
+            className="mt-4 h-12 px-5 rounded-xl bg-amber text-bg font-bold disabled:opacity-40">
+            {somBusy ? 'Posting…' : 'Post'}
+          </button>
         </section>
       )}
 

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { naira, lagosToday, tierLabel, methodLabel, whoRecorded, paymentSummary } from '../lib/format'
-import { loadDailyFinancials, loadToday, loadReceptionActivity, loadReceptionDashboard, loadRoomCharges } from '../lib/data'
+import { loadDailyFinancials, loadToday, loadReceptionActivity, loadReceptionDashboard,
+         loadRoomCharges, loadRoomsSoldInMonth } from '../lib/data'
 import { useToast } from '../components/Toast'
 
 // Read-only — browse any past day's sales by department. Built for
@@ -20,11 +21,19 @@ export default function DailySales({ boot }) {
   const [receptionActivity, setReceptionActivity] = useState(null)
   const [receptionDashboard, setReceptionDashboard] = useState(null)
   const [roomCharges, setRoomCharges] = useState([])
+  const [roomsSold, setRoomsSold] = useState(null)
 
   const itemById = useMemo(() => Object.fromEntries(items.map(i => [i.id, i])), [items])
   const locById = useMemo(() => Object.fromEntries(salesPoints.map(l => [l.id, l])), [salesPoints])
   const isReception = /reception/i.test(salesPoints.find(l => l.id === locId)?.name || '')
   const isRestaurant = /restaurant/i.test(salesPoints.find(l => l.id === locId)?.name || '')
+  // Room 209 (GM Office) and the monthly rooms-sold count are both
+  // GM/admin-only visibility on this dashboard — matches
+  // is_supervisor()'s own role set, not the broader oversight group.
+  const isGmOrAdmin = ['gm', 'admin'].includes(staff.role)
+  const visibleRoomRateProgress = (receptionDashboard?.roomRateProgress || [])
+    .filter(r => isGmOrAdmin || r.room_number !== '209')
+  const visibleRoomRateRemainingTotal = visibleRoomRateProgress.reduce((s, r) => s + r.remaining, 0)
   const currentDept = salesPoints.find(l => l.id === locId)
   const roomChargeCategory = isReception ? null
     : isRestaurant ? 'food'
@@ -34,7 +43,7 @@ export default function DailySales({ boot }) {
 
   const refresh = useCallback(() => {
     const loc = locId === 'all' ? null : locId
-    setSummary(null); setRows(null); setReceptionActivity(null); setRoomCharges([]); setReceptionDashboard(null)
+    setSummary(null); setRows(null); setReceptionActivity(null); setRoomCharges([]); setReceptionDashboard(null); setRoomsSold(null)
     if (isReception) {
       loadReceptionActivity(staff.branch_id, date).then(setReceptionActivity).catch(e => toast(e.message, 'error'))
       // Deferred/advance are computed from CURRENT balances (v_stay_
@@ -42,6 +51,11 @@ export default function DailySales({ boot }) {
       // meaningful, and only shown, when actually looking at today.
       if (date === lagosToday()) {
         loadReceptionDashboard(staff.branch_id, date).then(setReceptionDashboard).catch(e => toast(e.message, 'error'))
+      }
+      // Rooms sold, unlike the above, is a real historical count —
+      // works for any browsed month, not just today.
+      if (isGmOrAdmin) {
+        loadRoomsSoldInMonth(staff.branch_id, date).then(setRoomsSold).catch(() => {})
       }
       return
     }
@@ -97,6 +111,11 @@ export default function DailySales({ boot }) {
 
       {isReception ? (
         <>
+          {isGmOrAdmin && roomsSold != null && (
+            <p className="text-dim text-sm mt-3">
+              {roomsSold} room{roomsSold === 1 ? '' : 's'} sold {date.slice(0, 7) === lagosToday().slice(0, 7) ? 'this month' : 'in this month'}
+            </p>
+          )}
           {receptionDashboard && (
             <div className="mt-4 rounded-2xl border border-amber bg-surface p-4">
               <p className="font-semibold">Close of day</p>
@@ -133,10 +152,10 @@ export default function DailySales({ boot }) {
 
               <div className="mt-4 pt-3 border-t border-line flex items-baseline justify-between">
                 <span className="text-dim">Room rate — period progress</span>
-                <span className="tnum font-bold text-leaf">{naira(receptionDashboard.roomRateRemainingTotal)} left</span>
+                <span className="tnum font-bold text-leaf">{naira(visibleRoomRateRemainingTotal)} left</span>
               </div>
               <div className="mt-1 space-y-2">
-                {receptionDashboard.roomRateProgress.map(r => (
+                {visibleRoomRateProgress.map(r => (
                   <div key={r.stay_id} className="text-sm">
                     <div className="flex justify-between">
                       <span className="text-dim truncate">{r.guest_name || 'Guest'} · Room {r.room_number}</span>
@@ -150,7 +169,7 @@ export default function DailySales({ boot }) {
                     </div>
                   </div>
                 ))}
-                {!receptionDashboard.roomRateProgress.length && (
+                {!visibleRoomRateProgress.length && (
                   <p className="text-dim text-sm">No multi-night stays right now.</p>
                 )}
               </div>

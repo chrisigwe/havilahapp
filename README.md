@@ -2631,3 +2631,57 @@ and exported, just no longer wired into this particular dashboard.
 Same deliberate independence from payment status as the Folio version:
 this tracks the room rate's own consumption of the booked period, not
 whether it's been paid for.
+
+
+## Staff of the Month
+
+New company-wide banner (not branch-scoped — one ₦10,000 grand-prize
+winner recognized at both branches). Shows automatically for 7 days
+after being posted, then disappears on its own — the row stays in the
+table as history, the app just stops rendering it once posted_at is
+more than a week old.
+
+- Migration 221_staff_of_month.sql: `staff_of_month` table (readable
+  by everyone, writable only by GM/admin via is_supervisor()) and a
+  public `staff-photos` storage bucket with the same write
+  restriction, for the optional photo.
+- data.js: loadStaffOfMonth() (latest row + isActive/daysSince),
+  postStaffOfMonth() — a same-day edit updates the existing row in
+  place (fixing a typo doesn't reset the clock), but posting on a new
+  day always creates a fresh row, which is what actually restarts the
+  7-day window.
+- StaffOfMonthBanner.jsx, wired into Shell.jsx right alongside the
+  existing PendingBanner/UpdateBanner — shows on every screen, any
+  role, either branch.
+- Settings (StaySettings.jsx): new GM/admin-only section — name field,
+  optional photo upload/remove, live status ("3 days left" / "expired").
+
+Run the migration in Supabase before deploying the app build, or the
+banner and Settings section will error on load (table doesn't exist yet).
+
+## Room rate progress: GM Office hidden from non-GM/admin, rooms-sold count added
+
+Found that "GM Office" is an existing internal placeholder stay on
+room 209 — check-in 2026-07-01 through 2027-05-20, ₦0 daily rate —
+used to block the room for internal use, not a real guest. Two
+changes to the "Room rate — period progress" section on both
+SalesEntry.jsx and DailySales.jsx, GM/admin gating matching
+is_supervisor()'s own role set:
+
+- Room 209 is filtered out of the list (and its 0-contribution
+  excluded from the running total) for every role except gm/admin.
+  Everywhere else in the app (Room Board, In-house roster) is
+  untouched — this was scoped narrowly to just this one section, per
+  the request.
+- New "X rooms sold this month" line, GM/admin only, from
+  loadRoomsSoldInMonth(branchId, date) — counts bookings by check-in
+  date within whichever calendar month the browsed date falls in
+  (capped at today if it's the current, still-ongoing month; the full
+  month if browsing a past one), excluding room 209 itself so the
+  count reflects real guest bookings. On SalesEntry.jsx (always today)
+  this reads as "this month so far"; on DailySales.jsx it also works
+  correctly when browsing back to a fully-past month, and is placed
+  outside the today-only receptionDashboard gate so it still shows
+  when browsing history — deferred/advance/in-house genuinely have no
+  historical snapshot, but a rooms-sold count is a real historical
+  count and works for any date.

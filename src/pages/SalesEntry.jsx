@@ -4,7 +4,7 @@ import { loadStockMap, loadPopular, loadToday, saveBasket, saveWriteoff,
          loadDailyFinancials, loadCustomers, createCustomer,
          loadOpeningDate, loadBalances, loadReceipt,
          loadStaffForLocation, loadReceptionActivity, loadReceptionDashboard, deleteEntry,
-         loadRoomCharges, deleteOrderItem, saveRestaurantWriteoff } from '../lib/data'
+         loadRoomCharges, deleteOrderItem, saveRestaurantWriteoff, loadRoomsSoldInMonth } from '../lib/data'
 import { enqueue, flush, isConnectionError } from '../lib/outbox'
 import { useToast } from '../components/Toast'
 import ItemPicker from '../components/ItemPicker'
@@ -53,6 +53,13 @@ export default function SalesEntry({ boot }) {
   const currentDept = salesPoints.find(l => l.id === locationId)
   const isRestaurant = /restaurant/i.test(currentDept?.name || '')
   const isReception = /reception/i.test(currentDept?.name || '')
+  // Room 209 (GM Office) and the monthly rooms-sold count are both
+  // GM/admin-only visibility on the reception dashboard — matches
+  // is_supervisor()'s own role set, not the broader oversight group.
+  const isGmOrAdmin = ['gm', 'admin'].includes(staff.role)
+  const visibleRoomRateProgress = (receptionDashboard?.roomRateProgress || [])
+    .filter(r => isGmOrAdmin || r.room_number !== '209')
+  const visibleRoomRateRemainingTotal = visibleRoomRateProgress.reduce((s, r) => s + r.remaining, 0)
   // Which order_items.category a room charge from THIS department
   // lands under — null for Reception, which has no charges of its
   // own. Any department can have items charged to a room, not just
@@ -75,6 +82,7 @@ export default function SalesEntry({ boot }) {
   const [roomCharges, setRoomCharges] = useState([])   // Restaurant only: food charged to rooms
   const [receptionActivity, setReceptionActivity] = useState([])
   const [receptionDashboard, setReceptionDashboard] = useState(null)
+  const [roomsSold, setRoomsSold] = useState(null)
   const [showYesterday, setShowYesterday] = useState(false)
   const [yesterdaySummary, setYesterdaySummary] = useState(null)
   const [yesterdayActivity, setYesterdayActivity] = useState(null)
@@ -148,6 +156,9 @@ export default function SalesEntry({ boot }) {
     if (isReception) {
       loadReceptionActivity(staff.branch_id, date).then(setReceptionActivity).catch(() => {})
       loadReceptionDashboard(staff.branch_id, date).then(setReceptionDashboard).catch(() => {})
+      if (isGmOrAdmin) {
+        loadRoomsSoldInMonth(staff.branch_id, date).then(setRoomsSold).catch(() => {})
+      }
     }
     if (roomChargeCategory) {
       loadRoomCharges(staff.branch_id, date, roomChargeCategory).then(setRoomCharges).catch(() => {})
@@ -497,10 +508,13 @@ export default function SalesEntry({ boot }) {
 
           <div className="mt-4 pt-3 border-t border-line flex items-baseline justify-between">
             <span className="text-dim">Room rate — period progress</span>
-            <span className="tnum font-bold text-leaf">{naira(receptionDashboard.roomRateRemainingTotal)} left</span>
+            <span className="tnum font-bold text-leaf">{naira(visibleRoomRateRemainingTotal)} left</span>
           </div>
+          {isGmOrAdmin && roomsSold != null && (
+            <p className="text-dim text-sm mt-0.5">{roomsSold} room{roomsSold === 1 ? '' : 's'} sold this month</p>
+          )}
           <div className="mt-1 space-y-2">
-            {receptionDashboard.roomRateProgress.map(r => (
+            {visibleRoomRateProgress.map(r => (
               <div key={r.stay_id} className="text-sm">
                 <div className="flex justify-between">
                   <span className="text-dim truncate">{r.guest_name || 'Guest'} · Room {r.room_number}</span>
@@ -514,7 +528,7 @@ export default function SalesEntry({ boot }) {
                 </div>
               </div>
             ))}
-            {!receptionDashboard.roomRateProgress.length && (
+            {!visibleRoomRateProgress.length && (
               <p className="text-dim text-sm">No multi-night stays right now.</p>
             )}
           </div>

@@ -3,6 +3,7 @@ import { supabase } from '../lib/supabase'
 import Logo from './Logo'
 import PendingBanner from './PendingBanner'
 import UpdateBanner from './UpdateBanner'
+import StaffOfMonthBanner from './StaffOfMonthBanner'
 
 const STOCK_ROLES = ['storekeeper', 'manager', 'gm', 'admin']
 // GM/admin/manager oversee everything rather than doing one
@@ -64,6 +65,7 @@ export default function Shell({ staff, tab, onTab, children,
       </header>
       <PendingBanner />
       <UpdateBanner />
+      <StaffOfMonthBanner />
       {children}
       {confirmingSignOut && (
         <div className="fixed inset-0 z-[70] bg-bg flex flex-col justify-center px-6">
