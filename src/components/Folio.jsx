@@ -63,6 +63,27 @@ export default function Folio({ boot, room, onClose, onChanged }) {
   // separately alongside it.
   const totalOutstanding = outstanding + departmentCreditTotal + billedToYouTotal
   const live = ['reserved', 'occupied'].includes(room.status) && !!room.stay_id
+
+  // Room-rate countdown — how much of the booked period has elapsed
+  // vs remains, purely time-based against the planned nights. This is
+  // deliberately independent of payment/outstanding: an advance that
+  // exactly matches the room rate for the period gets fully "used up"
+  // by the last night regardless of what's been charged to other
+  // departments in the meantime (see Alphonso — his room rate is fully
+  // covered even though his overall balance owes money for extras).
+  const totalNights = Number(folio?.nights ?? 0)
+  const dailyRate = Number(folio?.daily_rate ?? 0)
+  const checkIn = folio?.check_in_date || room.check_in_date
+  const scheduledOut = folio?.scheduled_out || room.scheduled_out
+  const rawNightsElapsed = checkIn
+    ? Math.round((new Date(lagosToday()) - new Date(checkIn)) / 864e5) : 0
+  const nightsElapsed = Math.max(0, Math.min(totalNights, rawNightsElapsed))
+  const nightsLeft = Math.max(0, totalNights - nightsElapsed)
+  const consumedRoomCharge = nightsElapsed * dailyRate
+  const remainingRoomCharge = Math.max(0, Number(folio?.room_charge ?? 0) - consumedRoomCharge)
+  const pctElapsed = totalNights > 0 ? Math.min(100, Math.round((nightsElapsed / totalNights) * 100)) : 0
+  const showCountdown = room.status === 'occupied' && totalNights > 1
+
   const orderLines = orders.flatMap(o => (o.order_items || [])
     .map(li => ({ ...li, date: o.business_date, servedBy: o.served_by, orderId: o.id })))
   const payParts = paymentParts(pay, pay.amount)
@@ -250,6 +271,35 @@ export default function Folio({ boot, room, onClose, onChanged }) {
             </span>
           </div>
         </div>
+
+        {showCountdown && (
+          <div className="mt-4 rounded-2xl border border-line bg-surface p-4">
+            <div className="flex items-baseline justify-between mb-2">
+              <span className="font-semibold">Room rate — period progress</span>
+              <span className="text-dim text-sm">{scheduledOut}</span>
+            </div>
+            <div className="h-2.5 rounded-full bg-line overflow-hidden">
+              <div className="h-full bg-clay" style={{ width: `${pctElapsed}%` }} />
+            </div>
+            <div className="flex justify-between text-sm mt-2">
+              <span className="text-dim">
+                {nightsElapsed} of {totalNights} night{totalNights > 1 ? 's' : ''} used
+              </span>
+              <span className="text-dim">{nightsLeft} left</span>
+            </div>
+            <div className="flex justify-between mt-3 pt-3 border-t border-line">
+              <div>
+                <div className="text-dim text-sm">Taken out so far</div>
+                <div className="tnum font-bold">{naira(consumedRoomCharge)}</div>
+              </div>
+              <div className="text-right">
+                <div className="text-dim text-sm">Left in the room rate</div>
+                <div className="tnum font-bold text-leaf">{naira(remainingRoomCharge)}</div>
+              </div>
+            </div>
+          </div>
+        )}
+
 
         {live && (
           <div className="mt-4 rounded-2xl border border-line bg-surface p-4">

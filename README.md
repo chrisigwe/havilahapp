@@ -2577,3 +2577,16 @@ day. Deliberately doesn't include deferred/advance figures for
 yesterday — those are always current-moment balances (v_stay_folio has
 no historical snapshot capability), so showing "yesterday's" deferred
 would just be today's number mislabeled.
+
+
+## Folio: room-rate period countdown
+
+For any occupied stay booked more than one night, the Folio now shows
+a progress bar under Outstanding: nights used vs nights left, and how
+much of the room rate has been "taken out" so far vs how much remains,
+purely time-based against the planned check-in→scheduled-out window.
+Deliberately independent of payment status — it tracks the room rate's
+own consumption of the booked period, not whether it's been paid for
+or whether other departments have added extra charges on top (see
+Alphonso: room rate is fully covered by his advance regardless of the
+separate ₦9,500 he owes for food/drinks — those are different things).
