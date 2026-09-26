@@ -132,23 +132,26 @@ export default function DailySales({ boot }) {
               </div>
 
               <div className="mt-4 pt-3 border-t border-line flex items-baseline justify-between">
-                <span className="text-dim">Advance payments — balance remaining</span>
-                <span className="tnum font-bold text-leaf">{naira(receptionDashboard.advanceTotal)}</span>
+                <span className="text-dim">Room rate — period progress</span>
+                <span className="tnum font-bold text-leaf">{naira(receptionDashboard.roomRateRemainingTotal)} left</span>
               </div>
-              <div className="mt-1 space-y-1">
-                {receptionDashboard.advances.map(a => (
-                  <div key={a.stay_id} className="text-sm">
+              <div className="mt-1 space-y-2">
+                {receptionDashboard.roomRateProgress.map(r => (
+                  <div key={r.stay_id} className="text-sm">
                     <div className="flex justify-between">
-                      <span className="text-dim truncate">{a.guest_name || 'Guest'} · Room {a.room_number}</span>
-                      <span className="tnum text-leaf">{naira(a.balance)} left</span>
+                      <span className="text-dim truncate">{r.guest_name || 'Guest'} · Room {r.room_number}</span>
+                      <span className="text-dim">{r.nightsElapsed}/{r.totalNights}n · {r.nightsLeft} left</span>
                     </div>
-                    <div className="text-dim text-xs">
-                      Paid {naira(a.paid)} · used {naira(a.usedUp)}
+                    <div className="h-1.5 rounded-full bg-line overflow-hidden mt-1">
+                      <div className="h-full bg-clay" style={{ width: `${r.pctElapsed}%` }} />
+                    </div>
+                    <div className="text-dim text-xs mt-0.5">
+                      {naira(r.consumed)} taken out · {naira(r.remaining)} left to {r.scheduled_out}
                     </div>
                   </div>
                 ))}
-                {!receptionDashboard.advances.length && (
-                  <p className="text-dim text-sm">No advance balances right now.</p>
+                {!receptionDashboard.roomRateProgress.length && (
+                  <p className="text-dim text-sm">No multi-night stays right now.</p>
                 )}
               </div>
 

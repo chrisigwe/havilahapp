@@ -2612,3 +2612,22 @@ regardless of whether money moved for it today.
 
 Scoped to today only, same as Deferred/Advances — v_occupancy_today
 is current-moment, no historical snapshot for past dates.
+
+
+## Reception dashboard: Advance payments replaced with Room rate — period progress
+
+Swapped the "Advance payments — balance remaining" section on both
+SalesEntry.jsx and DailySales.jsx for "Room rate — period progress" —
+the same countdown concept built for the single-guest Folio, now shown
+across every occupied, multi-night stay at once. Per guest: a mini
+progress bar, nights used/left, and how much of the room rate has been
+taken out vs remains against the scheduled-out date. Headline figure
+is the total still "left" across all such stays.
+
+New loadRoomRateProgress() in data.js (v_stay_folio, status='occupied',
+nights > 1) replaces the loadAdvancePayments() call inside
+loadReceptionDashboard — loadAdvancePayments() itself is left intact
+and exported, just no longer wired into this particular dashboard.
+Same deliberate independence from payment status as the Folio version:
+this tracks the room rate's own consumption of the booked period, not
+whether it's been paid for.

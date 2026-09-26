@@ -1209,15 +1209,53 @@ export async function loadAdvancePayments(branchId) {
   }))
 }
 
+// Room-rate period progress across every occupied, multi-night stay —
+// nights consumed vs remaining against the planned check-in→scheduled-
+// out window, purely time-based. Deliberately independent of payment
+// status, same reasoning as the per-guest version of this on Folio: it
+// tracks the room rate's own consumption of the booked period, not
+// whether it's been paid for or what else has been charged.
+export async function loadRoomRateProgress(branchId) {
+  const { data: folios, error: e1 } = await supabase.from('v_stay_folio')
+    .select('stay_id, check_in_date, scheduled_out, daily_rate, nights, room_charge')
+    .eq('branch_id', branchId).eq('status', 'occupied').gt('nights', 1)
+  if (e1) throw e1
+  if (!folios?.length) return []
+
+  const { data: stays, error: e2 } = await supabase.from('stays')
+    .select('id, rooms(room_number), guests!guest_id(full_name)')
+    .in('id', folios.map(f => f.stay_id))
+  if (e2) throw e2
+  const stayById = Object.fromEntries((stays || []).map(s => [s.id, s]))
+
+  const today = lagosToday()
+  return folios.map(f => {
+    const totalNights = Number(f.nights)
+    const dailyRate = Number(f.daily_rate)
+    const rawElapsed = Math.round((new Date(today) - new Date(f.check_in_date)) / 864e5)
+    const nightsElapsed = Math.max(0, Math.min(totalNights, rawElapsed))
+    const nightsLeft = Math.max(0, totalNights - nightsElapsed)
+    const consumed = nightsElapsed * dailyRate
+    const remaining = Math.max(0, Number(f.room_charge) - consumed)
+    return {
+      stay_id: f.stay_id,
+      room_number: stayById[f.stay_id]?.rooms?.room_number,
+      guest_name: stayById[f.stay_id]?.guests?.full_name,
+      scheduled_out: f.scheduled_out,
+      totalNights, nightsElapsed, nightsLeft, consumed, remaining,
+      pctElapsed: totalNights > 0 ? Math.min(100, Math.round((nightsElapsed / totalNights) * 100)) : 0,
+    }
+  }).sort((a, b) => String(a.room_number).localeCompare(String(b.room_number), undefined, { numeric: true }))
+}
+
 // Reception's own daily-close dashboard — POS/cash collected today,
-// the full deferred (outstanding) and advance pictures, and a roster
-// of everyone actually in-house right now. That last part matters:
-// deferred only lists guests with a positive balance and advances
-// only those with a negative one, so a guest sitting at exactly zero
-// (fully settled — an advance guest mid-stay with no new charges, or
-// someone who simply made no payment or order today) falls through
-// both lists and would otherwise be invisible on this screen, easily
-// mistaken for having checked out.
+// the full deferred (outstanding) picture, room-rate period progress
+// for multi-night stays, and a roster of everyone actually in-house
+// right now. That last part matters: deferred only lists guests with
+// a positive balance, so a guest sitting at exactly zero (fully
+// settled — an advance guest mid-stay with no new charges, or someone
+// who simply made no payment or order today) would otherwise be
+// invisible on this screen, easily mistaken for having checked out.
 export async function loadReceptionDashboard(branchId, date) {
   const [{ data: todayPayments, error: e1 }, { data: occ, error: e5 }] = await Promise.all([
     supabase.from('payments')
@@ -1247,14 +1285,14 @@ export async function loadReceptionDashboard(branchId, date) {
     return { stay_id: o.stay_id, room_number: o.room_number, guest_name: o.guest_name, outstanding, paidToday, status }
   }).sort((a, b) => String(a.room_number).localeCompare(String(b.room_number), undefined, { numeric: true }))
 
-  const [deferred, advances] = await Promise.all([
+  const [deferred, roomRateProgress] = await Promise.all([
     loadGuestBalances(branchId),
-    loadAdvancePayments(branchId),
+    loadRoomRateProgress(branchId),
   ])
   const deferredTotal = deferred.reduce((s, g) => s + g.outstanding + g.departmentCredit + g.billedToYou, 0)
-  const advanceTotal = advances.reduce((s, a) => s + a.balance, 0)
+  const roomRateRemainingTotal = roomRateProgress.reduce((s, r) => s + r.remaining, 0)
 
-  return { pos, cash, deferred, deferredTotal, advances, advanceTotal, inHouse }
+  return { pos, cash, deferred, deferredTotal, roomRateProgress, roomRateRemainingTotal, inHouse }
 }
 
 export async function loadGuestBalances(branchId, staffId) {
