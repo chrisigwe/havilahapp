@@ -1196,7 +1196,7 @@ export async function loadAdvancePayments(branchId) {
   if (!folios?.length) return []
 
   const { data: stays, error: e2 } = await supabase.from('stays')
-    .select('id, rooms(room_number), guests!guest_id(full_name)')
+    .select('id, rooms(room_number, is_internal), guests!guest_id(full_name)')
     .in('id', folios.map(f => f.stay_id))
   if (e2) throw e2
   const stayById = Object.fromEntries((stays || []).map(s => [s.id, s]))
@@ -1223,7 +1223,7 @@ export async function loadRoomRateProgress(branchId) {
   if (!folios?.length) return []
 
   const { data: stays, error: e2 } = await supabase.from('stays')
-    .select('id, rooms(room_number), guests!guest_id(full_name)')
+    .select('id, rooms(room_number, is_internal), guests!guest_id(full_name)')
     .in('id', folios.map(f => f.stay_id))
   if (e2) throw e2
   const stayById = Object.fromEntries((stays || []).map(s => [s.id, s]))
@@ -1240,6 +1240,7 @@ export async function loadRoomRateProgress(branchId) {
     return {
       stay_id: f.stay_id,
       room_number: stayById[f.stay_id]?.rooms?.room_number,
+      is_internal: !!stayById[f.stay_id]?.rooms?.is_internal,
       guest_name: stayById[f.stay_id]?.guests?.full_name,
       scheduled_out: f.scheduled_out,
       totalNights, nightsElapsed, nightsLeft, consumed, remaining,
@@ -1598,12 +1599,16 @@ export async function loadRoomsSoldInMonth(branchId, date) {
   const upperBoundExclusive = date.slice(0, 7) === today.slice(0, 7)
     ? addDays(today, 1) : firstOfNextMonth(monthStart)
 
-  const { data: gmOfficeRoom } = await supabase.from('rooms')
-    .select('id').eq('branch_id', branchId).eq('room_number', '209').maybeSingle()
+  // Internal rooms (GM Office) are placeholders, not sales. Read from
+  // rooms.is_internal rather than a hardcoded number, so a genuine
+  // room 209 at another branch is counted normally.
+  const { data: internalRooms } = await supabase.from('rooms')
+    .select('id').eq('branch_id', branchId).eq('is_internal', true)
 
   let q = supabase.from('stays').select('id', { count: 'exact', head: true })
     .eq('branch_id', branchId).gte('check_in_date', monthStart).lt('check_in_date', upperBoundExclusive)
-  if (gmOfficeRoom?.id) q = q.neq('room_id', gmOfficeRoom.id)
+  const internalIds = (internalRooms || []).map(r => r.id)
+  if (internalIds.length) q = q.not('room_id', 'in', `(${internalIds.join(',')})`)
   const { count, error } = await q
   if (error) throw error
   return count || 0
@@ -1618,7 +1623,7 @@ export async function loadRoomsSoldInMonth(branchId, date) {
 export async function loadLiveStays(branchId) {
   const { data, error } = await supabase.from('stays')
     .select(`id, status, check_in_date, scheduled_out, daily_rate, billing_cycle,
-             guest_id, rooms(room_number), guests!guest_id(id, full_name, phone)`)
+             guest_id, rooms(room_number, is_internal), guests!guest_id(id, full_name, phone)`)
     .eq('branch_id', branchId).in('status', ['occupied', 'reserved'])
     .order('check_in_date', { ascending: false })
   if (error) throw error

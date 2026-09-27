@@ -33,12 +33,13 @@ export default function DailySales({ boot }) {
   const locById = useMemo(() => Object.fromEntries(salesPoints.map(l => [l.id, l])), [salesPoints])
   const isReception = /reception/i.test(salesPoints.find(l => l.id === locId)?.name || '')
   const isRestaurant = /restaurant/i.test(salesPoints.find(l => l.id === locId)?.name || '')
-  // Room 209 (GM Office) and the monthly rooms-sold count are both
+  // Internal rooms (GM Office, via rooms.is_internal) and the
+  // monthly rooms-sold count are both
   // GM/admin-only visibility on this dashboard — matches
   // is_supervisor()'s own role set, not the broader oversight group.
   const isGmOrAdmin = ['gm', 'admin'].includes(staff.role)
   const visibleRoomRateProgress = (receptionDashboard?.roomRateProgress || [])
-    .filter(r => isGmOrAdmin || r.room_number !== '209')
+    .filter(r => isGmOrAdmin || !r.is_internal)
   const visibleRoomRateRemainingTotal = visibleRoomRateProgress.reduce((s, r) => s + r.remaining, 0)
 
   // Reset to "All departments" on branch switch (GM/admin) — otherwise

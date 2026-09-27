@@ -3080,3 +3080,39 @@ CHECKED, CLEAN: no genuine temporal-dead-zone patterns remain (all
 apparent hits are inside async handlers that run after mount); no
 write/mutation errors silently swallowed; all polling intervals have
 cleanup; no UTC date construction that could drift off Lagos time.
+
+
+## 5. Read-only accounts: ReadOnlyBanner
+
+Correction to the audit note: block_if_read_only (migration 155)
+already raises a readable message — 'Your account is read-only — you
+cannot make changes.' — so the toast was never a raw Postgres error.
+The real gap was only that nothing warned BEFORE the work was done.
+
+staff.is_read_only was already in the boot payload (staff select *)
+and referenced nowhere. It now drives a persistent banner in Shell,
+alongside the pending/update/staff-of-month banners.
+
+Deliberately a banner rather than disabling every control: these
+accounts exist to browse the whole app, and blanket-disabling buttons
+would also block opening folios, receipts and statements, which they
+are meant to be able to view. Say the word if specific save buttons
+should also be greyed out.
+
+## 6 & 7. rooms.is_internal replaces hardcoded '209' (migration 228)
+
+The literal string '209' appeared in three places. A flag says what is
+actually meant, scopes per branch automatically, and allows a second
+internal room later with no code change.
+
+228 adds rooms.is_internal, sets it for AWKA's 209 only (branch-scoped
+on purpose — a Nnewi 209 would be a real guest room), and appends
+is_internal to v_occupancy_today after checked_in_at, preserving every
+existing column position.
+
+App now reads the flag in four places:
+  - SalesEntry / DailySales room-rate progress filters
+  - loadRoomsSoldInMonth (excludes internal rooms from the count)
+  - Corrections Reception list (item 7) — internal rooms hidden from
+    front desk, visible to gm/admin, with the empty state respecting
+    the filter so a hidden-only list still reads 'No live guests'

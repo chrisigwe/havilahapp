@@ -33,6 +33,9 @@ export default function Corrections({ boot }) {
   // stock purposes but has no business in guest identity records, and
   // auditor is read-only oversight.
   const seesGuests = ['front_desk', 'gm', 'admin'].includes(staff.role)
+  // GM Office is an internal placeholder stay, not a real guest —
+  // front desk has no reason to correct it and shouldn't see it.
+  const seesInternalRooms = ['gm', 'admin'].includes(staff.role)
   const [liveStays, setLiveStays] = useState(null)
   const [guestEdit, setGuestEdit] = useState(null)
 
@@ -155,6 +158,9 @@ export default function Corrections({ boot }) {
 
   useEffect(() => { if (view === 'guests') refreshGuests() }, [view, refreshGuests])
 
+  const visibleStays = (liveStays || [])
+    .filter(s2 => seesInternalRooms || !s2.rooms?.is_internal)
+
   async function saveGuestEdit() {
     setBusy(true)
     try {
@@ -232,11 +238,11 @@ export default function Corrections({ boot }) {
             updates that guest everywhere, including past stays.
           </p>
           {liveStays === null && <p className="text-dim">Loading…</p>}
-          {liveStays?.length === 0 && (
+          {liveStays !== null && !visibleStays.length && (
             <p className="py-8 text-center text-dim">No live guests right now.</p>
           )}
           <ul className="divide-y divide-line/60 rounded-2xl border border-line bg-surface px-4">
-            {(liveStays || []).map(s2 => (
+            {visibleStays.map(s2 => (
               <li key={s2.id} className="py-3 flex items-center gap-3">
                 <div className="flex-1 min-w-0">
                   <div className="truncate font-semibold">

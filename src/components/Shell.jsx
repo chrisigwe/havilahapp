@@ -5,6 +5,7 @@ import PendingBanner from './PendingBanner'
 import UpdateBanner from './UpdateBanner'
 import StaffOfMonthBanner from './StaffOfMonthBanner'
 import NavIcon from './NavIcon'
+import ReadOnlyBanner from './ReadOnlyBanner'
 
 const STOCK_ROLES = ['storekeeper', 'manager', 'gm', 'admin']
 // GM/admin/manager oversee everything rather than doing one
@@ -67,6 +68,7 @@ export default function Shell({ staff, tab, onTab, children,
       <PendingBanner />
       <UpdateBanner />
       <StaffOfMonthBanner branchId={staff.branch_id} />
+      <ReadOnlyBanner readOnly={staff.is_read_only} />
       {children}
       {confirmingSignOut && (
         <div className="fixed inset-0 z-[70] bg-bg flex flex-col justify-center px-6">

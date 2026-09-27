@@ -84,12 +84,13 @@ export default function SalesEntry({ boot }) {
   const [receptionActivity, setReceptionActivity] = useState([])
   const [receptionDashboard, setReceptionDashboard] = useState(null)
   const [roomsSold, setRoomsSold] = useState(null)
-  // Room 209 (GM Office) and the monthly rooms-sold count are both
+  // Internal rooms (GM Office, via rooms.is_internal) and the
+  // monthly rooms-sold count are both
   // GM/admin-only visibility on the reception dashboard — matches
   // is_supervisor()'s own role set, not the broader oversight group.
   const isGmOrAdmin = ['gm', 'admin'].includes(staff.role)
   const visibleRoomRateProgress = (receptionDashboard?.roomRateProgress || [])
-    .filter(r => isGmOrAdmin || r.room_number !== '209')
+    .filter(r => isGmOrAdmin || !r.is_internal)
   const visibleRoomRateRemainingTotal = visibleRoomRateProgress.reduce((s, r) => s + r.remaining, 0)
   const [showYesterday, setShowYesterday] = useState(false)
   const [yesterdaySummary, setYesterdaySummary] = useState(null)
