@@ -1010,7 +1010,7 @@ export async function loadFolio(stayId) {
   const [{ data: orders, error: e1 }, { data: payments, error: e2 }, { data: folio, error: e3 },
          { data: stay, error: e4 }] = await Promise.all([
     supabase.from('orders')
-      .select('id, business_date, served_by, order_items(id, category, description, qty, unit_price, amount, order_type, damage_reason, writeoff_note, pr_meal)')
+      .select('id, business_date, served_by, settlement, order_items(id, category, description, qty, unit_price, amount, order_type, damage_reason, writeoff_note, pr_meal)')
       .eq('stay_id', stayId).order('business_date', { ascending: false }),
     supabase.from('payments')
       .select('id, business_date, method, amount, is_overstay, remark')
@@ -1019,7 +1019,7 @@ export async function loadFolio(stayId) {
     // v_stay_folio has daily_rate/billing_cycle but not the raw
     // overstay_fee or rate_applied (the rate type) — both needed to
     // pre-fill the editing form correctly.
-    supabase.from('stays').select('overstay_fee, rate_applied, bill_to, bill_to_guest_id, guest_id').eq('id', stayId).maybeSingle(),
+    supabase.from('stays').select('overstay_fee, rate_applied, bill_to, bill_to_guest_id, guest_id, checked_in_at').eq('id', stayId).maybeSingle(),
   ])
   if (e1) throw e1
   if (e2) throw e2
@@ -1081,7 +1081,7 @@ export async function reopenStay(stayId) {
 export async function searchRecentCheckouts(branchId, query) {
   const since = new Date(Date.now() - 14 * 864e5).toISOString().slice(0, 10)
   const { data, error } = await supabase.from('stays')
-    .select(`id, check_in_date, scheduled_out, actual_out,
+    .select(`id, check_in_date, scheduled_out, actual_out, checked_in_at, checked_out_at,
              rooms(room_number), guests!guest_id(full_name)`)
     .eq('branch_id', branchId).eq('status', 'checked_out')
     .gte('actual_out', since)

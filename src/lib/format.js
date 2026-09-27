@@ -95,3 +95,16 @@ export function friendlyStayError(error) {
   }
   return msg
 }
+
+// Clock time of an actual check-in, in Lagos time. Returns '' when
+// the stay predates the checked_in_at column so callers can simply
+// omit it rather than print a fabricated time.
+export const lagosTime = (ts) => !ts ? '' : new Date(ts).toLocaleTimeString('en-NG', {
+  timeZone: 'Africa/Lagos', hour: '2-digit', minute: '2-digit', hour12: true,
+})
+
+// Who may see arrival/departure clock times on guest lists. Front
+// desk and bar staff see the DATES as before; only these four roles
+// see the stamped time, per explicit instruction.
+export const SEES_STAY_TIMES = ['manager', 'gm', 'admin', 'auditor']
+export const seesStayTimes = (role) => SEES_STAY_TIMES.includes(role)

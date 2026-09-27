@@ -2811,3 +2811,166 @@ its column, only the date itself is now compact, since the ask was
 specifically about date-width consistency, not the layout around it.
 Also added the missing `tnum` (tabular figures) to Credit.jsx's date
 input, which every other one already had.
+
+
+## Fix: GM/admin branch switch didn't reset department filters everywhere
+
+Audited every page with a per-branch department/location selector for
+the reset-on-branch-switch pattern already used correctly in
+SalesEntry.jsx, Recovery.jsx, and Credit.jsx. Found two that lacked it:
+
+- DailySales.jsx: locId stayed on whatever department was selected on
+  the old branch instead of returning to "All departments" — the bug
+  actually reported. Added a useEffect that resets it to 'all' on
+  every staff.branch_id change.
+- Store.jsx: toDept, fromDept, and convertLoc were only ever set once,
+  from the initial departments[0]/departments[1] at first render —
+  switching branches left them pointing at department ids from the
+  old branch, which could point a stock transfer or conversion at a
+  department that doesn't exist on the branch now being viewed. Added
+  a useEffect validating all three against the current departments
+  list on every branch switch, resetting any that no longer match —
+  same pattern the other three pages already used.
+
+No other page had a per-branch selector state without this protection.
+
+
+## Visibility audit: Daniel not seeing Obitex's MainBar credit
+
+Root cause: on Credit.jsx, the aggregate "Guest balances" view (which
+already sums a guest's debt across EVERY department, including
+MainBar) was only loaded and shown when the currently-selected
+department chip happened to be "Reception" — gated on isReception (a
+transient UI state), not on whether the viewer actually has Reception
+access (a role/assignment fact). Daniel has Reception in his own
+location list (Minimart+Reception), so if he had Minimart selected
+when he checked, the entire cross-department guest-balances section —
+including Obitex's ₦3,000 MainBar debt — simply disappeared, with no
+indication anything was hidden.
+
+Fixed by replacing the isReception gate with a proper
+hasReceptionAccess check (seesAllDepartments, or Reception present in
+the viewer's own locations), and by no longer making the per-
+department "Owed to X" list and the guest-balances section mutually
+exclusive — both now show together, so switching chips never hides
+guest-level debt for someone who's entitled to see it.
+
+Audited every other page with a similar department-chip pattern for
+the same class of bug and found three more instances:
+
+- Recovery.jsx: identical isReception-gates-a-cross-department-view
+  bug on room-payment recovery. Same fix applied. Also found this page
+  was entirely missing the seesAllDepartments expansion that Credit.jsx
+  already had — a manager/gm/admin/auditor without an explicit
+  staff_locations row covering every department would have had an
+  incomplete department-chip list here, same root cause as Credit.jsx
+  was deliberately fixed against before. Added it, matching Credit.jsx's
+  role set exactly (storekeeper/manager/gm/admin/auditor see every
+  department; bar/front_desk stay scoped to their own).
+- DailySales.jsx: same missing-expansion gap. Every role that can even
+  reach this page (auditor/storekeeper/manager/gm/admin, per its own
+  comment: "browse any past day's sales by department") is there
+  specifically for cross-department oversight, so it now always uses
+  allLocations rather than the viewer's own locations — there's no
+  bar/front_desk access to this page that would need staying
+  restricted.
+- SalesEntry.jsx: manager/gm/admin reach this page via More's "Record
+  a sale for any department" — that's the literal product intent, so
+  they now see every department as an option. Bar/front_desk/
+  storekeeper, who use this page as their direct working tab, are
+  unaffected — still scoped to their own assigned department(s).
+
+Store.jsx and Counts.jsx were already correct (Store.jsx uses
+allLocations for everyone, appropriate since stock transfers need
+every department as a possible source/destination regardless of role;
+Counts.jsx already had the seesAllDepartments-style expansion).
+RoomBoard.jsx and StaySettings.jsx don't use a department list at all,
+so this class of bug doesn't apply to them.
+
+
+## Root cause found: RLS, not just UI (migration 224)
+
+The earlier hasReceptionAccess fix was necessary but NOT sufficient.
+The actual reason Daniel could not see Obitex's MainBar credit is at
+the database level:
+
+sales_read (migration 33) limits a non-editor/non-auditor to rows they
+recorded or rows in their own staff_locations. Daniel is front_desk
+with Minimart + Reception, so MainBar sales rows are filtered out for
+him. v_guest_department_credit reads through
+v_customer_balances_by_staff (sales + sale_payments), and BOTH are
+security_invoker = on — they run with the caller's permissions. So the
+MainBar row never reached the app at all; no UI change could surface it.
+
+224 rebuilds v_guest_department_credit directly on the base tables as
+its own signed ledger and sets security_invoker = off, so it can
+aggregate across departments the caller isn't assigned to. Branch
+isolation is preserved explicitly in the view's WHERE clause via
+app_branch() / app_sees_all_branches() rather than being inherited
+from RLS.
+
+Scope is deliberately narrow: the view exposes only (guest,
+department, balance) for customers already linked to a guest. It does
+not expose individual sales, customer names, phones, or who served
+them. v_customer_balances_by_staff — which powers the per-department
+customer list on Credit — is left security_invoker = on and untouched,
+so front desk still cannot browse another department's customers.
+
+Covers both app paths that read this view: loadGuestBalances (Credit's
+guest balances, Reception dashboard deferred) and
+loadGuestDepartmentCredit (a guest's Folio).
+
+
+## Invoice did not match money owed (real billing bug)
+
+v_stay_folio.orders_charge counts order items with BOTH filters:
+  settlement = 'charged_to_room' AND order_type <> 'pr_damage'
+but loadFolio fetched every order item for the stay with no filter,
+and FolioStatement summed those raw lines into its own total. So a
+printed invoice added in (a) PR/damage items that are free and (b)
+orders already paid for at the department, coming out HIGHER than the
+outstanding figure shown on the Folio, Credit page and Reception
+dashboard. Guests were being handed inflated bills.
+
+Fix: the statement no longer re-sums anything. orders_charge,
+total_due and outstanding all come straight from v_stay_folio — the
+same view every other screen uses — so they agree by construction
+rather than by two code paths happening to match. Folio.jsx now splits
+lines into billableLines (matching the view's filters exactly) and
+freeLines (pr_damage), and passes only billable ones to the invoice;
+free items print in a separate "Complimentary / not charged" table at
+zero. Also added a "Paid at dept" badge on screen for lines whose
+settlement isn't charged_to_room, which previously had no marker at all.
+
+## Check-in time (migration 225)
+
+stays.checked_in_at (timestamptz), stamped by a trigger on both routes
+into 'occupied': INSERT for walk-ins, and the reserved -> occupied
+UPDATE for arrivals. Deliberately not reusing created_at, which for an
+advance booking is when the reservation was typed in, not when the
+guest arrived. Existing occupied stays backfilled to midday on their
+check_in_date rather than a fabricated exact time. Shown on the Folio
+header and the invoice; omitted entirely when null.
+
+
+## Check-in / check-out times on guest lists (migration 226)
+
+226 adds stays.checked_out_at with a trigger mirroring 225b's, and
+appends checked_in_at to v_occupancy_today. The view column goes at
+the very END of the select list because CREATE OR REPLACE VIEW matches
+by position and only permits appending — the exact mistake that made
+153 fail.
+
+The checkout trigger also CLEARS checked_out_at when a stay is
+reopened, so a reopened-then-reclosed stay records when it actually
+left rather than the first attempt's time.
+
+Visibility is restricted to manager/gm/admin/auditor via one shared
+helper (seesStayTimes in format.js) rather than four copies of a role
+array. Front desk and bar keep seeing the dates exactly as before,
+with no time. Applied in four places:
+  - RoomBoard occupied cards: "in 2:45 PM" under the guest name
+  - ReopenSearch (recent checkouts): departure time beside the date
+  - Folio header: arrival time after the check-in date
+  - Printed invoice: arrival time, passed as null for other roles so a
+    front-desk-printed invoice cannot leak what that person cannot see

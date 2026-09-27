@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { searchRecentCheckouts } from '../lib/data'
+import { lagosTime, seesStayTimes } from '../lib/format'
 import { useToast } from './Toast'
 
 // Finds a stay checked out in the last two weeks, since checked-out
@@ -10,6 +11,8 @@ import { useToast } from './Toast'
 export default function ReopenSearch({ boot, onPick, onClose }) {
   const { staff } = boot
   const toast = useToast()
+  // Oversight roles only, matching the room board.
+  const showTimes = seesStayTimes(staff.role)
   const [q, setQ] = useState('')
   const [rows, setRows] = useState(null)
 
@@ -45,7 +48,9 @@ export default function ReopenSearch({ boot, onPick, onClose }) {
                 <div className="flex items-center gap-3">
                   <span className="font-bold w-14">{s.rooms?.room_number}</span>
                   <span className="flex-1 min-w-0 truncate">{s.guests?.full_name}</span>
-                  <span className="text-dim text-sm tnum">{s.actual_out}</span>
+                  <span className="text-dim text-sm tnum">
+                    {s.actual_out}{showTimes && s.checked_out_at ? ` ${lagosTime(s.checked_out_at)}` : ''}
+                  </span>
                 </div>
               </button>
             </li>

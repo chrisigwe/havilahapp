@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { naira, lagosToday } from '../lib/format'
+import { naira, lagosToday, lagosTime, seesStayTimes } from '../lib/format'
 import { loadOccupancy, setRoomServiceStatus } from '../lib/data'
 import CheckIn from './CheckIn'
 import Folio from '../components/Folio'
@@ -36,6 +36,9 @@ export default function RoomBoard({ boot }) {
   const { staff } = boot
   const toast = useToast()
   const canManageRooms = ['manager', 'gm', 'admin'].includes(staff.role)
+  // Arrival/departure clock times are for oversight only — front
+  // desk and bar keep seeing the dates exactly as before.
+  const showTimes = seesStayTimes(staff.role)
   const [checkingIn, setCheckingIn] = useState(false)
   const [openStay, setOpenStay] = useState(null)   // the room whose folio is open
   const [reopenSearching, setReopenSearching] = useState(false)
@@ -158,6 +161,10 @@ export default function RoomBoard({ boot }) {
                 ) : room.guest_name ? (
                   <>
                     <p className="text-sm font-semibold mt-2 truncate">{room.guest_name}</p>
+                    {showTimes && room.checked_in_at && stateKey !== 'reserved'
+                      && stateKey !== 'reserved_due' && (
+                      <p className="text-dim text-xs tnum mt-0.5">in {lagosTime(room.checked_in_at)}</p>
+                    )}
                     {stateKey === 'reserved_due' && (
                       <p className="text-clay text-xs font-bold mt-0.5">
                         Reserved for {room.check_in_date === lagosToday() ? 'today' : 'since ' +

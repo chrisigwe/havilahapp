@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { naira, lagosToday, lagosTime, cyclesFor, nightsBetween, friendlyStayError } from '../lib/format'
+import { naira, lagosToday, lagosTime, seesStayTimes, cyclesFor, nightsBetween, friendlyStayError } from '../lib/format'
 import { loadFolio, loadBranchStaySettings, recordStayPayment, checkOutStay,
          reopenStay, updateStayDetails, updateOverstayFee, deleteStay,
          updateOrderItem, deleteOrderItem, searchSimilarGuests } from '../lib/data'
@@ -112,6 +112,8 @@ export default function Folio({ boot, room, onClose, onChanged }) {
   // role in ('gm', 'admin') — NOT manager, a narrower set than the
   // manager/gm/admin group that governs undoing an old checkout.
   const canSetNonDefaultOverstay = ['gm', 'admin'].includes(staff.role)
+  // Arrival/departure clock times: oversight roles only.
+  const showTimes = seesStayTimes(staff.role)
 
   async function submitPayment() {
     if (payAllocated <= 0) return
@@ -225,7 +227,7 @@ export default function Folio({ boot, room, onClose, onChanged }) {
         <h2 className="mt-3 text-2xl font-bold">{room.guest_name || 'Guest'}</h2>
         <p className="text-dim mt-1">
           Room {room.room_number} · {room.check_in_date}
-          {stay?.checked_in_at ? ` at ${lagosTime(stay.checked_in_at)}` : ''}
+          {showTimes && stay?.checked_in_at ? ` at ${lagosTime(stay.checked_in_at)}` : ''}
           {' to '}{folio?.scheduled_out || room.scheduled_out}
           {folio?.nights ? ` · ${folio.nights} night${folio.nights > 1 ? 's' : ''}` : ''}
         </p>
@@ -573,7 +575,7 @@ export default function Folio({ boot, room, onClose, onChanged }) {
 
       {printing && (
         <FolioStatement room={room} folio={folio} orderLines={billableLines}
-          freeLines={freeLines} payments={payments} checkedInAt={stay?.checked_in_at}
+          freeLines={freeLines} payments={payments} checkedInAt={showTimes ? stay?.checked_in_at : null}
           departmentCredit={departmentCredit} billedToYou={billedToYou}
           branchName={boot.branchName} onClose={() => setPrinting(false)} />
       )}
