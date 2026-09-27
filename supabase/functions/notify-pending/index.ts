@@ -43,13 +43,25 @@ Deno.serve(async () => {
 
   const { data: subs } = await supabase
     .from('push_subscriptions')
-    .select('endpoint, p256dh, auth, branch_id')
+    .select('endpoint, p256dh, auth, branch_id, last_count')
     .is('failed_at', null)
 
   let sent = 0
   for (const s of subs ?? []) {
     const count = byBranch[s.branch_id] ?? 0
-    if (count === 0) continue          // nothing to say; stay quiet
+
+    // Only push when the backlog GREW. An unchanged count means the
+    // person already knows; a falling one means someone is clearing
+    // it. Either way, pushing again every 5 minutes is how a useful
+    // alert becomes one people turn off. The row is still updated so
+    // a later rise is measured from the true current value.
+    if (count <= s.last_count) {
+      if (count !== s.last_count) {
+        await supabase.from('push_subscriptions')
+          .update({ last_count: count }).eq('endpoint', s.endpoint)
+      }
+      continue
+    }
 
     try {
       await webpush.sendNotification(
@@ -63,7 +75,8 @@ Deno.serve(async () => {
       )
       sent++
       await supabase.from('push_subscriptions')
-        .update({ last_sent_at: new Date().toISOString() }).eq('endpoint', s.endpoint)
+        .update({ last_sent_at: new Date().toISOString(), last_count: count })
+        .eq('endpoint', s.endpoint)
     } catch (err) {
       // 404/410 mean the browser is gone for good — mark it so we
       // stop pushing to a dead endpoint forever.

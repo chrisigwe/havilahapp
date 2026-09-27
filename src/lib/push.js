@@ -15,7 +15,21 @@ export const pushSupported = () =>
 
 // Push is configured only if a VAPID key was built in — without one,
 // subscribing throws, so the UI should not offer it.
-export const pushConfigured = () => pushSupported() && !!VAPID_PUBLIC_KEY
+export const pushConfigured = () => {
+  if (!pushSupported()) {
+    console.warn('[push] this browser does not support service workers / Push API')
+    return false
+  }
+  if (!VAPID_PUBLIC_KEY) {
+    // Silent hiding made this indistinguishable from a broken build
+    // during setup. Say so once, in the console, rather than nowhere.
+    console.warn('[push] VITE_VAPID_PUBLIC_KEY is not set in this build — '
+      + 'the notification prompt stays hidden. Set it in Netlify env vars '
+      + 'and redeploy with cache cleared.')
+    return false
+  }
+  return true
+}
 
 export const permissionState = () =>
   ('Notification' in window) ? Notification.permission : 'unsupported'

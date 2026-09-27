@@ -3248,3 +3248,39 @@ STILL REQUIRED, and cannot be done from here:
 
 iOS note: Web Push works on iOS 16.4+ ONLY for a PWA added to the home
 screen, not in a Safari tab.
+
+
+## Project folder renamed to havilah-app
+
+Renamed from havilah-inventory to match the working repo on disk, so
+extracting a delivered zip lands on the existing folder instead of
+creating a parallel one beside it. package.json / package-lock.json
+"name" updated to match; nothing else referenced the old name, and the
+build is unaffected (no path depends on the folder name).
+
+This also fixes a quiet hazard: with two differently-named folders,
+anything added in a NEW subfolder — supabase/functions/ being the
+first case — would never appear in the working repo unless the folder
+was copied across by hand, and would be easy to miss entirely.
+
+
+## Fix: alert tone fired on load (AudioContext error in console)
+
+pendingCount starts at useState(0), so the FIRST poll returning an
+existing backlog (2 submitted counts) compared 2 > 0 and read as a
+rise — sounding the tone on load, before any user gesture. Chrome
+blocks that and logs "The AudioContext was not allowed to start",
+which is exactly what appeared in the console. The prevPending !== null
+guard never helped, because the effect's own first run had already
+seeded it with the placeholder 0.
+
+Added pendingLoaded, set only when a poll actually resolves. The first
+real value seeds the baseline silently; alerting starts from the
+second. Signing out resets both, so the next sign-in re-seeds rather
+than alerting at its existing backlog.
+
+## push.js now says why the prompt is hidden
+
+pushConfigured() returning false silently made a missing
+VITE_VAPID_PUBLIC_KEY indistinguishable from a broken build during
+setup. It now console.warns which condition failed.

@@ -34,6 +34,8 @@ export default function App() {
   const [branches, setBranches] = useState([])
   const [viewBranch, setViewBranch] = useState(null)
   const [pendingCount, setPendingCount] = useState(0)
+  const [pendingLoaded, setPendingLoaded] = useState(false)
+  const prevPending = useRef(null)
   const [unfinished, setUnfinished] = useState([])
 
   const ALERT_ROLES = ['auditor', 'storekeeper', 'manager', 'gm', 'admin']
@@ -94,8 +96,11 @@ export default function App() {
   // not a push notification, so it only updates while someone is
   // actually looking at the app.
   useEffect(() => {
-    if (!boot?.staff || !ALERT_ROLES.includes(boot.staff.role)) { setPendingCount(0); return }
-    const check = () => loadPendingVerifications(boot.staff.branch_id).then(setPendingCount)
+    if (!boot?.staff || !ALERT_ROLES.includes(boot.staff.role)) {
+      setPendingCount(0); setPendingLoaded(false); prevPending.current = null; return
+    }
+    const check = () => loadPendingVerifications(boot.staff.branch_id)
+      .then(n => { setPendingCount(n); setPendingLoaded(true) })
     check()
     const id = setInterval(check, 60000)
     return () => clearInterval(id)
@@ -106,12 +111,17 @@ export default function App() {
   // already seen would train people to ignore it. prevPending starts
   // at null so the first poll after sign-in never sounds for a
   // backlog that was already there before the app opened.
-  const prevPending = useRef(null)
+  // pendingLoaded matters: pendingCount starts at 0, so without it the
+  // FIRST poll returning an existing backlog looks like a rise from
+  // zero and sounds on load — before any user gesture, which Chrome
+  // blocks and logs as an AudioContext error. The first real value
+  // only seeds the baseline; the alert starts from the second.
   useEffect(() => {
+    if (!pendingLoaded) return
     setAppBadge(pendingCount)
     if (prevPending.current !== null && pendingCount > prevPending.current) pulseAlert()
     prevPending.current = pendingCount
-  }, [pendingCount])
+  }, [pendingCount, pendingLoaded])
 
   // Browsers refuse to play audio until the user has interacted with
   // the page, so arm it on the first tap and then stop listening.
