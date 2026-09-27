@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback, useRef } from 'react'
 import { supabase } from './lib/supabase'
-import { loadBootstrap, loadStaffIdentity, loadBranchData } from './lib/data'
+import { loadBootstrap, loadStaffIdentity, loadBranchData, loadMyVerifiedCounts } from './lib/data'
 import Login from './pages/Login'
 import SalesEntry from './pages/SalesEntry'
 import Stock from './pages/Stock'
@@ -36,6 +36,11 @@ export default function App() {
   const [pendingCount, setPendingCount] = useState(0)
   const [pendingLoaded, setPendingLoaded] = useState(false)
   const prevPending = useRef(null)
+  // Declared here, not beside their effect below: the badge effect's
+  // dependency array references justVerified and dep arrays ARE
+  // evaluated during render, which would be a temporal dead zone.
+  const lastVerifiedSeen = useRef(null)
+  const [justVerified, setJustVerified] = useState(0)
   const [unfinished, setUnfinished] = useState([])
 
   const ALERT_ROLES = ['auditor', 'storekeeper', 'manager', 'gm', 'admin']
@@ -118,10 +123,38 @@ export default function App() {
   // only seeds the baseline; the alert starts from the second.
   useEffect(() => {
     if (!pendingLoaded) return
-    setAppBadge(pendingCount)
+    setAppBadge(pendingCount + justVerified)
     if (prevPending.current !== null && pendingCount > prevPending.current) pulseAlert()
     prevPending.current = pendingCount
-  }, [pendingCount, pendingLoaded])
+  }, [pendingCount, pendingLoaded, justVerified])
+
+  // "Your count was verified" — for the person who DID the count, so
+  // it runs for every role, unlike ALERT_ROLES which is about work
+  // waiting for a verifier. Tracks the newest verified_at rather than
+  // a count: verifying one while an older one leaves the 20-row window
+  // keeps the total identical, so a count would miss it.
+  useEffect(() => {
+    if (!boot?.staff) { lastVerifiedSeen.current = null; setJustVerified(0); return }
+    let cancelled = false
+    const check = async () => {
+      const { newest } = await loadMyVerifiedCounts(boot.staff.id, lastVerifiedSeen.current)
+      if (cancelled || !newest) return
+      // First pass only records where we are — otherwise signing in
+      // would announce every past verification, the same mistake the
+      // pending-count alert made.
+      if (lastVerifiedSeen.current !== null) {
+        pulseAlert()
+        setJustVerified(n => n + 1)
+      }
+      lastVerifiedSeen.current = newest
+    }
+    // Seed immediately, then poll on the same cadence as the other alert.
+    loadMyVerifiedCounts(boot.staff.id, null).then(({ newest }) => {
+      if (!cancelled) lastVerifiedSeen.current = newest || new Date().toISOString()
+    })
+    const id = setInterval(check, 60000)
+    return () => { cancelled = true; clearInterval(id) }
+  }, [boot?.staff?.id])
 
   // Browsers refuse to play audio until the user has interacted with
   // the page, so arm it on the first tap and then stop listening.
@@ -187,7 +220,7 @@ export default function App() {
       branches={boot.seesAllBranches ? branches : []}
       viewBranch={boot.viewBranchId} onBranch={setViewBranch}
       pendingCount={pendingCount}
-      alertEligible={ALERT_ROLES.includes(boot.staff.role)}>
+      alertEligible>
       {unfinished.length > 0 && tab !== 'count' && (
         <button onClick={() => setTab('count')}
           className="mx-5 mt-3 w-[calc(100%-2.5rem)] text-left rounded-xl border border-amber bg-amber/10 px-4 py-3">

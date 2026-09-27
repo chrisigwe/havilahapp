@@ -3284,3 +3284,39 @@ than alerting at its existing backlog.
 pushConfigured() returning false silently made a missing
 VITE_VAPID_PUBLIC_KEY indistinguishable from a broken build during
 setup. It now console.warns which condition failed.
+
+
+## Counters alerted when their count is verified (migration 234)
+
+Bar, front desk and every other role now get a tone, badge and push
+when a count THEY submitted is verified. This is the opposite
+direction to the existing alert: ALERT_ROLES tells verifiers "work is
+waiting for you" (status = 'submitted', per branch); this tells the
+counter "your work was checked" (status = 'verified', counted_by =
+that person). Different audience, different trigger, so it has its own
+high-water mark rather than reusing last_count.
+
+Keyed on the newest verified_at, NOT a row count. Verifying one count
+while an older one ages out of the window leaves the total identical,
+so a count-based check would miss it entirely.
+
+- 234 adds push_subscriptions.last_verified_seen, seeded to now() for
+  existing devices so switching this on does not announce every
+  historical verification at once.
+- App.jsx polls loadMyVerifiedCounts on the same 60s cadence. The first
+  pass only records the position — the same "seed silently, alert from
+  the second pass" rule the pending alert needed after it fired on load.
+- The Edge Function gained a second pass targeting staff_id. It
+  advances last_verified_seen even when a send fails for a transient
+  reason, or a persistent error would re-announce the same
+  verification every five minutes forever.
+- alertEligible is now true for every role, since anyone can receive
+  the verification push. It was previously limited to ALERT_ROLES,
+  which would have hidden the subscribe prompt from exactly the bar
+  and front-desk staff this feature is for.
+
+TDZ note: justVerified sits in the badge effect's dependency array,
+and dep arrays ARE evaluated during render, so it is declared with the
+other alert state near the top rather than beside its own effect.
+Declaring it below would have been the same crash class as the earlier
+"Cannot access before initialization".

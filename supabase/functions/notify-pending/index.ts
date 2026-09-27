@@ -43,7 +43,7 @@ Deno.serve(async () => {
 
   const { data: subs } = await supabase
     .from('push_subscriptions')
-    .select('endpoint, p256dh, auth, branch_id, last_count')
+    .select('endpoint, p256dh, auth, branch_id, staff_id, last_count, last_verified_seen')
     .is('failed_at', null)
 
   let sent = 0
@@ -87,7 +87,55 @@ Deno.serve(async () => {
       }
     }
   }
-  return new Response(JSON.stringify({ sent }), {
+  // ---- second pass: "your count was verified" ----
+  // Targets the person who DID the count, so it reaches bar and front
+  // desk too — they never receive the pass above, which is about work
+  // waiting for a verifier. Keyed on verified_at rather than a count,
+  // because verifying one count while another ages out leaves a total
+  // unchanged and the notification would be missed.
+  let verifiedSent = 0
+  for (const s of subs ?? []) {
+    const since = s.last_verified_seen ?? new Date(0).toISOString()
+    const { data: mine } = await supabase
+      .from('stock_counts')
+      .select('id, verified_at')
+      .eq('counted_by', s.staff_id)
+      .eq('status', 'verified')
+      .gt('verified_at', since)
+      .order('verified_at', { ascending: false })
+
+    if (!mine || mine.length === 0) continue
+    const newest = mine[0].verified_at
+
+    try {
+      await webpush.sendNotification(
+        { endpoint: s.endpoint, keys: { p256dh: s.p256dh, auth: s.auth } },
+        JSON.stringify({
+          count: mine.length,
+          title: 'Count verified',
+          body: mine.length === 1
+            ? 'Your stock count has been verified.'
+            : `${mine.length} of your stock counts have been verified.`,
+          url: '/',
+        }),
+      )
+      verifiedSent++
+    } catch (err) {
+      const code = (err as { statusCode?: number }).statusCode
+      if (code === 404 || code === 410) {
+        await supabase.from('push_subscriptions')
+          .update({ failed_at: new Date().toISOString() }).eq('endpoint', s.endpoint)
+        continue
+      }
+    }
+    // Advance the mark even if the send failed for a transient reason,
+    // or a persistent error would re-announce the same verification
+    // every five minutes forever.
+    await supabase.from('push_subscriptions')
+      .update({ last_verified_seen: newest }).eq('endpoint', s.endpoint)
+  }
+
+  return new Response(JSON.stringify({ sent, verifiedSent }), {
     headers: { 'Content-Type': 'application/json' },
   })
 })

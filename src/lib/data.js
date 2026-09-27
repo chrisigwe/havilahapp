@@ -1660,3 +1660,21 @@ export async function findDuplicateGuests(branchId) {
   if (error) throw error
   return data || []
 }
+
+// Counts THIS person submitted that have since been verified — the
+// mirror of loadPendingVerifications, which tells verifiers what is
+// waiting for them. Returns the newest verified_at so the caller can
+// tell "something new" from "same as last time"; a plain count cannot,
+// because verifying one count while an older one scrolls out of the
+// window leaves the total unchanged.
+export async function loadMyVerifiedCounts(staffId, sinceIso) {
+  let q = supabase.from('stock_counts')
+    .select('id, verified_at, location_id, count_date, verifier:verified_by(full_name)')
+    .eq('counted_by', staffId).eq('status', 'verified')
+    .order('verified_at', { ascending: false }).limit(20)
+  if (sinceIso) q = q.gt('verified_at', sinceIso)
+  const { data, error } = await q
+  if (error) return { rows: [], newest: null }
+  const rows = data || []
+  return { rows, newest: rows[0]?.verified_at || null }
+}
