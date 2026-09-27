@@ -1,4 +1,4 @@
-import { naira } from '../lib/format'
+import { naira, lagosTime } from '../lib/format'
 
 function printOnly(id) {
   document.querySelectorAll('.invoice-print').forEach(el => {
@@ -12,17 +12,25 @@ function printOnly(id) {
 // infrastructure Receipt.jsx already uses, not the reference app's
 // separate portal-based printing (which it needed only because of its
 // own drawer nesting; this app doesn't have that problem).
-export default function FolioStatement({ room, folio, orderLines, payments, branchName, departmentCredit, billedToYou, onClose }) {
+export default function FolioStatement({ room, folio, orderLines, freeLines, payments, branchName, departmentCredit, billedToYou, checkedInAt, onClose }) {
   const roomCharge = Number(folio?.room_charge ?? 0)
   const overstay = Number(folio?.overstay_charge ?? 0)
-  const orderTotal = orderLines.reduce((s, li) => s + Number(li.amount), 0)
+  // Money comes from v_stay_folio, never from re-summing the line
+  // list. The view filters to settlement = 'charged_to_room' AND
+  // order_type <> 'pr_damage'; summing raw lines here silently
+  // included complimentary/damage items and already-settled orders,
+  // so the invoice disagreed with the outstanding figure shown on the
+  // Folio, the Credit page and the Reception dashboard. Using the
+  // same view those all use makes them agree by construction.
+  const orderTotal = Number(folio?.orders_charge ?? 0)
+  const totalDue = Number(folio?.total_due ?? 0)
   const paid = Number(folio?.total_paid ?? 0)
   const departmentCreditTotal = (departmentCredit || []).reduce((s, d) => s + Number(d.balance), 0)
   const billedToYouTotal = (billedToYou || []).reduce((s, b) => s + Number(b.outstanding), 0)
   // Per explicit correction, linked department credit and other
   // guests' bills billed to this guest both belong in the headline
   // balance, not just shown separately below it.
-  const balance = roomCharge + overstay + orderTotal - paid + departmentCreditTotal + billedToYouTotal
+  const balance = Number(folio?.outstanding ?? 0) + departmentCreditTotal + billedToYouTotal
 
   return (
     <div className="fixed inset-0 z-[70] bg-bg flex flex-col">
@@ -59,7 +67,7 @@ export default function FolioStatement({ room, folio, orderLines, payments, bran
             <thead><tr><th>Date</th><th>Charges</th><th className="num">Amount</th></tr></thead>
             <tbody>
               <tr>
-                <td>{room.check_in_date}</td>
+                <td>{room.check_in_date}{checkedInAt ? ` ${lagosTime(checkedInAt)}` : ''}</td>
                 <td>{folio?.nights} night{folio?.nights > 1 ? 's' : ''} at {naira(folio?.daily_rate)}</td>
                 <td className="num tnum">{naira(roomCharge)}</td>
               </tr>
@@ -83,10 +91,28 @@ export default function FolioStatement({ room, folio, orderLines, payments, bran
               <tr>
                 <td></td>
                 <td className="num font-bold">Total due</td>
-                <td className="num tnum font-bold">{naira(roomCharge + overstay + orderTotal)}</td>
+                <td className="num tnum font-bold">{naira(totalDue)}</td>
               </tr>
             </tfoot>
           </table>
+
+          {!!freeLines?.length && (
+            <>
+              <h3 className="mt-6 mb-2 font-bold">Complimentary / not charged</h3>
+              <table className="invoice-table">
+                <thead><tr><th>Date</th><th>Item</th><th className="num">Value</th></tr></thead>
+                <tbody>
+                  {freeLines.map(li => (
+                    <tr key={li.id}>
+                      <td>{li.date}</td>
+                      <td>{li.description} <span className="text-dim">× {li.qty}</span></td>
+                      <td className="num tnum text-dim">{naira(li.amount)} — no charge</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </>
+          )}
 
           {payments.length > 0 && (
             <>

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { naira, lagosToday, cyclesFor, nightsBetween, friendlyStayError } from '../lib/format'
+import { naira, lagosToday, lagosTime, cyclesFor, nightsBetween, friendlyStayError } from '../lib/format'
 import { loadFolio, loadBranchStaySettings, recordStayPayment, checkOutStay,
          reopenStay, updateStayDetails, updateOverstayFee, deleteStay,
          updateOrderItem, deleteOrderItem, searchSimilarGuests } from '../lib/data'
@@ -85,7 +85,20 @@ export default function Folio({ boot, room, onClose, onChanged }) {
   const showCountdown = room.status === 'occupied' && totalNights > 1
 
   const orderLines = orders.flatMap(o => (o.order_items || [])
-    .map(li => ({ ...li, date: o.business_date, servedBy: o.served_by, orderId: o.id })))
+    .map(li => ({ ...li, date: o.business_date, servedBy: o.served_by,
+                  orderId: o.id, settlement: o.settlement })))
+  // Which lines the guest is actually BILLED for. This must match
+  // v_stay_folio.orders_charge exactly:
+  //   settlement = 'charged_to_room' AND order_type <> 'pr_damage'
+  // Without both filters the invoice totalled complimentary/damage
+  // items and orders already paid for at the department, so it came
+  // out higher than the outstanding figure the app showed everywhere
+  // else. Non-billable lines are still listed on screen (below), just
+  // never added to money.
+  const billableLines = orderLines.filter(
+    li => li.settlement === 'charged_to_room' && li.order_type !== 'pr_damage')
+  const freeLines = orderLines.filter(
+    li => li.settlement === 'charged_to_room' && li.order_type === 'pr_damage')
   const payParts = paymentParts(pay, pay.amount)
   const payAllocated = paymentAllocated(pay, pay.amount)
   const cycles = cyclesFor(branchSettings?.allowedCycles)
@@ -211,7 +224,9 @@ export default function Folio({ boot, room, onClose, onChanged }) {
         <button onClick={onClose} className="text-dim">Close</button>
         <h2 className="mt-3 text-2xl font-bold">{room.guest_name || 'Guest'}</h2>
         <p className="text-dim mt-1">
-          Room {room.room_number} · {room.check_in_date} to {folio?.scheduled_out || room.scheduled_out}
+          Room {room.room_number} · {room.check_in_date}
+          {stay?.checked_in_at ? ` at ${lagosTime(stay.checked_in_at)}` : ''}
+          {' to '}{folio?.scheduled_out || room.scheduled_out}
           {folio?.nights ? ` · ${folio.nights} night${folio.nights > 1 ? 's' : ''}` : ''}
         </p>
         {stay?.bill_to && (
@@ -393,6 +408,11 @@ export default function Folio({ boot, room, onClose, onChanged }) {
                             Staff
                           </span>
                         )}
+                        {li.settlement !== 'charged_to_room' && (
+                          <span className="shrink-0 text-xs font-bold text-leaf border border-leaf rounded-full px-2 py-0.5">
+                            Paid at dept
+                          </span>
+                        )}
                       </div>
                       <div className="text-dim text-sm">
                         {li.date} · {li.qty} × {naira(li.unit_price)}
@@ -552,7 +572,8 @@ export default function Folio({ boot, room, onClose, onChanged }) {
       )}
 
       {printing && (
-        <FolioStatement room={room} folio={folio} orderLines={orderLines} payments={payments}
+        <FolioStatement room={room} folio={folio} orderLines={billableLines}
+          freeLines={freeLines} payments={payments} checkedInAt={stay?.checked_in_at}
           departmentCredit={departmentCredit} billedToYou={billedToYou}
           branchName={boot.branchName} onClose={() => setPrinting(false)} />
       )}
