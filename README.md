@@ -3156,3 +3156,49 @@ devtools, the network tab, or simply pasting the link. Genuinely
 preventing download needs the bucket made private and the app serving
 time-limited signed URLs instead. Not done here because it changes how
 every photo is loaded and was not asked for; say the word.
+
+
+## 1. Yesterday's snapshot on Daily Sales
+
+Ported from SalesEntry with one deliberate difference: on Daily Sales
+the date is a CONTROL, so "yesterday" means the day before the date
+being BROWSED, not literal yesterday. Anchoring to lagosToday() would
+be wrong the moment someone looks back. lagosDaysAgo(n) gained an
+optional second argument for this and stays backward compatible.
+Still lazy — nothing fetched until the section is opened — and it
+respects the department chip, unlike the SalesEntry version which is
+always one department.
+
+## 2. Store managers see stay times
+
+SEES_STAY_TIMES now includes 'storekeeper' (Store Manager), covering
+all four display points at once since the rule lives in one helper.
+
+## 3. Guest records: duplicate merge (migration 229)
+
+PART 1 IS A BUG FIX, not a feature. merge_guests (173) reassigns only
+`stays`. Two columns pointing at guests were added afterwards and were
+never included:
+  customers.linked_guest_id (174) — department credit linkage
+  stays.bill_to_guest_id    (180) — bill-this-room-to-that-guest
+So merging left both pointing at the duplicate, which 173 then renames
+to "[merged into X] ...". The effect is silent and financial: the
+merged guest's department credit stops showing on the survivor's folio.
+ANY MERGE DONE BEFORE THIS MIGRATION SHOULD BE RE-CHECKED for those two.
+
+PART 2 adds find_duplicate_guests(branch) with three signals:
+  same phone      - strongest
+  initials match  - "GM" vs "General Manager", the prompting example.
+                    Plain string similarity CANNOT catch an acronym,
+                    which is why this is its own rule.
+  similar name    - close spelling after titles/punctuation stripped
+Nothing merges automatically: "Mr Okeke" and "Mrs Okeke" are a couple,
+not a duplicate, and a shared phone often means one family.
+
+UI sits on Corrections > Reception, gm/admin only, matching
+merge_guests' own is_supervisor() guard so the button never appears to
+someone the RPC would reject. Each pair shows both stay counts and
+lets either record be the survivor — the shorter name is not always
+the wrong one. Merging goes through a confirmation sheet spelling out
+what moves, and noting the old record is renamed rather than deleted
+so history stays auditable.

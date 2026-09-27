@@ -2,7 +2,8 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { naira, tierLabel, methodLabel, lagosDaysAgo, friendlyStayError } from '../lib/format'
 import { loadActivity, deleteEntry, updateEntry, loadAudit,
          loadSalePayments, updateSaleWithPayments,
-         loadLiveStays, updateGuestIdentity, correctStayDates } from '../lib/data'
+         loadLiveStays, updateGuestIdentity, correctStayDates,
+         findDuplicateGuests, mergeGuests } from '../lib/data'
 import { useToast } from '../components/Toast'
 
 export default function Corrections({ boot }) {
@@ -48,6 +49,11 @@ export default function Corrections({ boot }) {
   // GM Office is an internal placeholder stay, not a real guest —
   // front desk has no reason to correct it and shouldn't see it.
   const seesInternalRooms = ['gm', 'admin'].includes(staff.role)
+  // Merging is gm/admin only — matches merge_guests' own is_supervisor()
+  // guard, so the button never appears to someone the RPC would reject.
+  const canMerge = ['gm', 'admin'].includes(staff.role)
+  const [dupes, setDupes] = useState(null)
+  const [merging, setMerging] = useState(null)
   const [liveStays, setLiveStays] = useState(null)
   const [guestEdit, setGuestEdit] = useState(null)
 
@@ -171,6 +177,23 @@ export default function Corrections({ boot }) {
 
   useEffect(() => { if (view === 'guests') refreshGuests() }, [view, refreshGuests])
 
+  const refreshDupes = useCallback(() => {
+    if (!canMerge) return
+    findDuplicateGuests(staff.branch_id).then(setDupes).catch(() => setDupes([]))
+  }, [canMerge, staff.branch_id])
+  useEffect(() => { if (view === 'guests') refreshDupes() }, [view, refreshDupes])
+
+  async function doMerge() {
+    setBusy(true)
+    try {
+      await mergeGuests(merging.survivorId, [merging.dupId])
+      toast('Guest records merged', 'success')
+      setMerging(null)
+      refreshDupes(); refreshGuests()
+    } catch (e) { toast('Not merged: ' + e.message, 'error') }
+    setBusy(false)
+  }
+
   const visibleStays = (liveStays || [])
     .filter(s2 => seesInternalRooms || !s2.rooms?.is_internal)
 
@@ -290,6 +313,53 @@ export default function Corrections({ boot }) {
               </li>
             ))}
           </ul>
+          {canMerge && !!dupes?.length && (
+            <div className="mt-4 rounded-2xl border border-clay bg-surface p-4">
+              <p className="font-semibold">Possible duplicate guests</p>
+              <p className="text-dim text-xs mt-1 mb-3">
+                Same person entered twice. Check each one — a shared phone can
+                also just mean two people in one family. Merging moves every
+                stay, room charge and department balance onto the record you keep.
+              </p>
+              {dupes.map((d, i) => (
+                <div key={i} className="py-2 border-t border-line/60 first:border-0">
+                  <div className="text-xs text-dim mb-1">{d.reason}</div>
+                  <div className="flex items-center gap-2 text-sm">
+                    <div className="flex-1 min-w-0">
+                      <div className="truncate">{d.name_a}
+                        <span className="text-dim"> · {d.stays_a} stay{d.stays_a === 1 ? '' : 's'}</span>
+                      </div>
+                      <div className="truncate">{d.name_b}
+                        <span className="text-dim"> · {d.stays_b} stay{d.stays_b === 1 ? '' : 's'}</span>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="flex gap-2 mt-2">
+                    {/* Default to keeping whichever has more history, but
+                        let the user pick either — the shorter name is not
+                        always the wrong one. */}
+                    <button
+                      onClick={() => setMerging({
+                        survivorId: d.guest_a, survivorName: d.name_a,
+                        dupId: d.guest_b, dupName: d.name_b })}
+                      className="flex-1 h-9 rounded-lg border border-line text-dim text-xs px-2 truncate">
+                      Keep "{d.name_a}"
+                    </button>
+                    <button
+                      onClick={() => setMerging({
+                        survivorId: d.guest_b, survivorName: d.name_b,
+                        dupId: d.guest_a, dupName: d.name_a })}
+                      className="flex-1 h-9 rounded-lg border border-line text-dim text-xs px-2 truncate">
+                      Keep "{d.name_b}"
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+          {canMerge && dupes?.length === 0 && (
+            <p className="text-dim text-sm mt-4">No likely duplicate guests found.</p>
+          )}
         </>
       ) : view === 'history' ? (
         <ul className="divide-y divide-line/60">
@@ -406,6 +476,36 @@ export default function Corrections({ boot }) {
           <button onClick={doSave} disabled={busy}
             className="mt-6 w-full h-14 rounded-2xl bg-amber text-bg text-lg font-bold disabled:opacity-40">
             {busy ? 'Saving…' : 'Save changes'}
+          </button>
+        </Sheet>
+      )}
+
+      {merging && (
+        <Sheet onClose={() => setMerging(null)}>
+          <h3 className="text-xl font-bold">Merge guest records</h3>
+          <div className="mt-4 rounded-2xl border border-line bg-surface p-4">
+            <div className="text-dim text-sm">Keeping</div>
+            <div className="font-semibold">{merging.survivorName}</div>
+            <div className="text-dim text-sm mt-3">Merging in and closing</div>
+            <div className="font-semibold text-clay">{merging.dupName}</div>
+          </div>
+          <p className="text-dim text-sm mt-4">
+            Every stay, bill-to reference and department balance belonging to
+            "{merging.dupName}" moves onto "{merging.survivorName}". The old
+            record is kept but renamed, so the history is auditable rather than
+            erased — it is not deleted.
+          </p>
+          <p className="text-clay text-sm mt-3">
+            Make sure these really are the same person. Undoing a merge means
+            editing records by hand.
+          </p>
+          <button onClick={doMerge} disabled={busy}
+            className="mt-5 h-12 w-full rounded-xl bg-clay text-bg font-bold disabled:opacity-40">
+            {busy ? 'Merging…' : `Merge into ${merging.survivorName}`}
+          </button>
+          <button onClick={() => setMerging(null)}
+            className="mt-2 h-12 w-full rounded-xl border border-line text-dim font-semibold">
+            Cancel
           </button>
         </Sheet>
       )}

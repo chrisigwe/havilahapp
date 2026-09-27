@@ -1650,3 +1650,13 @@ export async function correctStayDates({ stayId, checkIn, scheduledOut }) {
     .update({ check_in_date: checkIn, scheduled_out: scheduledOut }).eq('id', stayId)
   if (error) throw error
 }
+
+// Duplicate guest candidates — see migration 229. Returns PAIRS with a
+// reason ('same phone' / 'initials match' / 'similar name'); nothing
+// is merged automatically, because a shared phone can legitimately
+// mean two people in one family.
+export async function findDuplicateGuests(branchId) {
+  const { data, error } = await supabase.rpc('find_duplicate_guests', { p_branch: branchId })
+  if (error) throw error
+  return data || []
+}

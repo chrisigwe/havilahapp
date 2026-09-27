@@ -11,8 +11,12 @@ export const methodLabel = { pos: 'POS', cash: 'Cash', credit: 'Credit', transfe
 // N days before the Lagos business date — matches lagos_today() - N in
 // the database exactly, so app-side windows never disagree with what
 // RLS actually permits.
-export const lagosDaysAgo = (n) => {
-  const d = new Date(lagosToday() + 'T12:00:00')
+// n days before `from` (default today). The optional anchor exists for
+// pages where the date is a control rather than always "now" — Daily
+// Sales anchors its prior-day snapshot to the date being browsed.
+// Midday avoids any DST/offset rollover when stepping the date.
+export const lagosDaysAgo = (n, from) => {
+  const d = new Date((from || lagosToday()) + 'T12:00:00')
   d.setDate(d.getDate() - n)
   return d.toISOString().slice(0, 10)
 }
@@ -104,7 +108,7 @@ export const lagosTime = (ts) => !ts ? '' : new Date(ts).toLocaleTimeString('en-
 })
 
 // Who may see arrival/departure clock times on guest lists. Front
-// desk and bar staff see the DATES as before; only these four roles
-// see the stamped time, per explicit instruction.
-export const SEES_STAY_TIMES = ['manager', 'gm', 'admin', 'auditor']
+// desk and bar staff see the DATES as before; only these roles see
+// the stamped time. 'storekeeper' is the Store Manager.
+export const SEES_STAY_TIMES = ['storekeeper', 'manager', 'gm', 'admin', 'auditor']
 export const seesStayTimes = (role) => SEES_STAY_TIMES.includes(role)

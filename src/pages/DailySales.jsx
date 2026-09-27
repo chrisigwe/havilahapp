@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { naira, lagosToday, tierLabel, methodLabel, whoRecorded, paymentSummary } from '../lib/format'
+import { naira, lagosToday, lagosDaysAgo, tierLabel, methodLabel, whoRecorded, paymentSummary } from '../lib/format'
 import { loadDailyFinancials, loadToday, loadReceptionActivity, loadReceptionDashboard,
          loadRoomCharges, loadRoomsSoldInMonth } from '../lib/data'
 import { useToast } from '../components/Toast'
@@ -28,6 +28,9 @@ export default function DailySales({ boot }) {
   const [receptionDashboard, setReceptionDashboard] = useState(null)
   const [roomCharges, setRoomCharges] = useState([])
   const [roomsSold, setRoomsSold] = useState(null)
+  const [showYesterday, setShowYesterday] = useState(false)
+  const [yesterdaySummary, setYesterdaySummary] = useState(null)
+  const [yesterdayActivity, setYesterdayActivity] = useState(null)
 
   const itemById = useMemo(() => Object.fromEntries(items.map(i => [i.id, i])), [items])
   const locById = useMemo(() => Object.fromEntries(salesPoints.map(l => [l.id, l])), [salesPoints])
@@ -48,6 +51,20 @@ export default function DailySales({ boot }) {
   useEffect(() => {
     setLocId('all')
   }, [staff.branch_id])
+
+  // "Yesterday" here means the day before the date being BROWSED, not
+  // always literal yesterday — on this page the date is a control, so
+  // anchoring to lagosToday() would be wrong the moment someone looks
+  // back. Lazy: nothing is fetched until the section is opened.
+  const priorDay = lagosDaysAgo(1, date)
+  useEffect(() => {
+    if (!isReception || !showYesterday) return
+    setYesterdaySummary(null); setYesterdayActivity(null)
+    loadDailyFinancials(staff.branch_id, priorDay, locId === 'all' ? null : locId)
+      .then(setYesterdaySummary).catch(() => {})
+    loadReceptionActivity(staff.branch_id, priorDay)
+      .then(setYesterdayActivity).catch(() => {})
+  }, [isReception, showYesterday, staff.branch_id, priorDay, locId])
   const currentDept = salesPoints.find(l => l.id === locId)
   const roomChargeCategory = isReception ? null
     : isRestaurant ? 'food'
@@ -223,6 +240,48 @@ export default function DailySales({ boot }) {
               balances, not a snapshot of {date}.
             </p>
           )}
+
+          <div className="mt-3">
+            <button onClick={() => setShowYesterday(x => !x)}
+              className="w-full h-11 rounded-xl border border-line text-dim font-semibold text-sm">
+              {showYesterday ? 'Hide' : 'Show'} the day before ({priorDay})
+            </button>
+            {showYesterday && (
+              <div className="mt-2 rounded-2xl border border-line bg-surface p-4">
+                {yesterdaySummary ? (
+                  <div className="grid grid-cols-3 gap-3 pb-3 mb-3 border-b border-line">
+                    <div>
+                      <div className="text-dim text-sm">POS</div>
+                      <div className="tnum font-bold">{naira((yesterdaySummary.byMethod || {}).pos || 0)}</div>
+                    </div>
+                    <div>
+                      <div className="text-dim text-sm">Cash</div>
+                      <div className="tnum font-bold">{naira((yesterdaySummary.byMethod || {}).cash || 0)}</div>
+                    </div>
+                    <div>
+                      <div className="text-dim text-sm">Credit raised</div>
+                      <div className="tnum font-bold text-clay">{naira(yesterdaySummary.creditRaised)}</div>
+                    </div>
+                  </div>
+                ) : <p className="text-dim text-sm">Loading…</p>}
+
+                <p className="text-dim text-sm mb-1">Payments collected</p>
+                {(yesterdayActivity || []).map(p2 => (
+                  <div key={p2.id} className="flex justify-between text-sm py-1 border-b border-line/60 last:border-0">
+                    <span className="truncate">
+                      {p2.stays?.guests?.full_name || 'Guest'} · Room {p2.stays?.rooms?.room_number || '—'}
+                      <span className="text-dim"> · {methodLabel[p2.method] || p2.method}</span>
+                    </span>
+                    <span className="tnum font-semibold">{naira(p2.amount)}</span>
+                  </div>
+                ))}
+                {yesterdayActivity && !yesterdayActivity.length && (
+                  <p className="text-dim text-sm">No payments that day.</p>
+                )}
+                {!yesterdayActivity && <p className="text-dim text-sm">Loading…</p>}
+              </div>
+            )}
+          </div>
 
           <div className="flex items-baseline justify-between mt-4">
             <h2 className="text-dim">
