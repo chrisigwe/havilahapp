@@ -176,7 +176,8 @@ export default function App() {
     <Shell staff={boot.staff} tab={tab} onTab={setTab}
       branches={boot.seesAllBranches ? branches : []}
       viewBranch={boot.viewBranchId} onBranch={setViewBranch}
-      pendingCount={pendingCount}>
+      pendingCount={pendingCount}
+      alertEligible={ALERT_ROLES.includes(boot.staff.role)}>
       {unfinished.length > 0 && tab !== 'count' && (
         <button onClick={() => setTab('count')}
           className="mx-5 mt-3 w-[calc(100%-2.5rem)] text-left rounded-xl border border-amber bg-amber/10 px-4 py-3">

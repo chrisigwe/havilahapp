@@ -52,3 +52,50 @@ self.addEventListener('fetch', (e) => {
     }
   })())
 })
+
+// ---------- Web Push ----------
+// These fire when the app is CLOSED or backgrounded. The in-page
+// pulseAlert/setAppBadge in App.jsx only run while the app is open;
+// a service worker is the only way a phone can alert on its home
+// screen icon without the app running.
+self.addEventListener('push', (e) => {
+  let payload = {}
+  try { payload = e.data ? e.data.json() : {} } catch { payload = {} }
+  const count = Number(payload.count || 0)
+  const title = payload.title || 'Havilah App'
+  const body = payload.body || 'You have items needing attention.'
+
+  e.waitUntil((async () => {
+    // Badge the home screen icon. Supported on installed PWAs
+    // (Android/Chrome, iOS 16.4+); harmless no-op elsewhere.
+    try {
+      if (count > 0 && self.navigator.setAppBadge) await self.navigator.setAppBadge(count)
+      else if (self.navigator.clearAppBadge) await self.navigator.clearAppBadge()
+    } catch { /* unsupported */ }
+
+    await self.registration.showNotification(title, {
+      body,
+      icon: '/icon-192.png',
+      badge: '/mask-icon.svg',
+      // Same tag so repeated pushes REPLACE rather than stack up —
+      // this is a running count, not a feed of separate events.
+      tag: 'havilah-pending',
+      renotify: true,
+      vibrate: [80, 60, 80],
+      data: { url: payload.url || '/' },
+    })
+  })())
+})
+
+self.addEventListener('notificationclick', (e) => {
+  e.notification.close()
+  const url = (e.notification.data && e.notification.data.url) || '/'
+  e.waitUntil((async () => {
+    const all = await self.clients.matchAll({ type: 'window', includeUncontrolled: true })
+    // Focus an already-open window instead of opening a second copy.
+    for (const c of all) {
+      if ('focus' in c) { await c.focus(); if ('navigate' in c) await c.navigate(url); return }
+    }
+    if (self.clients.openWindow) await self.clients.openWindow(url)
+  })())
+})

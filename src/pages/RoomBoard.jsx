@@ -39,6 +39,11 @@ export default function RoomBoard({ boot }) {
   // Arrival/departure clock times are for oversight only — front
   // desk and bar keep seeing the dates exactly as before.
   const showTimes = seesStayTimes(staff.role)
+  // Auditors were added to this page so they can SEE arrival times;
+  // they must not gain the ability to create bookings with it. Phrased
+  // as "not auditor" rather than an allow-list so no existing role
+  // quietly loses booking rights it already had.
+  const canBook = staff.role !== 'auditor'
   const [checkingIn, setCheckingIn] = useState(false)
   const [openStay, setOpenStay] = useState(null)   // the room whose folio is open
   const [reopenSearching, setReopenSearching] = useState(false)
@@ -100,10 +105,12 @@ export default function RoomBoard({ boot }) {
         </div>
       )}
 
-      <button onClick={() => setCheckingIn(true)}
-        className="w-full h-14 rounded-2xl border-2 border-amber text-amber text-lg font-bold mb-3">
-        + New booking
-      </button>
+      {canBook && (
+        <button onClick={() => setCheckingIn(true)}
+          className="w-full h-14 rounded-2xl border-2 border-amber text-amber text-lg font-bold mb-3">
+          + New booking
+        </button>
+      )}
 
       <button onClick={() => setReopenSearching(true)}
         className="w-full h-12 rounded-xl border border-line text-ink font-semibold mb-4">

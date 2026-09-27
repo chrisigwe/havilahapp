@@ -3202,3 +3202,49 @@ lets either record be the survivor — the shorter name is not always
 the wrong one. Merging goes through a confirmation sheet spelling out
 what moves, and noting the old record is renamed rather than deleted
 so history stays auditable.
+
+
+## Auditors and stay times
+
+'auditor' was ALREADY in SEES_STAY_TIMES — the block was elsewhere:
+auditors were not in the Rooms menu at all (More.jsx), so they could
+never open the page the arrival times are displayed on. Added them.
+
+Also gated "+ New booking", which was ungated — any role that could
+open the room board could start a check-in. Phrased as
+`staff.role !== 'auditor'` rather than an allow-list so no existing
+role quietly loses booking rights it already had.
+
+## Notifications while the app is closed (migration 230)
+
+The existing tone/badge live in App.jsx's polling effect, which only
+runs while the app is OPEN and foregrounded. A phone cannot alert on
+its home screen icon from there — that requires Web Push delivered to
+the service worker. Three parts:
+
+1. public/sw.js gains 'push' and 'notificationclick' handlers. The push
+   handler sets the app badge AND shows a notification, using a fixed
+   tag so repeated pushes REPLACE rather than stack — it is a running
+   count, not a feed. notificationclick focuses an existing window
+   instead of opening a second copy.
+2. src/lib/push.js + NotificationSetup.jsx: a prompt shown only to
+   alert-eligible roles, and only until they decide. Deliberately not
+   an automatic permission request on load — browsers permanently
+   block a site that asks and is dismissed, so the ask must follow a
+   tap the person chose to make. Hidden entirely when permission is
+   already 'denied', since nagging cannot help at that point.
+3. Migration 230 stores subscriptions, one row per DEVICE keyed on
+   endpoint, RLS-scoped so a person manages only their own.
+
+STILL REQUIRED, and cannot be done from here:
+  a. npx web-push generate-vapid-keys
+  b. Put the PUBLIC key in Netlify env as VITE_VAPID_PUBLIC_KEY and
+     redeploy. Until this exists the prompt stays hidden by design
+     (pushConfigured() is false), because subscribing without a key
+     throws.
+  c. Deploy supabase/functions/notify-pending (included) and set
+     VAPID_PUBLIC_KEY / VAPID_PRIVATE_KEY / VAPID_SUBJECT as secrets.
+  d. Schedule it with pg_cron — the SQL is in the function's header.
+
+iOS note: Web Push works on iOS 16.4+ ONLY for a PWA added to the home
+screen, not in a Safari tab.

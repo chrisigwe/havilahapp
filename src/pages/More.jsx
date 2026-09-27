@@ -4,7 +4,7 @@ const ITEMS = [
   { key: 'dailysales', label: 'Daily sales', hint: 'Any past day, by department',
     roles: ['auditor', 'storekeeper', 'manager', 'gm', 'admin'] },
   { key: 'roomboard', label: 'Rooms', hint: 'Who is checked in, who is due out, what is owed',
-    roles: ['front_desk', 'storekeeper', 'manager', 'gm', 'admin'] },
+    roles: ['front_desk', 'storekeeper', 'manager', 'gm', 'admin', 'auditor'] },
   { key: 'credit',  label: 'Credit',  hint: 'Who owes what, and record repayments',
     roles: ['bar', 'front_desk', 'storekeeper', 'manager', 'gm', 'admin', 'auditor'] },
   { key: 'recovery', label: 'Recovered debt', hint: 'Payments collected, who paid and who recovered it',

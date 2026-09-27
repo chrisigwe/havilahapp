@@ -6,6 +6,7 @@ import UpdateBanner from './UpdateBanner'
 import StaffOfMonthBanner from './StaffOfMonthBanner'
 import NavIcon from './NavIcon'
 import ReadOnlyBanner from './ReadOnlyBanner'
+import NotificationSetup from './NotificationSetup'
 
 const STOCK_ROLES = ['storekeeper', 'manager', 'gm', 'admin']
 // GM/admin/manager oversee everything rather than doing one
@@ -20,7 +21,8 @@ const MORE = ['dailysales', 'roomboard', 'credit', 'recovery', 'count', 'catalog
               'staysettings', 'sales', 'store', 'stock']
 
 export default function Shell({ staff, tab, onTab, children,
-                                branches = [], viewBranch, onBranch, pendingCount = 0 }) {
+                                branches = [], viewBranch, onBranch, pendingCount = 0,
+                                alertEligible = false }) {
   const [confirmingSignOut, setConfirmingSignOut] = useState(false)
   const auditorOnly = staff.role === 'auditor'
   let tabs
@@ -69,6 +71,7 @@ export default function Shell({ staff, tab, onTab, children,
       <UpdateBanner />
       <StaffOfMonthBanner branchId={staff.branch_id} />
       <ReadOnlyBanner readOnly={staff.is_read_only} />
+      <NotificationSetup staff={staff} alertEligible={alertEligible} />
       {children}
       {confirmingSignOut && (
         <div className="fixed inset-0 z-[70] bg-bg flex flex-col justify-center px-6">
