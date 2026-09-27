@@ -3137,3 +3137,22 @@ App now reads the flag in four places:
   it, which is what tapping "Minimart" from Reception plainly means.
   No chip renders as selected while on Reception, since none is
   filtering anything yet.
+
+
+## Staff of the Month photo: no long-press save/share
+
+The banner photo is now a CSS background on a div instead of an <img>.
+Long-press "Save image"/"Share" on iOS and Android targets image
+ELEMENTS, so a background gives that menu nothing to act on. Also set:
+-webkit-touch-callout: none (the iOS callout), user-select: none,
+draggable=false and onContextMenu preventDefault (desktop right-click
+and drag-to-desktop). role="img" + aria-label keep it announced to
+screen readers, which the <img> alt was doing before.
+
+IMPORTANT LIMIT: this stops casual saving from the banner, not a
+determined person. The staff-photos bucket is PUBLIC (migration 221),
+so the photo URL resolves for anyone who has it — via browser
+devtools, the network tab, or simply pasting the link. Genuinely
+preventing download needs the bucket made private and the app serving
+time-limited signed URLs instead. Not done here because it changes how
+every photo is loaded and was not asked for; say the word.

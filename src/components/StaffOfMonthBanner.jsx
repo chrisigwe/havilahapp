@@ -21,7 +21,27 @@ export default function StaffOfMonthBanner({ branchId }) {
   return (
     <div className="px-5 py-3 bg-amber/15 border-b border-amber flex items-center gap-3">
       {entry.photo_url ? (
-        <img src={entry.photo_url} alt="" className="w-12 h-12 rounded-full object-cover border-2 border-amber shrink-0" />
+        // Rendered as a CSS background rather than an <img> on purpose.
+        // Long-press "Save image" / "Share" on iOS and Android targets
+        // image ELEMENTS; a div with a background has nothing for that
+        // menu to act on. The callout/select/drag properties below
+        // close the remaining routes (iOS callout, desktop right-click
+        // and drag-to-desktop).
+        <div
+          role="img"
+          aria-label={`${entry.staff_name}, Staff of the Month`}
+          onContextMenu={e => e.preventDefault()}
+          draggable={false}
+          style={{
+            backgroundImage: `url("${entry.photo_url}")`,
+            backgroundSize: 'cover',
+            backgroundPosition: 'center',
+            WebkitTouchCallout: 'none',
+            WebkitUserSelect: 'none',
+            userSelect: 'none',
+          }}
+          className="w-12 h-12 rounded-full border-2 border-amber shrink-0"
+        />
       ) : (
         <div className="w-12 h-12 rounded-full bg-amber/30 flex items-center justify-center text-xl shrink-0">🏆</div>
       )}
