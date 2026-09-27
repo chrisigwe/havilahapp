@@ -27,10 +27,12 @@ export default function Corrections({ boot }) {
   const deptChips = isEditor ? allLocations : (locations || [])
   const [deptFilter, setDeptFilter] = useState(
     isEditor ? 'all' : (staff.default_location_id || deptChips[0]?.id || 'all'))
-  // Reception tab: correcting a guest's name or stay dates. Open to
-  // front desk (who take the booking and so make the typos) and to
-  // editors overseeing them; bar/storekeeper have no business here.
-  const seesGuests = isEditor || staff.role === 'front_desk'
+  // Reception tab: correcting a guest's name or stay dates. Reception
+  // staff (who take the booking and so make the typos) plus gm/admin.
+  // Deliberately NARROWER than isEditor — storekeeper is an editor for
+  // stock purposes but has no business in guest identity records, and
+  // auditor is read-only oversight.
+  const seesGuests = ['front_desk', 'gm', 'admin'].includes(staff.role)
   const [liveStays, setLiveStays] = useState(null)
   const [guestEdit, setGuestEdit] = useState(null)
 
@@ -167,9 +169,16 @@ export default function Corrections({ boot }) {
 
   return (
     <div className="px-5">
-      {canEdit && !ownOnly && <div className="flex gap-2 py-2">
-        {[['entries', 'Entries'], ...(seesGuests ? [['guests', 'Reception']] : []),
-          ['history', 'Change history']].map(([k, label]) => (
+      {/* The bar used to appear only for full editors. Reception staff
+          are ownOnly, so without the seesGuests clause below the very
+          people this tab exists for could never reach it. Change
+          history stays gated on !ownOnly exactly as before — adding
+          the Reception tab must not quietly hand front desk a view
+          they were never meant to have. */}
+      {canEdit && (!ownOnly || seesGuests) && <div className="flex gap-2 py-2">
+        {[['entries', 'Entries'],
+          ...(seesGuests ? [['guests', 'Reception']] : []),
+          ...(!ownOnly ? [['history', 'Change history']] : [])].map(([k, label]) => (
           <button key={k} onClick={() => setView(k)}
             className={`flex-1 h-12 rounded-xl border font-bold ${view === k
               ? 'bg-amber text-bg border-amber' : 'border-line text-dim'}`}>
@@ -207,7 +216,7 @@ export default function Corrections({ boot }) {
         </div>
       )}
 
-      {view === 'guests' ? (
+      {view === 'guests' && seesGuests ? (
         <>
           <p className="text-dim text-sm py-2">
             Everyone currently checked in or booked in. Fixing a name here

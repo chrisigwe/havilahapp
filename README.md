@@ -3027,3 +3027,20 @@ the join drops it), if sales point at a different stock_items row than
 receipts did (duplicate item records), if the sale's location isn't
 MainBar, or if the trigger is disabled. The six queries separate those
 cases; the fix depends on which one it is.
+
+
+## Corrections Reception tab: narrowed to reception staff + admins
+
+seesGuests is now ['front_desk', 'gm', 'admin'] rather than
+isEditor || front_desk. Storekeeper is an editor for stock purposes
+but has no business in guest identity records, and auditor is
+read-only oversight, so both are out. Manager is NOT included — say so
+if it should be.
+
+Also fixed a real bug in the tab as first built: the tab bar rendered
+only under `canEdit && !ownOnly`, and reception staff are ownOnly, so
+the group this tab exists for could never have reached it. The bar now
+also shows when seesGuests, while Change history stays gated on
+!ownOnly exactly as before — adding this tab must not quietly hand
+front desk a view they were never meant to have. The guests view
+itself is also guarded on seesGuests, not just the tab button.
