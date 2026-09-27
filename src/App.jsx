@@ -9,6 +9,7 @@ import Corrections from './pages/Corrections'
 import DailySales from './pages/DailySales'
 import RoomBoard from './pages/RoomBoard'
 import StaySettings from './pages/StaySettings'
+import { pulseAlert, setAppBadge, unlockAudio } from './lib/alert'
 import Catalog from './pages/Catalog'
 import Variances from './pages/Variances'
 import Recovery from './pages/Recovery'
@@ -99,6 +100,26 @@ export default function App() {
     const id = setInterval(check, 60000)
     return () => clearInterval(id)
   }, [boot?.staff?.branch_id, boot?.staff?.role])
+
+  // Tone + icon badge follow pendingCount. The tone fires only when
+  // the count RISES — re-alerting on every 60s poll for something
+  // already seen would train people to ignore it. prevPending starts
+  // at null so the first poll after sign-in never sounds for a
+  // backlog that was already there before the app opened.
+  const prevPending = useRef(null)
+  useEffect(() => {
+    setAppBadge(pendingCount)
+    if (prevPending.current !== null && pendingCount > prevPending.current) pulseAlert()
+    prevPending.current = pendingCount
+  }, [pendingCount])
+
+  // Browsers refuse to play audio until the user has interacted with
+  // the page, so arm it on the first tap and then stop listening.
+  useEffect(() => {
+    const arm = () => unlockAudio()
+    window.addEventListener('pointerdown', arm, { once: true })
+    return () => window.removeEventListener('pointerdown', arm)
+  }, [])
 
   // Unfinished (draft) stock counts — the "incomplete task" nudge.
   // Runs for anyone who can start a count (RLS then scopes what each

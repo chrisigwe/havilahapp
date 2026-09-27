@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { naira, tierLabel, methodLabel, lagosDaysAgo } from '../lib/format'
+import { naira, tierLabel, methodLabel, lagosDaysAgo, friendlyStayError } from '../lib/format'
 import { loadActivity, deleteEntry, updateEntry, loadAudit,
-         loadSalePayments, updateSaleWithPayments } from '../lib/data'
+         loadSalePayments, updateSaleWithPayments,
+         loadLiveStays, updateGuestIdentity, correctStayDates } from '../lib/data'
 import { useToast } from '../components/Toast'
 
 export default function Corrections({ boot }) {
@@ -26,6 +27,12 @@ export default function Corrections({ boot }) {
   const deptChips = isEditor ? allLocations : (locations || [])
   const [deptFilter, setDeptFilter] = useState(
     isEditor ? 'all' : (staff.default_location_id || deptChips[0]?.id || 'all'))
+  // Reception tab: correcting a guest's name or stay dates. Open to
+  // front desk (who take the booking and so make the typos) and to
+  // editors overseeing them; bar/storekeeper have no business here.
+  const seesGuests = isEditor || staff.role === 'front_desk'
+  const [liveStays, setLiveStays] = useState(null)
+  const [guestEdit, setGuestEdit] = useState(null)
 
   const itemById = useMemo(() => Object.fromEntries(items.map(i => [i.id, i])), [items])
   const locById  = useMemo(() => Object.fromEntries(allLocations.map(l => [l.id, l])), [allLocations])
@@ -130,12 +137,39 @@ export default function Corrections({ boot }) {
     setBusy(false)
   }
 
+  const refreshGuests = useCallback(() => {
+    if (!seesGuests) return
+    loadLiveStays(staff.branch_id).then(setLiveStays).catch(e => toast(e.message, 'error'))
+  }, [seesGuests, staff.branch_id, toast])
+
+  useEffect(() => { if (view === 'guests') refreshGuests() }, [view, refreshGuests])
+
+  async function saveGuestEdit() {
+    setBusy(true)
+    try {
+      const g = guestEdit
+      if (g.fullName.trim() !== g.origName) {
+        await updateGuestIdentity(g.guestId, { fullName: g.fullName.trim(), phone: g.phone })
+      } else if ((g.phone || '') !== (g.origPhone || '')) {
+        await updateGuestIdentity(g.guestId, { fullName: g.fullName.trim(), phone: g.phone })
+      }
+      if (g.checkIn !== g.origCheckIn || g.scheduledOut !== g.origScheduledOut) {
+        await correctStayDates({ stayId: g.stayId, checkIn: g.checkIn, scheduledOut: g.scheduledOut })
+      }
+      toast('Correction saved', 'success')
+      setGuestEdit(null)
+      refreshGuests()
+    } catch (e) { toast(friendlyStayError(e) || e.message, 'error') }
+    setBusy(false)
+  }
+
   if (canEdit && !rows) return <p className="px-5 text-dim">Loading…</p>
 
   return (
     <div className="px-5">
       {canEdit && !ownOnly && <div className="flex gap-2 py-2">
-        {[['entries', 'Entries'], ['history', 'Change history']].map(([k, label]) => (
+        {[['entries', 'Entries'], ...(seesGuests ? [['guests', 'Reception']] : []),
+          ['history', 'Change history']].map(([k, label]) => (
           <button key={k} onClick={() => setView(k)}
             className={`flex-1 h-12 rounded-xl border font-bold ${view === k
               ? 'bg-amber text-bg border-amber' : 'border-line text-dim'}`}>
@@ -173,7 +207,45 @@ export default function Corrections({ boot }) {
         </div>
       )}
 
-      {view === 'history' ? (
+      {view === 'guests' ? (
+        <>
+          <p className="text-dim text-sm py-2">
+            Everyone currently checked in or booked in. Fixing a name here
+            updates that guest everywhere, including past stays.
+          </p>
+          {liveStays === null && <p className="text-dim">Loading…</p>}
+          {liveStays?.length === 0 && (
+            <p className="py-8 text-center text-dim">No live guests right now.</p>
+          )}
+          <ul className="divide-y divide-line/60 rounded-2xl border border-line bg-surface px-4">
+            {(liveStays || []).map(s2 => (
+              <li key={s2.id} className="py-3 flex items-center gap-3">
+                <div className="flex-1 min-w-0">
+                  <div className="truncate font-semibold">
+                    {s2.guests?.full_name || 'Guest'}
+                  </div>
+                  <div className="text-dim text-sm tnum">
+                    Room {s2.rooms?.room_number || '—'} · {s2.check_in_date} to {s2.scheduled_out}
+                    {s2.status === 'reserved' && ' · reserved'}
+                  </div>
+                </div>
+                <button
+                  onClick={() => setGuestEdit({
+                    stayId: s2.id, guestId: s2.guests?.id,
+                    fullName: s2.guests?.full_name || '', origName: s2.guests?.full_name || '',
+                    phone: s2.guests?.phone || '', origPhone: s2.guests?.phone || '',
+                    checkIn: s2.check_in_date, origCheckIn: s2.check_in_date,
+                    scheduledOut: s2.scheduled_out, origScheduledOut: s2.scheduled_out,
+                    room: s2.rooms?.room_number,
+                  })}
+                  className="shrink-0 h-10 px-4 rounded-xl border border-amber text-amber font-semibold text-sm">
+                  Edit
+                </button>
+              </li>
+            ))}
+          </ul>
+        </>
+      ) : view === 'history' ? (
         <ul className="divide-y divide-line/60">
           {filteredAudit.map(a => (
             <li key={a.id} className="py-3">
@@ -288,6 +360,48 @@ export default function Corrections({ boot }) {
           <button onClick={doSave} disabled={busy}
             className="mt-6 w-full h-14 rounded-2xl bg-amber text-bg text-lg font-bold disabled:opacity-40">
             {busy ? 'Saving…' : 'Save changes'}
+          </button>
+        </Sheet>
+      )}
+
+      {guestEdit && (
+        <Sheet onClose={() => setGuestEdit(null)}>
+          <h3 className="text-xl font-bold">Correct guest details</h3>
+          <p className="text-dim text-sm mt-1 mb-4">
+            Room {guestEdit.room || '—'}. The name and phone belong to the guest
+            record, so they change on every stay of theirs, past and future. The
+            dates apply to this stay only.
+          </p>
+
+          <div className="text-dim text-sm mb-1">Guest name</div>
+          <input value={guestEdit.fullName} autoComplete="off"
+            onChange={e => setGuestEdit(g => ({ ...g, fullName: e.target.value }))}
+            className="h-12 w-full px-3 rounded-xl bg-raise border border-line" />
+
+          <div className="text-dim text-sm mt-3 mb-1">Phone</div>
+          <input value={guestEdit.phone} inputMode="tel" autoComplete="off"
+            onChange={e => setGuestEdit(g => ({ ...g, phone: e.target.value }))}
+            className="h-12 w-full px-3 rounded-xl bg-raise border border-line tnum" />
+
+          <div className="text-dim text-sm mt-3 mb-1">Check-in date</div>
+          <input type="date" value={guestEdit.checkIn}
+            onChange={e => setGuestEdit(g => ({ ...g, checkIn: e.target.value }))}
+            className="h-12 px-3 rounded-xl bg-raise border border-line tnum" />
+
+          <div className="text-dim text-sm mt-3 mb-1">Scheduled check-out</div>
+          <input type="date" value={guestEdit.scheduledOut} min={guestEdit.checkIn}
+            onChange={e => setGuestEdit(g => ({ ...g, scheduledOut: e.target.value }))}
+            className="h-12 px-3 rounded-xl bg-raise border border-line tnum" />
+
+          <p className="text-dim text-xs mt-3">
+            Moving the dates is checked against the room's other bookings — if it
+            would clash, the save is refused and nothing changes.
+          </p>
+
+          <button onClick={saveGuestEdit}
+            disabled={busy || !guestEdit.fullName.trim() || !guestEdit.checkIn || !guestEdit.scheduledOut}
+            className="mt-5 h-12 w-full rounded-xl bg-amber text-bg font-bold disabled:opacity-40">
+            {busy ? 'Saving…' : 'Save correction'}
           </button>
         </Sheet>
       )}

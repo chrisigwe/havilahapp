@@ -2974,3 +2974,56 @@ with no time. Applied in four places:
   - Folio header: arrival time after the check-in date
   - Printed invoice: arrival time, passed as null for other roles so a
     front-desk-printed invoice cannot leak what that person cannot see
+
+
+## Corrections: Reception tab (live guests)
+
+New third tab on Corrections, visible to front desk (who take the
+booking and so make the typos) and to editors overseeing them. Lists
+every occupied or reserved stay with an Edit button for the guest's
+name, phone, check-in date and scheduled check-out.
+
+Read via a new loadLiveStays() rather than v_occupancy_today: that
+view is keyed on ROOMS, so it would hide a second stay sharing a room,
+and it omits the rate/cycle fields the sheet pre-fills.
+
+Name and phone are corrected on the GUEST record, not the stay, so one
+fix propagates to every past and future stay for that person —
+renaming per-stay would fork their history. Dates apply to that stay
+only, via a separate correctStayDates() (updateStayDetails
+deliberately never touches check_in_date; this page is the one place
+that should). The stays_no_date_overlap exclusion constraint still
+guards the room, so a correction that would double-book is refused by
+the database rather than silently corrupting the board — surfaced
+through friendlyStayError.
+
+## Notification tone and app icon badge
+
+New src/lib/alert.js. The tone is synthesised with Web Audio rather
+than shipped as an audio file: no added payload, no extra fetch on a
+patchy connection, and nothing that can fail to cache offline. Two
+short 880Hz pulses with gain ramps — an abrupt square edge clicks
+audibly on phone speakers.
+
+Wired to pendingCount in App.jsx, firing only when the count RISES.
+Re-alerting on every 60s poll for something already seen would train
+people to ignore it, and prevPending starts at null so the first poll
+after sign-in never sounds for a backlog that predates opening the app.
+
+navigator.setAppBadge puts the count on the installed app icon
+(Android/Chrome, iOS 16.4+ from the home screen), wrapped so it is a
+silent no-op where unsupported. Audio is armed on the first pointerdown
+because browsers block playback until the user interacts with the page.
+
+## Amstel Malt at MainBar — diagnostic, not yet a fix
+
+227_diagnose_amstel_mainbar.sql is READ-ONLY. Deduction works like
+this: saveBasket writes only to `sales`; the trigger
+sync_sale_stock_movement (migration 03) then writes a matching 'sale'
+movement using new.stock_item_id; v_stock_on_hand is built purely from
+stock_movements and INNER JOINs stock_items. So a sale fails to reduce
+stock if stock_item_id is NULL (typed line — the movement exists but
+the join drops it), if sales point at a different stock_items row than
+receipts did (duplicate item records), if the sale's location isn't
+MainBar, or if the trigger is disabled. The six queries separate those
+cases; the fix depends on which one it is.

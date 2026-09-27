@@ -1608,3 +1608,40 @@ export async function loadRoomsSoldInMonth(branchId, date) {
   if (error) throw error
   return count || 0
 }
+
+// ---------- Corrections: Reception (live guests) ----------
+// Live = anyone currently in-house or booked in, i.e. exactly the
+// stays that still have a folio someone could need corrected.
+// Deliberately NOT read from v_occupancy_today: that view is keyed on
+// rooms and would hide a second stay sharing a room, and it omits the
+// rate/cycle fields the correction sheet has to pre-fill.
+export async function loadLiveStays(branchId) {
+  const { data, error } = await supabase.from('stays')
+    .select(`id, status, check_in_date, scheduled_out, daily_rate, billing_cycle,
+             guest_id, rooms(room_number), guests!guest_id(id, full_name, phone)`)
+    .eq('branch_id', branchId).in('status', ['occupied', 'reserved'])
+    .order('check_in_date', { ascending: false })
+  if (error) throw error
+  return data || []
+}
+
+// A misspelled name belongs to the GUEST record, not the stay, so it
+// is corrected once here and every past and future stay for that
+// person shows the fix — renaming per-stay would fork their history.
+export async function updateGuestIdentity(guestId, { fullName, phone }) {
+  const patch = { full_name: fullName }
+  if (phone !== undefined) patch.phone = phone || null
+  const { error } = await supabase.from('guests').update(patch).eq('id', guestId)
+  if (error) throw error
+}
+
+// Correcting a check-in date is exactly what this page exists for, so
+// unlike updateStayDetails (which never touches it) this one can move
+// it. The stays_no_date_overlap exclusion constraint still guards the
+// room, so a correction that would double-book comes back as a
+// database error rather than silently corrupting the board.
+export async function correctStayDates({ stayId, checkIn, scheduledOut }) {
+  const { error } = await supabase.from('stays')
+    .update({ check_in_date: checkIn, scheduled_out: scheduledOut }).eq('id', stayId)
+  if (error) throw error
+}
