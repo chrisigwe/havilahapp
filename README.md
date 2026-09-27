@@ -3116,3 +3116,24 @@ App now reads the flag in four places:
   - Corrections Reception list (item 7) — internal rooms hidden from
     front desk, visible to gm/admin, with the empty state respecting
     the filter so a hidden-only list still reads 'No live guests'
+
+
+## Corrections: front desk lands on Reception
+
+- Tab order for front_desk is now Reception, Entries (Change history
+  stays hidden from them as before). Other roles keep Entries first
+  with Reception second, so nothing moves for gm/admin.
+- Default view for front_desk is the Reception tab.
+- The Entries department subfilter no longer defaults to Reception.
+  Reception records no sales rows at all by design, so defaulting to
+  it (front desk's default_location_id since migration 204) opened
+  Entries on a permanently empty list. It now picks their first
+  NON-Reception department — Minimart at both branches — falling back
+  to the old behaviour if Reception is genuinely all they have. The
+  branch-switch reset uses the same rule.
+- Department chips stay visible on the Reception tab (Minimart is
+  right there), but they were inert there since a guest list isn't
+  department-scoped. Tapping one now switches to Entries filtered to
+  it, which is what tapping "Minimart" from Reception plainly means.
+  No chip renders as selected while on Reception, since none is
+  filtering anything yet.

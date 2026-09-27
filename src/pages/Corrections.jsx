@@ -12,7 +12,12 @@ export default function Corrections({ boot }) {
   const canEdit = isEditor || staff.role === 'bar' || staff.role === 'front_desk'
   const ownOnly = !isEditor
   const [rows, setRows] = useState(null)
-  const [view, setView] = useState(canEdit ? 'entries' : 'history')
+  // Front desk lands on Reception: it is the tab they actually work
+  // in, and Reception has no sales rows by design, so Entries would
+  // otherwise open on an empty list for them.
+  const landsOnReception = staff.role === 'front_desk'
+  const [view, setView] = useState(
+    !canEdit ? 'history' : landsOnReception ? 'guests' : 'entries')
   const [audit, setAudit] = useState(null)
   const [edit, setEdit] = useState(null)
   const [confirm, setConfirm] = useState(null)
@@ -25,8 +30,15 @@ export default function Corrections({ boot }) {
   // department in the branch, and not defaulted to a mixed "all of
   // mine" view when they have more than one.
   const deptChips = isEditor ? allLocations : (locations || [])
+  // Reception records no sales, so defaulting the Entries subfilter to
+  // it (the front desk default_location_id since migration 204) showed
+  // an empty list. Prefer their first NON-Reception department —
+  // Minimart for both branches' front desk — and fall back to the old
+  // behaviour if Reception is genuinely all they have.
+  const firstEntriesDept = (deptChips.find(l => !/reception/i.test(l.name)) || {}).id
   const [deptFilter, setDeptFilter] = useState(
-    isEditor ? 'all' : (staff.default_location_id || deptChips[0]?.id || 'all'))
+    isEditor ? 'all'
+      : (firstEntriesDept || staff.default_location_id || deptChips[0]?.id || 'all'))
   // Reception tab: correcting a guest's name or stay dates. Reception
   // staff (who take the booking and so make the typos) plus gm/admin.
   // Deliberately NARROWER than isEditor — storekeeper is an editor for
@@ -45,7 +57,8 @@ export default function Corrections({ boot }) {
   // indication why — same bug already fixed on DailySales and Store.
   useEffect(() => {
     setDeptFilter(cur => (cur === 'all' || deptChips.some(l => l.id === cur))
-      ? cur : (isEditor ? 'all' : (staff.default_location_id || deptChips[0]?.id || 'all')))
+      ? cur : (isEditor ? 'all'
+        : (firstEntriesDept || staff.default_location_id || deptChips[0]?.id || 'all')))
   }, [staff.branch_id])
 
   const itemById = useMemo(() => Object.fromEntries(items.map(i => [i.id, i])), [items])
@@ -191,8 +204,9 @@ export default function Corrections({ boot }) {
           the Reception tab must not quietly hand front desk a view
           they were never meant to have. */}
       {canEdit && (!ownOnly || seesGuests) && <div className="flex gap-2 py-2">
-        {[['entries', 'Entries'],
-          ...(seesGuests ? [['guests', 'Reception']] : []),
+        {[...(seesGuests && landsOnReception ? [['guests', 'Reception']] : []),
+          ['entries', 'Entries'],
+          ...(seesGuests && !landsOnReception ? [['guests', 'Reception']] : []),
           ...(!ownOnly ? [['history', 'Change history']] : [])].map(([k, label]) => (
           <button key={k} onClick={() => setView(k)}
             className={`flex-1 h-12 rounded-xl border font-bold ${view === k
@@ -215,15 +229,23 @@ export default function Corrections({ boot }) {
       {view !== 'history' && deptChips.length > 1 && (
         <div className="flex gap-2 overflow-x-auto pb-2 -mx-1 px-1">
           {isEditor && (
-            <button onClick={() => setDeptFilter('all')}
-              className={`shrink-0 h-9 px-3 rounded-full border text-sm ${deptFilter === 'all'
+            <button onClick={() => { setDeptFilter('all'); if (view === 'guests') setView('entries') }}
+              className={`shrink-0 h-9 px-3 rounded-full border text-sm ${view !== 'guests' && deptFilter === 'all'
                 ? 'bg-raise border-amber text-amber font-bold' : 'border-line text-dim'}`}>
               All departments
             </button>
           )}
           {deptChips.map(l => (
-            <button key={l.id} onClick={() => setDeptFilter(l.id)}
-              className={`shrink-0 h-9 px-3 rounded-full border text-sm ${deptFilter === l.id
+            <button key={l.id}
+              onClick={() => {
+                setDeptFilter(l.id)
+                // On the Reception tab the chips would otherwise be
+                // inert — the guest list isn't department-scoped.
+                // Tapping Minimart there means "show me Minimart",
+                // so send them to Entries filtered to it.
+                if (view === 'guests') setView('entries')
+              }}
+              className={`shrink-0 h-9 px-3 rounded-full border text-sm ${view !== 'guests' && deptFilter === l.id
                 ? 'bg-raise border-amber text-amber font-bold' : 'border-line text-dim'}`}>
               {l.name}
             </button>
