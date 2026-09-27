@@ -36,6 +36,15 @@ export default function Corrections({ boot }) {
   const [liveStays, setLiveStays] = useState(null)
   const [guestEdit, setGuestEdit] = useState(null)
 
+  // Reset the department chip on branch switch. Holding the previous
+  // branch's location id makes loadActivity query for a department
+  // that doesn't exist here, so the list comes back empty with no
+  // indication why — same bug already fixed on DailySales and Store.
+  useEffect(() => {
+    setDeptFilter(cur => (cur === 'all' || deptChips.some(l => l.id === cur))
+      ? cur : (isEditor ? 'all' : (staff.default_location_id || deptChips[0]?.id || 'all')))
+  }, [staff.branch_id])
+
   const itemById = useMemo(() => Object.fromEntries(items.map(i => [i.id, i])), [items])
   const locById  = useMemo(() => Object.fromEntries(allLocations.map(l => [l.id, l])), [allLocations])
 

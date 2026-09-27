@@ -41,7 +41,12 @@ export default function Counts({ boot }) {
   const locById  = useMemo(() => Object.fromEntries(allLocations.map(l => [l.id, l])), [allLocations])
 
   useEffect(() => {
-    if (!newLoc && pickableLocations.length) setNewLoc(pickableLocations[0].id)
+    // Also re-point it when the CURRENT value belongs to the branch we
+    // just left — otherwise a new count would be started against a
+    // location from the other branch, not merely displayed oddly.
+    if (pickableLocations.length && (!newLoc || !pickableLocations.some(l => l.id === newLoc))) {
+      setNewLoc(pickableLocations[0].id)
+    }
   }, [pickableLocations, newLoc])
 
   const refresh = useCallback(() => {

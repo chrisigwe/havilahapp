@@ -11,7 +11,12 @@ function printOnly(id) {
 export default function Receipt({ lines, branchName, locById, onClose, onPrint }) {
   if (!lines?.length) return null
 
-  const total = lines.reduce((s, l) => s + Number(l.qty) * Number(l.unit_price), 0)
+  // Use the stored amount rather than recomputing qty x unit_price.
+  // saveBasket writes amount as .toFixed(2), so recomputing here was a
+  // second source of truth that could drift by cents on any price with
+  // more than two decimals — the same mistake that made printed folio
+  // invoices disagree with the outstanding figure.
+  const total = lines.reduce((s, l) => s + Number(l.amount ?? (l.qty * l.unit_price)), 0)
   const payments = {}
   for (const l of lines) {
     for (const p of (l.sale_payments || [])) {

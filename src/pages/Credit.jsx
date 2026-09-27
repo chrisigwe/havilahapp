@@ -304,7 +304,13 @@ export default function Credit({ boot }) {
 
       {hasReceptionAccess && (() => {
         const gb = guestBalances || []
-        const gbTotal = gb.reduce((s, r) => s + r.outstanding, 0)
+        // Must match what each ROW below displays and what
+        // loadReceptionDashboard's deferredTotal uses. Summing only
+        // .outstanding made the header disagree with the rows under
+        // it for any guest carrying department credit — invisible
+        // before migration 224 (front desk got no department rows at
+        // all), obvious the moment that data started arriving.
+        const gbTotal = gb.reduce((s, r) => s + r.outstanding + r.departmentCredit + r.billedToYou, 0)
         return (
           <>
             <div className="flex items-baseline justify-between py-2">

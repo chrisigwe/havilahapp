@@ -3044,3 +3044,39 @@ also shows when seesGuests, while Change history stays gated on
 !ownOnly exactly as before — adding this tab must not quietly hand
 front desk a view they were never meant to have. The guests view
 itself is also guarded on seesGuests, not just the tab button.
+
+
+## Deep audit sweep — findings
+
+FIXED in this pass:
+1. Credit page "Owed to Reception" header summed only .outstanding
+   while each row below it showed outstanding + departmentCredit +
+   billedToYou. The rows did not add up to their own total, and the
+   figure disagreed with the Reception dashboard's deferredTotal.
+   Latent before migration 224 (front desk received no department
+   rows at all); live the moment that data started arriving.
+2. Corrections deptFilter never reset on branch switch — an editor who
+   picked a department then changed branch queried loadActivity with
+   the old branch's location id and got an empty list with no
+   explanation. Same class as the DailySales/Store fixes.
+3. Counts newLoc only initialised when empty, so after a branch switch
+   it still held the previous branch's location — the location a NEW
+   count would have been created against, not merely displayed.
+4. Receipt recomputed total as qty x unit_price instead of using the
+   stored amount (written as .toFixed(2)), a second source of truth
+   that could drift by cents. Same mistake as the folio invoice bug.
+
+FLAGGED, not changed:
+5. is_read_only is fetched in the boot payload (staff select *) but
+   referenced nowhere in the UI. Read-only accounts see every control
+   enabled and only discover the restriction as a raw trigger error on
+   save. Not a security hole — block_if_read_only enforces it server
+   side — but a poor experience for those accounts.
+6. Room 209 is hardcoded in three places as "GM Office". If Nnewi ever
+   has a real room 209 it would be hidden from non-GM/admin there.
+   A category or explicit flag would be sturdier than a number.
+
+CHECKED, CLEAN: no genuine temporal-dead-zone patterns remain (all
+apparent hits are inside async handlers that run after mount); no
+write/mutation errors silently swallowed; all polling intervals have
+cleanup; no UTC date construction that could drift off Lagos time.
