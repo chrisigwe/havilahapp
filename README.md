@@ -3963,3 +3963,45 @@ running the real tab logic for every role: only the auditor's changed.
 NOTE: store managers can still READ inventory_audit at the database
 level (app_can_view_audit includes storekeeper) though the app no longer
 shows them history. Read-only, so not a tampering risk; left as found.
+
+
+## One definition for every role's tabs (lib/tabs.js)
+
+The bar (Shell), the More menu and the landing screen (App) each decided
+a role's tabs on their own. Moving a tab onto a bar needed three
+coordinated edits; the earlier store-manager and auditor changes missed
+one, and it showed:
+  - store managers saw Counts on the bar AND in More
+  - auditors saw Counts and Variances twice
+  - the "counts awaiting verification" badge stayed on More even after
+    Counts moved onto the bar, pointing at a tab that no longer held it
+
+Now tabsFor(role) defines each bar. More hides anything on the bar
+(replacing its hand-written per-role exclusions), every role lands on its
+FIRST tab (landingTabFor), and the badge goes to whichever tab holds
+Counts (countBadgeTabFor). Change a role's tabs in one place and all
+three follow.
+
+VERIFIED by running the real old and new logic for every role: no
+duplicates remain, no role lost access to any screen, and every landing
+screen is unchanged except the auditor's (below).
+
+## Auditor bar and default location
+
+Bar: Counts · Variances · Daily sales · History · More, landing on
+Counts. Ordered by their work — verify submitted counts (their one
+sign-off, and where the alert points), investigate the variances those
+counts reveal, review the day's sales, then History: every edit and
+deletion at the branch, the evidence that shows tampering. Corrections
+appears as "History" for them since they only ever see its read-only
+view. Stock moves to More; the Stock menu item now includes auditors,
+so it stays reachable.
+
+DEFAULT LOCATION: a store manager has a natural home (the Store); an
+auditor does not — their job is the whole branch, and a single default
+department would quietly narrow every review. Their default is
+therefore ALL DEPARTMENTS, which Daily sales, Stock and Variances
+already open on. No single default_location_id is set for auditors.
+Credit and Recovered debt are built one department at a time and have
+no whole-branch view, so they still open on the first department;
+adding one is a separate change to how their totals are calculated.

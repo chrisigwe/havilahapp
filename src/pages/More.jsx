@@ -1,3 +1,4 @@
+import { tabsFor } from '../lib/tabs'
 import { MANAGEMENT } from '../lib/roles'
 // Was named OVERSIGHT_ROLES but has always been manager/gm/admin.
 const OVERSIGHT_ROLES = MANAGEMENT
@@ -20,7 +21,9 @@ const ITEMS = [
   { key: 'store', label: 'Store', hint: 'Receive stock and record transfers',
     roles: OVERSIGHT_ROLES },
   { key: 'stock', label: 'Stock', hint: 'Current stock on hand by department',
-    roles: OVERSIGHT_ROLES },
+    // auditor added: Stock left the auditor's bar for History, so this is
+    // how they reach it now.
+    roles: [...OVERSIGHT_ROLES, 'auditor'] },
   { key: 'count',   label: 'Stock count', hint: 'Count your stock at end of shift',
     roles: ['bar', 'front_desk', 'storekeeper', 'manager', 'gm', 'admin', 'auditor'] },
   { key: 'catalog', label: 'Catalog', hint: 'Items, prices and what is active',
@@ -39,12 +42,13 @@ export default function More({ boot, onGo, pendingCount = 0 }) {
   // destinations for THEM — hidden here so each doesn't appear in two
   // places at once; every other role that has access still reaches
   // them through this menu
-  const isOversight = OVERSIGHT_ROLES.includes(boot.staff.role)
-  const allowed = ITEMS.filter(i =>
-    i.roles.includes(boot.staff.role)
-    && !(i.key === 'dailysales' && (boot.staff.role === 'auditor' || isOversight))
-    && !(i.key === 'roomboard' && (boot.staff.role === 'front_desk' || isOversight))
-    && !(i.key === 'credit' && isOversight))
+  // Anything already on this role's bar is hidden here, so nothing
+  // appears twice. Derived from tabsFor() rather than a hand-kept list of
+  // per-role exclusions, which is what let the auditor's Counts and
+  // Variances show up in both places.
+  const recordsSales = (boot.locations || []).some(l => l.is_sales_point && !l.is_store)
+  const onBar = new Set(tabsFor(boot.staff.role, { recordsSales }).map(([k]) => k))
+  const allowed = ITEMS.filter(i => i.roles.includes(boot.staff.role) && !onBar.has(i.key))
   return (
     <div className="px-5">
       <ul className="divide-y divide-line/60">

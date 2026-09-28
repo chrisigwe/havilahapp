@@ -5,20 +5,17 @@ import PendingBanner from './PendingBanner'
 import UpdateBanner from './UpdateBanner'
 import StaffOfMonthBanner from './StaffOfMonthBanner'
 import NavIcon from './NavIcon'
+import { tabsFor, countBadgeTabFor } from '../lib/tabs'
 import ReadOnlyBanner from './ReadOnlyBanner'
 import NotificationSetup from './NotificationSetup'
-import { MANAGEMENT } from '../lib/roles'
 import { signOutCleanly } from '../lib/push'
 
-const STOCK_ROLES = ['storekeeper', 'manager', 'gm', 'admin']
 // GM/admin/manager oversee everything rather than doing one
 // department's day-to-day work — their four most load-bearing
 // screens (today's money across departments, the room board, who
 // owes what) get promoted to direct tabs; Sales/Store/Stock move
 // into More for them specifically, since storekeeper and other
 // department-scoped roles still need those as their own primary tabs.
-// Was named OVERSIGHT_ROLES but has always been manager/gm/admin.
-const OVERSIGHT_ROLES = MANAGEMENT
 
 const MORE = ['dailysales', 'roomboard', 'credit', 'recovery', 'count', 'catalog', 'variance', 'fix',
               'staysettings', 'sales', 'store', 'stock']
@@ -27,45 +24,10 @@ export default function Shell({ staff, tab, onTab, children,
                                 branches = [], viewBranch, onBranch, pendingCount = 0,
                                 alertEligible = false, recordsSales = false }) {
   const [confirmingSignOut, setConfirmingSignOut] = useState(false)
-  const auditorOnly = staff.role === 'auditor'
-  let tabs
-  if (OVERSIGHT_ROLES.includes(staff.role)) {
-    tabs = [['dailysales', 'Daily sales'], ['roomboard', 'Rooms'], ['credit', 'Credit'], ['more', 'More']]
-  } else {
-    if (staff.role === 'storekeeper') {
-      // Store managers: their three core jobs first — receive and
-      // transfer, see what's on hand, count. Sales appears only if they
-      // are actually assigned to a sales department (Nnewi's covers
-      // OpenBar; Awka's covers none), since otherwise they can't record
-      // a sale anywhere and Daily sales in More does the viewing better.
-      tabs = [['store', 'Store'], ['stock', 'Stock'], ['count', 'Counts']]
-      if (recordsSales) tabs.push(['sales', 'Sales'])
-      tabs.push(['more', 'More'])
-    } else {
-      if (auditorOnly) {
-        // Auditors: their core work is verifying counts and reviewing
-        // variances, so both sit on the bar — Counts is also where the
-        // verification alert sends them. Stock stays too: auditors can't
-        // reach it through More (that item is managers-only), so dropping
-        // it from the bar would remove their stock view altogether.
-        tabs = [['dailysales', 'Daily sales'], ['count', 'Counts'],
-                ['variance', 'Variances'], ['stock', 'Stock'], ['more', 'More']]
-      } else {
-        tabs = [['sales', 'Sales']]
-        // Room Board is front desk's primary tool — a dedicated tab.
-        // Everyone else who needs it reaches it through More instead.
-        if (staff.role === 'front_desk') tabs.push(['roomboard', 'Rooms'])
-        if (STOCK_ROLES.includes(staff.role)) tabs.push(['store', 'Store'])
-        tabs.push(['stock', 'Stock'])
-        tabs.push(['more', 'More'])
-      }
-    }
-  }
-  // Which tab keys are this role's own direct tabs — used below so
-  // "More" only highlights for a key that ISN'T already its own
-  // button, rather than a hardcoded per-role exclusion list that has
-  // to be remembered and extended by hand every time a role's direct
-  // tabs change.
+  // The bar comes from tabsFor() — the single definition shared with
+  // the More menu and the landing screen. See lib/tabs.js.
+  const tabs = tabsFor(staff.role, { recordsSales })
+  const countBadgeTab = countBadgeTabFor(staff.role, { recordsSales })
   const directTabKeys = new Set(tabs.map(([k]) => k))
   return (
     <div className="min-h-dvh pb-24">
@@ -127,7 +89,7 @@ export default function Shell({ staff, tab, onTab, children,
                 <span className={`relative text-xs font-semibold ${active ? 'text-amber' : 'text-dim'}`}>
                   {label}
                 </span>
-                {k === 'more' && pendingCount > 0 && (
+                {k === countBadgeTab && pendingCount > 0 && (
                   <span className="absolute top-1 right-1/2 translate-x-3.5 min-w-[1.1rem] h-[1.1rem] px-1
                                     rounded-full bg-clay text-bg text-[0.6rem] font-bold flex items-center justify-center">
                     {pendingCount > 9 ? '9+' : pendingCount}

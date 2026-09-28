@@ -24,8 +24,9 @@ import Counts from './pages/Counts'
 import Shell from './components/Shell'
 import ErrorBoundary from './components/ErrorBoundary'
 import InstallHint from './components/InstallHint'
-import { MANAGEMENT, OVERSIGHT } from './lib/roles'
+import { OVERSIGHT } from './lib/roles'
 import { signOutCleanly } from './lib/push'
+import { landingTabFor } from './lib/tabs'
 
 export default function App() {
   const [session, setSession] = useState(undefined) // undefined = loading
@@ -46,7 +47,6 @@ export default function App() {
   const [unfinished, setUnfinished] = useState([])
 
   const ALERT_ROLES = OVERSIGHT
-  const OVERSIGHT_ROLES = MANAGEMENT  // name kept; membership is manager/gm/admin
   // Guards the role-based default-tab effect below so it applies
   // only once per real sign-in, not on every identity object
   // refresh (e.g. an auth token refresh) — declared here, before any
@@ -79,12 +79,9 @@ export default function App() {
   useEffect(() => {
     if (!identity || landedRef.current) return
     landedRef.current = true
-    if (OVERSIGHT_ROLES.includes(identity.role)) setTab('dailysales')
-    else if (identity.role === 'auditor') setTab('dailysales')
-    // Store managers land on the Store — their working screen, and now
-    // their first tab. Landing on Sales sent them somewhere secondary.
-    else if (identity.role === 'storekeeper') setTab('store')
-    else setTab('sales')
+    // Every role lands on its FIRST tab (lib/tabs.js), so the landing
+    // screen can never drift from the bar's order.
+    setTab(landingTabFor(identity.role))
   }, [identity])
 
   const refresh = useCallback(() => {
