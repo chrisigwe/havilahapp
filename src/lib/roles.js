@@ -30,3 +30,9 @@ export const OVERSIGHT = ['storekeeper', 'manager', 'gm', 'admin', 'auditor']
 export const RECEPTION_EDIT = ['front_desk', 'gm', 'admin']
 
 export const is = (role, group) => group.includes(role)
+
+// front_desk, manager, gm, admin. Approve or refuse large room charges.
+// Mirrors approve_room_charge() / reject_room_charge() in the database
+// (migration 250) exactly, so the controls never appear to someone the
+// database would refuse.
+export const APPROVE_ROOM_CHARGES = ['front_desk', 'manager', 'gm', 'admin']

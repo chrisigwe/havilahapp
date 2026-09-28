@@ -89,7 +89,8 @@ export default function Folio({ boot, room, onClose, onChanged }) {
 
   const orderLines = orders.flatMap(o => (o.order_items || [])
     .map(li => ({ ...li, date: o.business_date, servedBy: o.served_by,
-                  orderId: o.id, settlement: o.settlement })))
+                  orderId: o.id, settlement: o.settlement,
+                  approval: o.approval_status || 'approved', decisionNote: o.decision_note })))
   // Which lines the guest is actually BILLED for. This must match
   // v_stay_folio.orders_charge exactly:
   //   settlement = 'charged_to_room' AND order_type <> 'pr_damage'
@@ -98,10 +99,19 @@ export default function Folio({ boot, room, onClose, onChanged }) {
   // out higher than the outstanding figure the app showed everywhere
   // else. Non-billable lines are still listed on screen (below), just
   // never added to money.
+  // Must match v_stay_folio.orders_charge EXACTLY, which since 248 also
+  // requires approval_status = 'approved'. Without this third condition
+  // a pending charge would print on the invoice while being absent from
+  // its total — the "lines don't add up" bug fixed once already.
   const billableLines = orderLines.filter(
-    li => li.settlement === 'charged_to_room' && li.order_type !== 'pr_damage')
+    li => li.settlement === 'charged_to_room' && li.order_type !== 'pr_damage'
+       && li.approval === 'approved')
   const freeLines = orderLines.filter(
-    li => li.settlement === 'charged_to_room' && li.order_type === 'pr_damage')
+    li => li.settlement === 'charged_to_room' && li.order_type === 'pr_damage'
+       && li.approval === 'approved')
+  // Awaiting front desk: shown on screen, never billed until approved.
+  const pendingLines = orderLines.filter(
+    li => li.settlement === 'charged_to_room' && li.approval === 'pending')
   const payParts = paymentParts(pay, pay.amount)
   const payAllocated = paymentAllocated(pay, pay.amount)
   const cycles = cyclesFor(branchSettings?.allowedCycles)
@@ -393,6 +403,23 @@ export default function Folio({ boot, room, onClose, onChanged }) {
           </div>
         )}
 
+        {/* Awaiting front desk: shown so nobody is surprised at checkout,
+            but NOT in the balance above until approved. */}
+        {!!pendingLines.length && (
+          <div className="mt-4 rounded-2xl border border-amber bg-surface p-4">
+            <div className="flex justify-between">
+              <span className="font-semibold">Awaiting front-desk approval</span>
+              <span className="tnum font-bold">
+                {naira(pendingLines.reduce((t, l) => t + Number(l.amount || 0), 0))}
+              </span>
+            </div>
+            <p className="text-dim text-xs mt-1">
+              Not on this guest's bill until approved. Approve or refuse it from the
+              Reception dashboard.
+            </p>
+          </div>
+        )}
+
         {orderLines.length > 0 && (
           <div className="mt-4">
             <div className="text-dim mb-2">Orders</div>
@@ -416,6 +443,16 @@ export default function Folio({ boot, room, onClose, onChanged }) {
                         {li.settlement !== 'charged_to_room' && (
                           <span className="shrink-0 text-xs font-bold text-leaf border border-leaf rounded-full px-2 py-0.5">
                             Paid at dept
+                          </span>
+                        )}
+                        {li.approval === 'pending' && (
+                          <span className="shrink-0 text-xs font-bold text-amber border border-amber rounded-full px-2 py-0.5">
+                            Awaiting approval
+                          </span>
+                        )}
+                        {li.approval === 'rejected' && (
+                          <span className="shrink-0 text-xs font-bold text-clay border border-clay rounded-full px-2 py-0.5">
+                            Refused
                           </span>
                         )}
                       </div>

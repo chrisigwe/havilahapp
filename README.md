@@ -3743,3 +3743,62 @@ ordinary sales, and say so rather than failing silently.
 
 Phase 2 (front-desk approval above N5,000) is separate: it adds an
 approval status and changes what the folio counts as owed.
+
+
+## Room charge approvals (Phase 2) — migrations 248, 249, 250
+
+Room charges over the branch limit (N5,000), made by staff other than
+front desk or management, wait for front-desk approval before reaching
+the guest's bill. If refused, the bartender collects by POS, Cash,
+Credit or Split.
+
+248 (schema)   orders.approval_status: approved | pending | rejected |
+               collected, default 'approved'. v_stay_folio.orders_charge
+               now also requires approval_status = 'approved'.
+               branches.room_charge_approval_limit, default 5000.
+               PARTIALLY APPLIED: the SQL editor committed statements
+               individually, so its temp-table safety check lost its
+               snapshot while the changes went through. Verified after
+               the fact instead: all 30 existing orders are 'approved', so
+               the new filter excludes nothing and every bill is unchanged;
+               and v_stay_folio's security_invoker was null BEFORE (recorded
+               by the 151 check) and is null now, so nothing was lost.
+249 (flag)     Trigger on order_items marks a NEW room charge pending when
+               over the limit and served by bar/storekeeper. Can never
+               flip an existing order (10-minute window, decided_at null).
+250 (decide)   approve_room_charge, reject_room_charge (reason REQUIRED),
+               collect_rejected_room_charge.
+
+Lesson carried into 249/250: each is ONE DO block, so it applies fully
+or not at all, logs itself last, and is safe to re-run.
+
+COLLECTION is one transaction: create the sales (stock comes off via the
+sales trigger), delete the room-charge lines (their stock movements are
+removed by the order_items trigger), then PROVE no room_charge movement
+survived — aborting the whole thing otherwise — so a bottle is never
+deducted twice. The order is kept as 'collected', the record that front
+desk refused it. Business date is today in Lagos, so the money lands in
+today's cash-up. Built against the LIVE column list: sales.amount and
+order_items.amount are generated (never written); sales.location_id is
+required but a typed charge has none, so the collecting department is
+the fallback.
+
+App:
+- Folio: billableLines now also requires approval 'approved' — the SAME
+  rule as the view. Without it a pending charge would print on the
+  invoice while missing from its total. Pending charges show in their
+  own box, clearly not on the bill; list lines are badged.
+- Till: says "Sent to front desk for approval ... not on the bill until
+  they approve it" when a charge goes pending.
+- RoomChargeApprovals (Reception view, APPROVE_ROOM_CHARGES roles):
+  approve, or refuse with a reason. Polls every minute.
+- CollectRefusedCharges (any department where you can record): refused
+  charges for the whole branch, with the refusal reason, collected by one
+  method or split; credit needs a customer.
+- APPROVE_ROOM_CHARGES = front_desk, manager, gm, admin — mirrors the
+  database functions exactly. RPC parameter names cross-checked against
+  the SQL signatures.
+
+DEPLOY ORDER: this zip FIRST, then 249, then 250. With the app live
+before 249 runs, there is never a moment where a charge can go pending
+with no screen to approve it.

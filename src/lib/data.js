@@ -1002,7 +1002,7 @@ export async function loadFolio(stayId) {
   const [{ data: orders, error: e1 }, { data: payments, error: e2 }, { data: folio, error: e3 },
          { data: stay, error: e4 }] = await Promise.all([
     supabase.from('orders')
-      .select('id, business_date, served_by, settlement, order_items(id, category, description, qty, unit_price, amount, order_type, damage_reason, writeoff_note, pr_meal)')
+      .select('id, business_date, served_by, settlement, approval_status, decision_note, order_items(id, category, description, qty, unit_price, amount, order_type, damage_reason, writeoff_note, pr_meal)')
       .eq('stay_id', stayId).order('business_date', { ascending: false }),
     supabase.from('payments')
       .select('id, business_date, method, amount, is_overstay, remark')
@@ -1841,7 +1841,11 @@ export async function chargeBasketToRoom({ staff, stayId, lines, locationId, dat
     await supabase.from('orders').delete().eq('id', order.id)
     throw iErr
   }
-  return order.id
+  // The approval trigger (249) runs after the items land, so this read
+  // reflects whether the charge went straight on or is waiting.
+  const { data: after } = await supabase.from('orders')
+    .select('approval_status').eq('id', order.id).single()
+  return { orderId: order.id, status: after?.approval_status || 'approved' }
 }
 
 // The guest's own bar tab: a customer account LINKED to them, so it
@@ -1866,4 +1870,54 @@ export async function getOrCreateGuestTab(branchId, guest) {
   }
   if (!row?.linked_guest_id) await linkCustomerToGuest(c.id, guest.id)
   return c
+}
+
+// ---------- Room charge approvals (Phase 2) ----------
+
+// Room charges in one approval state, with who served them and for which
+// room — enough to decide without opening the folio.
+export async function loadRoomChargesByStatus(branchId, status) {
+  const { data, error } = await supabase.from('orders')
+    .select(`id, business_date, created_at, approval_status, decision_note,
+             served:served_by(full_name),
+             stays(id, rooms(room_number), guests!guest_id(full_name)),
+             order_items(id, description, qty, unit_price, amount, order_type, location_id)`)
+    .eq('branch_id', branchId).eq('settlement', 'charged_to_room')
+    .eq('approval_status', status)
+    .order('created_at', { ascending: true })
+  if (error) throw error
+  return (data || []).map(o => {
+    const items = o.order_items || []
+    return {
+      id: o.id, date: o.business_date, createdAt: o.created_at, note: o.decision_note,
+      servedBy: o.served?.full_name || '',
+      room: o.stays?.rooms?.room_number, guest: o.stays?.guests?.full_name,
+      items,
+      // Billable only — PR/damage is never charged, so never collected.
+      total: items.filter(i => i.order_type !== 'pr_damage')
+                  .reduce((t, i) => t + Number(i.amount || 0), 0),
+    }
+  })
+}
+
+export async function approveRoomCharge(orderId, note) {
+  const { error } = await supabase.rpc('approve_room_charge', { p_order: orderId, p_note: note || null })
+  if (error) throw error
+}
+
+export async function rejectRoomCharge(orderId, note) {
+  const { error } = await supabase.rpc('reject_room_charge', { p_order: orderId, p_note: note })
+  if (error) throw error
+}
+
+// Settle a refused charge at the bar. One database transaction creates
+// the sale and releases the room-charge stock, so each bottle is
+// deducted exactly once. Returns the receipt id.
+export async function collectRejectedRoomCharge({ orderId, payments, customerId, locationId }) {
+  const { data, error } = await supabase.rpc('collect_rejected_room_charge', {
+    p_order: orderId, p_payments: payments,
+    p_customer: customerId || null, p_location: locationId || null,
+  })
+  if (error) throw error
+  return data
 }

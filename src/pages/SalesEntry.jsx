@@ -10,11 +10,13 @@ import { loadStockMap, loadPopular, loadToday, saveBasket, saveWriteoff,
 import { enqueue, flush, isConnectionError } from '../lib/outbox'
 import { useToast } from '../components/Toast'
 import ReceptionDashboard from '../components/ReceptionDashboard'
+import RoomChargeApprovals from '../components/RoomChargeApprovals'
+import CollectRefusedCharges from '../components/CollectRefusedCharges'
 import ItemPicker from '../components/ItemPicker'
 import RoomChargeSheet from '../components/RoomChargeSheet'
 import CustomerPicker from '../components/CustomerPicker'
 import Receipt from '../components/Receipt'
-import { EDITOR, MANAGEMENT, OVERSIGHT, SUPERVISOR, is } from '../lib/roles'
+import { APPROVE_ROOM_CHARGES, EDITOR, MANAGEMENT, OVERSIGHT, SUPERVISOR, is } from '../lib/roles'
 
 export default function SalesEntry({ boot }) {
   const { staff, locations, allLocations, tiers, methods, items } = boot
@@ -68,6 +70,7 @@ export default function SalesEntry({ boot }) {
   const ownLocationIds = new Set((locations || []).map(l => l.id))
   const canRecordAt = (id) => is(staff.role, MANAGEMENT) || ownLocationIds.has(id)
   const canRecordHere = canRecordAt(locationId)
+  const canApprove = is(staff.role, APPROVE_ROOM_CHARGES)
   // Restaurant and Reception don't behave like a normal sales
   // department — Restaurant is typed-order-only (no catalog stock to
   // sell), Reception doesn't record sales at all (check-in/checkout/
@@ -347,9 +350,16 @@ export default function SalesEntry({ boot }) {
     if (paying.roomStay) {
       setBusy(true)
       try {
-        await chargeBasketToRoom({ staff, stayId: paying.roomStay.id, lines: basket,
-                                   locationId, date, locById })
-        toast(`Charged to Room ${paying.roomStay.room} · ${naira(basketTotal)}`, 'success')
+        const res = await chargeBasketToRoom({ staff, stayId: paying.roomStay.id, lines: basket,
+                                               locationId, date, locById })
+        // Over the branch limit and made by bar staff: it waits for the
+        // front desk. Say so plainly, so nobody thinks it is on the bill.
+        if (res.status === 'pending') {
+          toast(`Sent to front desk for approval · Room ${paying.roomStay.room} · ${naira(basketTotal)}. ` +
+                'Not on the bill until they approve it.', 'success')
+        } else {
+          toast(`Charged to Room ${paying.roomStay.room} · ${naira(basketTotal)}`, 'success')
+        }
         setBasket([]); setPaying(null); setDefaultTier('general'); refresh()
       } catch (e) {
         toast(isConnectionError(e)
@@ -566,6 +576,19 @@ export default function SalesEntry({ boot }) {
         </button>
       )}
 
+      {!isReception && canRecordHere && (
+        <CollectRefusedCharges branchId={staff.branch_id} locationId={locationId}
+          methods={methods} customers={customers}
+          onCreateCustomer={async (name, servedBy) => {
+            try {
+              const c = await createCustomer(staff.branch_id, name, servedBy)
+              setCustomers(cs => cs.some(x => x.id === c.id) ? cs : [...cs, c])
+              return c
+            } catch (e) { toast(e.message, 'error'); return null }
+          }}
+          onCollected={refresh} />
+      )}
+
       {/* Shown instead of the recording buttons, so the missing
           controls read as deliberate rather than as a broken page. */}
       {!canRecordHere && (
@@ -573,6 +596,10 @@ export default function SalesEntry({ boot }) {
           Viewing {currentDept?.name || 'this department'}. You can see its sales here,
           but you can only record sales at your own departments.
         </p>
+      )}
+
+      {isReception && canApprove && (
+        <RoomChargeApprovals branchId={staff.branch_id} onDecided={refresh} />
       )}
 
       {isReception && (
