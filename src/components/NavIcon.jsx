@@ -1,5 +1,5 @@
 // Minimal stroke icons for the bottom nav — kept as one small file
-// rather than pulling in an icon library for six glyphs. All use
+// rather than pulling in an icon library for a handful of glyphs. All use
 // currentColor so they pick up the active/inactive text color for
 // free from the button around them.
 const PATHS = {
@@ -9,6 +9,15 @@ const PATHS = {
   sales: <path d="M6 8V6a3 3 0 0 1 6 0v2M4 8h8l1 12H3L4 8Z" />,
   store: <path d="M4 8l1-4h6l1 4M4 8h8M4 8v9a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1V8M15 21V11h6v10a1 1 0 0 1-1 1h-4a1 1 0 0 1-1-1ZM15 13h6" />,
   stock: <path d="M9 4h6a1 1 0 0 1 1 1v1H8V5a1 1 0 0 1 1-1ZM6 6h12v14a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1V6ZM9 11h6M9 15h6" />,
+  // Checklist with ticks: counting items off and signing them off.
+  // Deliberately NOT a clipboard — Stock already is one, and the two sit
+  // side by side on the store manager's bar.
+  count: <path d="M4 6.5l1.5 1.5L8 5M4 12.5l1.5 1.5L8 11M4 18.5l1.5 1.5L8 17M11 6.5h9M11 12.5h9M11 18.5h9" />,
+  // Balance scale: what the system says against what was actually found.
+  variance: <path d="M12 5v15M8 20h8M5 7h14M5 7l-2.5 6M5 7l2.5 6M2.5 13a2.5 2 0 0 0 5 0M19 7l-2.5 6M19 7l2.5 6M16.5 13a2.5 2 0 0 0 5 0" />,
+  // Clock with a turn-back arrow: looking back over past edits (Corrections,
+  // shown to auditors as History).
+  fix: <path d="M3.5 12a8.5 8.5 0 1 0 2.5-6M3 3v4h4M12 8v4l2.5 2.5" />,
   more: <path d="M5 12h.01M12 12h.01M19 12h.01" strokeWidth="3" />,
 }
 

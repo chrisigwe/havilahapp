@@ -4005,3 +4005,16 @@ already open on. No single default_location_id is set for auditors.
 Credit and Recovered debt are built one department at a time and have
 no whole-branch view, so they still open on the first department;
 adding one is a separate change to how their totals are calculated.
+
+
+## Icons for Counts, Variances and History
+
+Three bar tabs had no icon and showed as bare text: Counts (auditor and
+store manager bars), Variances and History (auditor bar).
+  count     checklist with ticks — deliberately not a clipboard, since
+            Stock already is one and both sit on the store manager's bar
+  variance  balance scale — system figure against what was found
+  fix       clock with a turn-back arrow — History (Corrections)
+Same 24px grid and 2px round stroke as the rest. Checked rendered at
+60px (how a 3x phone draws a 20px icon) and at a true 20px: all three
+stay legible. Verified every tab on every role's bar now has an icon.
