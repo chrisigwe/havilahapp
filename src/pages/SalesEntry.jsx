@@ -4,7 +4,8 @@ import { loadStockMap, loadPopular, loadToday, saveBasket, saveWriteoff,
          loadDailyFinancials, loadCustomers, createCustomer,
          loadOpeningDate, loadBalances, loadReceipt,
          loadStaffForLocation, loadReceptionActivity, loadReceptionDashboard, deleteEntry,
-         loadRoomCharges, deleteOrderItem, saveRestaurantWriteoff, loadRoomsSoldInMonth } from '../lib/data'
+         loadRoomCharges, deleteOrderItem, saveRestaurantWriteoff, loadRoomsSoldInMonth,
+         loadPrGivenOnDate } from '../lib/data'
 import { enqueue, flush, isConnectionError } from '../lib/outbox'
 import { useToast } from '../components/Toast'
 import ItemPicker from '../components/ItemPicker'
@@ -84,6 +85,7 @@ export default function SalesEntry({ boot }) {
   const [receptionActivity, setReceptionActivity] = useState([])
   const [receptionDashboard, setReceptionDashboard] = useState(null)
   const [roomsSold, setRoomsSold] = useState(null)
+  const [prGiven, setPrGiven] = useState(null)
   // Internal rooms (GM Office, via rooms.is_internal) and the
   // monthly rooms-sold count are both
   // GM/admin-only visibility on the reception dashboard — matches
@@ -172,6 +174,7 @@ export default function SalesEntry({ boot }) {
     if (roomChargeCategory) {
       loadRoomCharges(staff.branch_id, date, roomChargeCategory).then(setRoomCharges).catch(() => {})
     }
+    loadPrGivenOnDate(staff.branch_id, date, locationId).then(setPrGiven).catch(() => setPrGiven(null))
     loadDailyFinancials(staff.branch_id, date, locationId).then(r => {
       setSummary({ byMethod: r.byMethod, nonRevenue: r.nonRevenue })
       setRecon({ grossSales: r.grossSales, received: r.received, creditRaised: r.creditRaised,
@@ -723,6 +726,42 @@ export default function SalesEntry({ boot }) {
                 <span className="tnum">{naira(recon.totalMoneyIn)}</span>
               </div>
             </div>
+
+            {/* Placed BELOW the day's total and outside its border on
+                purpose. PR is not money and must never be counted into
+                what the cashier hands over; putting it above the total
+                is exactly what caused the confusion. Shown at COST —
+                what the goods cost the business, not their menu price. */}
+            {!!prGiven && (prGiven.cost > 0 || prGiven.foodValue > 0) && (
+              <div className="mt-3 pt-3 border-t-2 border-line">
+                <div className="flex justify-between">
+                  <span className="text-dim">PR / complimentary given (at cost)</span>
+                  <span className="tnum font-bold">{naira(prGiven.cost)}</span>
+                </div>
+                <p className="text-dim text-xs mt-1">
+                  Not money. Not part of the total above, and nothing to hand over.
+                </p>
+                {prGiven.lines.map((l, i) => (
+                  <div key={i} className="flex justify-between text-sm pl-4 mt-1">
+                    <span className="text-dim truncate">· {l.name} × {l.qty}</span>
+                    <span className="tnum text-dim">{naira(l.cost)}</span>
+                  </div>
+                ))}
+                {prGiven.foodValue > 0 && (
+                  <>
+                    <div className="flex justify-between text-sm mt-2 pt-2 border-t border-line/60">
+                      <span className="text-dim">Restaurant PR (menu value)</span>
+                      <span className="tnum text-dim">{naira(prGiven.foodValue)}</span>
+                    </div>
+                    <p className="text-dim text-xs mt-1">
+                      Food is not stock-tracked, so there is no cost figure for
+                      meals — the ingredients were expensed when bought. Menu
+                      value is shown instead, and is NOT added to the cost above.
+                    </p>
+                  </>
+                )}
+              </div>
+            )}
           </div>
         )}
 

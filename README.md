@@ -3548,3 +3548,33 @@ deleted along with it. Rebuilt from the UI's actual row shape
 repaidTotal) and verified column names against saveRepayment rather
 than assumed: credit_repayments uses paid_on and recorded_by, not
 received_by, which would have failed at runtime rather than at build.
+
+
+## PR / complimentary shown at cost on the daily close
+
+The cashier's confusion was presentational: PR items appeared among
+the day's orders with nothing telling them those are outside the
+reckoning. Revenue treatment was already correct — PR never enters
+gross sales or the folio (migration 164) — so nothing about the money
+changed here.
+
+New line on the Sales dashboard close-of-day, placed BELOW "Total
+income for the day" and outside its border, reading "PR /
+complimentary given (at cost)" with the itemised lines under it and an
+explicit note that it is not money and not part of the total. Putting
+it above the total is precisely what would perpetuate the confusion.
+
+Valued at COST, per the request. Three paths produce PR and all three
+are counted, since they live in different tables:
+  - writeoffs -> stock_movements 'complimentary', which carry
+    unit_cost ON THE ROW, so the cost is exact rather than looked up
+    against a price that may have changed since
+  - PR sales -> sales with order_type 'pr_damage', costed from the
+    item's cost_price
+  - restaurant PR -> order_items with order_type 'pr_damage'
+
+Restaurant meals have NO cost figure: food is not stock-tracked and
+the ingredients were expensed when bought. Rather than invent a cost,
+they are reported separately at menu value, clearly excluded from the
+cost total. An invented figure would be worse than an honest gap,
+especially on a number someone may take to an accountant.

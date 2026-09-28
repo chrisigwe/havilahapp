@@ -1782,3 +1782,71 @@ export async function loadCreditOnDate(branchId, date, locationId) {
     rows: [...taken, ...repaid].sort((a, b) => b.amount - a.amount),
   }
 }
+
+// PR / complimentary given away on one day, valued AT COST.
+//
+// Three paths produce PR, and they live in different tables, so all
+// three are counted:
+//   1. writeoffs      -> stock_movements 'complimentary'. These carry
+//                        unit_cost on the row itself, so the cost is
+//                        exact rather than looked up.
+//   2. PR sales       -> sales with order_type 'pr_damage'. Excluded
+//                        from revenue already; cost comes from the
+//                        item's cost_price.
+//   3. restaurant PR  -> order_items with order_type 'pr_damage'.
+//                        Food is not stock-tracked, so there is NO
+//                        cost figure for these — the ingredients were
+//                        expensed when bought. Reported separately at
+//                        menu value rather than guessed at, because a
+//                        made-up cost is worse than an honest gap.
+export async function loadPrGivenOnDate(branchId, date, locationId) {
+  const loc = locationId && locationId !== 'all' ? locationId : null
+
+  let mq = supabase.from('stock_movements')
+    .select('qty, unit_cost, from_location, stock_items(name)')
+    .eq('branch_id', branchId).eq('business_date', date)
+    .eq('movement_type', 'complimentary')
+  if (loc) mq = mq.eq('from_location', loc)
+
+  let sq = supabase.from('sales')
+    .select('qty, location_id, description, stock_items(name, cost_price)')
+    .eq('branch_id', branchId).eq('business_date', date)
+    .eq('order_type', 'pr_damage')
+  if (loc) sq = sq.eq('location_id', loc)
+
+  const [{ data: moves }, { data: prSales }, { data: orders }] = await Promise.all([
+    mq, sq,
+    supabase.from('orders')
+      .select('id, business_date, order_items(description, qty, amount, order_type, pr_meal)')
+      .eq('branch_id', branchId).eq('business_date', date),
+  ])
+
+  const lines = []
+  let cost = 0
+
+  for (const m of (moves || [])) {
+    const c = Number(m.qty) * Number(m.unit_cost || 0)
+    cost += c
+    lines.push({ name: m.stock_items?.name || 'Item', qty: Number(m.qty), cost: c })
+  }
+  for (const s of (prSales || [])) {
+    const c = Number(s.qty) * Number(s.stock_items?.cost_price || 0)
+    cost += c
+    lines.push({ name: s.stock_items?.name || s.description || 'Item',
+                 qty: Number(s.qty), cost: c })
+  }
+
+  // Restaurant PR: menu value only, no cost available.
+  const foodLines = []
+  let foodValue = 0
+  for (const o of (orders || [])) {
+    for (const li of (o.order_items || [])) {
+      if (li.order_type !== 'pr_damage') continue
+      foodValue += Number(li.amount || 0)
+      foodLines.push({ name: li.description || 'Meal', qty: Number(li.qty),
+                       value: Number(li.amount || 0), meal: li.pr_meal })
+    }
+  }
+
+  return { cost, lines, foodValue, foodLines }
+}
