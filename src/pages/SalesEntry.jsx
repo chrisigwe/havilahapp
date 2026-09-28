@@ -5,7 +5,8 @@ import { loadStockMap, loadPopular, loadToday, saveBasket, saveWriteoff,
          loadOpeningDate, loadBalances, loadReceipt,
          loadStaffForLocation, loadReceptionActivity, loadReceptionDashboard, deleteEntry,
          loadRoomCharges, deleteOrderItem, saveRestaurantWriteoff, loadRoomsSoldInMonth,
-         loadPrGivenOnDate } from '../lib/data'
+         loadPrGivenOnDate, loadLiveStays, chargeBasketToRoom,
+         getOrCreateGuestTab } from '../lib/data'
 import { enqueue, flush, isConnectionError } from '../lib/outbox'
 import { useToast } from '../components/Toast'
 import ReceptionDashboard from '../components/ReceptionDashboard'
@@ -100,6 +101,12 @@ export default function SalesEntry({ boot }) {
   const [receptionDashboard, setReceptionDashboard] = useState(null)
   const [roomsSold, setRoomsSold] = useState(null)
   const [prGiven, setPrGiven] = useState(null)
+  // In-house guests offered at the credit step, so a guest's drinks go
+  // to their room or their own linked tab instead of a free-floating
+  // customer account named after the room.
+  const [inHouse, setInHouse] = useState([])
+  const [guestChoice, setGuestChoice] = useState(null)  // stay awaiting room-vs-tab
+  const [roomGuard, setRoomGuard] = useState(null)      // typed name that looks like a room
   // Internal rooms (GM Office, via rooms.is_internal) and the
   // monthly rooms-sold count are both
   // GM/admin-only visibility on the reception dashboard — matches
@@ -292,9 +299,64 @@ export default function SalesEntry({ boot }) {
   const creditAmount = (p) =>
     p.split ? Number(p.split.credit || 0) : (p.method === 'credit' ? basketTotal : 0)
 
+  // Occupied rooms only — a reservation has not arrived, so there is no
+  // one at the bar to charge. Internal rooms (GM Office) excluded.
+  useEffect(() => {
+    if (!paying) return
+    loadLiveStays(staff.branch_id)
+      .then(rows => setInHouse((rows || [])
+        .filter(r => r.status === 'occupied' && !r.rooms?.is_internal)
+        .sort((a, b) => String(a.rooms?.room_number).localeCompare(
+          String(b.rooms?.room_number), undefined, { numeric: true }))))
+      .catch(() => setInHouse([]))
+  }, [!!paying, staff.branch_id])
+
+  const looksLikeRoom = (name) =>
+    /\b(room|rm)\.?\s*\d+/i.test(name) || /^\s*\d{3}\s*$/.test(name)
+
+  function chooseRoomBill(stay) {
+    setPaying(p => ({ ...p, customerId: null, split: null, method: 'credit',
+      roomStay: { id: stay.id, room: stay.rooms?.room_number, guestName: stay.guests?.full_name } }))
+    setGuestChoice(null); setRoomGuard(null)
+  }
+
+  async function chooseSeparateTab(stay) {
+    try {
+      const c = await getOrCreateGuestTab(staff.branch_id, stay.guests)
+      setCustomers(cs => cs.some(x => x.id === c.id) ? cs : [...cs, c])
+      setPaying(p => ({ ...p, customerId: c.id, roomStay: null }))
+      setGuestChoice(null); setRoomGuard(null)
+    } catch (e) { toast(e.message, 'error') }
+  }
+
+  async function createAndPick(name, servedBy) {
+    try {
+      const c = await createCustomer(staff.branch_id, name, servedBy)
+      setCustomers(cs => cs.some(x => x.id === c.id) ? cs : [...cs, c])
+      setPaying(p => ({ ...p, customerId: c.id }))
+    } catch (e) { toast(e.message, 'error') }
+  }
+
   async function commit() {
     if (!canRecordHere) {
       toast('View only — you can record only at your own departments', 'error')
+      return
+    }
+    // Room bill: the whole basket goes onto the guest's folio as a room
+    // charge — not a sale, so not saveBasket. One order, one line per item.
+    if (paying.roomStay) {
+      setBusy(true)
+      try {
+        await chargeBasketToRoom({ staff, stayId: paying.roomStay.id, lines: basket,
+                                   locationId, date, locById })
+        toast(`Charged to Room ${paying.roomStay.room} · ${naira(basketTotal)}`, 'success')
+        setBasket([]); setPaying(null); setDefaultTier('general'); refresh()
+      } catch (e) {
+        toast(isConnectionError(e)
+          ? 'No connection — room charges need to be online. Try again shortly.'
+          : 'Not charged: ' + e.message, 'error')
+      }
+      setBusy(false)
       return
     }
     setBusy(true)
@@ -913,7 +975,87 @@ export default function SalesEntry({ boot }) {
             </div>
           )}
 
+          {paying.roomStay ? (
+            <div className="mt-6 rounded-2xl border border-amber bg-surface p-4">
+              <div className="text-dim text-sm">Room bill</div>
+              <div className="font-bold text-lg">
+                Room {paying.roomStay.room} · {paying.roomStay.guestName}
+              </div>
+              <p className="text-dim text-sm mt-1">
+                The whole sale ({naira(basketTotal)}) goes on this guest's room bill
+                and is collected at checkout.
+              </p>
+              <button onClick={() => setPaying(p => ({ ...p, roomStay: null }))}
+                className="mt-2 text-amber text-sm underline">Change</button>
+            </div>
+          ) : (
           <div className="mt-6">
+            {/* Guests first, at the moment the credit decision is made —
+                the whole point. Previously a bartender reached this step
+                already committed to a customer account, and the correct
+                path (charge to room) was a separate button further up. */}
+            {creditAmount(paying) > 0 && !!inHouse.length && !guestChoice && !roomGuard && (
+              <div className="mb-5">
+                <div className="text-dim mb-2">In-house guest?</div>
+                <div className="space-y-2 max-h-56 overflow-y-auto">
+                  {inHouse.map(st => (
+                    <button key={st.id} onClick={() => { setRoomGuard(null); setGuestChoice(st) }}
+                      className="w-full h-12 px-4 rounded-xl border border-line text-left flex items-center gap-3">
+                      <span className="font-bold tnum w-20 shrink-0">Rm {st.rooms?.room_number}</span>
+                      <span className="truncate">{st.guests?.full_name}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {guestChoice && (
+              <div className="mb-5 rounded-2xl border border-amber bg-surface p-4">
+                <div className="font-bold">
+                  Room {guestChoice.rooms?.room_number} · {guestChoice.guests?.full_name}
+                </div>
+                <p className="text-dim text-sm mt-1">
+                  Check the guest's name matches before charging.
+                </p>
+                <button onClick={() => chooseRoomBill(guestChoice)}
+                  className="mt-3 w-full h-12 rounded-xl bg-amber text-bg font-bold">
+                  Add to room bill
+                </button>
+                <button onClick={() => chooseSeparateTab(guestChoice)}
+                  className="mt-2 w-full h-12 rounded-xl border border-amber text-amber font-semibold">
+                  Separate bar tab
+                </button>
+                <p className="text-dim text-xs mt-2">
+                  A separate tab is billed on its own (e.g. for company expenses) but
+                  still shows to the front desk at checkout.
+                </p>
+                <button onClick={() => setGuestChoice(null)}
+                  className="mt-2 w-full h-10 text-dim text-sm">Cancel</button>
+              </div>
+            )}
+
+            {roomGuard && (
+              <div className="mb-5 rounded-2xl border border-clay bg-surface p-4">
+                <p className="text-clay text-sm">
+                  "{roomGuard.name}" looks like a hotel guest. Charge it to their room,
+                  or their own tab, instead?
+                </p>
+                <div className="space-y-2 mt-3 max-h-56 overflow-y-auto">
+                  {inHouse.map(st => (
+                    <button key={st.id} onClick={() => { setRoomGuard(null); setGuestChoice(st) }}
+                      className="w-full h-12 px-4 rounded-xl border border-line text-left flex items-center gap-3">
+                      <span className="font-bold tnum w-20 shrink-0">Rm {st.rooms?.room_number}</span>
+                      <span className="truncate">{st.guests?.full_name}</span>
+                    </button>
+                  ))}
+                </div>
+                <button onClick={() => { const g = roomGuard; setRoomGuard(null); createAndPick(g.name, g.servedBy) }}
+                  className="mt-3 w-full h-11 rounded-xl border border-line text-dim text-sm">
+                  Not a guest — create "{roomGuard.name}" anyway
+                </button>
+              </div>
+            )}
+
             <div className="text-dim mb-2">
               {creditAmount(paying) > 0
                 ? 'Customer (required for credit)'
@@ -922,17 +1064,22 @@ export default function SalesEntry({ boot }) {
               <CustomerPicker customers={customers} value={paying.customerId}
                 onPick={id => setPaying(p => ({ ...p, customerId: id }))}
                 onCreate={async (name, servedBy) => {
-                  try {
-                    const c = await createCustomer(staff.branch_id, name, servedBy)
-                    setCustomers(cs => cs.some(x => x.id === c.id) ? cs : [...cs, c])
-                    setPaying(p => ({ ...p, customerId: c.id }))
-                  } catch (e) { toast(e.message, 'error') }
+                  // Room-numbered accounts ("Room 203 Mr Vincent") are the
+                  // habit that split guests' debt from their folio. Caught
+                  // here and redirected, with an escape hatch for the rare
+                  // genuine name that happens to match.
+                  if (looksLikeRoom(name) && inHouse.length) {
+                    setRoomGuard({ name, servedBy }); return
+                  }
+                  await createAndPick(name, servedBy)
                 }} />
           </div>
+          )}
 
           <button onClick={commit} disabled={busy}
             className="mt-8 w-full h-16 rounded-2xl bg-amber text-bg text-xl font-bold disabled:opacity-40">
-            {busy ? 'Saving…' : 'Save sale'}
+            {busy ? 'Saving…'
+              : paying.roomStay ? `Charge to Room ${paying.roomStay.room}` : 'Save sale'}
           </button>
         </Sheet>
       )}

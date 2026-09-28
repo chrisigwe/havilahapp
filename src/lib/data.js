@@ -1800,3 +1800,70 @@ export async function loadPrGivenOnDate(branchId, date, locationId) {
 
   return { cost, lines, foodValue, foodLines }
 }
+
+// ---------- Guest credit at the till ----------
+
+// A whole till basket charged to a guest's room, as ONE order with one
+// line per item. chargeItemToRoom writes an order per item, which suits
+// the separate room-charge sheet but would split a five-drink round into
+// five orders on the folio.
+//
+// Stock still deducts: order_items with a stock_item_id and location_id
+// fire trg_order_item_stock_movement (migration 108b). Typed lines with
+// no catalogue item deduct nothing — the same rule as everywhere else.
+export async function chargeBasketToRoom({ staff, stayId, lines, locationId, date, locById }) {
+  const categoryFor = (locId) => {
+    const n = locById?.[locId]?.name || ''
+    return /restaurant/i.test(n) ? 'food' : /minimart/i.test(n) ? 'minimart' : 'drink'
+  }
+  const { data: order, error: oErr } = await supabase.from('orders').insert({
+    branch_id: staff.branch_id, stay_id: stayId, business_date: date,
+    settlement: 'charged_to_room', served_by: staff.id,
+  }).select('id').single()
+  if (oErr) throw oErr
+
+  const rows = lines.map(l => {
+    const loc = l.locationId || locationId
+    return {
+      order_id: order.id,
+      category: l.item ? categoryFor(loc) : 'food',
+      stock_item_id: l.item?.id || null,
+      location_id: l.item ? loc : null,
+      description: l.item ? l.item.name : (l.description || 'Item'),
+      qty: l.qty, unit_price: l.unitPrice,
+      order_type: l.orderType === 'staff' ? 'staff' : 'standard',
+      writeoff_note: l.writeoffNote || null,
+    }
+  })
+  const { error: iErr } = await supabase.from('order_items').insert(rows)
+  if (iErr) {
+    // Never leave an empty order on the folio.
+    await supabase.from('orders').delete().eq('id', order.id)
+    throw iErr
+  }
+  return order.id
+}
+
+// The guest's own bar tab: a customer account LINKED to them, so it
+// shows on their folio at checkout while being billed separately (e.g.
+// for company expenses). Reuses a tab already linked to this guest if
+// there is one, so repeat visits don't create repeat accounts.
+export async function getOrCreateGuestTab(branchId, guest) {
+  const { data: linked } = await supabase.from('customers')
+    .select('id, name, served_by')
+    .eq('branch_id', branchId).eq('linked_guest_id', guest.id).eq('is_active', true)
+    .limit(1).maybeSingle()
+  if (linked) return linked
+
+  const c = await createCustomer(branchId, guest.full_name)
+  // createCustomer returns an EXISTING account on a name clash. Only
+  // claim it if it isn't already attached to a different guest —
+  // otherwise two people sharing a name would share a tab.
+  const { data: row } = await supabase.from('customers')
+    .select('linked_guest_id').eq('id', c.id).single()
+  if (row?.linked_guest_id && row.linked_guest_id !== guest.id) {
+    throw new Error(`"${guest.full_name}" already has a tab linked to another guest. Use the customer list to pick the right one.`)
+  }
+  if (!row?.linked_guest_id) await linkCustomerToGuest(c.id, guest.id)
+  return c
+}

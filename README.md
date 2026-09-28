@@ -3687,3 +3687,59 @@ Enforced at TWO layers, deliberately:
      leave a live path.
 
 Delete was already restricted to gm/admin, so it needed no change.
+
+
+## Database notes: 245-247 (foundation hazards, 28 Sep 2026)
+
+245  merge_customers assigned name_key, a GENERATED column -> every
+     customer merge from the app failed. Line removed; renaming the row
+     regenerates the key. Also suspends the on-behalf trigger for its
+     own repoint.
+246  Three validation triggers fired on EVERY edit, re-checking columns
+     the edit never touched. Narrowed to INSERT or UPDATE OF their own
+     columns (the pattern validate_sale_date already used):
+       on-behalf sale    -> recorded_by, on_behalf_of
+       on-behalf repay   -> recorded_by, credit_staff_id
+       payment method    -> method, sale_id
+     Also fixes a latent bug: disabling a payment method would have
+     blocked editing the AMOUNT of old payments made with it.
+247  The on-behalf rule named one staff id. Now staff.no_on_behalf_entries,
+     set for Store Manager (Awka) only — exactly the previous behaviour.
+     Guarded so only gm/admin can change it; the check functions are
+     SECURITY DEFINER so row-level security can never hide the flag and
+     silently let an entry through.
+Checked, not a bug: verify_stock_count DOES post adjustment movements
+for every variance, dated to the count.
+
+## Guest credit at the till (Phase 1)
+
+ROOT CAUSE of guests' debt landing on free-floating customer accounts:
+button order. A bartender's natural path is + Sell Item -> Credit ->
+customer picker, where "Room 203 Mr Vincent" gets typed and a new
+account is born. The correct path, "Charge to a room", was a separate
+button that had to be chosen BEFORE starting the sale.
+
+Now, at the credit step, in-house guests are listed first
+("Rm 203 · Vincent Onwudinjo"). Tapping one asks:
+  - Add to room bill -> the WHOLE basket becomes one order on the
+    folio (chargeBasketToRoom), stock deducting as normal. Any split
+    is cleared, since the whole sale goes to the room.
+  - Separate bar tab -> a customer account LINKED to the guest
+    (getOrCreateGuestTab), billed separately but visible at checkout.
+    Reuses an existing linked tab. Refuses rather than claim an
+    account already linked to a different guest of the same name.
+
+Only OCCUPIED rooms are offered (a reservation has not arrived), and
+internal rooms are excluded. Staff see names beside room numbers, with
+a prompt to check the name matches before charging.
+
+Typed room-like names ("Room 102", "Rm 203", "203") are intercepted and
+redirected to the guest list, with an escape hatch ("Not a guest —
+create anyway"). Tested against 14 cases including the actual bad names
+found in the data; no false positives on real names.
+
+Room charges require a connection — they are not queued offline like
+ordinary sales, and say so rather than failing silently.
+
+Phase 2 (front-desk approval above N5,000) is separate: it adds an
+approval status and changes what the folio counts as owed.
