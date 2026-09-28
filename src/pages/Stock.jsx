@@ -1,21 +1,15 @@
 import { useEffect, useMemo, useState } from 'react'
 import { loadStockMap } from '../lib/data'
-import { useToast } from '../components/Toast'
-import WriteoffSheet from '../components/WriteoffSheet'
 
 export default function Stock({ boot }) {
   const { staff, locations, items, seesAll } = boot
   const [stockMap, setStockMap] = useState({})
   const [locId, setLocId] = useState('all')
   const [q, setQ] = useState('')
-  const [writeoff, setWriteoff] = useState(null)
-  const toast = useToast()
 
-  // Only the auditor gets write-off-from-Stock (their RLS allows PR/
-  // damage but nothing else, and they have no Sales screen to do it
-  // from). Everyone else records write-offs on the Sales screen as
-  // before; for them Stock stays read-only.
-  const auditorWriteoff = staff.role === 'auditor'
+  // Read-only for everyone. Auditors used to record PR/damage write-offs
+  // here; removed in 255 — an auditor reviews write-offs and shouldn't
+  // also be able to create them.
 
   const refresh = () => { loadStockMap(staff.branch_id).then(setStockMap).catch(console.error) }
   useEffect(refresh, [staff.branch_id])
@@ -34,8 +28,6 @@ export default function Stock({ boot }) {
       .sort((a, b) => a.item.name.localeCompare(b.item.name))
   }, [items, locations, stockMap, locId, q])
 
-  const canTapRow = auditorWriteoff && locId !== 'all'
-
   return (
     <div className="px-5">
       <input value={q} onChange={e => setQ(e.target.value)} placeholder="Search stock"
@@ -48,18 +40,9 @@ export default function Stock({ boot }) {
           <LocChip key={l.id} active={locId === l.id} onClick={() => setLocId(l.id)}>{l.name}</LocChip>
         ))}
       </div>
-      {auditorWriteoff && (
-        <p className="text-dim text-sm mb-2">
-          {locId === 'all'
-            ? 'Pick a department above, then tap an item to record PR or damage.'
-            : 'Tap an item to record PR or damage against this department.'}
-        </p>
-      )}
       <ul className="divide-y divide-line/60">
         {rows.map(({ item, shown }) => (
-          <li key={item.id} className="py-3 flex items-center"
-            onClick={canTapRow ? () => setWriteoff({ item, locId }) : undefined}
-            style={canTapRow ? { cursor: 'pointer' } : undefined}>
+          <li key={item.id} className="py-3 flex items-center">
             <span className="flex-1 min-w-0 truncate font-semibold">{item.name}</span>
             <span className={`tnum font-bold ${shown < 0 ? 'text-clay' : shown === 0 ? 'text-dim' : 'text-leaf'}`}>
               {shown}
@@ -69,10 +52,6 @@ export default function Stock({ boot }) {
         {!rows.length && <li className="py-8 text-center text-dim">Nothing here yet.</li>}
       </ul>
 
-      {writeoff && (
-        <WriteoffSheet staff={staff} item={writeoff.item} locationId={writeoff.locId}
-          toast={toast} onClose={() => setWriteoff(null)} onSaved={refresh} />
-      )}
     </div>
   )
 }

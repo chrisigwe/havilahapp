@@ -14,7 +14,8 @@ const STAFF_COUNT = ['bar', 'front_desk']
 // verify but not delete). A DRAFT is a separate rule entirely — only
 // the staff member still counting it may remove it; see the render
 // logic below rather than this list.
-const CAN_DELETE_COUNT = ['storekeeper', 'manager', 'gm', 'auditor', 'admin']
+// Auditor removed (255): a count is evidence, and the auditor reviews it.
+const CAN_DELETE_COUNT = ['storekeeper', 'manager', 'gm', 'admin']
 
 export default function Counts({ boot }) {
   const { staff, allLocations, locations, items } = boot

@@ -3921,3 +3921,45 @@ Caught before shipping: the Shell destructure edit silently failed to
 match, leaving recordsSales used but undeclared — a crash on sign-in for
 every user that the build does not catch. Found by checking declarations
 directly after the build passed.
+
+
+## Auditor independence (migration 255)
+
+Principle: an auditor sees everything, signs off what is right, and
+changes nothing.
+
+ADDED — change history. Corrections is now in the auditor's menu, and
+they land straight on its read-only history. Two things had to change,
+not one: app_can_view_audit() (used only by inventory_audit.audit_read)
+EXCLUDED auditors, so the database refused them the audit log; and
+Corrections only fetched history when !ownOnly, which auditors are, so
+it would never have loaded even with permission.
+
+REMOVED — deleting counts. A count is evidence. auditor taken out of
+app_can_delete_submitted_count() (used only by counts_remove), out of
+count_lines_remove, and out of CAN_DELETE_COUNT in the app.
+
+REMOVED — write-offs. moves_write had a clause just for auditors
+(damage/complimentary). Removed, and the rule now states
+NOT app_is_auditor() outright rather than relying on app_can_record()
+excluding them. The Stock page's write-off feature existed only for
+auditors, so it and the WriteoffSheet component are gone; Stock is
+read-only for everyone.
+
+STILL WORKS: verifying counts, adjusting a count line, posting opening
+balances — all run through functions with elevated rights, not governed
+by moves_write. The migration CHECKS this and refuses to apply if any
+of them does not, rather than assuming.
+
+UNCHANGED BY DECISION: adjusting a count line before verifying (flagged
+and traceable; left as-is pending a decision).
+
+BAR: Daily sales · Counts · Variances · Stock · More. Counts is where
+the verification alert sends them. Stock kept deliberately — auditors
+cannot reach it through More, so dropping it from the bar (as first
+suggested) would have removed their stock view entirely. Verified by
+running the real tab logic for every role: only the auditor's changed.
+
+NOTE: store managers can still READ inventory_audit at the database
+level (app_can_view_audit includes storekeeper) though the app no longer
+shows them history. Read-only, so not a tampering risk; left as found.

@@ -114,7 +114,11 @@ export default function Corrections({ boot }) {
       loadActivity(staff.branch_id, 14, ownOnly ? staff.id : null, deptFilter !== 'all' ? deptFilter : null)
         .then(setRows).catch(e => toast(e.message, 'error'))
     }
-    if (!ownOnly) loadAudit(staff.branch_id).then(setAudit).catch(() => setAudit([]))
+    // Auditors are not editors, so they are ownOnly — but the change
+    // history is their core evidence. Without this they would land on the
+    // history view (they can't edit) and it would never be fetched.
+    if (!ownOnly || staff.role === 'auditor')
+      loadAudit(staff.branch_id).then(setAudit).catch(() => setAudit([]))
   }, [staff.branch_id, canEdit, ownOnly, staff.id, deptFilter])
   useEffect(refresh, [refresh])
 

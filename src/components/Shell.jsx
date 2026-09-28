@@ -42,14 +42,23 @@ export default function Shell({ staff, tab, onTab, children,
       if (recordsSales) tabs.push(['sales', 'Sales'])
       tabs.push(['more', 'More'])
     } else {
-      tabs = auditorOnly ? [['dailysales', 'Daily sales']] : [['sales', 'Sales']]
-      // Room Board is front desk's primary tool — a dedicated tab, same
-      // treatment as the auditor's Daily Sales. Everyone else who needs
-      // it (oversight roles) reaches it through More instead.
-      if (staff.role === 'front_desk') tabs.push(['roomboard', 'Rooms'])
-      if (STOCK_ROLES.includes(staff.role)) tabs.push(['store', 'Store'])
-      tabs.push(['stock', 'Stock'])
-      tabs.push(['more', 'More'])
+      if (auditorOnly) {
+        // Auditors: their core work is verifying counts and reviewing
+        // variances, so both sit on the bar — Counts is also where the
+        // verification alert sends them. Stock stays too: auditors can't
+        // reach it through More (that item is managers-only), so dropping
+        // it from the bar would remove their stock view altogether.
+        tabs = [['dailysales', 'Daily sales'], ['count', 'Counts'],
+                ['variance', 'Variances'], ['stock', 'Stock'], ['more', 'More']]
+      } else {
+        tabs = [['sales', 'Sales']]
+        // Room Board is front desk's primary tool — a dedicated tab.
+        // Everyone else who needs it reaches it through More instead.
+        if (staff.role === 'front_desk') tabs.push(['roomboard', 'Rooms'])
+        if (STOCK_ROLES.includes(staff.role)) tabs.push(['store', 'Store'])
+        tabs.push(['stock', 'Stock'])
+        tabs.push(['more', 'More'])
+      }
     }
   }
   // Which tab keys are this role's own direct tabs — used below so
