@@ -3424,3 +3424,25 @@ The confirm sheet shows each side's BALANCE and which departments it
 is used at, plus the combined total afterwards. Merging customers
 moves real money between accounts, so the decision needs the numbers,
 not just the names.
+
+
+## 242b: merge_customers already existed — fixed rather than replaced
+
+242 failed: merge_customers(uuid, uuid[]) was already in the database
+with parameters p_keep / p_merge. Those names are kept so CREATE OR
+REPLACE works without a DROP and any existing caller keeps working;
+the app's RPC call was changed to match, not the other way round.
+
+The existing version repointed sales and credit_repayments correctly
+but had two defects:
+  1. NO BRANCH CHECK — it would merge a customer across branches,
+     moving that debt onto the wrong branch's books. Same class of bug
+     as the Amstel stock merge.
+  2. It DELETEd the duplicate row, destroying any record of who was
+     merged into whom.
+
+Both fixed. The role check is left exactly as found
+(storekeeper/manager/gm/admin): narrowing it would silently remove an
+ability store managers already have, which is a separate decision, not
+something to slip into a bug fix. The UI gate stays at gm/admin, so the
+app is narrower than the database permits.

@@ -1690,8 +1690,11 @@ export async function findDuplicateCustomers(branchId) {
 }
 
 export async function mergeCustomers(survivorId, duplicateIds) {
+  // Parameter names are p_keep / p_merge — the signature that already
+  // existed in the database. Kept rather than renamed so anything else
+  // calling this RPC continues to work.
   const { error } = await supabase.rpc('merge_customers', {
-    survivor_id: survivorId, duplicate_ids: duplicateIds,
+    p_keep: survivorId, p_merge: duplicateIds,
   })
   if (error) throw error
 }
