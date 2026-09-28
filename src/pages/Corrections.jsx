@@ -3,7 +3,8 @@ import { naira, tierLabel, methodLabel, lagosDaysAgo, friendlyStayError } from '
 import { loadActivity, deleteEntry, updateEntry, loadAudit,
          loadSalePayments, updateSaleWithPayments,
          loadLiveStays, updateGuestIdentity, correctStayDates,
-         findDuplicateGuests, mergeGuests } from '../lib/data'
+         findDuplicateGuests, mergeGuests,
+         findDuplicateCustomers, mergeCustomers } from '../lib/data'
 import { useToast } from '../components/Toast'
 
 export default function Corrections({ boot }) {
@@ -54,6 +55,8 @@ export default function Corrections({ boot }) {
   const canMerge = ['gm', 'admin'].includes(staff.role)
   const [dupes, setDupes] = useState(null)
   const [merging, setMerging] = useState(null)
+  const [custDupes, setCustDupes] = useState(null)
+  const [mergingCust, setMergingCust] = useState(null)
   const [liveStays, setLiveStays] = useState(null)
   const [guestEdit, setGuestEdit] = useState(null)
 
@@ -182,6 +185,23 @@ export default function Corrections({ boot }) {
     findDuplicateGuests(staff.branch_id).then(setDupes).catch(() => setDupes([]))
   }, [canMerge, staff.branch_id])
   useEffect(() => { if (view === 'guests') refreshDupes() }, [view, refreshDupes])
+
+  const refreshCustDupes = useCallback(() => {
+    if (!canMerge) return
+    findDuplicateCustomers(staff.branch_id).then(setCustDupes).catch(() => setCustDupes([]))
+  }, [canMerge, staff.branch_id])
+  useEffect(() => { if (view === 'guests') refreshCustDupes() }, [view, refreshCustDupes])
+
+  async function doMergeCustomers() {
+    setBusy(true)
+    try {
+      await mergeCustomers(mergingCust.survivorId, [mergingCust.dupId])
+      toast('Customer records merged', 'success')
+      setMergingCust(null)
+      refreshCustDupes()
+    } catch (e) { toast('Not merged: ' + e.message, 'error') }
+    setBusy(false)
+  }
 
   async function doMerge() {
     setBusy(true)
@@ -360,6 +380,102 @@ export default function Corrections({ boot }) {
           {canMerge && dupes?.length === 0 && (
             <p className="text-dim text-sm mt-4">No likely duplicate guests found.</p>
           )}
+          {canMerge && !!custDupes?.length && (
+            <div className="mt-4 rounded-2xl border border-clay bg-surface p-4">
+              <p className="font-semibold">Possible duplicate customers</p>
+              <p className="text-dim text-xs mt-1 mb-3">
+                Credit accounts, not room guests. Balances and departments are
+                shown because the name alone is rarely enough to tell which
+                record to keep. Merging moves every sale and repayment onto the
+                one you keep.
+              </p>
+              {custDupes.map((d, i) => (
+                <div key={i} className="py-2 border-t border-line/60 first:border-0">
+                  <div className="text-xs text-dim mb-1">{d.reason}</div>
+                  <div className="text-sm">
+                    <div className="flex justify-between gap-2">
+                      <span className="truncate">{d.name_a}
+                        <span className="text-dim"> · {d.depts_a}</span>
+                      </span>
+                      <span className="tnum shrink-0 text-clay">{naira(d.bal_a)}</span>
+                    </div>
+                    <div className="flex justify-between gap-2">
+                      <span className="truncate">{d.name_b}
+                        <span className="text-dim"> · {d.depts_b}</span>
+                      </span>
+                      <span className="tnum shrink-0 text-clay">{naira(d.bal_b)}</span>
+                    </div>
+                  </div>
+                  <div className="flex gap-2 mt-2">
+                    <button
+                      onClick={() => setMergingCust({
+                        survivorId: d.cust_a, survivorName: d.name_a,
+                        dupId: d.cust_b, dupName: d.name_b,
+                        total: Number(d.bal_a) + Number(d.bal_b) })}
+                      className="flex-1 h-9 rounded-lg border border-line text-dim text-xs px-2 truncate">
+                      Keep "{d.name_a}"
+                    </button>
+                    <button
+                      onClick={() => setMergingCust({
+                        survivorId: d.cust_b, survivorName: d.name_b,
+                        dupId: d.cust_a, dupName: d.name_a,
+                        total: Number(d.bal_a) + Number(d.bal_b) })}
+                      className="flex-1 h-9 rounded-lg border border-line text-dim text-xs px-2 truncate">
+                      Keep "{d.name_b}"
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+          {canMerge && custDupes?.length === 0 && (
+            <p className="text-dim text-sm mt-2">No likely duplicate customers found.</p>
+          )}
+          {canMerge && !!custDupes?.length && (
+            <div className="mt-4 rounded-2xl border border-clay bg-surface p-4">
+              <p className="font-semibold">Possible duplicate customers</p>
+              <p className="text-dim text-xs mt-1 mb-3">
+                Credit accounts at the bars, minimart and restaurant. Balance and
+                departments are shown so you can see which record holds the real
+                history before choosing. Merging moves every sale and repayment
+                onto the record you keep.
+              </p>
+              {custDupes.map((d, i) => (
+                <div key={i} className="py-2 border-t border-line/60 first:border-0">
+                  <div className="text-xs text-dim mb-1">{d.reason}</div>
+                  <div className="text-sm">
+                    <div className="truncate">
+                      {d.name_a}
+                      <span className="text-dim"> · {naira(d.bal_a)} · {d.depts_a}</span>
+                    </div>
+                    <div className="truncate">
+                      {d.name_b}
+                      <span className="text-dim"> · {naira(d.bal_b)} · {d.depts_b}</span>
+                    </div>
+                  </div>
+                  <div className="flex gap-2 mt-2">
+                    <button
+                      onClick={() => setMergingCust({
+                        survivorId: d.cust_a, survivorName: d.name_a, survivorBal: d.bal_a,
+                        dupId: d.cust_b, dupName: d.name_b, dupBal: d.bal_b })}
+                      className="flex-1 h-9 rounded-lg border border-line text-dim text-xs px-2 truncate">
+                      Keep "{d.name_a}"
+                    </button>
+                    <button
+                      onClick={() => setMergingCust({
+                        survivorId: d.cust_b, survivorName: d.name_b, survivorBal: d.bal_b,
+                        dupId: d.cust_a, dupName: d.name_a, dupBal: d.bal_a })}
+                      className="flex-1 h-9 rounded-lg border border-line text-dim text-xs px-2 truncate">
+                      Keep "{d.name_b}"
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+          {canMerge && custDupes?.length === 0 && (
+            <p className="text-dim text-sm mt-4">No likely duplicate customers found.</p>
+          )}
         </>
       ) : view === 'history' ? (
         <ul className="divide-y divide-line/60">
@@ -476,6 +592,75 @@ export default function Corrections({ boot }) {
           <button onClick={doSave} disabled={busy}
             className="mt-6 w-full h-14 rounded-2xl bg-amber text-bg text-lg font-bold disabled:opacity-40">
             {busy ? 'Saving…' : 'Save changes'}
+          </button>
+        </Sheet>
+      )}
+
+      {mergingCust && (
+        <Sheet onClose={() => setMergingCust(null)}>
+          <h3 className="text-xl font-bold">Merge customer records</h3>
+          <div className="mt-4 rounded-2xl border border-line bg-surface p-4">
+            <div className="text-dim text-sm">Keeping</div>
+            <div className="font-semibold">{mergingCust.survivorName}</div>
+            <div className="text-dim text-sm mt-3">Merging in and closing</div>
+            <div className="font-semibold text-clay">{mergingCust.dupName}</div>
+            <div className="text-dim text-sm mt-3">Combined balance after merge</div>
+            <div className="tnum font-bold text-clay">{naira(mergingCust.total)}</div>
+          </div>
+          <p className="text-dim text-sm mt-4">
+            Every sale and repayment under "{mergingCust.dupName}" moves onto
+            "{mergingCust.survivorName}", so their debts combine into the single
+            figure above. The closed record is renamed and kept, not deleted, so
+            receipts already issued still resolve.
+          </p>
+          <p className="text-clay text-sm mt-3">
+            This moves real money between accounts. Be sure they are the same
+            person — undoing it means re-pointing each sale by hand.
+          </p>
+          <button onClick={doMergeCustomers} disabled={busy}
+            className="mt-5 h-12 w-full rounded-xl bg-clay text-bg font-bold disabled:opacity-40">
+            {busy ? 'Merging…' : `Merge into ${mergingCust.survivorName}`}
+          </button>
+          <button onClick={() => setMergingCust(null)}
+            className="mt-2 h-12 w-full rounded-xl border border-line text-dim font-semibold">
+            Cancel
+          </button>
+        </Sheet>
+      )}
+
+      {mergingCust && (
+        <Sheet onClose={() => setMergingCust(null)}>
+          <h3 className="text-xl font-bold">Merge customer records</h3>
+          <div className="mt-4 rounded-2xl border border-line bg-surface p-4">
+            <div className="text-dim text-sm">Keeping</div>
+            <div className="font-semibold">{mergingCust.survivorName}</div>
+            <div className="text-dim text-sm tnum">{naira(mergingCust.survivorBal)} owing</div>
+            <div className="text-dim text-sm mt-3">Merging in and closing</div>
+            <div className="font-semibold text-clay">{mergingCust.dupName}</div>
+            <div className="text-dim text-sm tnum">{naira(mergingCust.dupBal)} owing</div>
+          </div>
+          <div className="mt-4 rounded-2xl border border-amber bg-surface p-4">
+            <div className="text-dim text-sm">Combined balance afterwards</div>
+            <div className="tnum text-xl font-bold text-clay">
+              {naira(Number(mergingCust.survivorBal) + Number(mergingCust.dupBal))}
+            </div>
+          </div>
+          <p className="text-dim text-sm mt-4">
+            Every sale and repayment under "{mergingCust.dupName}" moves onto
+            "{mergingCust.survivorName}". The old account is closed and renamed,
+            not deleted, so receipts already issued still resolve.
+          </p>
+          <p className="text-clay text-sm mt-3">
+            This moves real money between accounts. Be sure they are the same
+            person — two people can share a phone.
+          </p>
+          <button onClick={doMergeCustomers} disabled={busy}
+            className="mt-5 h-12 w-full rounded-xl bg-clay text-bg font-bold disabled:opacity-40">
+            {busy ? 'Merging…' : `Merge into ${mergingCust.survivorName}`}
+          </button>
+          <button onClick={() => setMergingCust(null)}
+            className="mt-2 h-12 w-full rounded-xl border border-line text-dim font-semibold">
+            Cancel
           </button>
         </Sheet>
       )}

@@ -1678,3 +1678,20 @@ export async function loadMyVerifiedCounts(staffId, sinceIso) {
   const rows = data || []
   return { rows, newest: rows[0]?.verified_at || null }
 }
+
+// Duplicate CREDIT CUSTOMER candidates — the per-department credit
+// accounts, distinct from guests. Returns pairs with each side's
+// balance and which departments it is used at, because the name alone
+// is not enough to decide which record to keep.
+export async function findDuplicateCustomers(branchId) {
+  const { data, error } = await supabase.rpc('find_duplicate_customers', { p_branch: branchId })
+  if (error) throw error
+  return data || []
+}
+
+export async function mergeCustomers(survivorId, duplicateIds) {
+  const { error } = await supabase.rpc('merge_customers', {
+    survivor_id: survivorId, duplicate_ids: duplicateIds,
+  })
+  if (error) throw error
+}

@@ -16,21 +16,37 @@
 //       headers := '{"Authorization":"Bearer <SERVICE_ROLE_KEY>"}'::jsonb
 //     ) $$);
 
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
-import webpush from 'https://esm.sh/web-push@3.6.7'
+import { createClient } from 'npm:@supabase/supabase-js@2'
+import webpush from 'npm:web-push@3.6.7'
 
 const supabase = createClient(
   Deno.env.get('SUPABASE_URL')!,
   Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,   // bypasses RLS by design
 )
 
-webpush.setVapidDetails(
-  Deno.env.get('VAPID_SUBJECT') ?? 'mailto:admin@example.com',
-  Deno.env.get('VAPID_PUBLIC_KEY')!,
-  Deno.env.get('VAPID_PRIVATE_KEY')!,
-)
+// Deliberately NOT called at module scope. A throw up there kills the
+// worker before any request is handled, and the caller only ever sees
+// WORKER_ERROR with no reason. Called inside the handler instead, so
+// the real cause can be returned in the response body.
+function initVapid() {
+  const subject = Deno.env.get('VAPID_SUBJECT')
+  const pub = Deno.env.get('VAPID_PUBLIC_KEY')
+  const priv = Deno.env.get('VAPID_PRIVATE_KEY')
+  const missing = [
+    !subject && 'VAPID_SUBJECT',
+    !pub && 'VAPID_PUBLIC_KEY',
+    !priv && 'VAPID_PRIVATE_KEY',
+  ].filter(Boolean)
+  if (missing.length) throw new Error('Missing secrets: ' + missing.join(', '))
+  if (!subject!.startsWith('mailto:') && !subject!.startsWith('https://')) {
+    throw new Error('VAPID_SUBJECT must start with "mailto:" or "https://" — got: ' + subject)
+  }
+  webpush.setVapidDetails(subject!, pub!, priv!)
+}
 
 Deno.serve(async () => {
+ try {
+  initVapid()
   // Pending verifications per branch — the same thing the in-app
   // badge counts, so the two never disagree.
   const { data: pending } = await supabase
@@ -135,7 +151,18 @@ Deno.serve(async () => {
       .update({ last_verified_seen: newest }).eq('endpoint', s.endpoint)
   }
 
-  return new Response(JSON.stringify({ sent, verifiedSent }), {
+  return new Response(JSON.stringify({ ok: true, sent, verifiedSent }), {
     headers: { 'Content-Type': 'application/json' },
   })
+ } catch (err) {
+  // Returned as 200 ON PURPOSE: a 500 body is replaced by the
+  // platform's generic WORKER_ERROR, which is what hid this in the
+  // first place. 200 with ok:false gets the real message back to
+  // net._http_response where it can actually be read.
+  return new Response(JSON.stringify({
+    ok: false,
+    error: (err as Error)?.message ?? String(err),
+    stack: (err as Error)?.stack?.split('\n').slice(0, 3).join(' | '),
+  }), { headers: { 'Content-Type': 'application/json' } })
+ }
 })

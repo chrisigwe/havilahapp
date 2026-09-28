@@ -3320,3 +3320,107 @@ and dep arrays ARE evaluated during render, so it is declared with the
 other alert state near the top rather than beside its own effect.
 Declaring it below would have been the same crash class as the earlier
 "Cannot access before initialization".
+
+
+## Edge Function: WORKER_ERROR made diagnosable, and two likely causes fixed
+
+Every invocation returned 500 WORKER_ERROR with no readable reason.
+Three changes:
+
+1. esm.sh -> npm: specifiers. web-push is a NODE library and Supabase
+   Edge Functions run Deno. Importing it from esm.sh can fail at module
+   load, which kills the worker before any handler runs — exactly a
+   boot-time WORKER_ERROR. Supabase's runtime supports npm: specifiers
+   with Node compatibility, which is the supported way to use it.
+2. setVapidDetails moved OUT of module scope into initVapid(), called
+   inside the handler. At module scope a throw is fatal before any
+   request is served, so the caller can never be told why.
+3. The whole handler is wrapped, and errors return 200 with
+   {ok:false,error,stack} rather than throwing. Deliberate: a 500 body
+   is replaced by the platform's generic WORKER_ERROR message, which is
+   what hid the cause in the first place. 200 + ok:false puts the real
+   message in net._http_response, where it is readable without the
+   dashboard log.
+
+initVapid also names exactly which secrets are missing, and rejects a
+VAPID_SUBJECT lacking mailto:/https: — a common cause that otherwise
+looks identical to a missing key.
+
+
+## Typed room charges that are really stock items
+
+Two paths add a room charge: "Add a drink or minimart item" picks from
+the catalogue and deducts stock; "Add a restaurant order" is typed and
+does not — correct, since a plate of food is not a countable stock
+unit.
+
+The failure was a DRINK entered through the restaurant path. On 13
+Sept Alphonso was billed N897 for 1 Amstel Malt as free text: the
+money was right, the bottle never left inventory, and nothing on
+screen said so. The order_items trigger (108b) deliberately skips
+items with a null stock_item_id, so it cannot be fixed downstream —
+it has to be caught at entry.
+
+RoomChargeSheet now matches what is being typed against the catalogue
+and, on a match, warns that the item will be billed but not deducted,
+with a one-tap switch to the picker. Deliberately a warning rather
+than a block: an unusual one-off with a name close to a stocked item
+is still legitimate, and blocking it would push staff to misspell
+things to get past the check.
+
+
+## Check-in AND check-out times on checked-out guests
+
+ReopenSearch showed only the departure time. It now shows both ends of
+the stay on their own line — "In <date> <time> - Out <date> <time>" —
+since verifying a checkout needs both, and squeezing two timestamps
+beside the date truncates on a phone. Still gated on seesStayTimes
+(storekeeper/manager/gm/admin/auditor), so front desk and bar see the
+dates exactly as before.
+
+## App icon rebuilt with depth
+
+Same palette, same geometry, same 14px radius. The 3D read comes from
+lighting rather than perspective: one source at the top-left, so every
+tile has a lit top edge (white stroke as the specular catch), a darker
+extruded slab offset down-right as its side, and a cast shadow
+anchoring it. Background is a soft radial bowl so the plate reads as a
+surface, with a sheen over the top-left and a hairline rim so it does
+not dissolve into a dark home screen.
+
+Extrusion is deliberately ~1px at a 64 viewBox: enough to lift at icon
+size, small enough to survive scaling to a 24px favicon. Regenerated
+icon-192, icon-512 and apple-touch-icon from the SVG. The maskable
+variant drops the rounded corners and the rim — the OS applies its own
+mask and would clip a rounded plate.
+
+
+## Merge duplicate CUSTOMERS (migration 242)
+
+Credit accounts at MainBar, Minimart, OpenBar and Restaurant, added
+under Guest records on Corrections > Reception. gm/admin only, matching
+merge_customers' own is_supervisor() guard.
+
+Ran the read-only precheck (241) FIRST this time, per the rule adopted
+after the Amstel merge. It established three things that shaped the
+migration:
+  - customers IS branch-scoped, so the merge refuses across branches.
+    This is exactly the check whose absence broke the stock merge.
+  - only TWO columns reference customers (sales.customer_id,
+    credit_repayments.customer_id), so the repoint is small and known
+    rather than discovered dynamically.
+  - (branch_id, name) and (branch_id, name_key) are both UNIQUE, so
+    exact-name duplicates CANNOT exist — which is why the precheck
+    found none and why the finder has to be fuzzy. The rename on merge
+    also has to stay unique, so name_key is nulled (that index applies
+    only WHERE name_key IS NOT NULL).
+
+Finder uses same phone, initials match, and prefix similarity.
+"Initials match" is what catches GM vs General Manager — the pair that
+prompted this. No spelling-similarity measure can connect them; they
+share almost no characters.
+
+The confirm sheet shows each side's BALANCE and which departments it
+is used at, plus the combined total afterwards. Merging customers
+moves real money between accounts, so the decision needs the numbers,
+not just the names.

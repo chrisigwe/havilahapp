@@ -1,7 +1,57 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
-  <rect width="64" height="64" fill="#101613"/>
-  <rect x="17" y="17" width="12.5" height="12.5" rx="3" fill="#e8a13d"/>
-  <rect x="34.5" y="17" width="12.5" height="12.5" rx="3" fill="#7fb08a"/>
-  <rect x="17" y="34.5" width="12.5" height="12.5" rx="3" fill="#d96c5a"/>
-  <rect x="34.5" y="34.5" width="12.5" height="12.5" rx="3" fill="#e8a13d"/>
+  <!-- Same palette, geometry and 14px corner radius as the flat
+       original. The 3D read comes from lighting alone: one source at
+       the top-left, so every tile has a lit top edge, a darker
+       underside, and a shadow cast down-right. Tiles are extruded
+       ~1px — enough to lift off the background, small enough to
+       survive being scaled down to a 24px favicon. -->
+  <defs>
+    <radialGradient id="bg" cx="30%" cy="24%" r="92%">
+      <stop offset="0%" stop-color="#1b2521"/>
+      <stop offset="62%" stop-color="#121a16"/>
+      <stop offset="100%" stop-color="#0b100d"/>
+    </radialGradient>
+    <linearGradient id="amberF" x1="0" y1="0" x2="0.85" y2="1">
+      <stop offset="0%" stop-color="#f4bc63"/><stop offset="55%" stop-color="#e8a13d"/><stop offset="100%" stop-color="#c8842a"/>
+    </linearGradient>
+    <linearGradient id="greenF" x1="0" y1="0" x2="0.85" y2="1">
+      <stop offset="0%" stop-color="#9ac7a4"/><stop offset="55%" stop-color="#7fb08a"/><stop offset="100%" stop-color="#628f6c"/>
+    </linearGradient>
+    <linearGradient id="clayF" x1="0" y1="0" x2="0.85" y2="1">
+      <stop offset="0%" stop-color="#e88b7a"/><stop offset="55%" stop-color="#d96c5a"/><stop offset="100%" stop-color="#b55343"/>
+    </linearGradient>
+    <filter id="drop" x="-40%" y="-40%" width="190%" height="190%">
+      <feDropShadow dx="0.9" dy="1.6" stdDeviation="1.2" flood-color="#000" flood-opacity="0.68"/>
+    </filter>
+    <linearGradient id="sheen" x1="0" y1="0" x2="0.6" y2="1">
+      <stop offset="0%" stop-color="#ffffff" stop-opacity="0.10"/>
+      <stop offset="45%" stop-color="#ffffff" stop-opacity="0.03"/>
+      <stop offset="70%" stop-color="#ffffff" stop-opacity="0"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="64" height="64" fill="url(#bg)"/>
+
+  <!-- Per tile: a darker slab offset down-right is the extruded side;
+       the gradient face sits on top; the white stroke along the upper
+       edge is the specular catch that sells the bevel. -->
+  <g filter="url(#drop)">
+    <rect x="17.1" y="17.6" width="13.5" height="13.5" rx="3" fill="#8a5a1c"/>
+    <rect x="16" y="16" width="13.5" height="13.5" rx="3" fill="url(#amberF)"/>
+    <path d="M19 16.6h7.5" stroke="#fff" stroke-opacity="0.55" stroke-width="1.0" stroke-linecap="round" fill="none"/>
+
+    <rect x="35.6" y="17.6" width="13.5" height="13.5" rx="3" fill="#47684f"/>
+    <rect x="34.5" y="16" width="13.5" height="13.5" rx="3" fill="url(#greenF)"/>
+    <path d="M37.5 16.6h7.5" stroke="#fff" stroke-opacity="0.55" stroke-width="1.0" stroke-linecap="round" fill="none"/>
+
+    <rect x="17.1" y="36.1" width="13.5" height="13.5" rx="3" fill="#8e3d30"/>
+    <rect x="16" y="34.5" width="13.5" height="13.5" rx="3" fill="url(#clayF)"/>
+    <path d="M19 35.1h7.5" stroke="#fff" stroke-opacity="0.55" stroke-width="1.0" stroke-linecap="round" fill="none"/>
+
+    <rect x="35.6" y="36.1" width="13.5" height="13.5" rx="3" fill="#8a5a1c"/>
+    <rect x="34.5" y="34.5" width="13.5" height="13.5" rx="3" fill="url(#amberF)"/>
+    <path d="M37.5 35.1h7.5" stroke="#fff" stroke-opacity="0.55" stroke-width="1.0" stroke-linecap="round" fill="none"/>
+  </g>
+
+  <rect width="64" height="64" fill="url(#sheen)"/>
 </svg>

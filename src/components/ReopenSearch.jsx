@@ -48,10 +48,19 @@ export default function ReopenSearch({ boot, onPick, onClose }) {
                 <div className="flex items-center gap-3">
                   <span className="font-bold w-14">{s.rooms?.room_number}</span>
                   <span className="flex-1 min-w-0 truncate">{s.guests?.full_name}</span>
-                  <span className="text-dim text-sm tnum">
-                    {s.actual_out}{showTimes && s.checked_out_at ? ` ${lagosTime(s.checked_out_at)}` : ''}
-                  </span>
+                  <span className="text-dim text-sm tnum">{s.actual_out}</span>
                 </div>
+                {/* Both ends of the stay, for audit. Shown on its own
+                    line rather than squeezed beside the date — two
+                    timestamps in a row is what makes a checkout
+                    verifiable, and cramming them truncates on a phone. */}
+                {showTimes && (s.checked_in_at || s.checked_out_at) && (
+                  <div className="text-dim text-xs tnum mt-0.5 pl-14">
+                    In {s.check_in_date}{s.checked_in_at ? ` ${lagosTime(s.checked_in_at)}` : ''}
+                    {' · '}
+                    Out {s.actual_out}{s.checked_out_at ? ` ${lagosTime(s.checked_out_at)}` : ''}
+                  </div>
+                )}
               </button>
             </li>
           ))}

@@ -23,6 +23,20 @@ export default function RoomChargeSheet({ boot, stockMap, onClose, toast }) {
   const [picking, setPicking] = useState(false)
   const [typing, setTyping] = useState(null)    // { description, qty, unitPrice } while composing
   const [pending, setPending] = useState(null)  // { item, loc, qty, unitPrice } confirmed catalog pick
+
+  // A typed line never deducts stock — correct for food, wrong for a
+  // drink. Alphonso was billed for an Amstel Malt through this path in
+  // September: the money was right, the bottle never left inventory,
+  // and nothing on screen said so. Match what is being typed against
+  // the catalogue and say so before it is saved.
+  const typedMatchesStockItem = (() => {
+    const d = (typing?.description || '').trim().toLowerCase()
+    if (d.length < 3) return null
+    return (items || []).find(i => {
+      const n = (i.name || '').toLowerCase()
+      return n === d || n.includes(d) || d.includes(n)
+    }) || null
+  })()
   const [busy, setBusy] = useState(false)
 
   useEffect(() => {
@@ -159,6 +173,19 @@ export default function RoomChargeSheet({ boot, stockMap, onClose, toast }) {
                   onChange={e => setTyping(t => ({ ...t, description: e.target.value }))}
                   placeholder="e.g. Jollof Rice with Chicken"
                   className="h-12 w-full px-3 mb-3 rounded-xl bg-raise border border-line placeholder:text-dim" />
+                {typedMatchesStockItem && (
+                  <div className="mb-3 px-3 py-2 rounded-xl bg-clay/10 border border-clay">
+                    <p className="text-clay text-sm">
+                      "{typedMatchesStockItem.name}" is a stocked item. Typed here it
+                      will be billed to the guest but <strong>will not come off stock</strong>.
+                    </p>
+                    <button
+                      onClick={() => { setTyping(null); setPicking(true) }}
+                      className="mt-2 h-9 px-3 rounded-lg bg-clay text-bg font-bold text-sm">
+                      Pick it from the list instead
+                    </button>
+                  </div>
+                )}
                 <div className="flex items-center gap-3 mb-3">
                   <button onClick={() => setTyping(t => ({ ...t, qty: Math.max(1, t.qty - 1) }))}
                     className="h-11 w-11 rounded-xl bg-raise border border-line text-xl font-bold">−</button>
