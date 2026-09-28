@@ -3578,3 +3578,112 @@ the ingredients were expensed when bought. Rather than invent a cost,
 they are reported separately at menu value, clearly excluded from the
 cost total. An invented figure would be worse than an honest gap,
 especially on a number someone may take to an accountant.
+
+
+## Consolidation pass (review of 28 Sep 2026)
+
+Four mechanical changes, each verified to change no behaviour.
+
+1. RECEPTION DASHBOARD — one component (components/ReceptionDashboard.jsx)
+   It was copied inline into SalesEntry and DailySales (83 and 80
+   lines), and the copies had already started to drift. A diff showed
+   they differed in exactly one real way: rooms-sold sits inside the
+   dashboard on Sales but OUTSIDE on Daily Sales, where it must still
+   show for past dates when the dashboard (current balances only) is
+   hidden. That became the showRoomsSold prop. The internal-room
+   filtering both pages computed identically — and used for nothing
+   else — moved into the component too.
+
+2. ROLES — one file (lib/roles.js)
+   Role sets were typed inline 21 times in five combinations. Now named
+   groups that mirror what the database enforces:
+     SUPERVISOR     gm, admin                     = is_supervisor()
+     MANAGEMENT     manager, gm, admin            = can_manage_rooms()
+     EDITOR         + storekeeper
+     OVERSIGHT      + storekeeper, auditor
+     RECEPTION_EDIT front_desk, gm, admin
+   VERIFIED: every gate compared old vs new for all 7 roles — 140
+   checks, 0 differences. No one's access changed.
+
+   Two misleading names surfaced and were resolved by MEMBERSHIP, not
+   by name: OVERSIGHT_ROLES (in Shell, More, App) and SUPERVISOR_ROLES
+   (in Folio) have always been manager/gm/admin — i.e. MANAGEMENT —
+   despite their names. Folio's SUPERVISOR_ROLES in particular is NOT
+   the gm/admin set that is_supervisor() means.
+
+   One genuine inconsistency left deliberately untouched, since fixing
+   it would change access: `seesAllDepartments` means manager/gm/admin
+   in SalesEntry but storekeeper/manager/gm/admin/auditor in Recovery.
+   Same name, different sets. Needs a decision, not a refactor.
+
+3. GUEST MERGE — one location (Corrections > Reception)
+   The two entry points were NOT interchangeable: Settings had a manual
+   search that can merge ANY two guests; Corrections showed only pairs
+   the finder detected. Removing Settings outright would have lost
+   merges like "Chief Okonkwo" / "Emeka Okonkwo", which match no finder
+   rule. So the manual sheet MOVED to Corrections ("Merge two guests not
+   listed above") and was then removed from Settings.
+
+4. DEAD CODE — loadBarStaff, loadAdvancePayments,
+   loadRestaurantRoomCharges removed. Each confirmed to have zero
+   callers; removal used exact brace matching, and the function list
+   was diffed afterwards to prove exactly these three went and nothing
+   else (an earlier slice-based removal had deleted a neighbour).
+
+Build passing is NOT sufficient evidence for changes like these: an
+unimported identifier at module scope is a runtime crash that Vite
+does not catch. So imports were verified directly for every role
+group and every JSX component used. That check caught one real break
+mid-pass (More.jsx referenced MANAGEMENT with no import) before it
+shipped.
+
+
+## seesAllDepartments unified on OVERSIGHT
+
+Decision: store managers and auditors see all departments. All three
+pages that gate department chips now use is(staff.role, OVERSIGHT):
+  - Recovery: already OVERSIGHT — unchanged
+  - Credit:   was `isEditor || role === 'auditor'`, which is exactly
+              OVERSIGHT; rewritten to say so. Verified identical for
+              all 7 roles.
+  - Sales:    was MANAGEMENT. Gains storekeeper and auditor; nobody
+              loses access.
+
+IMPLICATION worth knowing: on the Sales page, department chips choose
+where a sale is RECORDED, not just what is viewed. So store managers
+can now ring up sales at any department. Auditors cannot reach the
+Sales page, so nothing changes for them there. The database's own
+rules still apply regardless — e.g. block_awka_storekeeper_on_behalf_sale
+still refuses Awka store-manager sales recorded on behalf of others.
+
+
+## Sales page: store managers SEE all departments, RECORD only their own
+
+Corrects the previous change, which made seesAllDepartments OVERSIGHT
+on Sales and so let store managers ring up sales at ANY department.
+The intent was viewing only.
+
+Seeing and recording are now separate on this page:
+  seesAllDepartments = OVERSIGHT          -> which chips appear
+  canRecordAt(id)    = MANAGEMENT or own  -> where a sale may be saved
+
+Resulting access (verified per role):
+  bar, front_desk        see + record own only        (unchanged)
+  storekeeper            see ALL, record own only     (the change)
+  manager, gm, admin     see + record all             (unchanged)
+  auditor                cannot reach this page
+
+Enforced at TWO layers, deliberately:
+  1. SAVE GUARDS — commit(), commitWriteoff(), and the inline restaurant
+     PR/damage save all refuse when not permitted. The restaurant save
+     checks against the RESTAURANT location, since that is where it
+     records, not the selected department. Guarding the saves covers
+     every route into them — including writeoffs opened from inside the
+     item picker, which have no button of their own.
+  2. UI — "+ Sell Item", "Add a restaurant order", and the tier row
+     containing "PR / Damage" are hidden when viewing someone else's
+     department, replaced by a note saying why. Hiding alone would not
+     be enough: four separate entry points exist, and missing one would
+     leave a live path.
+
+Delete was already restricted to gm/admin, so it needed no change.

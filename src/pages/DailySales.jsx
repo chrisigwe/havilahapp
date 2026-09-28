@@ -3,6 +3,8 @@ import { naira, lagosToday, lagosDaysAgo, tierLabel, methodLabel, whoRecorded, p
 import { loadDailyFinancials, loadToday, loadReceptionActivity, loadReceptionDashboard,
          loadRoomCharges, loadRoomsSoldInMonth } from '../lib/data'
 import { useToast } from '../components/Toast'
+import ReceptionDashboard from '../components/ReceptionDashboard'
+import { is, SUPERVISOR } from '../lib/roles'
 
 // Read-only — browse any past day's sales by department. Built for
 // the auditor (who has no live Sales tab at all, by design — never
@@ -40,10 +42,7 @@ export default function DailySales({ boot }) {
   // monthly rooms-sold count are both
   // GM/admin-only visibility on this dashboard — matches
   // is_supervisor()'s own role set, not the broader oversight group.
-  const isGmOrAdmin = ['gm', 'admin'].includes(staff.role)
-  const visibleRoomRateProgress = (receptionDashboard?.roomRateProgress || [])
-    .filter(r => isGmOrAdmin || !r.is_internal)
-  const visibleRoomRateRemainingTotal = visibleRoomRateProgress.reduce((s, r) => s + r.remaining, 0)
+  const isGmOrAdmin = is(staff.role, SUPERVISOR)
 
   // Reset to "All departments" on branch switch (GM/admin) — otherwise
   // the old branch's department id stays selected, matching no chip
@@ -147,93 +146,10 @@ export default function DailySales({ boot }) {
               {roomsSold} room{roomsSold === 1 ? '' : 's'} sold {date.slice(0, 7) === lagosToday().slice(0, 7) ? 'this month' : 'in this month'}
             </p>
           )}
-          {receptionDashboard && (
-            <div className="mt-4 rounded-2xl border border-amber bg-surface p-4">
-              <p className="font-semibold">Close of day</p>
-              <div className="grid grid-cols-3 gap-3 mt-3 pb-3 border-b border-line">
-                <div>
-                  <div className="text-dim text-sm">POS</div>
-                  <div className="tnum font-bold">{naira(receptionDashboard.pos)}</div>
-                </div>
-                <div>
-                  <div className="text-dim text-sm">Cash</div>
-                  <div className="tnum font-bold">{naira(receptionDashboard.cash)}</div>
-                </div>
-                <div>
-                  <div className="text-dim text-sm">Credit</div>
-                  <div className="tnum font-bold text-clay">{naira(receptionDashboard.deferredTotal)}</div>
-                </div>
-              </div>
-
-              <div className="mt-3 flex items-baseline justify-between">
-                <span className="text-dim">Deferred — owed across every live stay</span>
-                <span className="tnum font-bold text-clay">{naira(receptionDashboard.deferredTotal)}</span>
-              </div>
-              <div className="mt-1 space-y-1">
-                {receptionDashboard.deferred.map(g => (
-                  <div key={g.stay_id} className="flex justify-between text-sm">
-                    <span className="text-dim truncate">{g.guest_name || 'Guest'} · Room {g.room_number}</span>
-                    <span className="tnum">{naira(g.outstanding + g.departmentCredit + g.billedToYou)}</span>
-                  </div>
-                ))}
-                {!receptionDashboard.deferred.length && (
-                  <p className="text-dim text-sm">Nothing deferred right now.</p>
-                )}
-              </div>
-
-              <div className="mt-4 pt-3 border-t border-line flex items-baseline justify-between">
-                <span className="text-dim">Room rate — period progress</span>
-                <span className="tnum font-bold text-leaf">{naira(visibleRoomRateRemainingTotal)} left</span>
-              </div>
-              <div className="mt-1 space-y-2">
-                {visibleRoomRateProgress.map(r => (
-                  <div key={r.stay_id} className="text-sm">
-                    <div className="flex justify-between">
-                      <span className="text-dim truncate">{r.guest_name || 'Guest'} · Room {r.room_number}</span>
-                      <span className="text-dim">{r.nightsElapsed}/{r.totalNights}n · {r.nightsLeft} left</span>
-                    </div>
-                    <div className="h-1.5 rounded-full bg-line overflow-hidden mt-1">
-                      <div className="h-full bg-clay" style={{ width: `${r.pctElapsed}%` }} />
-                    </div>
-                    <div className="text-dim text-xs mt-0.5">
-                      {naira(r.consumed)} taken out · {naira(r.remaining)} left to {r.scheduled_out}
-                    </div>
-                  </div>
-                ))}
-                {!visibleRoomRateProgress.length && (
-                  <p className="text-dim text-sm">No multi-night stays right now.</p>
-                )}
-              </div>
-
-              <div className="mt-4 pt-3 border-t border-line flex items-baseline justify-between">
-                <span className="text-dim">In-house today — every occupied room</span>
-                <span className="tnum font-bold">{receptionDashboard.inHouse.length}</span>
-              </div>
-              <p className="text-dim text-xs mt-0.5">
-                Everyone stays listed here whether they paid, are on credit, or had no
-                activity today — nobody drops off this list just for not transacting.
-              </p>
-              <div className="mt-2 space-y-1.5">
-                {receptionDashboard.inHouse.map(g => (
-                  <div key={g.stay_id} className="flex justify-between text-sm">
-                    <span className="text-dim truncate">{g.guest_name || 'Guest'} · Room {g.room_number}</span>
-                    {g.status === 'paid' && (
-                      <span className="tnum text-leaf">Paid {naira(g.paidToday)} today</span>
-                    )}
-                    {g.status === 'credit' && (
-                      <span className="tnum text-clay">On credit · {naira(g.outstanding)} owing</span>
-                    )}
-                    {g.status === 'settled' && (
-                      <span className="text-dim">Settled · no activity today</span>
-                    )}
-                  </div>
-                ))}
-                {!receptionDashboard.inHouse.length && (
-                  <p className="text-dim text-sm">No occupied rooms right now.</p>
-                )}
-              </div>
-            </div>
-          )}
+          {/* showRoomsSold is false here: rooms sold renders above,
+              outside this block, so it still shows for past dates. */}
+          <ReceptionDashboard dashboard={receptionDashboard}
+            canSeeInternal={isGmOrAdmin} className="mt-4" />
           {date !== lagosToday() && (
             <p className="text-dim text-sm mt-4">
               Deferred and advance figures only show for today — they reflect current

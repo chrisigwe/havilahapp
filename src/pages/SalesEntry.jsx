@@ -8,10 +8,12 @@ import { loadStockMap, loadPopular, loadToday, saveBasket, saveWriteoff,
          loadPrGivenOnDate } from '../lib/data'
 import { enqueue, flush, isConnectionError } from '../lib/outbox'
 import { useToast } from '../components/Toast'
+import ReceptionDashboard from '../components/ReceptionDashboard'
 import ItemPicker from '../components/ItemPicker'
 import RoomChargeSheet from '../components/RoomChargeSheet'
 import CustomerPicker from '../components/CustomerPicker'
 import Receipt from '../components/Receipt'
+import { EDITOR, MANAGEMENT, OVERSIGHT, SUPERVISOR, is } from '../lib/roles'
 
 export default function SalesEntry({ boot }) {
   const { staff, locations, allLocations, tiers, methods, items } = boot
@@ -23,12 +25,17 @@ export default function SalesEntry({ boot }) {
   // since oversight roles aren't normally tied to one department).
   // Bar/front_desk/storekeeper, who use this as their direct working
   // tab, stay scoped to their own assigned department(s) as before.
-  const seesAllDepartments = ['manager', 'gm', 'admin'].includes(staff.role)
+  // OVERSIGHT, matching Credit and Recovery, so the name means the same
+  // thing on every page. NOTE: on THIS page department chips decide
+  // where a sale is RECORDED, so this also lets store managers ring up
+  // sales at any department — not only view them. Auditors cannot reach
+  // this page, so for them nothing changes.
+  const seesAllDepartments = is(staff.role, OVERSIGHT)
   const salesPoints = (seesAllDepartments ? allLocations : locations).filter(l => l.is_sales_point && !l.is_store)
   // anyone who records a sale may date it; overriding an unbalanced
   // sale stays with the roles above bar staff
   const canBackdate = staff.role !== 'auditor'
-  const canOverrideVariance = ['storekeeper', 'manager', 'gm', 'admin'].includes(staff.role)
+  const canOverrideVariance = is(staff.role, EDITOR)
   // Specifically excluded from on-behalf-of, per policy — pinned to
   // their staff id so a role change doesn't quietly reopen it, and
   // Nnewi's storekeeper (or any future Awka one) is unaffected. The
@@ -53,6 +60,13 @@ export default function SalesEntry({ boot }) {
   const [backdateReason, setBackdateReason] = useState('')
 
   const [locationId, setLocationId] = useState(staff.default_location_id || salesPoints[0]?.id)
+  // SEEING a department and RECORDING at it are separate. Store managers
+  // and auditors may select any department to view it (OVERSIGHT, above),
+  // but may only record at departments they are assigned to. Manager, gm
+  // and admin keep recording anywhere, exactly as before.
+  const ownLocationIds = new Set((locations || []).map(l => l.id))
+  const canRecordAt = (id) => is(staff.role, MANAGEMENT) || ownLocationIds.has(id)
+  const canRecordHere = canRecordAt(locationId)
   // Restaurant and Reception don't behave like a normal sales
   // department — Restaurant is typed-order-only (no catalog stock to
   // sell), Reception doesn't record sales at all (check-in/checkout/
@@ -90,17 +104,14 @@ export default function SalesEntry({ boot }) {
   // monthly rooms-sold count are both
   // GM/admin-only visibility on the reception dashboard — matches
   // is_supervisor()'s own role set, not the broader oversight group.
-  const isGmOrAdmin = ['gm', 'admin'].includes(staff.role)
-  const visibleRoomRateProgress = (receptionDashboard?.roomRateProgress || [])
-    .filter(r => isGmOrAdmin || !r.is_internal)
-  const visibleRoomRateRemainingTotal = visibleRoomRateProgress.reduce((s, r) => s + r.remaining, 0)
+  const isGmOrAdmin = is(staff.role, SUPERVISOR)
   const [showYesterday, setShowYesterday] = useState(false)
   const [yesterdaySummary, setYesterdaySummary] = useState(null)
   const [yesterdayActivity, setYesterdayActivity] = useState(null)
   // GM/Admin-only cleanup for training records, scoped specifically to
   // Restaurant here (Reception's version deletes a whole booking, not
   // a single row, so it lives separately in Folio)
-  const canDeleteTraining = isRestaurant && ['gm', 'admin'].includes(staff.role)
+  const canDeleteTraining = isRestaurant && is(staff.role, SUPERVISOR)
   const [deleteConfirm, setDeleteConfirm] = useState(null)
   const [deleteBusy, setDeleteBusy] = useState(false)
   const [writeoffBusy, setWriteoffBusy] = useState(false)
@@ -282,6 +293,10 @@ export default function SalesEntry({ boot }) {
     p.split ? Number(p.split.credit || 0) : (p.method === 'credit' ? basketTotal : 0)
 
   async function commit() {
+    if (!canRecordHere) {
+      toast('View only — you can record only at your own departments', 'error')
+      return
+    }
     setBusy(true)
     try {
       const customerId = paying.customerId
@@ -332,6 +347,10 @@ export default function SalesEntry({ boot }) {
   }
 
   async function commitWriteoff() {
+    if (!canRecordHere) {
+      toast('View only — you can record only at your own departments', 'error')
+      return
+    }
     setBusy(true)
     const w = writeoff
     try {
@@ -407,7 +426,8 @@ export default function SalesEntry({ boot }) {
         </p>
       )}
 
-      {!isReception && !isRestaurant && tiers.length > 1 && (
+      {/* Price tiers and PR/Damage only matter when recording. */}
+      {!isReception && !isRestaurant && tiers.length > 1 && canRecordHere && (
         <div className="mt-3">
           <div className="flex gap-2">
             {tiers.map(t => (
@@ -440,7 +460,7 @@ export default function SalesEntry({ boot }) {
         </button>
       )}
 
-      {!isReception && (
+      {!isReception && canRecordHere && (
         <button onClick={() => setRestaurantOrder({ description: '', qty: 1, unitPrice: '',
           orderType: 'standard', damageReason: null, writeoffNote: '', prMeal: null, date: null })}
           className="mt-3 w-full h-12 rounded-xl border border-line text-ink font-semibold">
@@ -477,102 +497,25 @@ export default function SalesEntry({ boot }) {
             on the Rooms tab.
           </p>
         </div>
-      ) : !isRestaurant && (
+      ) : !isRestaurant && canRecordHere && (
         <button onClick={() => setPicking(true)}
           className="mt-3 w-full h-16 rounded-2xl bg-amber text-bg text-xl font-bold active:bg-amber-deep">
           + Sell Item
         </button>
       )}
 
-      {isReception && receptionDashboard && (
-        <div className="mt-3 rounded-2xl border border-amber bg-surface p-4">
-          <p className="font-semibold">Close of day</p>
-          <div className="grid grid-cols-3 gap-3 mt-3 pb-3 border-b border-line">
-            <div>
-              <div className="text-dim text-sm">POS</div>
-              <div className="tnum font-bold">{naira(receptionDashboard.pos)}</div>
-            </div>
-            <div>
-              <div className="text-dim text-sm">Cash</div>
-              <div className="tnum font-bold">{naira(receptionDashboard.cash)}</div>
-            </div>
-            <div>
-              <div className="text-dim text-sm">Credit</div>
-              <div className="tnum font-bold text-clay">{naira(receptionDashboard.deferredTotal)}</div>
-            </div>
-          </div>
+      {/* Shown instead of the recording buttons, so the missing
+          controls read as deliberate rather than as a broken page. */}
+      {!canRecordHere && (
+        <p className="mt-3 px-4 py-3 rounded-xl bg-raise border border-line text-dim text-sm">
+          Viewing {currentDept?.name || 'this department'}. You can see its sales here,
+          but you can only record sales at your own departments.
+        </p>
+      )}
 
-          <div className="mt-3 flex items-baseline justify-between">
-            <span className="text-dim">Deferred — owed across every live stay</span>
-            <span className="tnum font-bold text-clay">{naira(receptionDashboard.deferredTotal)}</span>
-          </div>
-          <div className="mt-1 space-y-1">
-            {receptionDashboard.deferred.map(g => (
-              <div key={g.stay_id} className="flex justify-between text-sm">
-                <span className="text-dim truncate">{g.guest_name || 'Guest'} · Room {g.room_number}</span>
-                <span className="tnum">{naira(g.outstanding + g.departmentCredit + g.billedToYou)}</span>
-              </div>
-            ))}
-            {!receptionDashboard.deferred.length && (
-              <p className="text-dim text-sm">Nothing deferred right now.</p>
-            )}
-          </div>
-
-          <div className="mt-4 pt-3 border-t border-line flex items-baseline justify-between">
-            <span className="text-dim">Room rate — period progress</span>
-            <span className="tnum font-bold text-leaf">{naira(visibleRoomRateRemainingTotal)} left</span>
-          </div>
-          {isGmOrAdmin && roomsSold != null && (
-            <p className="text-dim text-sm mt-0.5">{roomsSold} room{roomsSold === 1 ? '' : 's'} sold this month</p>
-          )}
-          <div className="mt-1 space-y-2">
-            {visibleRoomRateProgress.map(r => (
-              <div key={r.stay_id} className="text-sm">
-                <div className="flex justify-between">
-                  <span className="text-dim truncate">{r.guest_name || 'Guest'} · Room {r.room_number}</span>
-                  <span className="text-dim">{r.nightsElapsed}/{r.totalNights}n · {r.nightsLeft} left</span>
-                </div>
-                <div className="h-1.5 rounded-full bg-line overflow-hidden mt-1">
-                  <div className="h-full bg-clay" style={{ width: `${r.pctElapsed}%` }} />
-                </div>
-                <div className="text-dim text-xs mt-0.5">
-                  {naira(r.consumed)} taken out · {naira(r.remaining)} left to {r.scheduled_out}
-                </div>
-              </div>
-            ))}
-            {!visibleRoomRateProgress.length && (
-              <p className="text-dim text-sm">No multi-night stays right now.</p>
-            )}
-          </div>
-
-          <div className="mt-4 pt-3 border-t border-line flex items-baseline justify-between">
-            <span className="text-dim">In-house today — every occupied room</span>
-            <span className="tnum font-bold">{receptionDashboard.inHouse.length}</span>
-          </div>
-          <p className="text-dim text-xs mt-0.5">
-            Everyone stays listed here whether they paid, are on credit, or had no
-            activity today — nobody drops off this list just for not transacting.
-          </p>
-          <div className="mt-2 space-y-1.5">
-            {receptionDashboard.inHouse.map(g => (
-              <div key={g.stay_id} className="flex justify-between text-sm">
-                <span className="text-dim truncate">{g.guest_name || 'Guest'} · Room {g.room_number}</span>
-                {g.status === 'paid' && (
-                  <span className="tnum text-leaf">Paid {naira(g.paidToday)} today</span>
-                )}
-                {g.status === 'credit' && (
-                  <span className="tnum text-clay">On credit · {naira(g.outstanding)} owing</span>
-                )}
-                {g.status === 'settled' && (
-                  <span className="text-dim">Settled · no activity today</span>
-                )}
-              </div>
-            ))}
-            {!receptionDashboard.inHouse.length && (
-              <p className="text-dim text-sm">No occupied rooms right now.</p>
-            )}
-          </div>
-        </div>
+      {isReception && (
+        <ReceptionDashboard dashboard={receptionDashboard}
+          canSeeInternal={isGmOrAdmin} roomsSold={roomsSold} showRoomsSold={isGmOrAdmin} />
       )}
 
       {isReception && (
@@ -1170,6 +1113,11 @@ export default function SalesEntry({ boot }) {
               setWriteoffBusy(true)
               try {
                 const restaurant = (boot.allLocations || []).find(l => /restaurant/i.test(l.name))
+                if (!canRecordAt(restaurant?.id)) {
+                  toast('View only — you can record only at your own departments', 'error')
+                  setWriteoffBusy(false)
+                  return
+                }
                 await saveRestaurantWriteoff({
                   staff, locationId: restaurant?.id, businessDate: restaurantOrder.date || date,
                   description: desc, qty, unitPrice,

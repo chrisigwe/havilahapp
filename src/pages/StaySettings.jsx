@@ -4,7 +4,7 @@ import { loadRoomsForSettings, loadBranchStaySettings, updateRoomRates,
          updateBranchOverstayDefault, loadStaffOfMonth, postStaffOfMonth,
          deleteStaffOfMonth } from '../lib/data'
 import { useToast } from '../components/Toast'
-import MergeGuestsSheet from '../components/MergeGuestsSheet'
+import { is, MANAGEMENT, SUPERVISOR } from '../lib/roles'
 
 const RATE_FIELDS = { standard: 'rate_standard', alternate: 'rate_alternate', short: 'rate_short' }
 
@@ -25,9 +25,8 @@ export default function StaySettings({ boot }) {
   const [fee, setFee] = useState('')
   const [busy, setBusy] = useState(false)
 
-  const canManageRooms = ['manager', 'gm', 'admin'].includes(staff.role)
-  const canSetOverstayDefault = ['gm', 'admin'].includes(staff.role)
-  const [mergingGuests, setMergingGuests] = useState(false)
+  const canManageRooms = is(staff.role, MANAGEMENT)
+  const canSetOverstayDefault = is(staff.role, SUPERVISOR)
 
   // Staff of the Month — GM/admin only, matches canSetOverstayDefault
   // exactly (is_supervisor()'s own role set), kept as a separate name
@@ -233,21 +232,6 @@ export default function StaySettings({ boot }) {
         </section>
       )}
 
-      {canSetOverstayDefault && (
-        <section className="mt-5 rounded-2xl border border-line bg-surface p-4">
-          <h3 className="font-semibold">Guest records</h3>
-          <p className="text-dim text-sm mt-1 mb-3">
-            If the same guest ended up with more than one record — different
-            spellings of their name over time — merge them into one so their
-            full history and current balance live in a single place.
-          </p>
-          <button onClick={() => setMergingGuests(true)}
-            className="h-12 px-5 rounded-xl border border-amber text-amber font-semibold">
-            Merge duplicate guests
-          </button>
-        </section>
-      )}
-
       <section className="mt-5">
         <h3 className="font-semibold">Room rates</h3>
         <p className="text-dim text-sm mt-1 mb-3">
@@ -297,7 +281,6 @@ export default function StaySettings({ boot }) {
         </div>
       </section>
 
-      {mergingGuests && <MergeGuestsSheet boot={boot} onClose={() => setMergingGuests(false)} />}
     </div>
   )
 }

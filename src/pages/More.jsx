@@ -1,4 +1,6 @@
-const OVERSIGHT_ROLES = ['manager', 'gm', 'admin']
+import { MANAGEMENT } from '../lib/roles'
+// Was named OVERSIGHT_ROLES but has always been manager/gm/admin.
+const OVERSIGHT_ROLES = MANAGEMENT
 
 const ITEMS = [
   { key: 'dailysales', label: 'Daily sales', hint: 'Any past day, by department',

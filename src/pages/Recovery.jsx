@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { naira, methodLabel, lagosToday } from '../lib/format'
 import { loadRecovery, updateRepayment, deleteRepayment, loadRoomPayments, deleteRoomPayment } from '../lib/data'
 import { useToast } from '../components/Toast'
+import { is, OVERSIGHT, SUPERVISOR } from '../lib/roles'
 
 // Deliberately excludes storekeeper — an explicit choice, not an
 // oversight, matching how storekeeper's write access has been pulled
@@ -19,7 +20,7 @@ export default function Recovery({ boot }) {
   // whatever locations happen to be on their own staff_locations row
   // — matches Credit.jsx's identical fix. Bar/front_desk keep seeing
   // only their own assigned departments.
-  const seesAllDepartments = ['storekeeper', 'manager', 'gm', 'admin', 'auditor'].includes(staff.role)
+  const seesAllDepartments = is(staff.role, OVERSIGHT)
   const salesPoints = (seesAllDepartments ? allLocations : locations || [])
     .filter(l => l.is_sales_point && !l.is_store)
   const [locId, setLocId] = useState(staff.default_location_id || salesPoints[0]?.id || null)
@@ -33,8 +34,8 @@ export default function Recovery({ boot }) {
   // still miss it just by having a different chip selected.
   const hasReceptionAccess = seesAllDepartments || (locations || []).some(l => /reception/i.test(l.name))
   const [roomPayments, setRoomPayments] = useState(null)
-  const canDeleteRoomPayment = ['gm', 'admin'].includes(staff.role)
-  const canDeleteRepayment = ['gm', 'admin'].includes(staff.role)
+  const canDeleteRoomPayment = is(staff.role, SUPERVISOR)
+  const canDeleteRepayment = is(staff.role, SUPERVISOR)
   const [deletingRoomPayment, setDeletingRoomPayment] = useState(null)
   const [deletingRepayment, setDeletingRepayment] = useState(null)
   const [deleteBusy, setDeleteBusy] = useState(false)

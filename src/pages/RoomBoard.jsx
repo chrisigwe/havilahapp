@@ -5,6 +5,7 @@ import CheckIn from './CheckIn'
 import Folio from '../components/Folio'
 import ReopenSearch from '../components/ReopenSearch'
 import { useToast } from '../components/Toast'
+import { is, MANAGEMENT } from '../lib/roles'
 
 // Phase 2 of bringing the front-desk app's functionality into this
 // one: check-in and new bookings, alongside the view-only room status
@@ -35,7 +36,7 @@ function stateOf(room) {
 export default function RoomBoard({ boot }) {
   const { staff } = boot
   const toast = useToast()
-  const canManageRooms = ['manager', 'gm', 'admin'].includes(staff.role)
+  const canManageRooms = is(staff.role, MANAGEMENT)
   // Arrival/departure clock times are for oversight only — front
   // desk and bar keep seeing the dates exactly as before.
   const showTimes = seesStayTimes(staff.role)

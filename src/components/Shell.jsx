@@ -7,6 +7,7 @@ import StaffOfMonthBanner from './StaffOfMonthBanner'
 import NavIcon from './NavIcon'
 import ReadOnlyBanner from './ReadOnlyBanner'
 import NotificationSetup from './NotificationSetup'
+import { MANAGEMENT } from '../lib/roles'
 
 const STOCK_ROLES = ['storekeeper', 'manager', 'gm', 'admin']
 // GM/admin/manager oversee everything rather than doing one
@@ -15,7 +16,8 @@ const STOCK_ROLES = ['storekeeper', 'manager', 'gm', 'admin']
 // owes what) get promoted to direct tabs; Sales/Store/Stock move
 // into More for them specifically, since storekeeper and other
 // department-scoped roles still need those as their own primary tabs.
-const OVERSIGHT_ROLES = ['manager', 'gm', 'admin']
+// Was named OVERSIGHT_ROLES but has always been manager/gm/admin.
+const OVERSIGHT_ROLES = MANAGEMENT
 
 const MORE = ['dailysales', 'roomboard', 'credit', 'recovery', 'count', 'catalog', 'variance', 'fix',
               'staysettings', 'sales', 'store', 'stock']

@@ -6,8 +6,11 @@ import { loadFolio, loadBranchStaySettings, recordStayPayment, checkOutStay,
 import { useToast } from '../components/Toast'
 import PaymentMethodPicker, { paymentParts, paymentAllocated } from './PaymentMethodPicker'
 import FolioStatement from './FolioStatement'
+import { MANAGEMENT, SUPERVISOR, is } from '../lib/roles'
 
-const SUPERVISOR_ROLES = ['manager', 'gm', 'admin']
+// Was named SUPERVISOR_ROLES but has always been manager/gm/admin —
+// NOT the gm/admin set that is_supervisor() means.
+const SUPERVISOR_ROLES = MANAGEMENT
 
 export default function Folio({ boot, room, onClose, onChanged }) {
   const { staff } = boot
@@ -111,7 +114,7 @@ export default function Folio({ boot, room, onClose, onChanged }) {
   // Matches is_supervisor() exactly (confirmed against its real body):
   // role in ('gm', 'admin') — NOT manager, a narrower set than the
   // manager/gm/admin group that governs undoing an old checkout.
-  const canSetNonDefaultOverstay = ['gm', 'admin'].includes(staff.role)
+  const canSetNonDefaultOverstay = is(staff.role, SUPERVISOR)
   // Arrival/departure clock times: oversight roles only.
   const showTimes = seesStayTimes(staff.role)
 
@@ -268,7 +271,7 @@ export default function Folio({ boot, room, onClose, onChanged }) {
         <button onClick={() => setPrinting(true)} className="block text-dim text-sm underline mt-1">
           Print guest statement
         </button>
-        {['gm', 'admin'].includes(staff.role) && (
+        {is(staff.role, SUPERVISOR) && (
           <button onClick={() => setConfirmingDelete(true)} className="block text-clay text-sm underline mt-1">
             Delete this booking — training records only
           </button>
@@ -426,7 +429,7 @@ export default function Folio({ boot, room, onClose, onChanged }) {
                     <span className="tnum font-semibold">{naira(li.amount)}</span>
                   </div>
                   {(() => {
-                    const canDelete = ['gm', 'admin'].includes(staff.role)
+                    const canDelete = is(staff.role, SUPERVISOR)
                     const canEdit = canDelete || li.servedBy === staff.id
                     if (!canEdit) return null
                     return (

@@ -1,6 +1,7 @@
 import { supabase } from './supabase'
 import { lagosDaysAgo, lagosToday, addDays, nameKey } from './format'
 import { normalizeCustomerName } from './customerName'
+import { SUPERVISOR } from './roles'
 
 export async function loadBranches() {
   const { data, error } = await supabase.from('branches')
@@ -31,7 +32,7 @@ export async function loadStaffIdentity() {
 
 export async function loadBranchData(staff, viewBranchId) {
   if (!staff) return { staff: null }
-  const seesAllBranches = ['gm', 'admin'].includes(staff.role)
+  const seesAllBranches = SUPERVISOR.includes(staff.role)
   const b = (seesAllBranches && viewBranchId) ? viewBranchId : staff.branch_id
   const [locs, tiers, methods, items, assigned, branchRow] = await Promise.all([
     supabase.from('stock_locations').select('*').eq('branch_id', b).order('sort_order'),
@@ -594,15 +595,6 @@ export async function loadStaffForLocation(branchId, locationId) {
                  || s.staff_locations.some(l => l.location_id === locationId))
     .map(({ staff_locations, ...s }) => s)
 }
-
-export async function loadBarStaff(branchId) {
-  const { data, error } = await supabase.from('staff')
-    .select('id, full_name, role').eq('branch_id', branchId).eq('is_active', true)
-    .order('full_name')
-  if (error) return []
-  return data
-}
-
 export async function deleteCustomer(customerId) {
   const { error } = await supabase.rpc('delete_customer', { p_customer: customerId })
   if (error) throw error
@@ -1173,42 +1165,6 @@ export async function updateBranchOverstayDefault(branchId, amount) {
 // Credit and Recovery had never queried this before; these are what
 // let those two screens represent it without merging two genuinely
 // different data models into one query.
-
-// v_stay_folio is a view, not a table — it has no foreign keys, so
-// PostgREST's embedded-relationship syntax (stays!inner(...)) has no
-// real path to follow from it. That silently broke this for every
-// guest, not just one — confirmed directly, not assumed. Fixed by
-// querying the view for the outstanding figures alone, then stays
-// (a real table, so its own embed to rooms/guests works correctly)
-// for just those stay ids, and merging client-side.
-// Guests who've paid ahead of what they actually owe (a negative
-// outstanding) — how much of that advance has been used up by
-// charges so far, and what's genuinely still left as a credit.
-// Restricted to live stays (occupied/reserved) — an old overpayment
-// sitting on an already-checked-out stay isn't a current advance,
-// it's historical, so it stays out of this list.
-export async function loadAdvancePayments(branchId) {
-  const { data: folios, error: e1 } = await supabase.from('v_stay_folio')
-    .select('stay_id, total_due, total_paid, outstanding')
-    .eq('branch_id', branchId).lt('outstanding', -0.009)
-    .in('status', ['occupied', 'reserved'])
-  if (e1) throw e1
-  if (!folios?.length) return []
-
-  const { data: stays, error: e2 } = await supabase.from('stays')
-    .select('id, rooms(room_number, is_internal), guests!guest_id(full_name)')
-    .in('id', folios.map(f => f.stay_id))
-  if (e2) throw e2
-  const stayById = Object.fromEntries((stays || []).map(s => [s.id, s]))
-
-  return folios.map(f => ({
-    stay_id: f.stay_id,
-    room_number: stayById[f.stay_id]?.rooms?.room_number,
-    guest_name: stayById[f.stay_id]?.guests?.full_name,
-    paid: Number(f.total_paid), usedUp: Number(f.total_due), balance: Math.abs(Number(f.outstanding)),
-  }))
-}
-
 // Room-rate period progress across every occupied, multi-night stay —
 // nights consumed vs remaining against the planned check-in→scheduled-
 // out window, purely time-based. Deliberately independent of payment
@@ -1458,12 +1414,6 @@ export async function loadRoomCharges(branchId, date, category) {
   if (error) throw error
   return data || []
 }
-
-// Backward-compatible alias — Restaurant's own category.
-export async function loadRestaurantRoomCharges(branchId, date) {
-  return loadRoomCharges(branchId, date, 'food')
-}
-
 // ---------- Restaurant order type: PR/Damage and Staff write-offs ----------
 // Standard orders are unchanged — they go through the normal basket/
 // payment flow. PR/Damage and Staff never collect payment at all, so

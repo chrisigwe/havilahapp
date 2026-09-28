@@ -1,3 +1,4 @@
+import { OVERSIGHT } from './roles'
 export const naira = (n) =>
   '₦' + Number(n ?? 0).toLocaleString('en-NG', { maximumFractionDigits: 2 })
 
@@ -110,5 +111,5 @@ export const lagosTime = (ts) => !ts ? '' : new Date(ts).toLocaleTimeString('en-
 // Who may see arrival/departure clock times on guest lists. Front
 // desk and bar staff see the DATES as before; only these roles see
 // the stamped time. 'storekeeper' is the Store Manager.
-export const SEES_STAY_TIMES = ['storekeeper', 'manager', 'gm', 'admin', 'auditor']
+export const SEES_STAY_TIMES = OVERSIGHT
 export const seesStayTimes = (role) => SEES_STAY_TIMES.includes(role)

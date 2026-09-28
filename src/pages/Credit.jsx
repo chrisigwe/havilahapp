@@ -8,6 +8,7 @@ import { loadBalances, loadCustomerLedger, saveRepayment, loadStaffForLocation,
 import { enqueue, flush, isConnectionError } from '../lib/outbox'
 import PaymentMethodPicker, { paymentParts, paymentAllocated } from '../components/PaymentMethodPicker'
 import FolioStatement from '../components/FolioStatement'
+import { EDITOR, OVERSIGHT, SUPERVISOR, is } from '../lib/roles'
 
 function printStatement() {
   document.querySelectorAll('.invoice-print').forEach(el => {
@@ -19,8 +20,8 @@ function printStatement() {
 
 export default function Credit({ boot }) {
   const { staff, items, methods, allLocations, locations } = boot
-  const isEditor = ['storekeeper', 'manager', 'gm', 'admin'].includes(staff.role)
-  const isAdmin = ['gm', 'admin'].includes(staff.role)
+  const isEditor = is(staff.role, EDITOR)
+  const isAdmin = is(staff.role, SUPERVISOR)
   // Specifically excluded from crediting a repayment to anyone else —
   // any repayment they record is attributed to themselves regardless
   // of whose balance the customer is on. Pinned to their staff id so
@@ -33,7 +34,7 @@ export default function Credit({ boot }) {
   // equal allLocations when nobody has assigned that person to a
   // single department. An auditor accidentally given a staff_locations
   // row would otherwise silently lose visibility with no error.
-  const seesAllDepartments = isEditor || staff.role === 'auditor'
+  const seesAllDepartments = is(staff.role, OVERSIGHT)  // same as Recovery and Sales
   const salesPoints = (seesAllDepartments ? allLocations : locations || [])
     .filter(l => l.is_sales_point && !l.is_store)
   // Whether this person can see guest-level, cross-department debt at

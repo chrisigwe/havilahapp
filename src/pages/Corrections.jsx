@@ -6,11 +6,13 @@ import { loadActivity, deleteEntry, updateEntry, loadAudit,
          findDuplicateGuests, mergeGuests,
          findDuplicateCustomers, mergeCustomers } from '../lib/data'
 import { useToast } from '../components/Toast'
+import MergeGuestsSheet from '../components/MergeGuestsSheet'
+import { is, EDITOR, RECEPTION_EDIT, SUPERVISOR } from '../lib/roles'
 
 export default function Corrections({ boot }) {
   const { staff, allLocations, locations, items, methods } = boot
   const toast = useToast()
-  const isEditor = ['storekeeper', 'manager', 'gm', 'admin'].includes(staff.role)
+  const isEditor = is(staff.role, EDITOR)
   const canEdit = isEditor || staff.role === 'bar' || staff.role === 'front_desk'
   const ownOnly = !isEditor
   const [rows, setRows] = useState(null)
@@ -46,17 +48,21 @@ export default function Corrections({ boot }) {
   // Deliberately NARROWER than isEditor — storekeeper is an editor for
   // stock purposes but has no business in guest identity records, and
   // auditor is read-only oversight.
-  const seesGuests = ['front_desk', 'gm', 'admin'].includes(staff.role)
+  const seesGuests = is(staff.role, RECEPTION_EDIT)
   // GM Office is an internal placeholder stay, not a real guest —
   // front desk has no reason to correct it and shouldn't see it.
-  const seesInternalRooms = ['gm', 'admin'].includes(staff.role)
+  const seesInternalRooms = is(staff.role, SUPERVISOR)
   // Merging is gm/admin only — matches merge_guests' own is_supervisor()
   // guard, so the button never appears to someone the RPC would reject.
-  const canMerge = ['gm', 'admin'].includes(staff.role)
+  const canMerge = is(staff.role, SUPERVISOR)
   const [dupes, setDupes] = useState(null)
   const [merging, setMerging] = useState(null)
   const [custDupes, setCustDupes] = useState(null)
   const [mergingCust, setMergingCust] = useState(null)
+  // Manual merge: for pairs the finder cannot detect, e.g. two
+  // spellings sharing no phone, initials or prefix. Moved here from
+  // Settings so every merge lives in ONE place.
+  const [manualMerge, setManualMerge] = useState(false)
   const [liveStays, setLiveStays] = useState(null)
   const [guestEdit, setGuestEdit] = useState(null)
 
@@ -380,6 +386,12 @@ export default function Corrections({ boot }) {
           {canMerge && dupes?.length === 0 && (
             <p className="text-dim text-sm mt-4">No likely duplicate guests found.</p>
           )}
+          {canMerge && (
+            <button onClick={() => setManualMerge(true)}
+              className="mt-3 w-full h-11 rounded-xl border border-line text-dim font-semibold text-sm">
+              Merge two guests not listed above
+            </button>
+          )}
           {canMerge && !!custDupes?.length && (
             <div className="mt-4 rounded-2xl border border-clay bg-surface p-4">
               <p className="font-semibold">Possible duplicate customers</p>
@@ -594,6 +606,11 @@ export default function Corrections({ boot }) {
             {busy ? 'Saving…' : 'Save changes'}
           </button>
         </Sheet>
+      )}
+
+      {manualMerge && (
+        <MergeGuestsSheet boot={boot}
+          onClose={() => { setManualMerge(false); refreshDupes(); refreshGuests() }} />
       )}
 
       {mergingCust && (

@@ -24,6 +24,7 @@ import Counts from './pages/Counts'
 import Shell from './components/Shell'
 import ErrorBoundary from './components/ErrorBoundary'
 import InstallHint from './components/InstallHint'
+import { MANAGEMENT, OVERSIGHT } from './lib/roles'
 
 export default function App() {
   const [session, setSession] = useState(undefined) // undefined = loading
@@ -43,8 +44,8 @@ export default function App() {
   const [justVerified, setJustVerified] = useState(0)
   const [unfinished, setUnfinished] = useState([])
 
-  const ALERT_ROLES = ['auditor', 'storekeeper', 'manager', 'gm', 'admin']
-  const OVERSIGHT_ROLES = ['manager', 'gm', 'admin']
+  const ALERT_ROLES = OVERSIGHT
+  const OVERSIGHT_ROLES = MANAGEMENT  // name kept; membership is manager/gm/admin
   // Guards the role-based default-tab effect below so it applies
   // only once per real sign-in, not on every identity object
   // refresh (e.g. an auth token refresh) — declared here, before any
