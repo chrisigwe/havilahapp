@@ -4,7 +4,7 @@ import { naira, lagosToday, methodLabel, tierLabel } from '../lib/format'
 import { loadBalances, loadCustomerLedger, saveRepayment, loadStaffForLocation,
          deleteCustomer, deactivateCustomer, loadGuestBalances, recordStayPayment, loadFolio,
          linkCustomerToGuest, searchSimilarGuests, moveWorkaroundToRoom,
-         loadUnlinkedCustomerBalances } from '../lib/data'
+         loadUnlinkedCustomerBalances, loadCreditOnDate } from '../lib/data'
 import { enqueue, flush, isConnectionError } from '../lib/outbox'
 import PaymentMethodPicker, { paymentParts, paymentAllocated } from '../components/PaymentMethodPicker'
 import FolioStatement from '../components/FolioStatement'
@@ -85,6 +85,11 @@ export default function Credit({ boot }) {
   // list at all.
   const [linkTarget, setLinkTarget] = useState(null)
   const [unlinked, setUnlinked] = useState(null)
+  // Empty = the normal running-balance view. A date switches to
+  // that day's activity instead; the two answer different
+  // questions and showing them together would be confusing.
+  const [dayFilter, setDayFilter] = useState('')
+  const [dayData, setDayData] = useState(null)
   const [linkQuery, setLinkQuery] = useState('')
   const [linkResults, setLinkResults] = useState([])
   const [linkBusy, setLinkBusy] = useState(false)
@@ -147,6 +152,13 @@ export default function Credit({ boot }) {
     loadUnlinkedCustomerBalances(staff.branch_id).then(setUnlinked).catch(() => setUnlinked([]))
   }, [hasReceptionAccess, staff.branch_id])
   useEffect(refreshUnlinked, [refreshUnlinked])
+
+  useEffect(() => {
+    if (!dayFilter) { setDayData(null); return }
+    setDayData(null)
+    loadCreditOnDate(staff.branch_id, dayFilter, locId === 'all' ? null : locId)
+      .then(setDayData).catch(e => toast(e.message, 'error'))
+  }, [dayFilter, staff.branch_id, locId, toast])
 
   async function confirmLink(guest) {
     setLinkBusy(true)
@@ -275,6 +287,59 @@ export default function Credit({ boot }) {
         </div>
       )}
 
+      {/* A date switches from running balances to that DAY's credit
+          activity. Balances are as-of-now by nature, so filtering them
+          by date would be meaningless; what a daily view answers is
+          who took credit that day and what came back. */}
+      <div className="flex items-center gap-2 py-2">
+        <input type="date" value={dayFilter} max={lagosToday()}
+          onChange={e => setDayFilter(e.target.value)}
+          className="h-11 px-3 rounded-xl bg-surface border border-line tnum" />
+        {dayFilter
+          ? <button onClick={() => setDayFilter('')}
+              className="h-11 px-3 rounded-xl border border-amber text-amber text-sm font-semibold">
+              Back to balances
+            </button>
+          : <span className="text-dim text-sm">Pick a date for that day's credit</span>}
+      </div>
+
+      {dayFilter ? (
+        <>
+          <div className="flex items-baseline justify-between py-2">
+            <h2 className="text-dim">Credit on {dayFilter}</h2>
+            <span className="tnum font-bold text-lg text-clay">
+              {naira(dayData?.takenTotal || 0)}
+            </span>
+          </div>
+          {dayData && dayData.repaidTotal > 0 && (
+            <p className="text-leaf text-sm pb-2">
+              {naira(dayData.repaidTotal)} repaid that day
+            </p>
+          )}
+          {!dayData && <p className="text-dim py-8 text-center">Loading…</p>}
+          {dayData && !dayData.rows.length && (
+            <p className="text-dim py-8 text-center">No credit activity on {dayFilter}.</p>
+          )}
+          <ul className="divide-y divide-line/60">
+            {(dayData?.rows || []).map(r => (
+              <li key={r.kind + r.id} className="py-3 flex items-center gap-3">
+                <div className="flex-1 min-w-0">
+                  <div className="font-semibold truncate">{r.customer}</div>
+                  <div className="text-dim text-sm truncate">
+                    {r.item}{r.qty ? ` × ${r.qty}` : ''}
+                    {locId === 'all' && locById[r.location_id]
+                      ? ` · ${locById[r.location_id].name}` : ''}
+                  </div>
+                  <div className="text-dim text-sm truncate">{r.who}</div>
+                </div>
+                <span className={`tnum font-bold shrink-0 ${r.kind === 'repaid' ? 'text-leaf' : 'text-clay'}`}>
+                  {r.kind === 'repaid' ? '-' : ''}{naira(r.amount)}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </>
+      ) : (
       <>
       <div className="flex items-baseline justify-between py-2">
         <h2 className="text-dim">
@@ -315,6 +380,7 @@ export default function Credit({ boot }) {
         {!owing.length && <li className="py-8 text-center text-dim">Nobody owes anything.</li>}
       </ul>
       </>
+      )}
 
       {/* Room balances are NOT department credit. Showing them under
           every chip made a guest's room debt look like money owed at
@@ -322,12 +388,12 @@ export default function Credit({ boot }) {
           departments, where they belong; under any other department a
           one-line pointer keeps them findable without pretending they
           belong there. */}
-      {hasReceptionAccess && !isReception && locId !== 'all' && (
+      {!dayFilter && hasReceptionAccess && !isReception && locId !== 'all' && (
         <p className="text-dim text-sm py-3">
           Guest room balances are under Reception.
         </p>
       )}
-      {hasReceptionAccess && (isReception || locId === 'all') && (() => {
+      {!dayFilter && hasReceptionAccess && (isReception || locId === 'all') && (() => {
         const gb = guestBalances || []
         // Must match what each ROW below displays and what
         // loadReceptionDashboard's deferredTotal uses. Summing only

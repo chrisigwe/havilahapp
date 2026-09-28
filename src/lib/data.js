@@ -1727,3 +1727,58 @@ export async function loadUnlinkedCustomerBalances(branchId) {
     .filter(c => c.balance > 0.009)
     .sort((a, b) => b.balance - a.balance)
 }
+
+
+// Credit activity on ONE day — both credit taken and repayments made,
+// as a single ordered list. Rows carry a `kind` ('taken' | 'repaid')
+// so the UI can show repayments as negative without a second query.
+//
+// Only the credit PORTION of a sale counts: a split sale (part cash,
+// part credit) raises only what actually went on credit, and using the
+// full sale value would overstate the day.
+export async function loadCreditOnDate(branchId, date, locationId) {
+  let sq = supabase.from('sales')
+    .select(`id, qty, location_id, description, customer_id,
+             stock_items(name), customers(name), staff:recorded_by(full_name),
+             sale_payments(method, amount)`)
+    .eq('branch_id', branchId).eq('business_date', date)
+    .not('customer_id', 'is', null)
+  if (locationId) sq = sq.eq('location_id', locationId)
+
+  let rq = supabase.from('credit_repayments')
+    .select(`id, amount, location_id, customer_id, method,
+             customers(name), staff:recorded_by(full_name)`)
+    .eq('branch_id', branchId).eq('paid_on', date)
+  if (locationId) rq = rq.eq('location_id', locationId)
+
+  const [{ data: sales, error: e1 }, { data: reps, error: e2 }] =
+    await Promise.all([sq, rq])
+  if (e1) throw e1
+  if (e2) throw e2
+
+  const taken = (sales || []).map(s => {
+    const amount = (s.sale_payments || [])
+      .filter(p => p.method === 'credit')
+      .reduce((t, p) => t + Number(p.amount), 0)
+    return {
+      kind: 'taken', id: s.id, amount,
+      customer: s.customers?.name || 'Unknown',
+      item: s.stock_items?.name || s.description || 'Item',
+      qty: Number(s.qty), location_id: s.location_id,
+      who: s.staff?.full_name ? `by ${s.staff.full_name}` : '',
+    }
+  }).filter(r => r.amount > 0.009)
+
+  const repaid = (reps || []).map(r => ({
+    kind: 'repaid', id: r.id, amount: Number(r.amount),
+    customer: r.customers?.name || 'Unknown',
+    item: 'Repayment', qty: null, location_id: r.location_id,
+    who: r.staff?.full_name ? `to ${r.staff.full_name}` : '',
+  }))
+
+  return {
+    takenTotal: taken.reduce((t, r) => t + r.amount, 0),
+    repaidTotal: repaid.reduce((t, r) => t + r.amount, 0),
+    rows: [...taken, ...repaid].sort((a, b) => b.amount - a.amount),
+  }
+}

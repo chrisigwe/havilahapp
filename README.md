@@ -3526,3 +3526,25 @@ someone to guess which department chip to look under.
 
 Only accounts actually owing are listed; a zero balance needs no
 attention.
+
+
+## Credit day filter — already existed; fixed what disrupted it
+
+The Credit page ALREADY had a date filter (dayFilter + loadCreditOnDate,
+with a date input and a "Back to balances" control). I started building
+a second one before checking, and removed it.
+
+The real defect was the one the request warned about. The sections
+added in earlier rounds — the room-balances pointer and the
+guest-room-balances list — sat OUTSIDE the dayFilter ternary, so
+selecting a date showed that day's credit with current balances still
+listed underneath, reading as though they were part of that day.
+Both are now gated on !dayFilter, matching how the department balance
+list already behaved.
+
+Also restored loadCreditOnDate, which my removal of the duplicate had
+deleted along with it. Rebuilt from the UI's actual row shape
+(kind/customer/item/qty/location_id/who/amount plus takenTotal and
+repaidTotal) and verified column names against saveRepayment rather
+than assumed: credit_repayments uses paid_on and recorded_by, not
+received_by, which would have failed at runtime rather than at build.
