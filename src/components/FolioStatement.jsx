@@ -1,12 +1,5 @@
+import { createPortal } from 'react-dom'
 import { naira, lagosTime } from '../lib/format'
-
-function printOnly(id) {
-  document.querySelectorAll('.invoice-print').forEach(el => {
-    el.style.display = el.id === id ? '' : 'none'
-  })
-  window.print()
-  document.querySelectorAll('.invoice-print').forEach(el => { el.style.display = '' })
-}
 
 // A guest's printable stay statement — same invoice-print/.invoice-table
 // infrastructure Receipt.jsx already uses, not the reference app's
@@ -32,8 +25,14 @@ export default function FolioStatement({ room, folio, orderLines, freeLines, pay
   // balance, not just shown separately below it.
   const balance = Number(folio?.outstanding ?? 0) + departmentCreditTotal + billedToYouTotal
 
-  return (
-    <div className="fixed inset-0 z-[70] bg-bg flex flex-col">
+  // Rendered into a portal on document.body, not in place. Print CSS
+  // can then display:none every OTHER child of body. The previous
+  // approach used visibility:hidden, which hides content but leaves it
+  // occupying layout height — the app's full scroll height kept
+  // generating pages after the invoice, which is where the trailing
+  // blank pages came from.
+  return createPortal(
+    <div className="print-portal fixed inset-0 z-[70] bg-bg flex flex-col">
       <div className="flex-1 overflow-y-auto">
         <div className="p-5 print:hidden">
           <button onClick={onClose} className="text-dim">Back</button>
@@ -42,7 +41,15 @@ export default function FolioStatement({ room, folio, orderLines, freeLines, pay
         <div id="folio-statement-area" className="invoice-print px-5 pb-6">
           <div className="invoice-head">
             <h1 className="text-2xl font-bold">Havilah Suite Ltd</h1>
-            <p className="text-dim">{branchName} · Guest Statement</p>
+            <div className="flex items-baseline justify-between">
+              <p className="text-dim">{branchName} · Guest Statement</p>
+              {/* Derived from the stay id rather than a counter: it is
+                  stable across reprints, so two copies of the same
+                  statement carry the same reference. */}
+              <p className="text-dim text-sm tnum">
+                No. {String(room.stay_id || '').replace(/-/g, '').slice(0, 8).toUpperCase()}
+              </p>
+            </div>
           </div>
 
           <div className="invoice-meta mt-5">
@@ -68,7 +75,10 @@ export default function FolioStatement({ room, folio, orderLines, freeLines, pay
             <tbody>
               <tr>
                 <td>{room.check_in_date}{checkedInAt ? ` ${lagosTime(checkedInAt)}` : ''}</td>
-                <td>{folio?.nights} night{folio?.nights > 1 ? 's' : ''} at {naira(folio?.daily_rate)}</td>
+                <td>
+                  <strong>Accommodation</strong> — Room {room.room_number},
+                  {' '}{folio?.nights} night{folio?.nights > 1 ? 's' : ''} at {naira(folio?.daily_rate)} per night
+                </td>
                 <td className="num tnum">{naira(roomCharge)}</td>
               </tr>
               {overstay > 0 && (
@@ -90,7 +100,17 @@ export default function FolioStatement({ room, folio, orderLines, freeLines, pay
             <tfoot>
               <tr>
                 <td></td>
-                <td className="num font-bold">Total due</td>
+                <td className="num">Room and over-stay</td>
+                <td className="num tnum">{naira(roomCharge + overstay)}</td>
+              </tr>
+              <tr>
+                <td></td>
+                <td className="num">Food, drinks and minimart</td>
+                <td className="num tnum">{naira(orderTotal)}</td>
+              </tr>
+              <tr>
+                <td></td>
+                <td className="num font-bold">Total charges</td>
                 <td className="num tnum font-bold">{naira(totalDue)}</td>
               </tr>
             </tfoot>
@@ -176,9 +196,10 @@ export default function FolioStatement({ room, folio, orderLines, freeLines, pay
         <button onClick={onClose} className="flex-1 h-14 rounded-2xl border border-line font-bold">
           Close
         </button>
-        <button onClick={() => printOnly('folio-statement-area')}
+        <button onClick={() => window.print()}
           className="flex-1 h-14 rounded-2xl bg-amber text-bg font-bold">Print / PDF</button>
       </div>
-    </div>
+    </div>,
+    document.body,
   )
 }

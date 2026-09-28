@@ -3446,3 +3446,38 @@ Both fixed. The role check is left exactly as found
 ability store managers already have, which is a separate decision, not
 something to slip into a bug fix. The UI gate stays at gm/admin, so the
 app is narrower than the database permits.
+
+
+## Invoice: blank pages fixed, and made easier to read
+
+ROOT CAUSE of the extra pages: the print CSS used
+`body * { visibility: hidden }`. Hidden elements still OCCUPY LAYOUT
+HEIGHT, so the app's entire scroll height kept generating sheets after
+the invoice ended. Absolutely positioning .invoice-print took it out
+of flow but did nothing about the phantom height behind it.
+
+Fix: FolioStatement now renders through a React portal onto
+document.body, so print CSS can `display: none` every other body
+child outright — removed from layout, not merely invisible. The
+portal's own flex/overflow chain is unwound too
+(overflow/max-height released), or the statement would be clipped to
+one screen and later pages would never print at all.
+
+Other print corrections:
+  - thead/tfoot as table-header-group/table-footer-group, so column
+    headings REPEAT on page two onward instead of leaving unlabelled
+    columns of numbers
+  - page-break-after: avoid on headings; break-inside: avoid on the
+    balance block and signature line, so neither is stranded alone
+  - last-child margin zeroed — a trailing margin can spill a whole
+    extra sheet on its own
+  - printOnly() deleted: with the portal there is only one
+    .invoice-print in the DOM, so the show/hide dance is dead code
+
+Readability:
+  - statement number derived from the stay id (stable across
+    reprints, so two copies carry the same reference)
+  - room line reads "Accommodation — Room 205, 30 nights at N18,750
+    per night" rather than a bare night count
+  - subtotals for accommodation and for food/drinks/minimart before
+    the total, so the figure is arrived at rather than asserted

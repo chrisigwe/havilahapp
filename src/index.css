@@ -62,33 +62,59 @@ input[type="date"]::-webkit-calendar-picker-indicator:hover { opacity: 0.75; }
   @page { size: A4; margin: 14mm; }
 
   html, body { background: #fff !important; }
-  body * { visibility: hidden; }
-  .invoice-print, .invoice-print * { visibility: visible; }
-  /* Every sheet/modal in this app is a position:fixed wrapper — a
-     known source of blank space and inconsistent positioning during
-     print across browsers. .invoice-print's own absolute positioning
-     is meant to resolve relative to the actual printed page, but a
-     fixed ancestor becomes its containing block instead, so it was
-     pinning against that instead of the page. Neutralizing every
-     fixed wrapper here breaks that chain correctly. Everything under
-     them is already visibility:hidden, so this has no visual effect
-     beyond fixing the containing-block chain. */
-  .fixed { position: static !important; inset: auto !important; }
+
+  /* display:none, NOT visibility:hidden. Hidden elements still occupy
+     layout height, so the app's full scroll height kept generating
+     empty pages after the invoice — the trailing blank pages. The
+     statement is portalled onto document.body precisely so every other
+     body child can be removed from layout outright. */
+  body > *:not(.print-portal) { display: none !important; }
+
+  .print-portal {
+    position: static !important;
+    display: block !important;
+    inset: auto !important;
+    overflow: visible !important;
+    height: auto !important;
+  }
+  /* The portal's inner scroll containers must release their height
+     too, or the flex/overflow chain clips the invoice to one screen
+     and the rest never prints. */
+  .print-portal * {
+    overflow: visible !important;
+    max-height: none !important;
+  }
+
   .invoice-print {
-    position: absolute; inset: 0 auto auto 0; width: 100%;
     padding: 0 !important; color: #000 !important; background: #fff !important;
-    font-size: 11pt;
+    font-size: 10.5pt; line-height: 1.45;
   }
   .invoice-print * { color: #000 !important; }
   .invoice-print .text-dim { color: #555 !important; }
 
-  .invoice-head { border-bottom: 2px solid #000 !important; }
+  .invoice-head { border-bottom: 2px solid #000 !important; padding-bottom: 6pt; }
   .invoice-balance { border-top: 2px solid #000 !important; }
-  .invoice-table th, .invoice-table td { border-bottom: 1px solid #bbb !important; }
-  .invoice-table thead { background: #eee !important; -webkit-print-color-adjust: exact; }
-  .invoice-table tfoot td { border-top: 2px solid #000 !important; }
-  .invoice-table tr { page-break-inside: avoid; }
+
+  .invoice-table { width: 100%; border-collapse: collapse; }
+  /* Repeat the column headings on every page of a long statement —
+     without this, page two onwards is unlabelled columns of numbers. */
+  .invoice-table thead { display: table-header-group; }
+  .invoice-table tfoot { display: table-footer-group; }
+  .invoice-table th, .invoice-table td {
+    border-bottom: 1px solid #bbb !important; padding: 3pt 4pt;
+  }
+  .invoice-table thead th { background: #eee !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .invoice-table tfoot td { border-top: 2px solid #000 !important; font-weight: 700; }
+  .invoice-table tr { page-break-inside: avoid; break-inside: avoid; }
+
+  /* Keep a heading with at least some of its table, and never strand
+     the balance or signature line alone on a final page. */
+  .invoice-print h2, .invoice-print h3 { page-break-after: avoid; break-after: avoid; }
+  .invoice-balance, .invoice-foot { page-break-inside: avoid; break-inside: avoid; }
   .invoice-foot { border-top: 1px solid #ccc; padding-top: 6pt; }
+
+  /* Trailing margins on the last element can spill into a new sheet. */
+  .invoice-print > *:last-child { margin-bottom: 0 !important; }
 
   nav, header, button, .print\:hidden { display: none !important; }
 }
