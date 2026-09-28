@@ -113,3 +113,23 @@ export const lagosTime = (ts) => !ts ? '' : new Date(ts).toLocaleTimeString('en-
 // the stamped time. 'storekeeper' is the Store Manager.
 export const SEES_STAY_TIMES = OVERSIGHT
 export const seesStayTimes = (role) => SEES_STAY_TIMES.includes(role)
+
+// Which department a screen should open on.
+//
+// Every department-chip screen used to do `staff.default_location_id ||
+// list[0]`, trusting the default blindly. That breaks the moment the
+// default isn't in that screen's list — e.g. a store manager whose
+// default is the Store, on a screen whose list excludes stores. The page
+// then opened on a department that doesn't exist on it, and its own
+// "reset if invalid" logic reset straight back to the same bad value.
+//
+// Order: the person's default, if it's on this screen; else the first
+// department they're actually assigned to that's on this screen; else
+// the first on the list.
+export const startingDept = (list, staff, own = []) => {
+  const ids = new Set((list || []).map(l => l.id))
+  if (staff?.default_location_id && ids.has(staff.default_location_id)) return staff.default_location_id
+  const mine = (own || []).find(l => ids.has(l.id))
+  if (mine) return mine.id
+  return list?.[0]?.id ?? null
+}

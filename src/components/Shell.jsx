@@ -25,21 +25,32 @@ const MORE = ['dailysales', 'roomboard', 'credit', 'recovery', 'count', 'catalog
 
 export default function Shell({ staff, tab, onTab, children,
                                 branches = [], viewBranch, onBranch, pendingCount = 0,
-                                alertEligible = false }) {
+                                alertEligible = false, recordsSales = false }) {
   const [confirmingSignOut, setConfirmingSignOut] = useState(false)
   const auditorOnly = staff.role === 'auditor'
   let tabs
   if (OVERSIGHT_ROLES.includes(staff.role)) {
     tabs = [['dailysales', 'Daily sales'], ['roomboard', 'Rooms'], ['credit', 'Credit'], ['more', 'More']]
   } else {
-    tabs = auditorOnly ? [['dailysales', 'Daily sales']] : [['sales', 'Sales']]
-    // Room Board is front desk's primary tool — a dedicated tab, same
-    // treatment as the auditor's Daily Sales. Everyone else who needs
-    // it (oversight roles) reaches it through More instead.
-    if (staff.role === 'front_desk') tabs.push(['roomboard', 'Rooms'])
-    if (STOCK_ROLES.includes(staff.role)) tabs.push(['store', 'Store'])
-    tabs.push(['stock', 'Stock'])
-    tabs.push(['more', 'More'])
+    if (staff.role === 'storekeeper') {
+      // Store managers: their three core jobs first — receive and
+      // transfer, see what's on hand, count. Sales appears only if they
+      // are actually assigned to a sales department (Nnewi's covers
+      // OpenBar; Awka's covers none), since otherwise they can't record
+      // a sale anywhere and Daily sales in More does the viewing better.
+      tabs = [['store', 'Store'], ['stock', 'Stock'], ['count', 'Counts']]
+      if (recordsSales) tabs.push(['sales', 'Sales'])
+      tabs.push(['more', 'More'])
+    } else {
+      tabs = auditorOnly ? [['dailysales', 'Daily sales']] : [['sales', 'Sales']]
+      // Room Board is front desk's primary tool — a dedicated tab, same
+      // treatment as the auditor's Daily Sales. Everyone else who needs
+      // it (oversight roles) reaches it through More instead.
+      if (staff.role === 'front_desk') tabs.push(['roomboard', 'Rooms'])
+      if (STOCK_ROLES.includes(staff.role)) tabs.push(['store', 'Store'])
+      tabs.push(['stock', 'Stock'])
+      tabs.push(['more', 'More'])
+    }
   }
   // Which tab keys are this role's own direct tabs — used below so
   // "More" only highlights for a key that ISN'T already its own

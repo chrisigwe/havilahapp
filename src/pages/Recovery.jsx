@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { naira, methodLabel, lagosToday } from '../lib/format'
+import { lagosToday, methodLabel, naira, startingDept } from '../lib/format'
 import { loadRecovery, updateRepayment, deleteRepayment, loadRoomPayments, deleteRoomPayment } from '../lib/data'
 import { useToast } from '../components/Toast'
 import { is, OVERSIGHT, SUPERVISOR } from '../lib/roles'
@@ -23,7 +23,7 @@ export default function Recovery({ boot }) {
   const seesAllDepartments = is(staff.role, OVERSIGHT)
   const salesPoints = (seesAllDepartments ? allLocations : locations || [])
     .filter(l => l.is_sales_point && !l.is_store)
-  const [locId, setLocId] = useState(staff.default_location_id || salesPoints[0]?.id || null)
+  const [locId, setLocId] = useState(startingDept(salesPoints, staff, locations))
   const [rows, setRows] = useState(null)
   const isReception = /reception/i.test(salesPoints.find(l => l.id === locId)?.name || '')
   // Whether this person can see room-payment recovery at all — a
@@ -67,7 +67,7 @@ export default function Recovery({ boot }) {
   // branch.
   useEffect(() => {
     const valid = salesPoints.some(l => l.id === locId)
-    if (!valid) setLocId(staff.default_location_id || salesPoints[0]?.id || null)
+    if (!valid) setLocId(startingDept(salesPoints, staff, locations))
   }, [staff.branch_id])
 
   const refresh = useCallback(() => {

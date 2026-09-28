@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useToast } from '../components/Toast'
-import { naira, lagosToday, methodLabel, tierLabel } from '../lib/format'
+import { lagosToday, methodLabel, naira, startingDept, tierLabel } from '../lib/format'
 import { loadBalances, loadCustomerLedger, saveRepayment, loadStaffForLocation,
          deleteCustomer, deactivateCustomer, loadGuestBalances, recordStayPayment, loadFolio,
          linkCustomerToGuest, searchSimilarGuests, moveWorkaroundToRoom,
@@ -47,13 +47,13 @@ export default function Credit({ boot }) {
   // a department like MainBar just by having a different chip
   // selected when they looked.
   const hasReceptionAccess = seesAllDepartments || (locations || []).some(l => /reception/i.test(l.name))
-  const [locId, setLocId] = useState(staff.default_location_id || salesPoints[0]?.id || null)
+  const [locId, setLocId] = useState(startingDept(salesPoints, staff, locations))
   // Re-sync the selected department when the GM switches branch — the
   // old branch's location id matches no chip here, so without this
   // nothing highlights until a manual tap.
   useEffect(() => {
     const valid = salesPoints.some(l => l.id === locId)
-    if (!valid) setLocId(staff.default_location_id || salesPoints[0]?.id || null)
+    if (!valid) setLocId(startingDept(salesPoints, staff, locations))
   }, [staff.branch_id])
   const [confirmDel, setConfirmDel] = useState(null)
   const [delBusy, setDelBusy] = useState(false)

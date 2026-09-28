@@ -3891,3 +3891,33 @@ kinds, actions and ownership — 72 cases, 0 mismatches.
 
 merge_customers: storekeeper removed from its role list (UI was already
 gm/admin only).
+
+
+## Store manager: bottom bar, landing, and default location (253)
+
+Bar is now Store · Stock · Counts · (Sales) · More, landing on Store —
+their working screen. Previously Sales · Store · Stock · More, landing on
+Sales, which had become secondary for them. Sales appears ONLY if they
+are assigned to a sales department (Nnewi covers OpenBar; Awka covers
+none), via a recordsSales prop derived from their assignments; otherwise
+they cannot record a sale anywhere and Daily sales in More does the
+viewing better.
+
+startingDept(list, staff, own): every department-chip screen used to do
+`default_location_id || list[0]`, trusting the default blindly. That
+breaks whenever the default isn't on that screen — a Store default on a
+screen whose list excludes stores — and the screens' own reset logic
+reset back to the same bad value, so the page stayed stuck. Now: the
+default if it's on this screen, else the first assigned department that
+is, else the first. Applied to Sales, Credit, Recovery and Counts.
+Tested against the real function: store managers land correctly; front
+desk, bar and managers behave exactly as before.
+
+253 sets each store manager's default to their branch's Store (both had
+none). DEPLOY THE APP FIRST: the old app would get stuck on a Store
+default. Refuses unless each branch has exactly one store.
+
+Caught before shipping: the Shell destructure edit silently failed to
+match, leaving recordsSales used but undeclared — a crash on sign-in for
+every user that the build does not catch. Found by checking declarations
+directly after the build passed.

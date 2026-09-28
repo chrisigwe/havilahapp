@@ -81,6 +81,9 @@ export default function App() {
     landedRef.current = true
     if (OVERSIGHT_ROLES.includes(identity.role)) setTab('dailysales')
     else if (identity.role === 'auditor') setTab('dailysales')
+    // Store managers land on the Store — their working screen, and now
+    // their first tab. Landing on Sales sent them somewhere secondary.
+    else if (identity.role === 'storekeeper') setTab('store')
     else setTab('sales')
   }, [identity])
 
@@ -222,7 +225,8 @@ export default function App() {
       branches={boot.seesAllBranches ? branches : []}
       viewBranch={boot.viewBranchId} onBranch={setViewBranch}
       pendingCount={pendingCount}
-      alertEligible>
+      alertEligible
+      recordsSales={(boot.locations || []).some(l => l.is_sales_point && !l.is_store)}>
       {unfinished.length > 0 && tab !== 'count' && (
         <button onClick={() => setTab('count')}
           className="mx-5 mt-3 w-[calc(100%-2.5rem)] text-left rounded-xl border border-amber bg-amber/10 px-4 py-3">

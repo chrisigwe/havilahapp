@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { naira, lagosToday, lagosDaysAgo, tierLabel, methodLabel, whoRecorded, paymentSummary } from '../lib/format'
+import { lagosDaysAgo, lagosToday, methodLabel, naira, paymentSummary, startingDept, tierLabel, whoRecorded } from '../lib/format'
 import { loadStockMap, loadPopular, loadToday, saveBasket, saveWriteoff,
          loadDailyFinancials, loadCustomers, createCustomer,
          loadOpeningDate, loadBalances, loadReceipt,
@@ -63,7 +63,7 @@ export default function SalesEntry({ boot }) {
   })()
   const [backdateReason, setBackdateReason] = useState('')
 
-  const [locationId, setLocationId] = useState(staff.default_location_id || salesPoints[0]?.id)
+  const [locationId, setLocationId] = useState(startingDept(salesPoints, staff, locations))
   // SEEING a department and RECORDING at it are separate. Store managers
   // and auditors may select any department to view it (OVERSIGHT, above),
   // but may only record at departments they are assigned to. Manager, gm
@@ -95,7 +95,7 @@ export default function SalesEntry({ boot }) {
   // so nothing highlights until a manual tap.
   useEffect(() => {
     const valid = salesPoints.some(l => l.id === locationId)
-    if (!valid) setLocationId(staff.default_location_id || salesPoints[0]?.id)
+    if (!valid) setLocationId(startingDept(salesPoints, staff, locations))
   }, [staff.branch_id])
   const [stockMap, setStockMap] = useState({})
   const [popular, setPopular] = useState({})

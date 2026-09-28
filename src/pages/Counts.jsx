@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { loadStockMap, loadCounts, loadCountLines, saveCountLine,
          startCountOfType, submitCount, verifyCount, deleteCount,
          postOpeningBalance, auditorAdjustCountLine } from '../lib/data'
-import { lagosToday } from '../lib/format'
+import { lagosToday, startingDept } from '../lib/format'
 import { enqueue, flush, isConnectionError } from '../lib/outbox'
 import { useToast } from '../components/Toast'
 
@@ -45,7 +45,9 @@ export default function Counts({ boot }) {
     // just left — otherwise a new count would be started against a
     // location from the other branch, not merely displayed oddly.
     if (pickableLocations.length && (!newLoc || !pickableLocations.some(l => l.id === newLoc))) {
-      setNewLoc(pickableLocations[0].id)
+      // The person's own default when it's countable here — a store
+      // manager's is the Store — rather than whichever came first.
+      setNewLoc(startingDept(pickableLocations, staff, locations))
     }
   }, [pickableLocations, newLoc])
 
