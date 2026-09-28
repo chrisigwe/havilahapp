@@ -302,7 +302,18 @@ export default function Credit({ boot }) {
       </ul>
       </>
 
-      {hasReceptionAccess && (() => {
+      {/* Room balances are NOT department credit. Showing them under
+          every chip made a guest's room debt look like money owed at
+          Minimart or MainBar. Shown under Reception and All
+          departments, where they belong; under any other department a
+          one-line pointer keeps them findable without pretending they
+          belong there. */}
+      {hasReceptionAccess && !isReception && locId !== 'all' && (
+        <p className="text-dim text-sm py-3">
+          Guest room balances are under Reception.
+        </p>
+      )}
+      {hasReceptionAccess && (isReception || locId === 'all') && (() => {
         const gb = guestBalances || []
         // Must match what each ROW below displays and what
         // loadReceptionDashboard's deferredTotal uses. Summing only
@@ -315,7 +326,7 @@ export default function Credit({ boot }) {
           <>
             <div className="flex items-baseline justify-between py-2">
               <h2 className="text-dim">
-                Owed to Reception
+                Guest room balances
                 <span className="ml-2 text-sm">
                   ({gb.length} room{gb.length === 1 ? '' : 's'})
                 </span>

@@ -3481,3 +3481,24 @@ Readability:
     per night" rather than a bare night count
   - subtotals for accommodation and for food/drinks/minimart before
     the total, so the figure is arrived at rather than asserted
+
+
+## Fix: room balances appearing under every department (my regression)
+
+When the Obitex fix made the guest-balances section show regardless of
+the selected chip, it started appearing under MainBar, Minimart and
+OpenBar too — where a guest's ROOM debt reads as money owed at that
+department. Vincent Onwudinjo's N70,000 room balance showing while
+looking at Minimart is that bug, not duplicated data: his only
+department credit is a genuine N500 chin-chin sale at Minimart on 26
+Sept.
+
+Now shown under Reception and All departments only. Under any other
+department a one-line pointer — "Guest room balances are under
+Reception" — keeps them findable without implying they belong there.
+Relabelled from "Owed to Reception" to "Guest room balances", which is
+what the figure actually is.
+
+The Obitex case still works: that was about a guest's DEPARTMENT
+credit aggregating across departments on the folio, which is a
+different mechanism (v_guest_department_credit) and untouched here.
