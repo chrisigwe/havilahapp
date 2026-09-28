@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { naira } from '../lib/format'
 import { loadRoomChargesByStatus, approveRoomCharge, rejectRoomCharge } from '../lib/data'
 import { useToast } from './Toast'
+import { pulseAlert } from '../lib/alert'
 
 // Room charges over the branch limit, made by bar staff, waiting for the
 // front desk. Nothing here is on a guest's bill until approved.
@@ -16,15 +17,33 @@ export default function RoomChargeApprovals({ branchId, onDecided }) {
   const [reason, setReason] = useState('')
   const [busy, setBusy] = useState(null)
 
-  const refresh = useCallback(() => {
-    loadRoomChargesByStatus(branchId, 'pending').then(setRows).catch(() => setRows([]))
-  }, [branchId])
+  // Ids already known. null until the first load, so charges waiting
+  // when the page opens don't all chime at once as if newly arrived.
+  const known = useRef(null)
 
-  // Poll, so a charge made at the bar reaches the front desk without
-  // anyone having to reload.
+  const refresh = useCallback(() => {
+    loadRoomChargesByStatus(branchId, 'pending').then(next => {
+      setRows(next)
+      const prev = known.current
+      known.current = new Set(next.map(r => r.id))
+      if (!prev) return
+      const arrived = next.filter(r => !prev.has(r.id))
+      if (!arrived.length) return
+      // Chime and say what came in, so the front desk knows without the
+      // bartender having to ring through on the intercom.
+      pulseAlert({ variant: 'attention' })
+      const r = arrived[arrived.length - 1]
+      toast(arrived.length === 1
+        ? `New room charge to approve · Room ${r.room} · ${naira(r.total)}${r.servedBy ? ` (${r.servedBy})` : ''}`
+        : `${arrived.length} new room charges to approve`, 'info', { duration: 10000 })
+    }).catch(() => setRows([]))
+  }, [branchId, toast])
+
+  // Every 15 s rather than every minute: a bartender and a guest are
+  // standing waiting for this decision.
   useEffect(() => {
     refresh()
-    const id = setInterval(refresh, 60000)
+    const id = setInterval(refresh, 15000)
     return () => clearInterval(id)
   }, [refresh])
 

@@ -25,6 +25,7 @@ import Shell from './components/Shell'
 import ErrorBoundary from './components/ErrorBoundary'
 import InstallHint from './components/InstallHint'
 import { MANAGEMENT, OVERSIGHT } from './lib/roles'
+import { signOutCleanly } from './lib/push'
 
 export default function App() {
   const [session, setSession] = useState(undefined) // undefined = loading
@@ -209,7 +210,7 @@ export default function App() {
         You're signed in, but this account isn't linked to a staff record yet.
         Ask a manager to link it, then reload.
       </p>
-      <button onClick={() => window.confirm('Sign out?') && supabase.auth.signOut()}
+      <button onClick={() => window.confirm('Sign out?') && signOutCleanly()}
         className="mt-6 text-amber">Sign out</button>
     </Center>
   )

@@ -20,28 +20,52 @@ export function unlockAudio() {
   if (c && c.state === 'suspended') c.resume().catch(() => {})
 }
 
-// Two short pulses — deliberately not a long chime. Staff are on a
-// busy floor and this fires on a count needing verification, which
-// wants attention without being startling. Gain ramps rather than
-// switching on and off, because an abrupt square edge produces an
-// audible click on most phone speakers.
-export function pulseAlert({ times = 2 } = {}) {
+// A reception-bell chime rather than a beep.
+//
+// The first version was two 0.2 s sine blips at one pitch — quiet, and
+// closer to a microwave than a hotel. A bell reads as "someone needs
+// you" without being harsh. Timbre comes from inharmonic partials
+// (x2.0, x2.76, x5.4 over the fundamental), which is what makes a
+// struck bell sound like metal rather than a pure tone.
+//
+// Two distinct sounds, so staff can tell them apart without looking:
+//   'attention' — two rising dings. Something needs YOU: a charge to
+//                 approve, a count to verify.
+//   'resolved'  — a rising three-note arpeggio. Something you were
+//                 waiting on was answered.
+function bell(c, t, freq, peak = 0.32, decay = 1.1) {
+  const master = c.createGain()
+  // Near-instant attack, long exponential decay: the shape of a strike.
+  master.gain.setValueAtTime(0.0001, t)
+  master.gain.exponentialRampToValueAtTime(peak, t + 0.008)
+  master.gain.exponentialRampToValueAtTime(0.0001, t + decay)
+  master.connect(c.destination)
+  // Partial amplitudes sum to 2.0; x peak 0.32 = 0.64, safely below
+  // clipping even with notes overlapping.
+  for (const [mult, amp] of [[1, 1], [2.0, 0.5], [2.76, 0.35], [5.4, 0.15]]) {
+    const osc = c.createOscillator()
+    const g = c.createGain()
+    osc.type = 'sine'
+    osc.frequency.setValueAtTime(freq * mult, t)
+    g.gain.setValueAtTime(amp, t)
+    osc.connect(g).connect(master)
+    osc.start(t)
+    osc.stop(t + decay + 0.05)
+  }
+}
+
+export function pulseAlert({ variant = 'attention' } = {}) {
   const c = audioCtx()
   if (!c) return
   if (c.state === 'suspended') c.resume().catch(() => {})
-  const start = c.currentTime
-  for (let i = 0; i < times; i++) {
-    const t = start + i * 0.28
-    const osc = c.createOscillator()
-    const gain = c.createGain()
-    osc.type = 'sine'
-    osc.frequency.setValueAtTime(880, t)
-    gain.gain.setValueAtTime(0.0001, t)
-    gain.gain.exponentialRampToValueAtTime(0.18, t + 0.02)
-    gain.gain.exponentialRampToValueAtTime(0.0001, t + 0.20)
-    osc.connect(gain).connect(c.destination)
-    osc.start(t)
-    osc.stop(t + 0.22)
+  const t = c.currentTime
+  if (variant === 'resolved') {
+    bell(c, t,        1046.5, 0.26, 0.9)   // C6
+    bell(c, t + 0.13, 1318.5, 0.26, 0.9)   // E6
+    bell(c, t + 0.26, 1568.0, 0.30, 1.3)   // G6
+  } else {
+    bell(c, t,        784.0)               // G5
+    bell(c, t + 0.20, 1046.5, 0.34, 1.4)   // C6
   }
 }
 

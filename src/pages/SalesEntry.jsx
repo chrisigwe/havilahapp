@@ -12,6 +12,7 @@ import { useToast } from '../components/Toast'
 import ReceptionDashboard from '../components/ReceptionDashboard'
 import RoomChargeApprovals from '../components/RoomChargeApprovals'
 import CollectRefusedCharges from '../components/CollectRefusedCharges'
+import MyPendingRoomCharges from '../components/MyPendingRoomCharges'
 import ItemPicker from '../components/ItemPicker'
 import RoomChargeSheet from '../components/RoomChargeSheet'
 import CustomerPicker from '../components/CustomerPicker'
@@ -356,7 +357,7 @@ export default function SalesEntry({ boot }) {
         // front desk. Say so plainly, so nobody thinks it is on the bill.
         if (res.status === 'pending') {
           toast(`Sent to front desk for approval · Room ${paying.roomStay.room} · ${naira(basketTotal)}. ` +
-                'Not on the bill until they approve it.', 'success')
+                'Not on the bill until they approve it.', 'success', { duration: 12000 })
         } else {
           toast(`Charged to Room ${paying.roomStay.room} · ${naira(basketTotal)}`, 'success')
         }
@@ -574,6 +575,10 @@ export default function SalesEntry({ boot }) {
           className="mt-3 w-full h-16 rounded-2xl bg-amber text-bg text-xl font-bold active:bg-amber-deep">
           + Sell Item
         </button>
+      )}
+
+      {!isReception && canRecordHere && (
+        <MyPendingRoomCharges branchId={staff.branch_id} staffId={staff.id} onDecided={refresh} />
       )}
 
       {!isReception && canRecordHere && (

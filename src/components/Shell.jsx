@@ -8,6 +8,7 @@ import NavIcon from './NavIcon'
 import ReadOnlyBanner from './ReadOnlyBanner'
 import NotificationSetup from './NotificationSetup'
 import { MANAGEMENT } from '../lib/roles'
+import { signOutCleanly } from '../lib/push'
 
 const STOCK_ROLES = ['storekeeper', 'manager', 'gm', 'admin']
 // GM/admin/manager oversee everything rather than doing one
@@ -82,7 +83,7 @@ export default function Shell({ staff, tab, onTab, children,
             You'll need your password to sign back in. If this is your own
             phone, there's usually no need to sign out at all — just close the app.
           </p>
-          <button onClick={() => supabase.auth.signOut()}
+          <button onClick={() => signOutCleanly()}
             className="mt-6 w-full h-14 rounded-2xl bg-clay text-bg text-lg font-bold">
             Sign out
           </button>

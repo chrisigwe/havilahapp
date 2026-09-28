@@ -88,3 +88,42 @@ export async function isPushEnabled() {
   const reg = await navigator.serviceWorker.ready
   return !!(await reg.pushManager.getSubscription())
 }
+
+// Resolve after ms even if p never settles. navigator.serviceWorker.ready
+// NEVER resolves on a device with no active service worker, so awaiting
+// it directly during sign-out could leave someone unable to sign out.
+const withTimeout = (p, ms) =>
+  Promise.race([p, new Promise(resolve => setTimeout(resolve, ms))])
+
+// Sign out AND detach this device from the person who was signed in.
+//
+// Before this, sign-out only ended the session. The phone stayed
+// subscribed under that staff member, kept their badge on the icon and
+// their notification in the tray — so it carried on receiving alerts
+// meant for someone no longer using it.
+//
+// Order matters: the subscription row is removed BEFORE the session
+// ends, because deleting it relies on the person still being signed in
+// (RLS: staff_id = auth.uid()). Every step is time-limited and
+// independent: a failure in one never blocks sign-out itself.
+export async function signOutCleanly() {
+  try { if (navigator.clearAppBadge) await withTimeout(navigator.clearAppBadge(), 1500) } catch { /* unsupported */ }
+
+  try {
+    const reg = await withTimeout(navigator.serviceWorker?.getRegistration?.(), 1500)
+    const shown = reg?.getNotifications ? await withTimeout(reg.getNotifications(), 1500) : []
+    ;(shown || []).forEach(n => n.close())
+  } catch { /* no service worker */ }
+
+  try {
+    const reg = await withTimeout(navigator.serviceWorker?.getRegistration?.(), 1500)
+    const sub = reg?.pushManager ? await withTimeout(reg.pushManager.getSubscription(), 1500) : null
+    if (sub) {
+      const endpoint = sub.endpoint
+      await withTimeout(sub.unsubscribe(), 2000)
+      await withTimeout(supabase.from('push_subscriptions').delete().eq('endpoint', endpoint), 3000)
+    }
+  } catch { /* push unsupported or already gone */ }
+
+  await supabase.auth.signOut()
+}

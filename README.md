@@ -3802,3 +3802,53 @@ App:
 DEPLOY ORDER: this zip FIRST, then 249, then 250. With the app live
 before 249 runs, there is never a moment where a charge can go pending
 with no screen to approve it.
+
+
+## 251: room-charge stock trigger had never worked
+
+sync_order_item_stock_movement (108b) declared a record `o` and queried
+`from orders o`, so `o.branch_id` resolved to the empty VARIABLE:
+"record o is not assigned yet". Every room charge of a CATALOGUE item
+failed; typed ones escaped because the function returns early for lines
+with no stock item. Evidence: zero 'room_charge' stock movements existed
+in the whole database. Likely origin of staff typing drinks onto rooms —
+the only way a room charge would save, and typed lines never deduct.
+Fixed by renaming the variable; behaviour otherwise identical.
+
+## Bartender waiting panel, front-desk chime, bell tone, clean sign-out
+
+WAITING: a toast (3 s) was the wrong tool for "sent for approval" — gone
+before it was read, leaving the bartender to ring the front desk.
+MyPendingRoomCharges stays on the Sales page for exactly as long as HIS
+charges are pending, with how long each has waited, then chimes and
+reports the outcome (approved -> on the bill; refused -> reason, collect
+below). Polls every 15 s. First load only records state, so charges
+already waiting are not announced as newly decided.
+
+FRONT DESK: RoomChargeApprovals now chimes and announces each NEW charge
+("Room 203 · N7,500 (Daniel)"), polling every 15 s instead of 60. This is
+what removes the need for the intercom.
+
+TONE: was two 0.2 s sine blips at one pitch. Now a reception bell —
+inharmonic partials (x2.0, x2.76, x5.4) for a metallic strike, 8 ms
+attack, long decay. Two sounds, told apart by ear:
+  attention  two rising dings — something needs YOU
+  resolved   rising three-note arpeggio — your request was answered
+Rendered offline with identical parameters to check it: peaks 0.61 and
+0.62, headroom below clipping. Previews: tone-attention.wav,
+tone-resolved.wav. NOTE: this is the in-app tone. A push that arrives
+while the app is closed uses the phone's own notification sound, which a
+web app cannot replace.
+
+TOAST: accepts { duration } as an optional third argument. Every
+existing call keeps its old timing.
+
+SIGN-OUT (signOutCleanly): sign-out used to end the session only. The
+phone stayed subscribed under that person, kept their badge and their
+tray notification, and went on receiving their alerts. Now it clears the
+badge, closes shown notifications, unsubscribes, and deletes the
+subscription row — BEFORE ending the session, since that delete needs
+the person signed in (RLS staff_id = auth.uid()). Every step is
+time-limited: navigator.serviceWorker.ready never resolves on a device
+with no active service worker, and awaiting it would have left people
+unable to sign out at all.

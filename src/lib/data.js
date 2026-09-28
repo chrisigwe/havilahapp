@@ -1878,7 +1878,7 @@ export async function getOrCreateGuestTab(branchId, guest) {
 // room — enough to decide without opening the folio.
 export async function loadRoomChargesByStatus(branchId, status) {
   const { data, error } = await supabase.from('orders')
-    .select(`id, business_date, created_at, approval_status, decision_note,
+    .select(`id, business_date, created_at, approval_status, decision_note, served_by,
              served:served_by(full_name),
              stays(id, rooms(room_number), guests!guest_id(full_name)),
              order_items(id, description, qty, unit_price, amount, order_type, location_id)`)
@@ -1890,7 +1890,7 @@ export async function loadRoomChargesByStatus(branchId, status) {
     const items = o.order_items || []
     return {
       id: o.id, date: o.business_date, createdAt: o.created_at, note: o.decision_note,
-      servedBy: o.served?.full_name || '',
+      servedBy: o.served?.full_name || '', servedById: o.served_by,
       room: o.stays?.rooms?.room_number, guest: o.stays?.guests?.full_name,
       items,
       // Billable only — PR/damage is never charged, so never collected.
@@ -1920,4 +1920,18 @@ export async function collectRejectedRoomCharge({ orderId, payments, customerId,
   })
   if (error) throw error
   return data
+}
+
+// What became of specific room charges — used to tell a bartender the
+// outcome once a charge he was waiting on leaves the pending list.
+export async function loadOrderOutcomes(ids) {
+  if (!ids?.length) return []
+  const { data, error } = await supabase.from('orders')
+    .select('id, approval_status, decision_note, stays(rooms(room_number))')
+    .in('id', ids)
+  if (error) return []
+  return (data || []).map(o => ({
+    id: o.id, status: o.approval_status, note: o.decision_note,
+    room: o.stays?.rooms?.room_number,
+  }))
 }

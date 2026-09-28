@@ -5,10 +5,13 @@ export const useToast = () => useContext(Ctx)
 
 export function ToastHost({ children }) {
   const [items, setItems] = useState([])
-  const push = useCallback((message, tone = 'info') => {
+  // Optional third argument { duration } for messages that must be read,
+  // e.g. "sent for approval". Every existing call keeps its old timing.
+  const push = useCallback((message, tone = 'info', opts = {}) => {
     const id = crypto.randomUUID()
     setItems(l => [...l, { id, message, tone }])
-    setTimeout(() => setItems(l => l.filter(t => t.id !== id)), tone === 'error' ? 6000 : 3000)
+    const ms = opts.duration ?? (tone === 'error' ? 6000 : 3000)
+    setTimeout(() => setItems(l => l.filter(t => t.id !== id)), ms)
   }, [])
   return (
     <Ctx.Provider value={push}>
