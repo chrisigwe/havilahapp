@@ -3852,3 +3852,42 @@ the person signed in (RLS staff_id = auth.uid()). Every step is
 time-limited: navigator.serviceWorker.ready never resolves on a device
 with no active service worker, and awaiting it would have left people
 unable to sign out at all.
+
+
+## Store managers: own entries only; no customer merging (migration 252)
+
+Segregation of duties — the custodian of stock should not be able to
+alter the sales records stock is reconciled against.
+
+WHY THE DATABASE. Corrections writes straight to sales, sale_payments
+and stock_movements, and their edit/delete policies let app_is_editor()
+— which includes storekeeper — change ANY row at the branch. Hiding
+buttons alone would have changed nothing real.
+
+WHY NOT EDIT app_is_editor(). READ policies (e.g. sales_read) use it too;
+removing storekeeper would have cut what they can SEE. So a separate
+app_can_edit_any() (manager/gm/admin) is used only in the six edit and
+delete policies, changed with ALTER POLICY so each keeps its name,
+command, roles and permissive setting.
+
+Store manager, after 252:
+  sale edit        own today/yesterday only
+  sale delete      never
+  movement edit    own today/yesterday only
+  movement delete  own today/yesterday only
+The one difference from bar staff is deleting their OWN recent stock
+movement: undoing their own wrong transfer or receipt is the core of the
+job. Deleting anyone else's is impossible. The storekeeper condition in
+moves_remove is explicit, so it hands bar staff no new delete right.
+
+App (Corrections): isEditor is now MANAGEMENT, mirroring
+app_can_edit_any. Store managers can still open Corrections (canEdit),
+keep the all-departments chips as a filter over their own rows, and see
+Delete only on their own recent STOCK rows. They no longer see Change
+history, which is the audit view of everyone's edits.
+
+VERIFIED: app buttons vs database permissions across all roles, entry
+kinds, actions and ownership — 72 cases, 0 mismatches.
+
+merge_customers: storekeeper removed from its role list (UI was already
+gm/admin only).

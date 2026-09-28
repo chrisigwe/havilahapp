@@ -7,14 +7,23 @@ import { loadActivity, deleteEntry, updateEntry, loadAudit,
          findDuplicateCustomers, mergeCustomers } from '../lib/data'
 import { useToast } from '../components/Toast'
 import MergeGuestsSheet from '../components/MergeGuestsSheet'
-import { is, EDITOR, RECEPTION_EDIT, SUPERVISOR } from '../lib/roles'
+import { MANAGEMENT, RECEPTION_EDIT, SUPERVISOR, is } from '../lib/roles'
 
 export default function Corrections({ boot }) {
   const { staff, allLocations, locations, items, methods } = boot
   const toast = useToast()
-  const isEditor = is(staff.role, EDITOR)
-  const canEdit = isEditor || staff.role === 'bar' || staff.role === 'front_desk'
+  // Who may correct ANYONE's entries: manager, gm, admin. Mirrors
+  // app_can_edit_any() in the database (migration 252). Store managers
+  // were editors here until 252; they now correct only their OWN recent
+  // entries, like bar staff — segregation of duties, since stock is
+  // reconciled against these very sales.
+  const isEditor = is(staff.role, MANAGEMENT)
+  const isStorekeeper = staff.role === 'storekeeper'
+  const canEdit = isEditor || isStorekeeper || staff.role === 'bar' || staff.role === 'front_desk'
   const ownOnly = !isEditor
+  // Store managers keep the all-departments chips (a filter over their
+  // own rows), so an entry they made at another counter is never hidden.
+  const seesAllDeptChips = isEditor || isStorekeeper
   const [rows, setRows] = useState(null)
   // Front desk lands on Reception: it is the tab they actually work
   // in, and Reception has no sales rows by design, so Entries would
@@ -33,7 +42,7 @@ export default function Corrections({ boot }) {
   // only ever see their OWN assigned department(s) — not every
   // department in the branch, and not defaulted to a mixed "all of
   // mine" view when they have more than one.
-  const deptChips = isEditor ? allLocations : (locations || [])
+  const deptChips = seesAllDeptChips ? allLocations : (locations || [])
   // Reception records no sales, so defaulting the Entries subfilter to
   // it (the front desk default_location_id since migration 204) showed
   // an empty list. Prefer their first NON-Reception department —
@@ -41,13 +50,12 @@ export default function Corrections({ boot }) {
   // behaviour if Reception is genuinely all they have.
   const firstEntriesDept = (deptChips.find(l => !/reception/i.test(l.name)) || {}).id
   const [deptFilter, setDeptFilter] = useState(
-    isEditor ? 'all'
+    seesAllDeptChips ? 'all'
       : (firstEntriesDept || staff.default_location_id || deptChips[0]?.id || 'all'))
   // Reception tab: correcting a guest's name or stay dates. Reception
   // staff (who take the booking and so make the typos) plus gm/admin.
-  // Deliberately NARROWER than isEditor — storekeeper is an editor for
-  // stock purposes but has no business in guest identity records, and
-  // auditor is read-only oversight.
+  // Deliberately separate from isEditor: store managers have no business
+  // in guest identity records, and auditor is read-only oversight.
   const seesGuests = is(staff.role, RECEPTION_EDIT)
   // GM Office is an internal placeholder stay, not a real guest —
   // front desk has no reason to correct it and shouldn't see it.
@@ -72,7 +80,7 @@ export default function Corrections({ boot }) {
   // indication why — same bug already fixed on DailySales and Store.
   useEffect(() => {
     setDeptFilter(cur => (cur === 'all' || deptChips.some(l => l.id === cur))
-      ? cur : (isEditor ? 'all'
+      ? cur : (seesAllDeptChips ? 'all'
         : (firstEntriesDept || staff.default_location_id || deptChips[0]?.id || 'all')))
   }, [staff.branch_id])
 
@@ -277,7 +285,7 @@ export default function Corrections({ boot }) {
 
       {view !== 'history' && deptChips.length > 1 && (
         <div className="flex gap-2 overflow-x-auto pb-2 -mx-1 px-1">
-          {isEditor && (
+          {seesAllDeptChips && (
             <button onClick={() => { setDeptFilter('all'); if (view === 'guests') setView('entries') }}
               className={`shrink-0 h-9 px-3 rounded-full border text-sm ${view !== 'guests' && deptFilter === 'all'
                 ? 'bg-raise border-amber text-amber font-bold' : 'border-line text-dim'}`}>
@@ -545,7 +553,8 @@ export default function Corrections({ boot }) {
                     Too old to edit yourself — ask a manager
                   </span>
                 )}
-                {isEditor && (
+                {(isEditor || (isStorekeeper && r.kind !== 'sale'
+                    && r.recorded_by === staff.id && r.business_date >= lagosDaysAgo(1))) && (
                   <button onClick={() => setConfirm(r)}
                     className="h-10 px-4 rounded-lg border border-clay text-clay text-sm font-semibold">Delete</button>
                 )}
