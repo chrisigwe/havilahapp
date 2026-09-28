@@ -3502,3 +3502,27 @@ what the figure actually is.
 The Obitex case still works: that was about a guest's DEPARTMENT
 credit aggregating across departments on the folio, which is a
 different mechanism (v_guest_department_credit) and untouched here.
+
+
+## "Link to a guest" reachable from Reception
+
+The control existed only INSIDE a customer's statement, and Reception
+shows guest room balances rather than a customer list — so from there
+it could not be reached at all. Vincent's Minimart account was only
+linkable by knowing to switch to the Minimart chip first.
+
+Two changes:
+  - the link sheet now reads a linkTarget rather than open.customer,
+    so it can be started from anywhere instead of only from a statement
+  - Reception gains "Department accounts not linked to a guest":
+    every active customer with a balance and no linked_guest_id, with
+    the departments it is owed at and a Link button
+
+That section is the point of the fix. These are precisely the balances
+that vanish at checkout — the room is settled while money sits on a
+named account at a bar or the minimart, and nothing joins the two.
+Surfacing them where the front desk already stands beats expecting
+someone to guess which department chip to look under.
+
+Only accounts actually owing are listed; a zero balance needs no
+attention.

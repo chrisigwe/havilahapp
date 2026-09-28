@@ -3,7 +3,8 @@ import { useToast } from '../components/Toast'
 import { naira, lagosToday, methodLabel, tierLabel } from '../lib/format'
 import { loadBalances, loadCustomerLedger, saveRepayment, loadStaffForLocation,
          deleteCustomer, deactivateCustomer, loadGuestBalances, recordStayPayment, loadFolio,
-         linkCustomerToGuest, searchSimilarGuests, moveWorkaroundToRoom } from '../lib/data'
+         linkCustomerToGuest, searchSimilarGuests, moveWorkaroundToRoom,
+         loadUnlinkedCustomerBalances } from '../lib/data'
 import { enqueue, flush, isConnectionError } from '../lib/outbox'
 import PaymentMethodPicker, { paymentParts, paymentAllocated } from '../components/PaymentMethodPicker'
 import FolioStatement from '../components/FolioStatement'
@@ -78,6 +79,12 @@ export default function Credit({ boot }) {
   const toast = useToast()
   const [open, setOpen] = useState(null)       // { customer, ledger }
   const [linking, setLinking] = useState(false)
+  // The customer being linked. Previously the link sheet read
+  // open.customer directly, so it could only be reached from inside
+  // a statement — unreachable from Reception, which has no customer
+  // list at all.
+  const [linkTarget, setLinkTarget] = useState(null)
+  const [unlinked, setUnlinked] = useState(null)
   const [linkQuery, setLinkQuery] = useState('')
   const [linkResults, setLinkResults] = useState([])
   const [linkBusy, setLinkBusy] = useState(false)
@@ -135,12 +142,19 @@ export default function Credit({ boot }) {
     return () => clearTimeout(t)
   }, [linkQuery, linking, staff.branch_id])
 
+  const refreshUnlinked = useCallback(() => {
+    if (!hasReceptionAccess) return
+    loadUnlinkedCustomerBalances(staff.branch_id).then(setUnlinked).catch(() => setUnlinked([]))
+  }, [hasReceptionAccess, staff.branch_id])
+  useEffect(refreshUnlinked, [refreshUnlinked])
+
   async function confirmLink(guest) {
     setLinkBusy(true)
     try {
-      await linkCustomerToGuest(open.customer.customer_id, guest.id)
+      await linkCustomerToGuest(linkTarget.customerId, guest.id)
       toast(`Linked to ${guest.full_name}`, 'success')
-      setLinking(false); setLinkQuery(''); setLinkResults([])
+      setLinking(false); setLinkTarget(null); setLinkQuery(''); setLinkResults([])
+      refreshUnlinked()
     } catch (e) { toast(e.message, 'error') }
     setLinkBusy(false)
   }
@@ -369,6 +383,38 @@ export default function Credit({ boot }) {
               )}
               {guestBalances === null && <li className="py-8 text-center text-dim">Loading…</li>}
             </ul>
+
+            {/* Department accounts owing money but attached to no
+                guest. This is the money that goes missing at checkout:
+                the room gets settled and a bar or minimart balance in
+                the guest's name is never seen, because nothing joins
+                the two. Linking one makes it appear on that guest's
+                folio from then on. */}
+            {!!unlinked?.length && (
+              <div className="mt-6 rounded-2xl border border-clay bg-surface p-4">
+                <p className="font-semibold">Department accounts not linked to a guest</p>
+                <p className="text-dim text-xs mt-1 mb-3">
+                  These balances will not show on any guest's folio at checkout.
+                  Link one to the guest it belongs to, if it belongs to a guest.
+                </p>
+                {unlinked.map(c => (
+                  <div key={c.id} className="flex items-center gap-3 py-2 border-t border-line/60 first:border-0">
+                    <div className="flex-1 min-w-0">
+                      <div className="truncate">{c.name}</div>
+                      <div className="text-dim text-xs">
+                        {c.locationIds.map(id => locById[id]?.name).filter(Boolean).join(', ') || '—'}
+                      </div>
+                    </div>
+                    <span className="tnum font-bold text-clay shrink-0">{naira(c.balance)}</span>
+                    <button
+                      onClick={() => { setLinkTarget({ customerId: c.id, name: c.name }); setLinking(true) }}
+                      className="shrink-0 h-9 px-3 rounded-lg border border-amber text-amber text-sm font-semibold">
+                      Link
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
           </>
         )
       })()}
@@ -378,7 +424,8 @@ export default function Credit({ boot }) {
           <div className="flex-1 overflow-y-auto">
             <div className="p-5 print:hidden flex items-center justify-between">
               <button onClick={() => setOpen(null)} className="text-dim">Back</button>
-              <button onClick={() => setLinking(true)} className="text-amber text-sm font-semibold">
+              <button onClick={() => { setLinkTarget({ customerId: open.customer.customer_id, name: open.customer.name }); setLinking(true) }}
+                className="text-amber text-sm font-semibold">
                 Link to a guest
               </button>
             </div>
@@ -668,11 +715,11 @@ export default function Credit({ boot }) {
 
       {linking && (
         <div className="fixed inset-0 z-[80] bg-bg flex flex-col px-6 pt-6">
-          <button onClick={() => { setLinking(false); setLinkQuery(''); setLinkResults([]) }}
+          <button onClick={() => { setLinking(false); setLinkTarget(null); setLinkQuery(''); setLinkResults([]) }}
             className="text-dim self-start">Close</button>
           <h2 className="mt-3 text-2xl font-bold">Link to a guest</h2>
           <p className="text-dim mt-2">
-            Connects {open?.customer?.name} to a real guest record, so their
+            Connects {linkTarget?.name} to a real guest record, so their
             department credit shows up on that guest's own folio and
             statement — not just here.
           </p>

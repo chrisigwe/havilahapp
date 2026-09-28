@@ -1698,3 +1698,32 @@ export async function mergeCustomers(survivorId, duplicateIds) {
   })
   if (error) throw error
 }
+
+// Department credit accounts not attached to any guest. These are the
+// balances that go missing at checkout: the front desk settles the
+// room, and money sitting on a named account at a bar or the minimart
+// is never surfaced because nothing ties it to the guest.
+export async function loadUnlinkedCustomerBalances(branchId) {
+  const { data: custs, error } = await supabase.from('customers')
+    .select('id, name, phone')
+    .eq('branch_id', branchId).eq('is_active', true).is('linked_guest_id', null)
+  if (error) throw error
+  if (!custs?.length) return []
+
+  const { data: bals } = await supabase.from('v_customer_balances_by_staff')
+    .select('customer_id, location_id, balance')
+    .in('customer_id', custs.map(c => c.id))
+
+  const byId = {}
+  for (const b of (bals || [])) {
+    const e = byId[b.customer_id] || (byId[b.customer_id] = { total: 0, locs: new Set() })
+    e.total += Number(b.balance)
+    if (Number(b.balance) > 0.009) e.locs.add(b.location_id)
+  }
+  // Only those actually owing — a zero account needs no attention.
+  return custs
+    .map(c => ({ ...c, balance: byId[c.id]?.total || 0,
+                 locationIds: [...(byId[c.id]?.locs || [])] }))
+    .filter(c => c.balance > 0.009)
+    .sort((a, b) => b.balance - a.balance)
+}
