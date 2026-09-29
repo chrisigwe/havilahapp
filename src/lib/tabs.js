@@ -16,6 +16,17 @@ const STOCK_ROLES = ['storekeeper', 'manager', 'gm', 'admin']
 // and a role lands on its FIRST tab. Change a role's tabs here and all
 // three follow.
 export function tabsFor(role, { recordsSales = false } = {}) {
+  if (role === 'manager') {
+    // The manager runs the day. Daily sales first for the whole-branch
+    // picture on arrival. Sales second: it opens on their default,
+    // Reception, where the close of day and the room-charge approvals
+    // box live — managers approve room charges, and previously had to go
+    // More -> Sales -> Reception to see them. Then Rooms and Credit.
+    // Counts stays in More: verifying adjusted counts is occasional, and
+    // the pending badge still points them there.
+    return [['dailysales', 'Daily sales'], ['sales', 'Sales'], ['roomboard', 'Rooms'],
+            ['credit', 'Credit'], ['more', 'More']]
+  }
   if (MANAGEMENT.includes(role)) {
     return [['dailysales', 'Daily sales'], ['roomboard', 'Rooms'], ['credit', 'Credit'], ['more', 'More']]
   }

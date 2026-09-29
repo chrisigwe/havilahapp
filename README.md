@@ -4172,3 +4172,26 @@ auditor/GM/admin, and legacy lines, for every verifier: 0 mismatches.
 
 DEPLOY ORDER: 259 FIRST, then this app. The app now loads adjusted_by;
 before the column exists, count lines would fail to load.
+
+
+## Manager bar and default location (migration 260)
+
+Bar: Daily sales · Sales · Rooms · Credit · More, landing on Daily sales
+(unchanged). Managers were split out of the shared MANAGEMENT bar in
+lib/tabs.js; GM and admin are untouched.
+
+Sales moved onto the bar because managers approve room charges, and the
+approvals box lives on the Sales page's Reception view — previously
+More -> Sales -> Reception. Counts stays in More: verifying adjusted
+counts (decision C) is occasional, and the badge still points there.
+
+Default location = Reception (260). Both managers had none. On Reception,
+Sales opens on the close of day, in-house roster and approvals; Credit on
+guest room balances and unlinked accounts. Checked first that each branch
+has exactly one Reception that is a sales point and not a store —
+otherwise startingDept() would silently fall back to another department.
+Counts also opens new counts on the default; managers can pick any
+department there, so it only pre-selects the choice.
+
+VERIFIED by running the real old and new tab logic for every role: only
+the manager changed, nobody lost a screen, no duplicates.
