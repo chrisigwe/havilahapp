@@ -4195,3 +4195,55 @@ department there, so it only pre-selects the choice.
 
 VERIFIED by running the real old and new tab logic for every role: only
 the manager changed, nobody lost a screen, no duplicates.
+
+
+## GM/admin actions made visible (migration 261)
+
+The auditor's History recorded only sales and stock movements, so most
+of what ONLY the GM/admin can do left no trace. With one person at the
+top ("GM", role admin — confirmed nobody else signs in with it, and it
+keeps full powers including fixing things), History is the only check
+on that account. 261 changes nobody's permissions; it logs:
+  credit_repayments  deleted; amount/method/date edited
+  payments           room payment deleted; amount/method edited
+  stays              booking deleted; nightly rate changed (+ reason)
+  rooms              any rate_* column changed
+  stock_items        any *price column changed; item deleted;
+                     removed from / restored to the catalog
+All into inventory_audit, so History shows them with no app change.
+
+Safety: an erroring audit trigger would CANCEL the action it records.
+All ids are UUIDs and every table has branch_id (checked); lookups
+tolerate missing rows; changed values go through audit_value(), which
+falls back to plain text instead of failing a numeric cast. Columns are
+compared as JSON, so new price/rate columns are logged automatically.
+
+Self-test: each log is exercised inside a rolled-back subtransaction
+(real change, entry counted, both undone). Any log that fails to write
+blocks the whole migration. Untestable cases are reported, not failed.
+SQL-editor changes are logged too, as "by unknown".
+
+
+## GM/admin bar, whole-branch money screens, cross-branch default (262)
+
+Bar: Daily sales · Rooms · Credit · Variances · More, landing on Daily
+sales (unchanged). Variances joins the bar: where counted stock and
+recorded sales disagree — the most direct view of money going missing,
+which is the GM's to watch. Sales stays in More; front desk and managers
+handle approvals day to day.
+
+Credit and Recovered debt open on ALL departments for GM/admin, as for
+auditors — one definition now, OPENS_ON_ALL in lib/roles.js.
+
+Cross-branch default: only GM/admin can view the other branch, where
+their stored default doesn't exist. Startup used to fall back to the
+first sales department; it now first looks for the department with the
+SAME NAME there, so a GM whose default is Awka's Reception lands on
+Nnewi's Reception. One small query, only in that case. Tested with the
+real code: both branch views correct; manager, store manager and
+no-default cases unchanged.
+
+262 sets GM/admin defaults (the "GM" admin account and the read-only
+Demo gm account) to home-branch Reception, where empty. Verified by
+running the real old and new tab logic for every role: only GM/admin
+changed, nobody lost a screen, no duplicates.

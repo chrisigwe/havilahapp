@@ -36,3 +36,8 @@ export const is = (role, group) => group.includes(role)
 // (migration 250) exactly, so the controls never appear to someone the
 // database would refuse.
 export const APPROVE_ROOM_CHARGES = ['front_desk', 'manager', 'gm', 'admin']
+
+// auditor, gm, admin. Open Credit and Recovered debt on ALL departments:
+// their job is the whole branch, and a single department would quietly
+// narrow the review. Everyone else opens on their own department.
+export const OPENS_ON_ALL = ['auditor', 'gm', 'admin']

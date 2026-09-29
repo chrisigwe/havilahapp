@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { lagosToday, methodLabel, naira, startingDept } from '../lib/format'
 import { loadRecovery, updateRepayment, deleteRepayment, loadRoomPayments, deleteRoomPayment } from '../lib/data'
 import { useToast } from '../components/Toast'
-import { is, OVERSIGHT, SUPERVISOR } from '../lib/roles'
+import { OPENS_ON_ALL, OVERSIGHT, SUPERVISOR, is } from '../lib/roles'
 
 // Deliberately excludes storekeeper — an explicit choice, not an
 // oversight, matching how storekeeper's write access has been pulled
@@ -25,7 +25,7 @@ export default function Recovery({ boot }) {
     .filter(l => l.is_sales_point && !l.is_store)
   // 'all' = every department; auditors open on it (their job is the
   // whole branch). Each repayment row already names its department.
-  const openingDept = () => staff.role === 'auditor' ? 'all' : startingDept(salesPoints, staff, locations)
+  const openingDept = () => is(staff.role, OPENS_ON_ALL) ? 'all' : startingDept(salesPoints, staff, locations)
   const [locId, setLocId] = useState(openingDept)
   const [rows, setRows] = useState(null)
   const isReception = /reception/i.test(salesPoints.find(l => l.id === locId)?.name || '')

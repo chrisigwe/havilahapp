@@ -8,7 +8,7 @@ import { loadBalances, loadCustomerLedger, saveRepayment, loadStaffForLocation,
 import { enqueue, flush, isConnectionError } from '../lib/outbox'
 import PaymentMethodPicker, { paymentParts, paymentAllocated } from '../components/PaymentMethodPicker'
 import FolioStatement from '../components/FolioStatement'
-import { EDITOR, OVERSIGHT, SUPERVISOR, is } from '../lib/roles'
+import { EDITOR, OPENS_ON_ALL, OVERSIGHT, SUPERVISOR, is } from '../lib/roles'
 
 function printStatement() {
   document.querySelectorAll('.invoice-print').forEach(el => {
@@ -49,7 +49,7 @@ export default function Credit({ boot }) {
   const hasReceptionAccess = seesAllDepartments || (locations || []).some(l => /reception/i.test(l.name))
   // 'all' = every department. Offered to whoever sees all departments;
   // auditors OPEN on it, since their job is the whole branch.
-  const openingDept = () => staff.role === 'auditor' ? 'all' : startingDept(salesPoints, staff, locations)
+  const openingDept = () => is(staff.role, OPENS_ON_ALL) ? 'all' : startingDept(salesPoints, staff, locations)
   const [locId, setLocId] = useState(openingDept)
   // Re-sync the selected department when the GM switches branch — the
   // old branch's location id matches no chip here, so without this

@@ -60,9 +60,22 @@ export async function loadBranchData(staff, viewBranchId) {
   // the other branch's OpenBar) would otherwise blank every stock
   // total until they manually tap a tab — so fall back to their
   // first visible sales point instead.
-  const validDefault = visible.some(l => l.id === staff.default_location_id)
-    ? staff.default_location_id
-    : (visible.find(l => l.is_sales_point && !l.is_store)?.id || visible[0]?.id || null)
+  let validDefault = visible.some(l => l.id === staff.default_location_id)
+    ? staff.default_location_id : null
+  // Viewing ANOTHER branch (only GM/admin can): the stored default belongs
+  // to the home branch, so use the department with the same name here. A
+  // GM whose default is Awka's Reception opens on Nnewi's Reception, not
+  // on whichever department happens to come first. One small query, and
+  // only in that case; everyone else's default is always in their branch.
+  if (!validDefault && staff.default_location_id) {
+    const { data: home } = await supabase.from('stock_locations')
+      .select('name').eq('id', staff.default_location_id).maybeSingle()
+    const twin = home && visible.find(l => l.name === home.name)
+    if (twin) validDefault = twin.id
+  }
+  if (!validDefault) {
+    validDefault = visible.find(l => l.is_sales_point && !l.is_store)?.id || visible[0]?.id || null
+  }
 
   return {
     // pages read staff.branch_id everywhere, so point it at the branch
