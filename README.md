@@ -4093,3 +4093,82 @@ break it. It also refuses to run before 256.
 DEPLOY ORDER: this zip, then 256, then 257, back to back. Between the
 zip and 257, EDITING fails cleanly (edit_sale doesn't exist yet) — so
 run 257 promptly. Nothing can be corrupted in the gap.
+
+
+## Payments only on new sales (migration 258)
+
+257 stopped payments being stripped; 258 stops them being padded. The
+payment INSERT rule allowed a row on ANY sale in the branch at any time.
+Now only on a sale created in the last 15 minutes — the till adds
+payments immediately after creating the sale.
+
+Deliberately NOT "a sale you recorded yourself": queued offline sales
+replay under the ORIGINAL staff (p.staffLite) but are sent by whoever is
+signed in at reconnect. On a shared phone those differ, and that
+condition would refuse a synced sale's payments, leaving it with none.
+created_at is set by the database at sync time, so freshness is safe.
+Residual accepted: a colleague's sale can gain a payment within its
+first 15 minutes. The verification also re-checks, table-wide, that no
+other permissive rule still opens edit/delete on sales or payments.
+
+
+## All departments on Credit and Recovered debt
+
+Both screens showed one department at a time. Now an "All departments"
+chip is offered to everyone who sees all departments (OVERSIGHT), and
+auditors OPEN on it — their default is the whole branch. Everyone else
+still opens on their own department via startingDept().
+
+The loaders already treated no department as the whole branch, so the
+work was in the screens:
+  - CREDIT: loadBalances returns one row per customer PER department
+    per staff member. The all view COMBINES them — one line per
+    customer, listing where they owe — so someone owing at two counters
+    doesn't appear twice as two half-truths. Combined BEFORE filtering
+    out settled accounts, so an overpayment at one department correctly
+    reduces what they owe overall. The statement shows the whole ledger.
+  - Record payment and Move to room are HIDDEN in the all view, with a
+    note: a repayment must be credited to one department, and both fell
+    back to locId — which in the all view is the literal 'all'.
+  - The staff filter is hidden in the all view (it's built per
+    department).
+  - RECOVERY: rows already name their department, so only the chip,
+    the starting choice and the loader changed.
+The Day filter and guest room balances were already written for 'all'.
+
+VERIFIED with the real combining code: two-counter debt combines
+(1,000 + 500 = 1,500); an overpayment reduces the total (800 owed,
+200 overpaid elsewhere = 600, listed at MainBar only); fully repaid
+customers drop out; a customer across two staff combines; the
+single-department view is unchanged.
+
+
+## Adjusted counts need a second person (migration 259, decision C)
+
+An auditor may still correct a line on a submitted count after a
+recount, but NOBODY VERIFIES A COUNT THEY ADJUSTED:
+  no adjusted lines  -> auditor, GM or admin verify (unchanged)
+  any adjusted line  -> manager, GM or admin verify, never the adjuster
+
+An earlier draft of 259 (written in a response that was lost; its files
+survived) excluded only the auditor ROLE. But auditor_adjust_count_line
+lets auditor, GM and admin adjust, so a GM could have corrected a line
+and verified it themselves. Corrected: stock_count_lines.adjusted_by
+records WHO adjusted, and verification refuses that person whatever
+their role. Lines adjusted before 259 have no recorded adjuster; the
+role rule still applies to them. 259 records itself under a new id
+('..._v2') and its guards accept either verify version, so it applies
+correctly even if the draft was ever run.
+
+Also fixed: neither verify_stock_count nor auditor_adjust_count_line
+checked the count's branch, and both run with elevated rights.
+can_see_branch() added to both. Adjusting an item not on the count now
+says so instead of silently changing nothing.
+
+App: count lines load adjusted_by; Verify is hidden from whoever
+adjusted, with "You adjusted a line on this count, so someone else must
+verify it." VERIFIED app vs database across not-adjusted, adjusted by
+auditor/GM/admin, and legacy lines, for every verifier: 0 mismatches.
+
+DEPLOY ORDER: 259 FIRST, then this app. The app now loads adjusted_by;
+before the column exists, count lines would fail to load.

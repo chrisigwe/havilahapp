@@ -23,7 +23,10 @@ export default function Recovery({ boot }) {
   const seesAllDepartments = is(staff.role, OVERSIGHT)
   const salesPoints = (seesAllDepartments ? allLocations : locations || [])
     .filter(l => l.is_sales_point && !l.is_store)
-  const [locId, setLocId] = useState(startingDept(salesPoints, staff, locations))
+  // 'all' = every department; auditors open on it (their job is the
+  // whole branch). Each repayment row already names its department.
+  const openingDept = () => staff.role === 'auditor' ? 'all' : startingDept(salesPoints, staff, locations)
+  const [locId, setLocId] = useState(openingDept)
   const [rows, setRows] = useState(null)
   const isReception = /reception/i.test(salesPoints.find(l => l.id === locId)?.name || '')
   // Whether this person can see room-payment recovery at all — a
@@ -66,12 +69,12 @@ export default function Recovery({ boot }) {
   // default whenever the current selection isn't a location in this
   // branch.
   useEffect(() => {
-    const valid = salesPoints.some(l => l.id === locId)
-    if (!valid) setLocId(startingDept(salesPoints, staff, locations))
+    const valid = (locId === 'all' && seesAllDepartments) || salesPoints.some(l => l.id === locId)
+    if (!valid) setLocId(openingDept())
   }, [staff.branch_id])
 
   const refresh = useCallback(() => {
-    loadRecovery(staff.branch_id, locId).then(setRows).catch(e => toast(e.message, 'error'))
+    loadRecovery(staff.branch_id, locId === 'all' ? null : locId).then(setRows).catch(e => toast(e.message, 'error'))
   }, [staff.branch_id, locId])
   useEffect(refresh, [refresh])
 
@@ -132,6 +135,13 @@ export default function Recovery({ boot }) {
     <div className="px-5">
       {salesPoints.length > 1 && (
         <div className="flex gap-2 overflow-x-auto py-2 -mx-1 px-1">
+          {seesAllDepartments && (
+            <button onClick={() => setLocId('all')}
+              className={`shrink-0 h-11 px-4 rounded-full border ${locId === 'all'
+                ? 'bg-amber text-bg border-amber font-bold' : 'border-line text-dim'}`}>
+              All departments
+            </button>
+          )}
           {salesPoints.map(l => (
             <button key={l.id} onClick={() => setLocId(l.id)}
               className={`shrink-0 h-11 px-4 rounded-full border ${l.id === locId

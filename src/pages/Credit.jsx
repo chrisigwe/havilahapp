@@ -47,13 +47,16 @@ export default function Credit({ boot }) {
   // a department like MainBar just by having a different chip
   // selected when they looked.
   const hasReceptionAccess = seesAllDepartments || (locations || []).some(l => /reception/i.test(l.name))
-  const [locId, setLocId] = useState(startingDept(salesPoints, staff, locations))
+  // 'all' = every department. Offered to whoever sees all departments;
+  // auditors OPEN on it, since their job is the whole branch.
+  const openingDept = () => staff.role === 'auditor' ? 'all' : startingDept(salesPoints, staff, locations)
+  const [locId, setLocId] = useState(openingDept)
   // Re-sync the selected department when the GM switches branch — the
   // old branch's location id matches no chip here, so without this
   // nothing highlights until a manual tap.
   useEffect(() => {
-    const valid = salesPoints.some(l => l.id === locId)
-    if (!valid) setLocId(startingDept(salesPoints, staff, locations))
+    const valid = (locId === 'all' && seesAllDepartments) || salesPoints.some(l => l.id === locId)
+    if (!valid) setLocId(openingDept())
   }, [staff.branch_id])
   const [confirmDel, setConfirmDel] = useState(null)
   const [delBusy, setDelBusy] = useState(false)
@@ -104,7 +107,7 @@ export default function Credit({ boot }) {
 
   const refresh = useCallback(() => {
     const requestedFor = requestKey   // snapshot at the moment this fetch was started
-    loadBalances(staff.branch_id, locId, isEditor ? staffFilter : null)
+    loadBalances(staff.branch_id, locId === 'all' ? null : locId, isEditor ? staffFilter : null)
       .then(data => { if (requestKeyRef.current === requestedFor) setRows(data) })
       .catch(e => toast(e.message, 'error'))
   }, [staff.branch_id, locId, staffFilter, isEditor, requestKey])
@@ -126,6 +129,7 @@ export default function Credit({ boot }) {
   // real reason clicking a person still returned every debtor.
   useEffect(() => {
     if (!isEditor || !locId) return
+    if (locId === 'all') { setPeople([]); setStaffFilter(null); return }
     loadStaffForLocation(staff.branch_id, locId).then(ps => {
       setPeople(ps)
       setStaffFilter(cur => ps.some(p => p.id === cur) ? cur : null)
@@ -134,7 +138,7 @@ export default function Credit({ boot }) {
 
   async function openCustomer(c) {
     try {
-      const ledger = await loadCustomerLedger(staff.branch_id, c.customer_id, locId,
+      const ledger = await loadCustomerLedger(staff.branch_id, c.customer_id, locId === 'all' ? null : locId,
         isEditor ? (c.staff_id || null) : null)
       setOpen({ customer: c, ledger })
     } catch (e) { toast(e.message, 'error') }
@@ -251,16 +255,37 @@ export default function Credit({ boot }) {
   // if a late/out-of-order fetch lands in `rows`, it physically cannot
   // paint under the wrong department — the filter is on the data
   // itself, not on a timing guard that can drift.
-  const owing = rows.filter(r =>
-    Number(r.balance) > 0.009
-    && (!locId || r.location_id === locId)
+  const inScope = rows.filter(r =>
+    (!locId || locId === 'all' || r.location_id === locId)
     && (!staffFilter || r.staff_id === staffFilter))
+  // All departments: rows come one per customer PER department, so combine
+  // them — otherwise someone owing at two counters appears twice, as two
+  // half-truths. Combined BEFORE the owing filter, so an overpayment at one
+  // department correctly reduces what they owe overall.
+  const combined = locId !== 'all' ? inScope : Object.values(inScope.reduce((acc, r) => {
+    const a = acc[r.customer_id] || (acc[r.customer_id] = {
+      ...r, credit_taken: 0, repaid: 0, balance: 0,
+      location_id: null, staff_id: null, staff_name: null, deptIds: [] })
+    a.credit_taken += Number(r.credit_taken); a.repaid += Number(r.repaid); a.balance += Number(r.balance)
+    if (r.first_credit_date && (!a.first_credit_date || r.first_credit_date < a.first_credit_date)) a.first_credit_date = r.first_credit_date
+    if (r.last_credit_date && (!a.last_credit_date || r.last_credit_date > a.last_credit_date)) a.last_credit_date = r.last_credit_date
+    if (Number(r.balance) > 0.009 && !a.deptIds.includes(r.location_id)) a.deptIds.push(r.location_id)
+    return acc
+  }, {})).sort((x, y) => String(y.last_credit_date || '').localeCompare(String(x.last_credit_date || '')))
+  const owing = combined.filter(r => Number(r.balance) > 0.009)
   const total = owing.reduce((s, r) => s + Number(r.balance), 0)
 
   return (
     <div className="px-5">
       {salesPoints.length > 1 && (
         <div className="flex gap-2 overflow-x-auto py-2 -mx-1 px-1">
+          {seesAllDepartments && (
+            <button onClick={() => setLocId('all')}
+              className={`shrink-0 h-11 px-4 rounded-full border ${locId === 'all'
+                ? 'bg-amber text-bg border-amber font-bold' : 'border-line text-dim'}`}>
+              All departments
+            </button>
+          )}
           {salesPoints.map(l => (
             <button key={l.id} onClick={() => setLocId(l.id)}
               className={`shrink-0 h-11 px-4 rounded-full border ${l.id === locId
@@ -344,7 +369,7 @@ export default function Credit({ boot }) {
       <>
       <div className="flex items-baseline justify-between py-2">
         <h2 className="text-dim">
-          Owed to {locById[locId]?.name || 'this department'}
+          {locId === 'all' ? 'Owed across all departments' : `Owed to ${locById[locId]?.name || 'this department'}`}
           {staffFilter && people.find(p => p.id === staffFilter)
             ? ` · ${people.find(p => p.id === staffFilter).full_name}` : ''}
           <span className="ml-2 text-sm">
@@ -362,6 +387,11 @@ export default function Credit({ boot }) {
               <div className="text-dim text-sm">
                 {naira(c.credit_taken)} taken · {naira(c.repaid)} repaid
               </div>
+              {!!c.deptIds?.length && (
+                <div className="text-dim text-xs">
+                  {c.deptIds.map(id => locById[id]?.name).filter(Boolean).join(', ')}
+                </div>
+              )}
               <div className="text-dim text-sm">
                 {c.last_credit_date && (
                   <span>
@@ -588,7 +618,13 @@ export default function Credit({ boot }) {
                 <span className="tnum">{naira(open.customer.balance)}</span>
               </div>
 
-              {open.customer.balance > 0.009 && (
+              {open.customer.balance > 0.009 && locId === 'all' && (
+                <p className="print:hidden mt-3 text-dim text-sm">
+                  Viewing all departments. To record a payment or move this balance
+                  to a room, open the department it was owed at.
+                </p>
+              )}
+              {open.customer.balance > 0.009 && locId !== 'all' && (
                 <button onClick={() => setMovingToRoom({ customerId: open.customer.customer_id, locationId: locId,
                                                             amount: open.customer.balance })}
                   className="print:hidden mt-3 h-11 px-4 rounded-xl border border-amber text-amber text-sm font-semibold">
@@ -616,7 +652,9 @@ export default function Credit({ boot }) {
               const wouldBeOnBehalf = NO_ON_BEHALF.has(staff.id)
                 && open.customer.staff_id
                 && open.customer.staff_id !== staff.id
-              const hidden = hiddenForRole || wouldBeOnBehalf
+              // A repayment must be credited to one department; in the all
+              // view it would otherwise fall back to the literal 'all'.
+              const hidden = hiddenForRole || wouldBeOnBehalf || locId === 'all'
               return (
                 <button onClick={() => setPay({ customerId: open.customer.customer_id,
                   amount: open.customer.balance, method: methods.find(m => m !== 'credit') || 'cash',

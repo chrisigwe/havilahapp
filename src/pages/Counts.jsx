@@ -7,6 +7,12 @@ import { enqueue, flush, isConnectionError } from '../lib/outbox'
 import { useToast } from '../components/Toast'
 
 const AUDITOR = ['auditor', 'gm', 'admin']
+// A count with ANY adjusted line needs a second person to verify it —
+// whoever corrected a line must not also sign it off (decision C,
+// migration 259). Two rules, both mirrored from verify_stock_count:
+// the ROLE (manager/gm/admin for adjusted counts) and the PERSON (never
+// whoever adjusted a line — auditors, GMs and admins can all adjust).
+const VERIFY_ADJUSTED = ['manager', 'gm', 'admin']
 const MANAGE_ANY = ['storekeeper', 'manager', 'gm', 'admin']
 const STAFF_COUNT = ['bar', 'front_desk']
 // Deleting a SUBMITTED count: exactly these five roles, not derived
@@ -22,7 +28,10 @@ export default function Counts({ boot }) {
   const canManageAny = MANAGE_ANY.includes(staff.role)
   const canCountOwn  = STAFF_COUNT.includes(staff.role)
   const canCount = canManageAny || canCountOwn
-  const canVerify = AUDITOR.includes(staff.role)
+  // Adjusting a line and verifying the count used to share one gate.
+  // They are separate now: adjusting stays with auditors (and GM/admin);
+  // who may VERIFY depends on whether any line was adjusted.
+  const canAdjust = AUDITOR.includes(staff.role)
   const canDelete = CAN_DELETE_COUNT.includes(staff.role)
   // staff pick from their own assigned department(s) only; a
   // storekeeper or above can count any department in the branch
@@ -32,6 +41,11 @@ export default function Counts({ boot }) {
   const [counts, setCounts] = useState(null)
   const [stockMap, setStockMap] = useState({})
   const [open, setOpen] = useState(null)      // { count, lines }
+  // Recomputed from the lines on screen, so the moment an auditor adjusts a
+  // line their own Verify button gives way to the GM/manager note.
+  const hasAdjusted = !!open?.lines?.some(l => l.auditor_adjusted)
+  const iAdjusted = !!open?.lines?.some(l => l.auditor_adjusted && l.adjusted_by === staff.id)
+  const canVerifyThis = (hasAdjusted ? VERIFY_ADJUSTED : AUDITOR).includes(staff.role) && !iAdjusted
   const [busy, setBusy] = useState(false)
   const [confirmDel, setConfirmDel] = useState(null)
   const [newLoc, setNewLoc] = useState(null)
@@ -80,13 +94,13 @@ export default function Counts({ boot }) {
   // from setLine (which upserts via saveCountLine, draft-only). This
   // goes through the auditor RPC and flags the line as adjusted.
   async function adjustLine(line) {
-    if (open.count.status !== 'submitted' || !canVerify) return
+    if (open.count.status !== 'submitted' || !canAdjust) return
     if (line.counted_qty === null || line.counted_qty === undefined) return
     const countId = open.count.id
     try {
       await auditorAdjustCountLine(countId, line.stock_item_id, Number(line.counted_qty))
       setOpen(o => o?.count.id === countId ? { ...o, lines: o.lines.map(l =>
-        l.stock_item_id === line.stock_item_id ? { ...l, auditor_adjusted: true } : l) } : o)
+        l.stock_item_id === line.stock_item_id ? { ...l, auditor_adjusted: true, adjusted_by: staff.id } : l) } : o)
     } catch (e) { toast('Could not adjust: ' + e.message, 'error') }
   }
 
@@ -264,7 +278,7 @@ export default function Counts({ boot }) {
                             l.pending ? 'border-amber'
                             : (Number(l.system_qty) !== 0 && l.counted_qty === null) ? 'border-clay'
                             : 'border-line'}`} />
-                      ) : (open.count.status === 'submitted' && canVerify) ? (
+                      ) : (open.count.status === 'submitted' && canAdjust) ? (
                         // auditor can correct a submitted figure before
                         // verifying — overwrites, flags the line as adjusted.
                         // onChange only touches local state (saveCountLine
@@ -308,14 +322,20 @@ export default function Counts({ boot }) {
                 {busy ? 'Submitting…' : 'Submit for verification'}
               </button>
             )}
-            {open.count.status === 'submitted' && canVerify && (
+            {open.count.status === 'submitted' && canVerifyThis && (
               <button onClick={doVerify} disabled={busy}
                 className="w-full h-16 rounded-2xl bg-leaf text-bg text-xl font-bold disabled:opacity-40">
                 {busy ? 'Verifying…' : 'Verify and post variances'}
               </button>
             )}
-            {open.count.status === 'submitted' && !canVerify && (
-              <p className="text-center text-dim">Only an auditor can verify this count.</p>
+            {open.count.status === 'submitted' && !canVerifyThis && (
+              <p className="text-center text-dim">
+                {iAdjusted
+                  ? 'You adjusted a line on this count, so someone else must verify it.'
+                  : hasAdjusted
+                    ? 'A line on this count was adjusted, so a GM or manager must verify it.'
+                    : 'Only an auditor can verify this count.'}
+              </p>
             )}
             {(
               (open.count.status === 'submitted' && canDelete)

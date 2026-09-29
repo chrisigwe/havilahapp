@@ -418,7 +418,7 @@ export async function loadCounts(branchId) {
 
 export async function loadCountLines(countId) {
   const { data, error } = await supabase.from('stock_count_lines')
-    .select('stock_item_id, system_qty, counted_qty, auditor_adjusted').eq('count_id', countId)
+    .select('stock_item_id, system_qty, counted_qty, auditor_adjusted, adjusted_by').eq('count_id', countId)
   if (error) throw error
   return data
 }
