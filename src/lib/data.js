@@ -247,10 +247,12 @@ export async function loadActivity(branchId, days = 14, ownOnlyStaffId = null, l
 
 export async function deleteEntry(entry) {
   if (entry.kind === 'sale') {
-    const { error: e1 } = await supabase.from('sale_payments').delete().eq('sale_id', entry.id)
-    if (e1) throw e1
-    const { error } = await supabase.from('sales').delete().eq('id', entry.id)
-    if (error) throw error          // trigger removes the stock deduction
+    // One database step, GM/admin only: payments and sale are removed
+    // together or not at all. Two client calls (payments, then sale)
+    // could strip a sale's payments and then fail on the sale itself,
+    // leaving a sale with no payment — silently gone from the cash-up.
+    const { error } = await supabase.rpc('delete_sale', { p_sale: entry.id })
+    if (error) throw error
   } else {
     const { error } = await supabase.from('stock_movements').delete().eq('id', entry.id)
     if (error) throw error
@@ -258,25 +260,20 @@ export async function deleteEntry(entry) {
 }
 
 export async function updateEntry(entry, { qty, unitPrice }) {
+  // Stock movements only. The sale branch that used to be here collapsed
+  // every payment into ONE row of the first method found (or 'cash') — so
+  // correcting the quantity on a part-cash, part-credit sale would have
+  // erased the credit, and the customer's debt with it. Nothing called it
+  // for sales (Corrections uses updateSaleWithPayments), and direct sale
+  // edits are now refused by the database (257) — so it is removed rather
+  // than left as a trap.
   if (entry.kind === 'sale') {
-    const { error } = await supabase.from('sales')
-      .update({ qty, unit_price: unitPrice }).eq('id', entry.id)
-    if (error) throw error          // trigger keeps the deduction in step
-    // payments no longer match the new total: restate as a single row
-    const { error: e1 } = await supabase.from('sale_payments').delete().eq('sale_id', entry.id)
-    if (e1) throw e1
-    const { data: pm } = await supabase.from('branch_payment_methods')
-      .select('method').eq('branch_id', entry.branch_id ?? undefined).limit(1)
-    const method = entry.method || pm?.[0]?.method || 'cash'
-    const { error: e2 } = await supabase.from('sale_payments')
-      .insert({ sale_id: entry.id, method, amount: qty * unitPrice })
-    if (e2) throw e2
-  } else {
-    const patch = { qty }
-    if (unitPrice !== undefined && unitPrice !== null && unitPrice !== '') patch.unit_cost = unitPrice
-    const { error } = await supabase.from('stock_movements').update(patch).eq('id', entry.id)
-    if (error) throw error
+    throw new Error('Sales are edited with updateSaleWithPayments, which keeps the payment split.')
   }
+  const patch = { qty }
+  if (unitPrice !== undefined && unitPrice !== null && unitPrice !== '') patch.unit_cost = unitPrice
+  const { error } = await supabase.from('stock_movements').update(patch).eq('id', entry.id)
+  if (error) throw error
 }
 
 export async function loadAudit(branchId, limit = 100) {
@@ -516,18 +513,18 @@ export async function loadSalePayments(saleId) {
   return data
 }
 
+// Edit a sale's quantity, price and payment split in ONE database step.
+// Previously three client calls — update the sale, delete its payments,
+// re-add them — which meant everyone who could edit also held the right
+// to delete payment rows directly, and a failure between the calls could
+// leave a sale with no payment. edit_sale() (migration 257) does it
+// atomically and applies the same who-may-edit rule itself.
 export async function updateSaleWithPayments(saleId, { qty, unitPrice, payments }) {
-  const { error } = await supabase.from('sales')
-    .update({ qty, unit_price: unitPrice }).eq('id', saleId)
+  const { error } = await supabase.rpc('edit_sale', {
+    p_sale: saleId, p_qty: qty, p_unit_price: unitPrice,
+    p_payments: payments.map(p => ({ method: p.method, amount: Number(p.amount) || 0 })),
+  })
   if (error) throw error
-  const { error: e1 } = await supabase.from('sale_payments').delete().eq('sale_id', saleId)
-  if (e1) throw e1
-  const rows = payments.filter(p => Number(p.amount) > 0)
-    .map(p => ({ sale_id: saleId, method: p.method, amount: Number(p.amount) }))
-  if (rows.length) {
-    const { error: e2 } = await supabase.from('sale_payments').insert(rows)
-    if (e2) throw e2
-  }
 }
 
 export async function loadRecovery(branchId, locationId, days = 60) {

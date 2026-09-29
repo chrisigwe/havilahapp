@@ -4,7 +4,7 @@ import { loadRoomsForSettings, loadBranchStaySettings, updateRoomRates,
          updateBranchOverstayDefault, loadStaffOfMonth, postStaffOfMonth,
          deleteStaffOfMonth } from '../lib/data'
 import { useToast } from '../components/Toast'
-import { is, MANAGEMENT, SUPERVISOR } from '../lib/roles'
+import { SUPERVISOR, is } from '../lib/roles'
 
 const RATE_FIELDS = { standard: 'rate_standard', alternate: 'rate_alternate', short: 'rate_short' }
 
@@ -25,7 +25,10 @@ export default function StaySettings({ boot }) {
   const [fee, setFee] = useState('')
   const [busy, setBusy] = useState(false)
 
-  const canManageRooms = is(staff.role, MANAGEMENT)
+  // GM/admin only (migration 256). Room rates joined over-stay and Staff
+  // of the Month as GM authority, matching item prices in Catalog — which
+  // left nothing on this page for managers.
+  const canManageRooms = is(staff.role, SUPERVISOR)
   const canSetOverstayDefault = is(staff.role, SUPERVISOR)
 
   // Staff of the Month — GM/admin only, matches canSetOverstayDefault

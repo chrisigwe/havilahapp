@@ -4018,3 +4018,78 @@ store manager bars), Variances and History (auditor bar).
 Same 24px grid and 2px round stroke as the rest. Checked rendered at
 60px (how a 3x phone draws a 20px icon) and at a true 20px: all three
 stay legible. Verified every tab on every role's bar now has an icon.
+
+
+## Manager limits; Awka Manager writable (migration 256)
+
+Principle: a manager runs the day; the GM holds final authority over
+money, prices and anything that can't be undone. Three places the line
+was drawn inconsistently, now fixed:
+
+1. DELETION -> GM/admin. A manager could delete any sale or stock
+   movement but not a N500 repayment. Managers still EDIT anyone's
+   entries.
+   Done with a delete_sale() function, not just a tighter rule: the app
+   deleted a sale in TWO client calls (payments, then sale). Managers
+   must keep the right to delete PAYMENT rows because editing works by
+   deleting and re-adding them, so tightening only the sale rule would
+   have let a manager's delete strip the payments and then fail on the
+   sale — a sale with no payment, silently gone from the cash-up.
+   delete_sale() removes both in one transaction, GM/admin only.
+2. ROOM RATES -> GM/admin, matching item prices (Catalog). rooms_update
+   now requires is_supervisor(). The app's only direct room write is
+   room rates; out-of-service runs through set_room_service_status(),
+   which has elevated rights and its own manager check, so it still
+   works. Settings now holds only GM/admin sections, so it left the
+   manager's menu.
+3. MERGING CUSTOMERS -> GM/admin in the database, matching the app.
+4. Awka Manager: read-only flag lifted.
+
+VERIFIED: app buttons vs database permissions for every role, entry
+kind, action and ownership — 84 cases, 0 mismatches. No screen deletes
+sales or writes rooms directly other than through the gated paths.
+
+KNOWN GAP (deliberately not closed): because editing deletes payment
+rows, a manager — or bar staff on their own recent sales — could still
+remove payment rows directly through the database, outside the app.
+Closing it means making editing one database step too.
+
+DEPLOY ORDER: APP FIRST, then 256. With 256 applied under the OLD app,
+a manager deleting a sale would hit exactly the two-step failure above.
+With the new app first, the only effect in the gap is that a GM's sale
+delete fails cleanly until 256 creates delete_sale().
+
+
+## Sale edits in one database step (migration 257)
+
+Closes the gap left open in 256. Editing a sale deleted and re-added its
+payment rows in separate calls, so everyone able to edit also held the
+right to DELETE payment rows directly — and could strip a sale's
+payments outside the app, dropping it from the cash-up.
+
+Now edit_sale() changes quantity, price and payments together, and
+delete_sale() (256) removes a sale and its payments together. With both,
+the app never updates or deletes a sale or payment row directly (the
+write map was re-run to prove it: only the till's INSERTS remain), so
+sales_amend, sales_remove, payments_amend and payments_remove refuse
+everyone. Both functions carry elevated rights and apply the same
+who-may-edit rule sales_amend used to: manager/gm/admin anyone's at the
+branch, anyone their own from today or yesterday.
+
+edit_sale() also enforces, in the database, that payments add up to
+quantity x price (previously only the screen checked), and adds one
+rule: credit needs a customer — editing a cash sale into credit used to
+create a debt nobody owed.
+
+Removed: updateEntry's sale branch. It collapsed every payment into one
+row of the first method found (or 'cash'), so correcting a part-cash,
+part-credit sale would have erased the credit and the customer's debt.
+Nothing called it for sales; it now throws instead.
+
+Guard: 257 refuses to apply if any function without elevated rights
+updates or deletes sales or payments, since closing those rules would
+break it. It also refuses to run before 256.
+
+DEPLOY ORDER: this zip, then 256, then 257, back to back. Between the
+zip and 257, EDITING fails cleanly (edit_sale doesn't exist yet) — so
+run 257 promptly. Nothing can be corrupted in the gap.

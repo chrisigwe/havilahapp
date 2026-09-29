@@ -19,6 +19,10 @@ export default function Corrections({ boot }) {
   // reconciled against these very sales.
   const isEditor = is(staff.role, MANAGEMENT)
   const isStorekeeper = staff.role === 'storekeeper'
+  // Deleting is GM/admin only (migration 256), matching payments and
+  // bookings; managers keep EDITING anyone's entries. Mirrors
+  // is_supervisor() in delete_sale() and the delete policies.
+  const canDeleteAny = is(staff.role, SUPERVISOR)
   const canEdit = isEditor || isStorekeeper || staff.role === 'bar' || staff.role === 'front_desk'
   const ownOnly = !isEditor
   // Store managers keep the all-departments chips (a filter over their
@@ -557,7 +561,7 @@ export default function Corrections({ boot }) {
                     Too old to edit yourself — ask a manager
                   </span>
                 )}
-                {(isEditor || (isStorekeeper && r.kind !== 'sale'
+                {(canDeleteAny || (isStorekeeper && r.kind !== 'sale'
                     && r.recorded_by === staff.id && r.business_date >= lagosDaysAgo(1))) && (
                   <button onClick={() => setConfirm(r)}
                     className="h-10 px-4 rounded-lg border border-clay text-clay text-sm font-semibold">Delete</button>
