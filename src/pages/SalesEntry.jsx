@@ -5,7 +5,7 @@ import { loadStockMap, loadPopular, loadToday, saveBasket, saveWriteoff,
          loadOpeningDate, loadBalances, loadReceipt,
          loadStaffForLocation, loadReceptionActivity, loadReceptionDashboard, deleteEntry,
          loadRoomCharges, deleteOrderItem, saveRestaurantWriteoff, loadRoomsSoldInMonth,
-         loadPrGivenOnDate, loadLiveStays, chargeBasketToRoom,
+         loadWriteoffsOnDate, loadLiveStays, chargeBasketToRoom,
          getOrCreateGuestTab } from '../lib/data'
 import { enqueue, flush, isConnectionError } from '../lib/outbox'
 import { useToast } from '../components/Toast'
@@ -104,7 +104,7 @@ export default function SalesEntry({ boot }) {
   const [receptionActivity, setReceptionActivity] = useState([])
   const [receptionDashboard, setReceptionDashboard] = useState(null)
   const [roomsSold, setRoomsSold] = useState(null)
-  const [prGiven, setPrGiven] = useState(null)
+  const [writeoffs, setWriteoffs] = useState(null)
   // In-house guests offered at the credit step, so a guest's drinks go
   // to their room or their own linked tab instead of a free-floating
   // customer account named after the room.
@@ -196,7 +196,7 @@ export default function SalesEntry({ boot }) {
     if (roomChargeCategory) {
       loadRoomCharges(staff.branch_id, date, roomChargeCategory).then(setRoomCharges).catch(() => {})
     }
-    loadPrGivenOnDate(staff.branch_id, date, locationId).then(setPrGiven).catch(() => setPrGiven(null))
+    loadWriteoffsOnDate(staff.branch_id, date, locationId).then(setWriteoffs).catch(() => setWriteoffs(null))
     loadDailyFinancials(staff.branch_id, date, locationId).then(r => {
       setSummary({ byMethod: r.byMethod, nonRevenue: r.nonRevenue })
       setRecon({ grossSales: r.grossSales, received: r.received, creditRaised: r.creditRaised,
@@ -764,38 +764,89 @@ export default function SalesEntry({ boot }) {
               </div>
             </div>
 
-            {/* Placed BELOW the day's total and outside its border on
-                purpose. PR is not money and must never be counted into
-                what the cashier hands over; putting it above the total
-                is exactly what caused the confusion. Shown at COST —
-                what the goods cost the business, not their menu price. */}
-            {!!prGiven && (prGiven.cost > 0 || prGiven.foodValue > 0) && (
+            {/* Below the day's total and outside its border: neither PR
+                nor damage is money, and neither is part of what the
+                cashier hands over.
+
+                PR and damage are shown SEPARATELY and itemised. They are
+                different things — PR is a decision someone made, damage
+                is a loss — and "Damaged 6 units · ₦22,000" tells you
+                neither what broke nor why. Each line names the item,
+                quantity, cost, reason and who recorded it, so it can be
+                checked against the breakages. */}
+            {!!writeoffs && (writeoffs.prCost > 0 || writeoffs.damageCost > 0 || writeoffs.foodValue > 0) && (
               <div className="mt-3 pt-3 border-t-2 border-line">
-                <div className="flex justify-between">
-                  <span className="text-dim">PR / complimentary given (at cost)</span>
-                  <span className="tnum font-bold">{naira(prGiven.cost)}</span>
-                </div>
-                <p className="text-dim text-xs mt-1">
+                <div className="text-dim text-sm mb-2">
                   Not money. Not part of the total above, and nothing to hand over.
-                </p>
-                {prGiven.lines.map((l, i) => (
-                  <div key={i} className="flex justify-between text-sm pl-4 mt-1">
-                    <span className="text-dim truncate">· {l.name} × {l.qty}</span>
-                    <span className="tnum text-dim">{naira(l.cost)}</span>
-                  </div>
-                ))}
-                {prGiven.foodValue > 0 && (
-                  <>
-                    <div className="flex justify-between text-sm mt-2 pt-2 border-t border-line/60">
-                      <span className="text-dim">Restaurant PR (menu value)</span>
-                      <span className="tnum text-dim">{naira(prGiven.foodValue)}</span>
+                </div>
+
+                {writeoffs.pr.length > 0 && (
+                  <div className="mb-3">
+                    <div className="flex justify-between">
+                      <span className="font-semibold">PR / complimentary (at cost)</span>
+                      <span className="tnum font-bold">{naira(writeoffs.prCost)}</span>
                     </div>
+                    {writeoffs.pr.map((l, i) => (
+                      <div key={i} className="flex justify-between text-sm pl-4 mt-1">
+                        <span className="text-dim truncate pr-2">
+                          · {l.name} × {l.qty}
+                          {l.note && ` — ${l.note}`}
+                          {l.who && ` · ${l.who}`}
+                        </span>
+                        <span className="tnum text-dim shrink-0">{naira(l.cost)}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {writeoffs.damage.length > 0 && (
+                  <div className="mb-3 rounded-xl border border-clay px-3 py-2">
+                    <div className="flex justify-between">
+                      <span className="font-semibold text-clay">Damaged / lost (at cost)</span>
+                      <span className="tnum font-bold text-clay">{naira(writeoffs.damageCost)}</span>
+                    </div>
+                    {writeoffs.damage.map((l, i) => (
+                      <div key={i} className="flex justify-between text-sm mt-1">
+                        <span className="text-dim truncate pr-2">
+                          · {l.name} × {l.qty}
+                          {l.reason && ` · ${l.reason}`}
+                          {l.note && ` — ${l.note}`}
+                          {l.who && ` · ${l.who}`}
+                        </span>
+                        <span className="tnum text-dim shrink-0">{naira(l.cost)}</span>
+                      </div>
+                    ))}
+                    {/* A reason is asked for at entry; if one is missing
+                        say so rather than leave a silent gap. */}
+                    {writeoffs.damage.some(l => !l.reason) && (
+                      <p className="text-clay text-xs mt-2">
+                        Some lines have no reason recorded — worth asking who entered them.
+                      </p>
+                    )}
+                  </div>
+                )}
+
+                {writeoffs.foodValue > 0 && (
+                  <div>
+                    <div className="flex justify-between text-sm">
+                      <span className="text-dim">Restaurant PR / damage (menu value)</span>
+                      <span className="tnum text-dim">{naira(writeoffs.foodValue)}</span>
+                    </div>
+                    {writeoffs.food.map((l, i) => (
+                      <div key={i} className="flex justify-between text-sm pl-4 mt-1">
+                        <span className="text-dim truncate pr-2">
+                          · {l.name} × {l.qty}{l.meal && ` · ${l.meal}`}
+                          {l.reason && ` · ${l.reason}`}
+                        </span>
+                        <span className="tnum text-dim shrink-0">{naira(l.value)}</span>
+                      </div>
+                    ))}
                     <p className="text-dim text-xs mt-1">
-                      Food is not stock-tracked, so there is no cost figure for
-                      meals — the ingredients were expensed when bought. Menu
-                      value is shown instead, and is NOT added to the cost above.
+                      Food is not stock-tracked, so there is no cost figure for meals —
+                      the ingredients were expensed when bought. Menu value shown instead,
+                      and NOT added to the costs above.
                     </p>
-                  </>
+                  </div>
                 )}
               </div>
             )}

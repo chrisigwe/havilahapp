@@ -1747,33 +1747,39 @@ export async function loadCreditOnDate(branchId, date, locationId) {
   }
 }
 
-// PR / complimentary given away on one day, valued AT COST.
+// PR and DAMAGE for one day, ITEMISED and valued at cost — kept apart,
+// because they are different things. PR is a decision someone made;
+// damage is a loss, and a large one needs checking against the broken
+// bottles. A single "Damaged 6 units · ₦22,000" line says neither what
+// was damaged nor why.
 //
-// Three paths produce PR, and they live in different tables, so all
-// three are counted:
-//   1. writeoffs      -> stock_movements 'complimentary'. These carry
-//                        unit_cost on the row itself, so the cost is
-//                        exact rather than looked up.
-//   2. PR sales       -> sales with order_type 'pr_damage'. Excluded
-//                        from revenue already; cost comes from the
-//                        item's cost_price.
-//   3. restaurant PR  -> order_items with order_type 'pr_damage'.
-//                        Food is not stock-tracked, so there is NO
-//                        cost figure for these — the ingredients were
-//                        expensed when bought. Reported separately at
-//                        menu value rather than guessed at, because a
-//                        made-up cost is worse than an honest gap.
-export async function loadPrGivenOnDate(branchId, date, locationId) {
+// Three paths produce both, in different tables:
+//   1. writeoffs     -> stock_movements 'complimentary' / 'damage',
+//                       which carry unit_cost on the row, so the cost is
+//                       exact rather than looked up against a price that
+//                       may have changed since
+//   2. till entries  -> sales with order_type 'pr_damage'. damage_reason
+//                       tells them apart: set = damage, empty = PR only
+//                       (that is exactly what the till asks). Costed from
+//                       the item's cost_price
+//   3. restaurant    -> order_items with order_type 'pr_damage'. Food is
+//                       not stock-tracked and the ingredients were
+//                       expensed when bought, so there is NO cost for
+//                       these; reported separately at menu value rather
+//                       than guessed at
+export async function loadWriteoffsOnDate(branchId, date, locationId) {
   const loc = locationId && locationId !== 'all' ? locationId : null
 
   let mq = supabase.from('stock_movements')
-    .select('qty, unit_cost, from_location, stock_items(name)')
+    .select(`qty, unit_cost, movement_type, damage_reason, note, from_location,
+             stock_items(name), staff:recorded_by(full_name)`)
     .eq('branch_id', branchId).eq('business_date', date)
-    .eq('movement_type', 'complimentary')
+    .in('movement_type', ['complimentary', 'damage'])
   if (loc) mq = mq.eq('from_location', loc)
 
   let sq = supabase.from('sales')
-    .select('qty, location_id, description, stock_items(name, cost_price)')
+    .select(`qty, location_id, description, damage_reason, writeoff_note,
+             stock_items(name, cost_price), staff:recorded_by(full_name)`)
     .eq('branch_id', branchId).eq('business_date', date)
     .eq('order_type', 'pr_damage')
   if (loc) sq = sq.eq('location_id', loc)
@@ -1781,38 +1787,51 @@ export async function loadPrGivenOnDate(branchId, date, locationId) {
   const [{ data: moves }, { data: prSales }, { data: orders }] = await Promise.all([
     mq, sq,
     supabase.from('orders')
-      .select('id, business_date, order_items(description, qty, amount, order_type, pr_meal)')
+      .select('id, order_items(description, qty, amount, order_type, pr_meal, damage_reason, writeoff_note)')
       .eq('branch_id', branchId).eq('business_date', date),
   ])
 
-  const lines = []
-  let cost = 0
-
+  const pr = [], damage = []
   for (const m of (moves || [])) {
-    const c = Number(m.qty) * Number(m.unit_cost || 0)
-    cost += c
-    lines.push({ name: m.stock_items?.name || 'Item', qty: Number(m.qty), cost: c })
+    const line = {
+      name: m.stock_items?.name || 'Item', qty: Number(m.qty),
+      cost: Number(m.qty) * Number(m.unit_cost || 0),
+      reason: m.damage_reason || null, note: m.note || null,
+      who: m.staff?.full_name || '', locationId: m.from_location,
+    }
+    ;(m.movement_type === 'damage' ? damage : pr).push(line)
   }
   for (const s of (prSales || [])) {
-    const c = Number(s.qty) * Number(s.stock_items?.cost_price || 0)
-    cost += c
-    lines.push({ name: s.stock_items?.name || s.description || 'Item',
-                 qty: Number(s.qty), cost: c })
+    const line = {
+      name: s.stock_items?.name || s.description || 'Item', qty: Number(s.qty),
+      cost: Number(s.qty) * Number(s.stock_items?.cost_price || 0),
+      reason: s.damage_reason || null, note: s.writeoff_note || null,
+      who: s.staff?.full_name || '', locationId: s.location_id,
+    }
+    // The till's own question: a reason set means damage, none means PR.
+    ;(s.damage_reason ? damage : pr).push(line)
   }
 
-  // Restaurant PR: menu value only, no cost available.
-  const foodLines = []
-  let foodValue = 0
+  // Restaurant meals: menu value only, no cost available.
+  const food = []
   for (const o of (orders || [])) {
     for (const li of (o.order_items || [])) {
       if (li.order_type !== 'pr_damage') continue
-      foodValue += Number(li.amount || 0)
-      foodLines.push({ name: li.description || 'Meal', qty: Number(li.qty),
-                       value: Number(li.amount || 0), meal: li.pr_meal })
+      food.push({
+        name: li.description || 'Meal', qty: Number(li.qty),
+        value: Number(li.amount || 0), meal: li.pr_meal,
+        reason: li.damage_reason || null, note: li.writeoff_note || null,
+      })
     }
   }
 
-  return { cost, lines, foodValue, foodLines }
+  const sum = rows => rows.reduce((t, r) => t + r.cost, 0)
+  const byValue = (a, b) => b.cost - a.cost
+  return {
+    pr: pr.sort(byValue), damage: damage.sort(byValue),
+    prCost: sum(pr), damageCost: sum(damage),
+    food, foodValue: food.reduce((t, r) => t + r.value, 0),
+  }
 }
 
 // ---------- Guest credit at the till ----------

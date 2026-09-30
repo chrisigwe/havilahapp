@@ -4313,3 +4313,32 @@ VERIFIED: app expressions against the database functions across every
 role and both flags — 28 combinations, 0 mismatches. Resulting access:
 Awka auditor edit-anyone + dates; Nnewi store manager dates only;
 Awka store manager neither.
+
+
+## PR and damage separated and itemised on the dashboard
+
+The close of day showed two totals — "PR / free 1 units" and
+"Damaged 6 units · ₦22,000" — which say neither WHAT was damaged nor
+WHY. They are also different things: PR is a decision someone made,
+damage is a loss that needs checking against the broken bottles.
+
+Now two blocks, each itemised: item, quantity, cost, reason, note and
+who recorded it, biggest first. Damage sits in its own outlined box.
+A damage line with NO reason recorded is flagged, since the till asks
+for one. Restaurant PR/damage stays separate at menu value (food is not
+stock-tracked; the ingredients were expensed when bought).
+
+loadPrGivenOnDate replaced by loadWriteoffsOnDate, covering all three
+paths: stock_movements 'complimentary'/'damage' (unit_cost on the row,
+so exact), till sales with order_type 'pr_damage' (damage_reason set =
+damage, empty = PR — exactly what the till asks), and restaurant
+order_items.
+
+Tested with the real loader on the 27 Sep case: Hennessy ×6 ₦22,000
+breakage shows in full, the ₦1,200 Amstel is flagged as having no
+reason, PR and damage never cross over, and food stays out of the cost
+totals.
+
+Caught before shipping: the renamed loader was still in SalesEntry's
+import list — the old name no longer exists, so the Sales page would
+have failed to load. The build does not catch it; an import sweep does.
