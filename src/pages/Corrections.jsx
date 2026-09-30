@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { naira, tierLabel, methodLabel, lagosDaysAgo, friendlyStayError } from '../lib/format'
+import { naira, tierLabel, methodLabel, lagosDaysAgo, lagosToday, friendlyStayError } from '../lib/format'
 import { loadActivity, deleteEntry, updateEntry, loadAudit,
          loadSalePayments, updateSaleWithPayments,
          loadLiveStays, updateGuestIdentity, correctStayDates,
@@ -7,7 +7,7 @@ import { loadActivity, deleteEntry, updateEntry, loadAudit,
          findDuplicateCustomers, mergeCustomers } from '../lib/data'
 import { useToast } from '../components/Toast'
 import MergeGuestsSheet from '../components/MergeGuestsSheet'
-import { MANAGEMENT, RECEPTION_EDIT, SUPERVISOR, is } from '../lib/roles'
+import { EDITOR, MANAGEMENT, RECEPTION_EDIT, SUPERVISOR, is } from '../lib/roles'
 
 export default function Corrections({ boot }) {
   const { staff, allLocations, locations, items, methods } = boot
@@ -23,6 +23,11 @@ export default function Corrections({ boot }) {
   // bookings; managers keep EDITING anyone's entries. Mirrors
   // is_supervisor() in delete_sale() and the delete policies.
   const canDeleteAny = is(staff.role, SUPERVISOR)
+  // Mirrors app_can_change_sale_date(): store managers, managers, gm,
+  // admin, and anyone individually granted corrections. Bar and front
+  // desk still fix their own quantity, price and payments, but cannot
+  // move a sale to another day.
+  const canChangeDate = is(staff.role, EDITOR) || !!staff.can_correct_sales
   const canEdit = isEditor || isStorekeeper || staff.role === 'bar' || staff.role === 'front_desk'
   const ownOnly = !isEditor
   // Store managers keep the all-departments chips (a filter over their
@@ -152,7 +157,7 @@ export default function Corrections({ boot }) {
   }
 
   async function openEdit(r) {
-    const base = { row: r, qty: r.qty,
+    const base = { row: r, qty: r.qty, date: r.business_date || '',
       price: r.kind === 'sale' ? r.unit_price : (r.unit_cost ?? ''), payments: null }
     if (r.kind === 'sale') {
       try {
@@ -186,7 +191,8 @@ export default function Corrections({ boot }) {
         if (Math.abs(entered - qty * unitPrice) > 0.01) {
           toast('Payments must add up to ' + naira(qty * unitPrice), 'error'); setBusy(false); return
         }
-        await updateSaleWithPayments(edit.row.id, { qty, unitPrice, payments })
+        await updateSaleWithPayments(edit.row.id, { qty, unitPrice, payments,
+          businessDate: edit.date && edit.date !== edit.row.business_date ? edit.date : null })
       } else {
         await updateEntry({ ...edit.row, branch_id: staff.branch_id }, { qty, unitPrice })
       }
@@ -588,6 +594,24 @@ export default function Corrections({ boot }) {
         <Sheet onClose={() => setEdit(null)}>
           <h2 className="text-2xl font-bold">{describe(edit.row).title}</h2>
           <p className="text-dim mt-1">{describe(edit.row).detail}</p>
+          {/* Date first: a sale on the wrong day was previously stuck
+              there — edit_sale did not accept a date at all. Only shown
+              to those the database will actually allow to change one. */}
+          {canChangeDate && edit.row.kind === 'sale' && (
+            <>
+              <label className="block mt-6 text-dim">Date of sale</label>
+              <input type="date" value={edit.date} max={lagosToday()}
+                onChange={e => setEdit({ ...edit, date: e.target.value })}
+                className="mt-2 h-14 w-full px-4 rounded-xl bg-surface border border-line tnum" />
+              {edit.date !== edit.row.business_date && (
+                <p className="text-amber text-sm mt-1">
+                  Moving this sale from {edit.row.business_date} to {edit.date}. It will leave
+                  that day's takings and join this one.
+                </p>
+              )}
+            </>
+          )}
+
           <label className="block mt-6 text-dim">Quantity</label>
           <input type="number" inputMode="decimal" value={edit.qty}
             onChange={e => setEdit({ ...edit, qty: e.target.value })}

@@ -532,10 +532,14 @@ export async function loadSalePayments(saleId) {
 // to delete payment rows directly, and a failure between the calls could
 // leave a sale with no payment. edit_sale() (migration 257) does it
 // atomically and applies the same who-may-edit rule itself.
-export async function updateSaleWithPayments(saleId, { qty, unitPrice, payments }) {
+export async function updateSaleWithPayments(saleId, { qty, unitPrice, payments, businessDate }) {
   const { error } = await supabase.rpc('edit_sale', {
     p_sale: saleId, p_qty: qty, p_unit_price: unitPrice,
     p_payments: payments.map(p => ({ method: p.method, amount: Number(p.amount) || 0 })),
+    // null = leave the date as it is. The database refuses a date change
+    // from anyone not allowed to make one, and the usual date rules
+    // (no future dates, nothing before opening, backdate window) apply.
+    p_business_date: businessDate || null,
   })
   if (error) throw error
 }

@@ -4247,3 +4247,44 @@ no-default cases unchanged.
 Demo gm account) to home-branch Reception, where empty. Verified by
 running the real old and new tab logic for every role: only GM/admin
 changed, nobody lost a screen, no duplicates.
+
+
+## Correctable sale dates; Awka auditor may correct sales (263)
+
+The real problems reported were wrong DATE, payment type, quantity and
+price — all edits, no deletions.
+
+THE DATE WAS NOT CORRECTABLE BY ANYONE, the GM included: edit_sale()
+(257) took only qty, price and payments, and the Corrections sheet
+offered only those. edit_sale() now takes a business date; the sheet
+shows a date field, with a warning naming both days.
+Who may change a date: storekeeper, manager, gm, admin, and anyone
+flagged. NOT bar or front desk — they still fix their own qty, price
+and payments. validate_sale_date still applies (no future dates,
+nothing before the opening balance, 4-day window for non-editors).
+
+AWKA AUDITOR: staff.can_correct_sales, set for that ONE account, lets
+them edit anyone's sale at their branch. EDIT ONLY — deleting a sale
+stays with the GM, and stock movements are untouched. The flag is per
+PERSON so a future auditor doesn't inherit it; only gm/admin can change
+it (guard trigger). Their edits already log to History with old and new
+values — which rests on the GM reading Awka's History regularly.
+
+IMPLICATIONS CHECKED:
+  - one caller of edit_sale; new parameter defaults to null, so an
+    un-updated app keeps working
+  - permissions widen by EXACTLY one person (proved per role); own-entry
+    editing and sale deletion unchanged
+  - a sale's stock movement follows its new date
+    (sync_sale_stock_movement sets business_date on UPDATE), payments
+    have no date of their own, and daily revenue reads the same field —
+    so a moved sale leaves nothing behind
+  - caught before shipping: lagosToday was used in Corrections but not
+    imported — a crash on opening the edit sheet that the build does not
+    catch. Swept every file for the same fault; this was the only one.
+
+OPEN, NOT FIXED — verified counts do not lock their dates. Moving a sale
+into or out of an already-verified day changes that day's reconciliation
+after sign-off. Pre-existing (true of any edit since 257), but more
+reachable now dates are editable. A lock would also block legitimate
+corrections, so it needs a decision.
