@@ -4384,3 +4384,36 @@ vanish on the Reception tab; failures set an error the component shows.
 
 Checked afterwards: no third copy of the old block anywhere, every
 import resolves, and the component's own markup is balanced.
+
+
+## Why the approval chime didn't sound
+
+Two causes, the first being the likely one in testing.
+
+1. A CHARGE ALREADY WAITING NEVER CHIMED. RoomChargeApprovals only
+   chimed for charges that ARRIVED while the screen was open (first load
+   just recorded state). So if the front desk opened the screen AFTER
+   the bartender's charge existed, silence — by design, but it hid the
+   case that matters most: opening the app to find something waiting.
+   Now the first load chimes if the box is non-empty. It cannot nag:
+   only when genuinely non-empty, once per visit to the screen.
+
+2. AUDIO UNLOCK WAS FRAGILE. Browsers block sound until a gesture.
+   - unlockAudio() only called resume(); on iOS a sound must actually
+     START inside the gesture, so it now plays one silent frame too.
+   - The listener was once:true, so a first tap that failed (page still
+     loading, or the context re-suspended after backgrounding) left the
+     app permanently silent. It now keeps listening until the context is
+     really running, and re-arms when the app becomes visible again.
+   - pulseAlert() called resume() and scheduled notes immediately;
+     resume is ASYNC, so notes could be scheduled while still suspended
+     and never sound. It now waits for resume, then plays.
+
+Also added a "Test the chime" link on the approvals box, so the front
+desk can confirm sound works on that phone rather than finding out when
+a charge arrives — and a line telling them to tap once if it isn't
+ready. The bartender's waiting panel keeps its first-load silence: it
+announces DECISIONS, and a charge still waiting hasn't been decided.
+
+VERIFIED: the chime fires on open-with-waiting and on arrival, and stays
+silent on open-with-nothing, no change, and a charge clearing.

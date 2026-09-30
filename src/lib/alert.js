@@ -14,11 +14,25 @@ function audioCtx() {
 }
 
 // Browsers block audio until the user has interacted with the page.
-// Called once from the first tap so later alerts can actually sound.
+//
+// resume() alone is not enough on iOS: a sound must actually START
+// inside the gesture, or the context silently stays blocked. So play one
+// silent frame as well. Reports whether it worked, so the caller can
+// keep listening for another tap instead of assuming one was sufficient.
 export function unlockAudio() {
   const c = audioCtx()
-  if (c && c.state === 'suspended') c.resume().catch(() => {})
+  if (!c) return false
+  try {
+    const src = c.createBufferSource()
+    src.buffer = c.createBuffer(1, 1, 22050)
+    src.connect(c.destination)
+    src.start(0)
+  } catch { /* ignore — resume below may still do it */ }
+  if (c.state === 'suspended') c.resume().catch(() => {})
+  return c.state === 'running'
 }
+
+export const audioReady = () => audioCtx()?.state === 'running'
 
 // A reception-bell chime rather than a beep.
 //
@@ -57,7 +71,17 @@ function bell(c, t, freq, peak = 0.32, decay = 1.1) {
 export function pulseAlert({ variant = 'attention' } = {}) {
   const c = audioCtx()
   if (!c) return
-  if (c.state === 'suspended') c.resume().catch(() => {})
+  // resume() is asynchronous: scheduling notes immediately after asking
+  // for it meant they could be scheduled while still suspended and never
+  // sound. Wait for it, then play.
+  if (c.state === 'suspended') {
+    c.resume().then(() => play(c, variant)).catch(() => {})
+    return
+  }
+  play(c, variant)
+}
+
+function play(c, variant) {
   const t = c.currentTime
   if (variant === 'resolved') {
     bell(c, t,        1046.5, 0.26, 0.9)   // C6

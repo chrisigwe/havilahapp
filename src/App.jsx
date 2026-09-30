@@ -161,9 +161,21 @@ export default function App() {
   // Browsers refuse to play audio until the user has interacted with
   // the page, so arm it on the first tap and then stop listening.
   useEffect(() => {
-    const arm = () => unlockAudio()
-    window.addEventListener('pointerdown', arm, { once: true })
-    return () => window.removeEventListener('pointerdown', arm)
+    // Keep listening until it actually works. The first tap can fail —
+    // the page may still be loading, and on iOS a context can be
+    // re-suspended when the app returns from the background — so
+    // once:true could leave the app permanently silent.
+    const arm = () => { if (unlockAudio()) detach() }
+    const detach = () => {
+      window.removeEventListener('pointerdown', arm)
+      window.removeEventListener('touchend', arm)
+      document.removeEventListener('visibilitychange', onShow)
+    }
+    const onShow = () => { if (document.visibilityState === 'visible') unlockAudio() }
+    window.addEventListener('pointerdown', arm)
+    window.addEventListener('touchend', arm)
+    document.addEventListener('visibilitychange', onShow)
+    return detach
   }, [])
 
   // Unfinished (draft) stock counts — the "incomplete task" nudge.

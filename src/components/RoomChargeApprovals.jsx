@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { naira } from '../lib/format'
 import { loadRoomChargesByStatus, approveRoomCharge, rejectRoomCharge } from '../lib/data'
 import { useToast } from './Toast'
-import { pulseAlert } from '../lib/alert'
+import { pulseAlert, unlockAudio, audioReady } from '../lib/alert'
 
 // Room charges over the branch limit, made by bar staff, waiting for the
 // front desk. Nothing here is on a guest's bill until approved.
@@ -26,8 +26,12 @@ export default function RoomChargeApprovals({ branchId, onDecided }) {
       setRows(next)
       const prev = known.current
       known.current = new Set(next.map(r => r.id))
-      if (!prev) return
-      const arrived = next.filter(r => !prev.has(r.id))
+      // First load: chime if something is ALREADY waiting. Staying
+      // silent then hid the very case that matters most — opening the
+      // app to find a charge that has been sitting there. It cannot
+      // nag, because it only happens when the box is genuinely
+      // non-empty, and only once per visit to the screen.
+      const arrived = prev ? next.filter(r => !prev.has(r.id)) : next
       if (!arrived.length) return
       // Chime and say what came in, so the front desk knows without the
       // bartender having to ring through on the intercom.
@@ -80,6 +84,18 @@ export default function RoomChargeApprovals({ branchId, onDecided }) {
       <p className="text-dim text-xs mt-1 mb-2">
         Not on any guest's bill until you approve. Check with the guest if unsure.
       </p>
+      {/* Lets the front desk confirm sound works on THIS phone, rather
+          than discovering it didn't when a charge arrives. Tapping it is
+          itself a gesture, so it also unlocks audio. */}
+      <button onClick={() => { unlockAudio(); pulseAlert({ variant: 'attention' }) }}
+        className="text-amber text-xs underline mb-2">
+        Test the chime
+      </button>
+      {!audioReady() && (
+        <p className="text-dim text-xs mb-2">
+          Tap anywhere on the screen once so this phone can play the chime.
+        </p>
+      )}
 
       {rows.map(r => (
         <div key={r.id} className="py-3 border-t border-line/60 first:border-0">
