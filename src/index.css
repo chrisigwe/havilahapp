@@ -118,3 +118,51 @@ input[type="date"]::-webkit-calendar-picker-indicator:hover { opacity: 0.75; }
 
   nav, header, button, .print\:hidden { display: none !important; }
 }
+
+/* ---- bottom tabs: movement on hover and tap ----
+   Transforms only (no width/height, no margins), so nothing reflows and
+   the tap targets keep their size. */
+
+.nav-tab, .nav-ico, .nav-pill {
+  transition: transform 180ms cubic-bezier(0.2, 0.9, 0.3, 1),
+              opacity 180ms ease;
+}
+
+/* The icon lifts; the whole tab does not, so the label stays put and
+   the row keeps its rhythm. */
+@media (hover: hover) and (pointer: fine) {
+  .nav-tab:hover .nav-ico { transform: translateY(-2px) scale(1.12); }
+  .nav-tab:hover .nav-pill { opacity: 0.55; transform: scale(1); }
+}
+
+/* Tap: press in, then settle. Faster than the hover transition so it
+   feels like a response rather than an animation. */
+.nav-tab:active { transform: scale(0.94); transition-duration: 90ms; }
+.nav-tab:active .nav-ico { transform: translateY(1px) scale(0.92); transition-duration: 90ms; }
+
+/* Keyboard focus gets the same lift, so it isn't mouse-only. */
+.nav-tab:focus-visible { outline: none; }
+.nav-tab:focus-visible .nav-ico { transform: translateY(-2px) scale(1.12); }
+.nav-tab:focus-visible .nav-pill { opacity: 0.55; }
+
+/* The selected tab's icon settles a touch larger than the rest. */
+.nav-tab[aria-current='page'] .nav-ico { transform: scale(1.06); }
+
+/* A one-shot bounce when a tab BECOMES selected. Keyed off
+   aria-current so it runs on selection, not on every re-render. */
+@keyframes navPop {
+  0%   { transform: scale(0.88); }
+  55%  { transform: scale(1.16); }
+  100% { transform: scale(1.06); }
+}
+.nav-tab[aria-current='page'] .nav-ico { animation: navPop 260ms cubic-bezier(0.2, 0.9, 0.3, 1); }
+
+/* Someone who has asked their phone for less motion gets none of it —
+   the colour change alone still shows which tab is selected. */
+@media (prefers-reduced-motion: reduce) {
+  .nav-tab, .nav-ico, .nav-pill { transition: opacity 120ms ease; }
+  .nav-tab:hover .nav-ico,
+  .nav-tab:active, .nav-tab:active .nav-ico,
+  .nav-tab:focus-visible .nav-ico,
+  .nav-tab[aria-current='page'] .nav-ico { transform: none; animation: none; }
+}

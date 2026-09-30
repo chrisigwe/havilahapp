@@ -4417,3 +4417,35 @@ announces DECISIONS, and a charge still waiting hasn't been decided.
 
 VERIFIED: the chime fires on open-with-waiting and on arrival, and stays
 silent on open-with-nothing, no change, and a charge clearing.
+
+
+## Bottom tabs: motion on hover and tap
+
+CSS only — no library, no new dependency, and nothing added to the
+render path.
+
+  hover (desktop only, @media hover:hover)  icon lifts 2px and grows
+                                            12%, faint pill behind it
+  tap / :active                             whole tab presses to 94%,
+                                            icon dips — 90ms, faster
+                                            than hover so it reads as a
+                                            response, not an animation
+  becoming selected                         one-shot navPop bounce,
+                                            keyed off aria-current so it
+                                            fires on selection, not on
+                                            every re-render
+  selected at rest                          icon settles 6% larger
+  keyboard focus                            same lift as hover, so it
+                                            isn't mouse-only
+
+TRANSFORMS ONLY (no width, height or margin), so nothing reflows and
+the tap targets keep their size. Checked that the bar has no
+overflow-hidden to clip a lifted icon, and that the pill and the pending
+badge are absolutely positioned so scaling the tab cannot move them.
+aria-current='page' added, which the CSS keys off and which also tells a
+screen reader which tab is current.
+
+prefers-reduced-motion: all transforms and the bounce are switched off;
+the colour change alone still shows the selected tab. Hover effects are
+gated behind hover:hover/pointer:fine so a phone never shows a stuck
+hover state after a tap.

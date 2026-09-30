@@ -82,10 +82,14 @@ export default function Shell({ staff, tab, onTab, children,
             const active = tab === k || (k === 'more' && MORE.includes(tab) && !directTabKeys.has(tab))
             return (
               <button key={k} onClick={() => onTab(k)}
-                className="relative flex-1 flex flex-col items-center justify-center gap-0.5 py-2 rounded-[20px] transition-colors">
-                <span className={`absolute inset-0 rounded-[20px] transition-opacity ${
-                  active ? 'opacity-100 bg-amber/20' : 'opacity-0'}`} />
-                <NavIcon tab={k} className={`relative w-5 h-5 ${active ? 'text-amber' : 'text-dim'}`} />
+                aria-current={active ? 'page' : undefined}
+                className="nav-tab relative flex-1 flex flex-col items-center justify-center
+                           gap-0.5 py-2 rounded-[20px] transition-colors">
+                {/* The pill grows into place rather than just fading, so
+                    switching tabs reads as movement. */}
+                <span className={`absolute inset-0 rounded-[20px] bg-amber/20 nav-pill ${
+                  active ? 'opacity-100 scale-100' : 'opacity-0 scale-90'}`} />
+                <NavIcon tab={k} className={`nav-ico relative w-5 h-5 ${active ? 'text-amber' : 'text-dim'}`} />
                 <span className={`relative text-xs font-semibold ${active ? 'text-amber' : 'text-dim'}`}>
                   {label}
                 </span>
