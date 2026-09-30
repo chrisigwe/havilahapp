@@ -4288,3 +4288,28 @@ into or out of an already-verified day changes that day's reconciliation
 after sign-off. Pre-existing (true of any edit since 257), but more
 reachable now dates are editable. A lock would also block legitimate
 corrections, so it needs a decision.
+
+
+## Two corrections to 263b
+
+1. THE AWKA AUDITOR COULD NOT REACH CORRECTIONS. The database let them
+   edit, but the page didn't: when auditors got read-only History, the
+   page was written so anyone who is not an editor sees history only.
+   The permission was real and unreachable. Corrections now reads
+   staff.can_correct_sales (loaded already — staff is select *) in
+   canEdit, ownOnly, the department chips, the per-row Edit button and
+   canChangeDate. The flagged auditor opens on Entries with both tabs
+   and may edit ANYONE's sale; an unflagged auditor still gets History
+   only, and nobody else changes. Edit button appears for sales only —
+   stock movements stay with the GM — and no Delete anywhere.
+
+2. DATE CORRECTION WAS BY ROLE, so BOTH store managers got it; only
+   Nnewi's was asked for. 264 makes it per person
+   (staff.can_fix_entry_dates, set for the Nnewi store manager);
+   manager/gm/admin keep it by role, since they can already correct
+   anyone's entries. Awka's store manager no longer has it.
+
+VERIFIED: app expressions against the database functions across every
+role and both flags — 28 combinations, 0 mismatches. Resulting access:
+Awka auditor edit-anyone + dates; Nnewi store manager dates only;
+Awka store manager neither.

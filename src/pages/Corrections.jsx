@@ -7,7 +7,7 @@ import { loadActivity, deleteEntry, updateEntry, loadAudit,
          findDuplicateCustomers, mergeCustomers } from '../lib/data'
 import { useToast } from '../components/Toast'
 import MergeGuestsSheet from '../components/MergeGuestsSheet'
-import { EDITOR, MANAGEMENT, RECEPTION_EDIT, SUPERVISOR, is } from '../lib/roles'
+import { MANAGEMENT, RECEPTION_EDIT, SUPERVISOR, is } from '../lib/roles'
 
 export default function Corrections({ boot }) {
   const { staff, allLocations, locations, items, methods } = boot
@@ -19,6 +19,11 @@ export default function Corrections({ boot }) {
   // reconciled against these very sales.
   const isEditor = is(staff.role, MANAGEMENT)
   const isStorekeeper = staff.role === 'storekeeper'
+  // Granted per person (staff.can_correct_sales, migration 263b), not by
+  // role: currently the Awka auditor only. Mirrors
+  // app_can_correct_any_sale() — lets them edit ANYONE's sale, never
+  // delete, and never a stock movement.
+  const canCorrectSales = !!staff.can_correct_sales
   // Deleting is GM/admin only (migration 256), matching payments and
   // bookings; managers keep EDITING anyone's entries. Mirrors
   // is_supervisor() in delete_sale() and the delete policies.
@@ -27,12 +32,19 @@ export default function Corrections({ boot }) {
   // admin, and anyone individually granted corrections. Bar and front
   // desk still fix their own quantity, price and payments, but cannot
   // move a sale to another day.
-  const canChangeDate = is(staff.role, EDITOR) || !!staff.can_correct_sales
-  const canEdit = isEditor || isStorekeeper || staff.role === 'bar' || staff.role === 'front_desk'
-  const ownOnly = !isEditor
+  // Mirrors app_can_change_sale_date() after 264: manager/gm/admin by
+  // role, plus anyone individually granted (Nnewi store manager,
+  // Awka auditor). Store managers do NOT get it by role — only Nnewi's
+  // was asked for. Bar and front desk still fix their own quantity,
+  // price and payments, but cannot move a sale to another day.
+  const canChangeDate = is(staff.role, MANAGEMENT) || canCorrectSales
+    || !!staff.can_fix_entry_dates
+  const canEdit = isEditor || isStorekeeper || canCorrectSales
+    || staff.role === 'bar' || staff.role === 'front_desk'
+  const ownOnly = !isEditor && !canCorrectSales
   // Store managers keep the all-departments chips (a filter over their
   // own rows), so an entry they made at another counter is never hidden.
-  const seesAllDeptChips = isEditor || isStorekeeper
+  const seesAllDeptChips = isEditor || isStorekeeper || canCorrectSales
   const [rows, setRows] = useState(null)
   // Front desk lands on Reception: it is the tab they actually work
   // in, and Reception has no sales rows by design, so Entries would
@@ -558,7 +570,8 @@ export default function Corrections({ boot }) {
                 {d.money && <span className="tnum text-dim">{d.money}</span>}
               </div>
               <div className="flex gap-2 mt-2">
-                {(isEditor || (r.recorded_by === staff.id && r.business_date >= lagosDaysAgo(1))) && (
+                {(isEditor || (canCorrectSales && r.kind === 'sale')
+                  || (r.recorded_by === staff.id && r.business_date >= lagosDaysAgo(1))) && (
                   <button onClick={() => openEdit(r)}
                     className="h-10 px-4 rounded-lg border border-line text-sm font-semibold">Edit</button>
                 )}
