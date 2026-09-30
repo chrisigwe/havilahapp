@@ -4467,3 +4467,43 @@ Also on the mobile fix: touchAction 'manipulation' and a transparent
 flash competing with the animation. useEffect/useRef added to Shell's
 React import — they were used but not imported, which would have
 crashed the app on load and which the build does not catch.
+
+
+## Bottom tabs reshaped to the new WhatsApp pattern
+
+Was: a highlight block filling the whole tab. Now: a CAPSULE BEHIND THE
+ICON ONLY (h-8 w-16, fully rounded), with the label as a sibling below
+it — WhatsApp's current bar, and Material 3's pill indicator.
+
+The capsule widens from scale-x-50 to full as a tab is selected, which
+is now the main movement; the icon's bounce was softened to match, and
+ends at scale 1 so it agrees with the inline transform the button holds
+when idle.
+
+The pending badge moved to the capsule's top-right corner. Its old
+position was measured against the tab-wide highlight and would have sat
+adrift of the new capsule.
+
+Press feedback (React-driven, from the mobile fix above) is unchanged —
+that is the part that actually works on iPhone and Android.
+
+
+## Bottom tabs matched to the WhatsApp screenshots
+
+Corrected against two screenshots the user supplied. My previous
+version had the capsule behind the ICON ONLY; theirs wraps the WHOLE
+TAB, icon and label together. And the selected icon is SOLID while the
+rest are hollow outlines — which is what marks the chosen tab at a
+glance, more than colour, and still reads on a dim or small screen.
+
+  - NavIcon gains a FILLED set for all 10 tabs, drawn as solid shapes
+    with fill=currentColor rather than thickened strokes (a heavier
+    outline just looks blurry at 20px). Each was rendered alone and
+    checked for ink coverage, so none is blank or a solid block.
+  - The capsule is back to inset-0, fully rounded, fading in.
+  - Icons went 5 -> 6 units, since a filled glyph reads smaller.
+  - PRESS FEEDBACK REMOVED at the user's request: pointer/touch
+    handlers, the pressed state, the hold timer and the inline
+    transforms are all gone, and the CSS reduced to the fade.
+  - The pending badge moved again — its position had been measured
+    against the icon-only capsule.

@@ -30,19 +30,6 @@ export default function Shell({ staff, tab, onTab, children,
   const countBadgeTab = countBadgeTabFor(staff.role, { recordsSales })
   const directTabKeys = new Set(tabs.map(([k]) => k))
 
-  // Press feedback is driven from React, not CSS :active. iOS Safari
-  // largely ignores :active on buttons without a touch handler, and a
-  // tap is over in ~60ms anyway — far too quick to see. So: mark the tab
-  // pressed on touch, and hold it briefly after release so the movement
-  // is actually visible.
-  const [pressed, setPressed] = useState(null)
-  const releaseAt = useRef(0)
-  const press = (k) => { releaseAt.current = Date.now() + 140; setPressed(k) }
-  const release = () => {
-    const wait = Math.max(0, releaseAt.current - Date.now())
-    setTimeout(() => setPressed(null), wait)
-  }
-
   // One-shot bounce when a tab becomes the selected one. Driven by a key
   // that changes on selection, so the animation restarts every time —
   // a CSS rule alone would not re-run for a tab already mounted.
@@ -105,30 +92,33 @@ export default function Shell({ staff, tab, onTab, children,
             return (
               <button key={k} onClick={() => onTab(k)}
                 aria-current={active ? 'page' : undefined}
-                onPointerDown={() => press(k)}
-                onPointerUp={release} onPointerCancel={release} onPointerLeave={release}
-                onTouchStart={() => press(k)} onTouchEnd={release} onTouchCancel={release}
-                style={{
-                  transform: pressed === k ? 'scale(0.90)' : 'scale(1)',
-                  WebkitTapHighlightColor: 'transparent', touchAction: 'manipulation',
-                }}
+                style={{ WebkitTapHighlightColor: 'transparent', touchAction: 'manipulation' }}
                 className="nav-tab relative flex-1 flex flex-col items-center justify-center
-                           gap-0.5 py-2 rounded-[20px] transition-colors">
-                {/* The pill grows into place rather than just fading, so
-                    switching tabs reads as movement. */}
-                <span className={`absolute inset-0 rounded-[20px] bg-amber/20 nav-pill ${
-                  active ? 'opacity-100 scale-100' : 'opacity-0 scale-90'}`} />
+                           gap-1 py-2 rounded-full">
+
+                {/* The capsule wraps the WHOLE tab — icon and label —
+                    like WhatsApp's, not just the icon. */}
+                <span className={`nav-pill absolute inset-0 rounded-full bg-amber/20 ${
+                  active ? 'opacity-100' : 'opacity-0'}`} />
+
+                {/* Hollow when resting, solid when selected. That, more
+                    than colour, is what marks the chosen tab — and it
+                    still reads on a dim or small screen. */}
                 <span key={active ? `on-${popKey}` : 'off'}
-                  className={`relative ${active ? 'nav-ico-pop' : ''}`}
-                  style={{ transform: pressed === k ? 'translateY(1px) scale(0.88)'
-                                                    : active ? 'scale(1.08)' : 'scale(1)' }}>
-                  <NavIcon tab={k} className={`nav-ico block w-5 h-5 ${active ? 'text-amber' : 'text-dim'}`} />
+                  className={`relative ${active ? 'nav-ico-pop' : ''}`}>
+                  <NavIcon tab={k} filled={active}
+                    className={`nav-ico block w-6 h-6 ${active ? 'text-amber' : 'text-dim'}`} />
                 </span>
-                <span className={`relative text-xs font-semibold ${active ? 'text-amber' : 'text-dim'}`}>
+
+                <span className={`relative text-[0.7rem] leading-none ${
+                  active ? 'text-amber font-bold' : 'text-dim font-semibold'}`}>
                   {label}
                 </span>
+
+                {/* On the icon's top-right, which with the capsule now
+                    spanning the whole tab means offsetting from centre. */}
                 {k === countBadgeTab && pendingCount > 0 && (
-                  <span className="absolute top-1 right-1/2 translate-x-3.5 min-w-[1.1rem] h-[1.1rem] px-1
+                  <span className="absolute top-1 left-1/2 translate-x-1.5 min-w-[1.1rem] h-[1.1rem] px-1
                                     rounded-full bg-clay text-bg text-[0.6rem] font-bold flex items-center justify-center">
                     {pendingCount > 9 ? '9+' : pendingCount}
                   </span>
