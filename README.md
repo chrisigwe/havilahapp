@@ -4365,3 +4365,22 @@ Two faults, both mine.
 Also: a load failure now SHOWS ("PR and damage could not be loaded …")
 instead of rendering nothing. A hidden section looked identical to a day
 with no write-offs, which is exactly how the broken query went unnoticed.
+
+
+## The itemised PR/damage block had to be on BOTH pages
+
+Second miss on the same request: the block the GM was actually looking
+at is on DAILY SALES, not Sales. Both pages had their own copy of the
+old totals-only "Not income — stock out without payment" lines; I fixed
+SalesEntry twice and never touched DailySales.
+
+Now one shared component, WriteoffBreakdown, used by both — the same
+treatment as ReceptionDashboard, and for the same reason: two copies of
+the same block is how they drifted apart in the first place.
+
+DailySales also had to LOAD the data, which it never did. Loaded before
+the isReception branch, which returns early, so the breakdown does not
+vanish on the Reception tab; failures set an error the component shows.
+
+Checked afterwards: no third copy of the old block anywhere, every
+import resolves, and the component's own markup is balanced.

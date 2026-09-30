@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { naira, lagosToday, lagosDaysAgo, tierLabel, methodLabel, whoRecorded, paymentSummary } from '../lib/format'
 import { loadDailyFinancials, loadToday, loadReceptionActivity, loadReceptionDashboard,
-         loadRoomCharges, loadRoomsSoldInMonth } from '../lib/data'
+         loadRoomCharges, loadRoomsSoldInMonth, loadWriteoffsOnDate } from '../lib/data'
 import { useToast } from '../components/Toast'
 import ReceptionDashboard from '../components/ReceptionDashboard'
+import WriteoffBreakdown from '../components/WriteoffBreakdown'
 import { is, SUPERVISOR } from '../lib/roles'
 
 // Read-only — browse any past day's sales by department. Built for
@@ -25,6 +26,7 @@ export default function DailySales({ boot }) {
   const [date, setDate] = useState(lagosToday())
   const [locId, setLocId] = useState('all')
   const [summary, setSummary] = useState(null)
+  const [writeoffs, setWriteoffs] = useState(null)
   const [rows, setRows] = useState(null)
   const [receptionActivity, setReceptionActivity] = useState(null)
   const [receptionDashboard, setReceptionDashboard] = useState(null)
@@ -74,6 +76,15 @@ export default function DailySales({ boot }) {
   const refresh = useCallback(() => {
     const loc = locId === 'all' ? null : locId
     setSummary(null); setRows(null); setReceptionActivity(null); setRoomCharges([]); setReceptionDashboard(null); setRoomsSold(null)
+    setWriteoffs(null)
+    // Loaded BEFORE the Reception branch below, which returns early —
+    // otherwise the breakdown would vanish on the Reception tab. On
+    // failure, record the error so the section says so rather than
+    // silently showing nothing.
+    loadWriteoffsOnDate(staff.branch_id, date, loc)
+      .then(r => setWriteoffs({ ...r, error: null }))
+      .catch(e => setWriteoffs({ pr: [], damage: [], food: [], prCost: 0, damageCost: 0,
+                                 foodValue: 0, error: e.message || 'could not load' }))
     if (isReception) {
       loadReceptionActivity(staff.branch_id, date).then(setReceptionActivity).catch(e => toast(e.message, 'error'))
       // Deferred/advance are computed from CURRENT balances (v_stay_
@@ -273,17 +284,10 @@ export default function DailySales({ boot }) {
               <span className="tnum">{naira(summary.totalMoneyIn)}</span>
             </div>
           </div>
-          {!!(summary.nonRevenue || []).length && (
-            <div className="mt-3 pt-3 border-t border-line">
-              <div className="text-dim text-sm mb-1">Not income — stock out without payment</div>
-              {summary.nonRevenue.map(r => (
-                <div key={r.kind} className="flex justify-between text-sm">
-                  <span className="text-dim">{r.kind === 'complimentary' ? 'PR / free' : 'Damaged'}</span>
-                  <span className="tnum">{r.qty} units{Number(r.value) > 0 && ` · ${naira(r.value)}`}</span>
-                </div>
-              ))}
-            </div>
-          )}
+          {/* The old totals-only block was here; the itemised
+              breakdown is shared with Sales so the two pages
+              cannot drift apart again. */}
+          <WriteoffBreakdown data={writeoffs} />
         </div>
       )}
 

@@ -10,6 +10,7 @@ import { loadStockMap, loadPopular, loadToday, saveBasket, saveWriteoff,
 import { enqueue, flush, isConnectionError } from '../lib/outbox'
 import { useToast } from '../components/Toast'
 import ReceptionDashboard from '../components/ReceptionDashboard'
+import WriteoffBreakdown from '../components/WriteoffBreakdown'
 import RoomChargeApprovals from '../components/RoomChargeApprovals'
 import CollectRefusedCharges from '../components/CollectRefusedCharges'
 import MyPendingRoomCharges from '../components/MyPendingRoomCharges'
@@ -780,91 +781,8 @@ export default function SalesEntry({ boot }) {
                 neither what broke nor why. Each line names the item,
                 quantity, cost, reason and who recorded it, so it can be
                 checked against the breakages. */}
-            {!!writeoffs?.error && (
-              <div className="mt-3 pt-3 border-t-2 border-line">
-                <p className="text-clay text-sm">
-                  PR and damage could not be loaded ({writeoffs.error}). The totals above are unaffected.
-                </p>
-              </div>
-            )}
+            <WriteoffBreakdown data={writeoffs} />
 
-            {!!writeoffs && !writeoffs.error
-              && (writeoffs.prCost > 0 || writeoffs.damageCost > 0 || writeoffs.foodValue > 0) && (
-              <div className="mt-3 pt-3 border-t-2 border-line">
-                <div className="text-dim text-sm mb-2">
-                  Not money. Not part of the total above, and nothing to hand over.
-                </div>
-
-                {writeoffs.pr.length > 0 && (
-                  <div className="mb-3">
-                    <div className="flex justify-between">
-                      <span className="font-semibold">PR / complimentary (at cost)</span>
-                      <span className="tnum font-bold">{naira(writeoffs.prCost)}</span>
-                    </div>
-                    {writeoffs.pr.map((l, i) => (
-                      <div key={i} className="flex justify-between text-sm pl-4 mt-1">
-                        <span className="text-dim truncate pr-2">
-                          · {l.name} × {l.qty}
-                          {l.note && ` — ${l.note}`}
-                          {l.who && ` · ${l.who}`}
-                        </span>
-                        <span className="tnum text-dim shrink-0">{naira(l.cost)}</span>
-                      </div>
-                    ))}
-                  </div>
-                )}
-
-                {writeoffs.damage.length > 0 && (
-                  <div className="mb-3 rounded-xl border border-clay px-3 py-2">
-                    <div className="flex justify-between">
-                      <span className="font-semibold text-clay">Damaged / lost (at cost)</span>
-                      <span className="tnum font-bold text-clay">{naira(writeoffs.damageCost)}</span>
-                    </div>
-                    {writeoffs.damage.map((l, i) => (
-                      <div key={i} className="flex justify-between text-sm mt-1">
-                        <span className="text-dim truncate pr-2">
-                          · {l.name} × {l.qty}
-                          {l.reason && ` · ${l.reason}`}
-                          {l.note && ` — ${l.note}`}
-                          {l.who && ` · ${l.who}`}
-                        </span>
-                        <span className="tnum text-dim shrink-0">{naira(l.cost)}</span>
-                      </div>
-                    ))}
-                    {/* A reason is asked for at entry; if one is missing
-                        say so rather than leave a silent gap. */}
-                    {writeoffs.damage.some(l => !l.reason) && (
-                      <p className="text-clay text-xs mt-2">
-                        Some lines have no reason recorded — worth asking who entered them.
-                      </p>
-                    )}
-                  </div>
-                )}
-
-                {writeoffs.foodValue > 0 && (
-                  <div>
-                    <div className="flex justify-between text-sm">
-                      <span className="text-dim">Restaurant PR / damage (menu value)</span>
-                      <span className="tnum text-dim">{naira(writeoffs.foodValue)}</span>
-                    </div>
-                    {writeoffs.food.map((l, i) => (
-                      <div key={i} className="flex justify-between text-sm pl-4 mt-1">
-                        <span className="text-dim truncate pr-2">
-                          · {l.name} × {l.qty}{l.meal && ` · ${l.meal}`}
-                          {l.reason && ` · ${l.reason}`}
-                        </span>
-                        <span className="tnum text-dim shrink-0">{naira(l.value)}</span>
-                      </div>
-                    ))}
-                    <p className="text-dim text-xs mt-1">
-                      Food is not stock-tracked, so there is no cost figure for meals —
-                      the ingredients were expensed when bought. Menu value shown instead,
-                      and NOT added to the costs above.
-                    </p>
-                  </div>
-                )}
-              </div>
-            )}
           </div>
         )}
 
