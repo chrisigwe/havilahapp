@@ -120,49 +120,43 @@ input[type="date"]::-webkit-calendar-picker-indicator:hover { opacity: 0.75; }
 }
 
 /* ---- bottom tabs: movement on hover and tap ----
-   Transforms only (no width/height, no margins), so nothing reflows and
+   The PRESS is driven from React (Shell.jsx sets an inline transform),
+   because :active is unreliable on phones — iOS Safari largely ignores
+   it on buttons without a touch handler, and a tap is over in about
+   60ms, too quick to see. These rules only supply the TRANSITION that
+   makes those inline transforms animate, plus hover for desktop.
+
+   Transforms only (no width, height or margin), so nothing reflows and
    the tap targets keep their size. */
 
-.nav-tab, .nav-ico, .nav-pill {
-  transition: transform 180ms cubic-bezier(0.2, 0.9, 0.3, 1),
-              opacity 180ms ease;
+.nav-tab, .nav-tab > span, .nav-ico {
+  transition: transform 160ms cubic-bezier(0.2, 0.9, 0.3, 1), opacity 160ms ease;
 }
+.nav-pill { transition: transform 200ms cubic-bezier(0.2, 0.9, 0.3, 1), opacity 160ms ease; }
 
-/* The icon lifts; the whole tab does not, so the label stays put and
-   the row keeps its rhythm. */
+/* Hover: desktop pointers only, so a phone never sticks in a hover
+   state after a tap. */
 @media (hover: hover) and (pointer: fine) {
   .nav-tab:hover .nav-ico { transform: translateY(-2px) scale(1.12); }
   .nav-tab:hover .nav-pill { opacity: 0.55; transform: scale(1); }
+  .nav-tab:focus-visible .nav-ico { transform: translateY(-2px) scale(1.12); }
 }
-
-/* Tap: press in, then settle. Faster than the hover transition so it
-   feels like a response rather than an animation. */
-.nav-tab:active { transform: scale(0.94); transition-duration: 90ms; }
-.nav-tab:active .nav-ico { transform: translateY(1px) scale(0.92); transition-duration: 90ms; }
-
-/* Keyboard focus gets the same lift, so it isn't mouse-only. */
 .nav-tab:focus-visible { outline: none; }
-.nav-tab:focus-visible .nav-ico { transform: translateY(-2px) scale(1.12); }
-.nav-tab:focus-visible .nav-pill { opacity: 0.55; }
 
-/* The selected tab's icon settles a touch larger than the rest. */
-.nav-tab[aria-current='page'] .nav-ico { transform: scale(1.06); }
-
-/* A one-shot bounce when a tab BECOMES selected. Keyed off
-   aria-current so it runs on selection, not on every re-render. */
+/* One-shot bounce when a tab becomes selected. Shell changes the
+   element's key on selection so this restarts each time. */
 @keyframes navPop {
-  0%   { transform: scale(0.88); }
-  55%  { transform: scale(1.16); }
-  100% { transform: scale(1.06); }
+  0%   { transform: scale(0.86); }
+  55%  { transform: scale(1.18); }
+  100% { transform: scale(1.08); }
 }
-.nav-tab[aria-current='page'] .nav-ico { animation: navPop 260ms cubic-bezier(0.2, 0.9, 0.3, 1); }
+.nav-ico-pop { animation: navPop 280ms cubic-bezier(0.2, 0.9, 0.3, 1); }
 
 /* Someone who has asked their phone for less motion gets none of it —
-   the colour change alone still shows which tab is selected. */
+   the colour change alone still shows the selected tab. */
 @media (prefers-reduced-motion: reduce) {
-  .nav-tab, .nav-ico, .nav-pill { transition: opacity 120ms ease; }
-  .nav-tab:hover .nav-ico,
-  .nav-tab:active, .nav-tab:active .nav-ico,
-  .nav-tab:focus-visible .nav-ico,
-  .nav-tab[aria-current='page'] .nav-ico { transform: none; animation: none; }
+  .nav-tab, .nav-tab > span, .nav-ico, .nav-pill { transition: opacity 120ms ease !important; }
+  .nav-ico-pop { animation: none; }
+  .nav-tab, .nav-tab > span, .nav-tab:hover .nav-ico,
+  .nav-tab:focus-visible .nav-ico { transform: none !important; }
 }

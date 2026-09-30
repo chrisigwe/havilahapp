@@ -4421,8 +4421,19 @@ silent on open-with-nothing, no change, and a charge clearing.
 
 ## Bottom tabs: motion on hover and tap
 
-CSS only — no library, no new dependency, and nothing added to the
-render path.
+FIRST ATTEMPT FAILED ON PHONES — CSS :active does not fire reliably:
+iOS Safari largely ignores it on buttons with no touch handler, and a
+tap lasts about 60ms anyway, far too short to see. Hover rules are
+desktop-only by design, so a phone got nothing at all.
+
+Now the PRESS is driven from React (Shell.jsx): pointerdown/touchstart
+set an inline transform, and release is held for 140ms so the movement
+is actually visible. The selection bounce is driven by a key that
+changes on selection, so it restarts each time — a CSS class alone would
+not re-run on an element that is already mounted. CSS now only supplies
+the transitions those inline transforms animate with, plus hover.
+
+Original CSS-only notes below (hover behaviour still applies):
 
   hover (desktop only, @media hover:hover)  icon lifts 2px and grows
                                             12%, faint pill behind it
@@ -4449,3 +4460,10 @@ prefers-reduced-motion: all transforms and the bounce are switched off;
 the colour change alone still shows the selected tab. Hover effects are
 gated behind hover:hover/pointer:fine so a phone never shows a stuck
 hover state after a tap.
+
+
+Also on the mobile fix: touchAction 'manipulation' and a transparent
+-webkit-tap-highlight-color, so there is no 300ms delay and no grey
+flash competing with the animation. useEffect/useRef added to Shell's
+React import — they were used but not imported, which would have
+crashed the app on load and which the build does not catch.
