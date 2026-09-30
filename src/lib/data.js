@@ -1770,9 +1770,13 @@ export async function loadCreditOnDate(branchId, date, locationId) {
 export async function loadWriteoffsOnDate(branchId, date, locationId) {
   const loc = locationId && locationId !== 'all' ? locationId : null
 
+  // recorded_by is read as a plain id and the names looked up after —
+  // every other stock_movements query in this file does the same. Asking
+  // PostgREST to embed staff here made the whole query fail, which hid
+  // the section on the dashboard with no error shown.
   let mq = supabase.from('stock_movements')
     .select(`qty, unit_cost, movement_type, damage_reason, note, from_location,
-             stock_items(name), staff:recorded_by(full_name)`)
+             recorded_by, stock_items(name)`)
     .eq('branch_id', branchId).eq('business_date', date)
     .in('movement_type', ['complimentary', 'damage'])
   if (loc) mq = mq.eq('from_location', loc)
@@ -1791,13 +1795,21 @@ export async function loadWriteoffsOnDate(branchId, date, locationId) {
       .eq('branch_id', branchId).eq('business_date', date),
   ])
 
+  // One lookup for the handful of people involved.
+  const ids = [...new Set((moves || []).map(m => m.recorded_by).filter(Boolean))]
+  const names = {}
+  if (ids.length) {
+    const { data: ppl } = await supabase.from('staff').select('id, full_name').in('id', ids)
+    for (const x of (ppl || [])) names[x.id] = x.full_name
+  }
+
   const pr = [], damage = []
   for (const m of (moves || [])) {
     const line = {
       name: m.stock_items?.name || 'Item', qty: Number(m.qty),
       cost: Number(m.qty) * Number(m.unit_cost || 0),
       reason: m.damage_reason || null, note: m.note || null,
-      who: m.staff?.full_name || '', locationId: m.from_location,
+      who: names[m.recorded_by] || '', locationId: m.from_location,
     }
     ;(m.movement_type === 'damage' ? damage : pr).push(line)
   }

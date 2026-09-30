@@ -4342,3 +4342,26 @@ totals.
 Caught before shipping: the renamed loader was still in SalesEntry's
 import list — the old name no longer exists, so the Sales page would
 have failed to load. The build does not catch it; an import sweep does.
+
+
+## Fix: the itemised PR/damage section never appeared
+
+Two faults, both mine.
+
+1. THE NEW QUERY FAILED. It asked PostgREST to embed staff on
+   stock_movements (staff:recorded_by(full_name)). No other
+   stock_movements query in this file does that — they read recorded_by
+   as a plain id. The embed failed, the catch set writeoffs to null, and
+   the section simply did not render. Now recorded_by is read plainly
+   and the names looked up in one follow-up query.
+
+2. I REPLACED THE WRONG BLOCK. There were TWO displays: the prGiven
+   block I added earlier (inside the reconciliation card) and the older
+   summary.nonRevenue block — "Not income — stock out without payment",
+   with the totals-only "Damaged 6 units · ₦22,000" lines. I replaced
+   the first and left the second, so the screen was unchanged. The old
+   block is now removed; the itemised sections are the only display.
+
+Also: a load failure now SHOWS ("PR and damage could not be loaded …")
+instead of rendering nothing. A hidden section looked identical to a day
+with no write-offs, which is exactly how the broken query went unnoticed.

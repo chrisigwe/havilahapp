@@ -196,7 +196,13 @@ export default function SalesEntry({ boot }) {
     if (roomChargeCategory) {
       loadRoomCharges(staff.branch_id, date, roomChargeCategory).then(setRoomCharges).catch(() => {})
     }
-    loadWriteoffsOnDate(staff.branch_id, date, locationId).then(setWriteoffs).catch(() => setWriteoffs(null))
+    // On failure, record the error rather than silently showing nothing:
+    // a hidden section looks identical to a day with no write-offs, which
+    // is how a broken query went unnoticed.
+    loadWriteoffsOnDate(staff.branch_id, date, locationId)
+      .then(r => setWriteoffs({ ...r, error: null }))
+      .catch(e => setWriteoffs({ pr: [], damage: [], food: [], prCost: 0, damageCost: 0,
+                                 foodValue: 0, error: e.message || 'could not load' }))
     loadDailyFinancials(staff.branch_id, date, locationId).then(r => {
       setSummary({ byMethod: r.byMethod, nonRevenue: r.nonRevenue })
       setRecon({ grossSales: r.grossSales, received: r.received, creditRaised: r.creditRaised,
@@ -774,7 +780,16 @@ export default function SalesEntry({ boot }) {
                 neither what broke nor why. Each line names the item,
                 quantity, cost, reason and who recorded it, so it can be
                 checked against the breakages. */}
-            {!!writeoffs && (writeoffs.prCost > 0 || writeoffs.damageCost > 0 || writeoffs.foodValue > 0) && (
+            {!!writeoffs?.error && (
+              <div className="mt-3 pt-3 border-t-2 border-line">
+                <p className="text-clay text-sm">
+                  PR and damage could not be loaded ({writeoffs.error}). The totals above are unaffected.
+                </p>
+              </div>
+            )}
+
+            {!!writeoffs && !writeoffs.error
+              && (writeoffs.prCost > 0 || writeoffs.damageCost > 0 || writeoffs.foodValue > 0) && (
               <div className="mt-3 pt-3 border-t-2 border-line">
                 <div className="text-dim text-sm mb-2">
                   Not money. Not part of the total above, and nothing to hand over.
@@ -863,17 +878,11 @@ export default function SalesEntry({ boot }) {
                 </div>
               ))}
             </div>
-            {!!summary.nonRevenue.length && (
-              <div className="mt-3 pt-3 border-t border-line">
-                <div className="text-dim text-sm mb-1">Not income — stock out without payment</div>
-                {summary.nonRevenue.map(r => (
-                  <div key={r.kind} className="flex justify-between text-sm">
-                    <span className="text-dim">{r.kind === 'complimentary' ? 'PR / free' : 'Damaged'}</span>
-                    <span className="tnum">{r.qty} units{Number(r.value) > 0 && ` · ${naira(r.value)}`}</span>
-                  </div>
-                ))}
-              </div>
-            )}
+            {/* The old totals-only block ("Damaged 6 units · ₦22,000")
+                lived here. Replaced by the itemised PR and damage
+                sections above, which name the item, reason and who
+                recorded it. Two blocks showing the same figures
+                differently would only confuse the cash-up. */}
           </div>
         )}
 
