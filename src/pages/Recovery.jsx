@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { lagosToday, methodLabel, naira, startingDept } from '../lib/format'
-import { deleteRepayment, deleteRoomPayment, loadBalances, loadRecovery, loadRoomPayments, updateRepayment } from '../lib/data'
+import { deleteRepayment, deleteRoomPayment, loadBalances, loadBalancesAsAt, loadRecovery, loadRoomPayments, updateRepayment } from '../lib/data'
 import { useToast } from '../components/Toast'
 import { OPENS_ON_ALL, OVERSIGHT, SUPERVISOR, is } from '../lib/roles'
 
@@ -36,6 +36,10 @@ export default function Recovery({ boot }) {
   // debt needs, and it is always right. Labelled as current so it is
   // never mistaken for a historical one.
   const [balances, setBalances] = useState([])
+  // What they owed at the END of the selected day, beside what they owe
+  // now. The difference between the two is simply what has happened
+  // since — more credit taken, or more repaid.
+  const [asAtBalances, setAsAtBalances] = useState(null)
   const isReception = /reception/i.test(salesPoints.find(l => l.id === locId)?.name || '')
   // Whether this person can see room-payment recovery at all — a
   // role/assignment fact, not "which chip happens to be selected right
@@ -84,8 +88,13 @@ export default function Recovery({ boot }) {
   const refresh = useCallback(() => {
     loadBalances(staff.branch_id, locId === 'all' ? null : locId, null)
       .then(setBalances).catch(() => setBalances([]))
+    // Only fetched when a day is actually selected.
+    if (dayFilter) {
+      loadBalancesAsAt(staff.branch_id, dayFilter, locId)
+        .then(setAsAtBalances).catch(() => setAsAtBalances([]))
+    } else setAsAtBalances(null)
     loadRecovery(staff.branch_id, locId === 'all' ? null : locId).then(setRows).catch(e => toast(e.message, 'error'))
-  }, [staff.branch_id, locId])
+  }, [staff.branch_id, locId, dayFilter])  // dayFilter: the as-at balance must refetch when the date changes
   useEffect(refresh, [refresh])
 
   // Reception's recovered debt is room payments, not credit
@@ -150,9 +159,16 @@ export default function Recovery({ boot }) {
   const dayRows = dayFilter ? (rows || []).filter(r => r.paid_on === dayFilter) : []
   const dayTotal = dayRows.reduce((t, r) => t + Number(r.amount), 0)
   // One line per customer for the day: recovered, and what is still owed.
+  // Owed at the END of the selected day, by name (unique per branch).
+  const owedThen = {}
+  for (const b of (asAtBalances || [])) {
+    owedThen[b.name] = (owedThen[b.name] || 0) + Number(b.balance || 0)
+  }
   const dayByCustomer = Object.values(dayRows.reduce((acc, r) => {
     const a = acc[r.customer_name] || (acc[r.customer_name] = {
-      name: r.customer_name, recovered: 0, payments: [], outstanding: owedBy[r.customer_name] || 0 })
+      name: r.customer_name, recovered: 0, payments: [],
+      outstanding: owedBy[r.customer_name] || 0,
+      owedThen: asAtBalances ? (owedThen[r.customer_name] || 0) : null })
     a.recovered += Number(r.amount)
     a.payments.push(r)
     return acc
@@ -163,6 +179,7 @@ export default function Recovery({ boot }) {
     return acc
   }, {})).sort((a, b) => b[1] - a[1])
   const stillOwedAfter = dayByCustomer.reduce((t, c) => t + c.outstanding, 0)
+  const owedThenTotal = dayByCustomer.reduce((t, c) => t + (c.owedThen || 0), 0)
 
   return (
     <div className="px-5">
@@ -239,11 +256,30 @@ export default function Recovery({ boot }) {
                   <span className="tnum text-dim shrink-0">{naira(r.amount)}</span>
                 </div>
               ))}
-              <div className="flex justify-between text-sm mt-2 pt-2 border-t border-line/60">
-                <span className="text-dim">Still owed (as it stands today)</span>
-                <span className={`tnum font-bold ${c.outstanding > 0.009 ? 'text-clay' : 'text-leaf'}`}>
-                  {c.outstanding > 0.009 ? naira(c.outstanding) : 'settled'}
-                </span>
+              <div className="mt-2 pt-2 border-t border-line/60 space-y-0.5">
+                {c.owedThen != null && (
+                  <div className="flex justify-between text-sm">
+                    <span className="text-dim">Owed at the end of {dayFilter}</span>
+                    <span className={`tnum ${c.owedThen > 0.009 ? 'text-clay' : 'text-leaf'}`}>
+                      {c.owedThen > 0.009 ? naira(c.owedThen) : 'settled'}
+                    </span>
+                  </div>
+                )}
+                <div className="flex justify-between text-sm">
+                  <span className="text-dim">Owed today</span>
+                  <span className={`tnum font-bold ${c.outstanding > 0.009 ? 'text-clay' : 'text-leaf'}`}>
+                    {c.outstanding > 0.009 ? naira(c.outstanding) : 'settled'}
+                  </span>
+                </div>
+                {/* Name the difference rather than leave two figures to
+                    be subtracted by eye. */}
+                {c.owedThen != null && Math.abs(c.outstanding - c.owedThen) > 0.009 && (
+                  <div className="text-dim text-xs">
+                    {c.outstanding > c.owedThen
+                      ? `${naira(c.outstanding - c.owedThen)} more credit taken since`
+                      : `${naira(c.owedThen - c.outstanding)} repaid since`}
+                  </div>
+                )}
               </div>
             </section>
           ))}
@@ -254,13 +290,19 @@ export default function Recovery({ boot }) {
                 <span className="text-dim">Recovered on {dayFilter}</span>
                 <span className="tnum text-leaf">{naira(dayTotal)}</span>
               </div>
+              {asAtBalances && (
+                <div className="flex justify-between text-sm">
+                  <span className="text-dim">Owed by these customers at the end of {dayFilter}</span>
+                  <span className="tnum text-clay">{naira(owedThenTotal)}</span>
+                </div>
+              )}
               <div className="flex justify-between font-bold">
-                <span>Still owed by these customers (today)</span>
+                <span>Owed by these customers today</span>
                 <span className="tnum text-clay">{naira(stillOwedAfter)}</span>
               </div>
               <p className="text-dim text-xs pt-1">
-                The amount still owed is the balance as it stands now, not as it
-                stood at the end of {dayFilter}.
+                "At the end of {dayFilter}" is what the books say about that day now.
+                Entries backdated or corrected since will have changed it.
               </p>
             </div>
           )}

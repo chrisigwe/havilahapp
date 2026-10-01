@@ -1985,3 +1985,20 @@ export async function loadOrderOutcomes(ids) {
     room: o.stays?.rooms?.room_number,
   }))
 }
+
+// What each customer owed AT THE END of a given day. Mirrors
+// v_customer_balances_by_staff exactly, with a date cut-off (migration
+// 271), so it reconciles with the current balance instead of drifting.
+//
+// This is what the books NOW say about that day — not a snapshot of
+// what the screen showed on the night. Backdated entries, date
+// corrections and later edits all change a past day after the fact,
+// which is precisely why the two figures are shown side by side.
+export async function loadBalancesAsAt(branchId, asAt, locationId) {
+  const { data, error } = await supabase.rpc('customer_balances_as_at', {
+    p_branch: branchId, p_as_at: asAt,
+    p_location: locationId && locationId !== 'all' ? locationId : null,
+  })
+  if (error) throw error
+  return data || []
+}

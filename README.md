@@ -4562,3 +4562,38 @@ VERIFIED with the page's own derivation code: a day's payments only,
 two payments combining onto one customer line, a balance summing across
 departments, a settled customer reading "settled", the collector split,
 and ordering by size — 7 checks, all correct.
+
+
+## "Owed at the end of that day" (migration 271)
+
+The recovered-debt day view now shows, per customer, what they owed AT
+THE END of the selected day beside what they owe TODAY, and names the
+difference ("N1,500 repaid since" / "N800 more credit taken since").
+
+customer_balances_as_at() MIRRORS v_customer_balances_by_staff — read
+from the live definition, not assumed — with one added condition:
+entry_date <= the chosen day. Same arithmetic, so the two figures
+reconcile; a hand-rolled sum would drift and send the auditor chasing a
+difference that does not exist. VERIFIED: as-at-today compared against
+the live view for all 19 Nnewi customers — 0 disagreements.
+
+Two details a guess would have got wrong, and why the view had to be
+read first:
+  * credit is the CREDIT PORTION of a sale (sale_payments where
+    method = 'credit'), not the sale total, so a split sale contributes
+    only what went on credit
+  * the sides are dated differently — a sale by business_date, a
+    repayment by paid_on — so the cut-off uses each side's own date
+
+WHAT IT MEANS, stated on screen: this is what the books say about that
+day NOW, not a snapshot of what the screen showed on the night.
+Backdating, date corrections (263b) and later edits all change a past
+day after the fact — which is exactly why both figures are shown rather
+than one. A true point-in-time snapshot would need recording balances
+nightly; not built, and only worth it if someone must explain an old
+printed report.
+
+271 refuses to install if the view is not the shape it mirrors, so a
+future change to the view cannot leave this quietly out of step. The
+as-at figure is only fetched when a day is selected, and dayFilter was
+added to the refresh dependencies so it refetches when the date changes.
