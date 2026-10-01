@@ -4507,3 +4507,27 @@ glance, more than colour, and still reads on a dim or small screen.
     transforms are all gone, and the CSS reduced to the fade.
   - The pending badge moved again — its position had been measured
     against the icon-only capsule.
+
+
+## Room charge approvals switched OFF (migration 270)
+
+Front desk found the over-N5,000 step unhelpful — "Charge to room" is
+enough. Turned off, not torn out:
+
+  - branches.room_charge_approval_limit = NULL now means "no approval
+    needed". The trigger returns early, so nothing goes pending; the
+    trigger and the approve/reject/collect functions stay in place, so
+    no past order loses meaning.
+  - Boot carries the limit; the three screens (approvals box, waiting
+    panel, refused charges) only mount when it is set — otherwise they
+    would poll every 15s for something that cannot happen. All the code
+    stays, so setting a number restores the feature with no deploy.
+  - 270 REFUSES to run if anything is pending or rejected, which would
+    strand charges off folios with no screen to clear them. Checked
+    first (269): 32 approved, 2 collected, 0 in flight.
+  - v_stay_folio is untouched — it still counts approved orders only,
+    which is right: new charges are approved from the moment they are
+    made, and the two 'collected' ones must stay off the folio because
+    they were already paid at the bar.
+
+To restore: update branches set room_charge_approval_limit = 5000;

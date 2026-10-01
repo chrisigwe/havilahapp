@@ -40,7 +40,7 @@ export async function loadBranchData(staff, viewBranchId) {
     supabase.from('branch_payment_methods').select('method').eq('branch_id', b),
     supabase.from('stock_items').select('*').eq('branch_id', b).eq('is_active', true).order('name'),
     supabase.from('staff_locations').select('location_id').eq('staff_id', staff.id),
-    supabase.from('branches').select('name, slug').eq('id', b).maybeSingle(),
+    supabase.from('branches').select('name, slug, room_charge_approval_limit').eq('id', b).maybeSingle(),
   ])
   for (const r of [locs, tiers, methods, items]) if (r.error) throw r.error
 
@@ -84,6 +84,11 @@ export async function loadBranchData(staff, viewBranchId) {
              default_location_id: validDefault },
     seesAllBranches,
     branchName: branchRow?.data?.name || '',
+    // null = room-charge approvals are off for this branch (migration
+    // 270). Drives whether the approval screens mount at all, so they
+    // are not polling every 15s for something that cannot happen — and
+    // setting a number brings the whole feature back with no code change.
+    roomChargeApprovalLimit: branchRow?.data?.room_charge_approval_limit ?? null,
     viewBranchId: b,
     seesAll,
     allLocations: locs.data,

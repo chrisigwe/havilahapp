@@ -22,6 +22,7 @@ import { APPROVE_ROOM_CHARGES, EDITOR, MANAGEMENT, OVERSIGHT, SUPERVISOR, is } f
 
 export default function SalesEntry({ boot }) {
   const { staff, locations, allLocations, tiers, methods, items } = boot
+  const approvalsOn = boot.roomChargeApprovalLimit != null
   const toast = useToast()
   // Manager/gm/admin reach this page via More's "Record a sale for
   // any department" — that phrase is the actual product intent, so
@@ -362,6 +363,9 @@ export default function SalesEntry({ boot }) {
                                                locationId, date, locById })
         // Over the branch limit and made by bar staff: it waits for the
         // front desk. Say so plainly, so nobody thinks it is on the bill.
+        // Kept as a branch, not deleted: with approvals off nothing is
+        // ever pending, but if the limit is set again this message
+        // returns on its own.
         if (res.status === 'pending') {
           toast(`Sent to front desk for approval · Room ${paying.roomStay.room} · ${naira(basketTotal)}. ` +
                 'Not on the bill until they approve it.', 'success', { duration: 12000 })
@@ -584,11 +588,11 @@ export default function SalesEntry({ boot }) {
         </button>
       )}
 
-      {!isReception && canRecordHere && (
+      {approvalsOn && !isReception && canRecordHere && (
         <MyPendingRoomCharges branchId={staff.branch_id} staffId={staff.id} onDecided={refresh} />
       )}
 
-      {!isReception && canRecordHere && (
+      {approvalsOn && !isReception && canRecordHere && (
         <CollectRefusedCharges branchId={staff.branch_id} locationId={locationId}
           methods={methods} customers={customers}
           onCreateCustomer={async (name, servedBy) => {
@@ -610,7 +614,7 @@ export default function SalesEntry({ boot }) {
         </p>
       )}
 
-      {isReception && canApprove && (
+      {approvalsOn && isReception && canApprove && (
         <RoomChargeApprovals branchId={staff.branch_id} onDecided={refresh} />
       )}
 
