@@ -371,9 +371,23 @@ export default function Folio({ boot, room, onClose, onChanged }) {
           </div>
         )}
 
-        {live && (
+        {/* A guest who has left can still settle — paying at the desk on
+            the way out, or later. Reopening the stay to take money was
+            the only route before, which adds a reopen to the record and
+            can change the nights charged. Shown after checkout only
+            while something is actually owing, so a settled stay stays
+            closed. */}
+        {(live || (room.status === 'checked_out' && outstanding > 0.009)) && (
           <div className="mt-4 rounded-2xl border border-line bg-surface p-4">
-            <div className="text-dim mb-2">Record payment</div>
+            <div className="text-dim mb-2">
+              {live ? 'Record payment' : 'Record a payment after check-out'}
+            </div>
+            {!live && (
+              <p className="text-dim text-sm mb-2">
+                Checked out on {room.actual_out}. Recording this settles the balance
+                without reopening the stay.
+              </p>
+            )}
 
             <label className="block text-dim text-sm">Amount</label>
             <div className="flex items-center gap-3 mt-1">
@@ -422,7 +436,19 @@ export default function Folio({ boot, room, onClose, onChanged }) {
 
         {orderLines.length > 0 && (
           <div className="mt-4">
-            <div className="text-dim mb-2">Orders</div>
+            {/* Payment is recorded against the WHOLE stay, not line by
+                line, so no single charge can be marked paid. State the
+                folio's position instead of implying per-item tracking. */}
+            <div className="flex items-baseline justify-between mb-2">
+              <span className="text-dim">Orders</span>
+              {outstanding > 0.009
+                ? <span className="text-clay text-sm font-semibold">
+                    {naira(outstanding)} of this bill is unpaid
+                  </span>
+                : <span className="text-leaf text-sm font-semibold">
+                    Bill settled in full
+                  </span>}
+            </div>
             <ul className="divide-y divide-line/60 rounded-2xl border border-line bg-surface px-4">
               {orderLines.map(li => (
                 <li key={li.id} className="py-3">

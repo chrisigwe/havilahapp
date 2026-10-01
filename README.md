@@ -4597,3 +4597,31 @@ printed report.
 future change to the view cannot leave this quietly out of step. The
 as-at figure is only fetched when a day is selected, and dayFilter was
 added to the refresh dependencies so it refetches when the date changes.
+
+
+## Recording a payment after check-out, and whether a bill is paid
+
+ROOM 208 checked out on 30 Sep having paid for 4 bottles of water, and
+there was no way to record it: the payment form was gated on `live`
+(reserved/occupied). The only route was "Undo check-out", which adds a
+reopen to the record and can change the nights charged — far too
+heavy-handed for taking money.
+
+The payment form now also appears on a CHECKED-OUT stay while something
+is still owing, with a line saying so. Verified across every state: a
+settled checked-out stay stays closed, and so does an overpaid one (a
+refund is not a payment). App-side only — payments_rw checks only the
+branch, never the stay's status, and submitPayment needs just the stay
+id, which a closed stay still has.
+
+"HOW DO WE KNOW THE ORDERS HAVE BEEN PAID FOR?" — honestly, per LINE we
+do not: a payment is recorded against the WHOLE stay, not allocated
+across charges. Rather than imply otherwise, the Orders heading now
+states the folio's position: "N5,000 of this bill is unpaid" or "Bill
+settled in full". The existing "Paid at dept" badge still marks lines
+the guest paid at the bar or minimart instead of charging to the room.
+
+Per-item payment tracking would mean allocating every payment across
+individual charges — a much larger change, and not how a hotel folio
+normally works. Not built; flagged for the user to ask for if the
+accounting genuinely needs it.
