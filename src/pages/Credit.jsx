@@ -331,39 +331,86 @@ export default function Credit({ boot }) {
 
       {dayFilter ? (
         <>
-          <div className="flex items-baseline justify-between py-2">
-            <h2 className="text-dim">Credit on {dayFilter}</h2>
-            <span className="tnum font-bold text-lg text-clay">
-              {naira(dayData?.takenTotal || 0)}
-            </span>
-          </div>
-          {dayData && dayData.repaidTotal > 0 && (
-            <p className="text-leaf text-sm pb-2">
-              {naira(dayData.repaidTotal)} repaid that day
-            </p>
-          )}
+          {/* Credit raised and repayments received are SEPARATE
+              sections with separate totals. They were one list with
+              repayments shown as negatives, which left neither figure
+              readable: credit raised increases what customers owe, a
+              repayment reduces it and brings cash in. An accountant
+              needs both, apart. */}
           {!dayData && <p className="text-dim py-8 text-center">Loading…</p>}
+
           {dayData && !dayData.rows.length && (
             <p className="text-dim py-8 text-center">No credit activity on {dayFilter}.</p>
           )}
-          <ul className="divide-y divide-line/60">
-            {(dayData?.rows || []).map(r => (
-              <li key={r.kind + r.id} className="py-3 flex items-center gap-3">
-                <div className="flex-1 min-w-0">
-                  <div className="font-semibold truncate">{r.customer}</div>
-                  <div className="text-dim text-sm truncate">
-                    {r.item}{r.qty ? ` × ${r.qty}` : ''}
-                    {locId === 'all' && locById[r.location_id]
-                      ? ` · ${locById[r.location_id].name}` : ''}
-                  </div>
-                  <div className="text-dim text-sm truncate">{r.who}</div>
-                </div>
-                <span className={`tnum font-bold shrink-0 ${r.kind === 'repaid' ? 'text-leaf' : 'text-clay'}`}>
-                  {r.kind === 'repaid' ? '-' : ''}{naira(r.amount)}
+
+          {!!dayData?.rows.filter(r => r.kind !== 'repaid').length && (
+            <>
+              <div className="flex items-baseline justify-between py-2 mt-2">
+                <h2 className="text-dim">Credit taken on {dayFilter}</h2>
+                <span className="tnum font-bold text-lg text-clay">{naira(dayData.takenTotal || 0)}</span>
+              </div>
+              <ul className="divide-y divide-line/60">
+                {dayData.rows.filter(r => r.kind !== 'repaid').map(r => (
+                  <li key={r.kind + r.id} className="py-3 flex items-center gap-3">
+                    <div className="flex-1 min-w-0">
+                      <div className="font-semibold truncate">{r.customer}</div>
+                      <div className="text-dim text-sm truncate">
+                        {r.item}{r.qty ? ` × ${r.qty}` : ''}
+                        {locId === 'all' && locById[r.location_id] ? ` · ${locById[r.location_id].name}` : ''}
+                      </div>
+                      <div className="text-dim text-sm truncate">{r.who}</div>
+                    </div>
+                    <span className="tnum font-bold shrink-0 text-clay">{naira(r.amount)}</span>
+                  </li>
+                ))}
+              </ul>
+            </>
+          )}
+
+          {!!dayData?.rows.filter(r => r.kind === 'repaid').length && (
+            <>
+              <div className="flex items-baseline justify-between py-2 mt-5 border-t border-line">
+                <h2 className="text-dim">Repayments received on {dayFilter}</h2>
+                <span className="tnum font-bold text-lg text-leaf">{naira(dayData.repaidTotal || 0)}</span>
+              </div>
+              <ul className="divide-y divide-line/60">
+                {dayData.rows.filter(r => r.kind === 'repaid').map(r => (
+                  <li key={r.kind + r.id} className="py-3 flex items-center gap-3">
+                    <div className="flex-1 min-w-0">
+                      <div className="font-semibold truncate">{r.customer}</div>
+                      <div className="text-dim text-sm truncate">
+                        {locId === 'all' && locById[r.location_id] ? `${locById[r.location_id].name} · ` : ''}
+                        {r.who}
+                      </div>
+                    </div>
+                    <span className="tnum font-bold shrink-0 text-leaf">{naira(r.amount)}</span>
+                  </li>
+                ))}
+              </ul>
+            </>
+          )}
+
+          {/* The day in one line: what customers owe went up by X, down
+              by Y, so the net movement is Z. */}
+          {!!dayData?.rows.length && (
+            <div className="mt-5 pt-3 border-t-2 border-line space-y-1">
+              <div className="flex justify-between text-sm">
+                <span className="text-dim">Credit taken (owed to us, up)</span>
+                <span className="tnum text-clay">+{naira(dayData.takenTotal || 0)}</span>
+              </div>
+              <div className="flex justify-between text-sm">
+                <span className="text-dim">Repayments received (owed to us, down)</span>
+                <span className="tnum text-leaf">-{naira(dayData.repaidTotal || 0)}</span>
+              </div>
+              <div className="flex justify-between font-bold pt-1 border-t border-line/60">
+                <span>Net change in what customers owe</span>
+                <span className="tnum">
+                  {(dayData.takenTotal || 0) - (dayData.repaidTotal || 0) >= 0 ? '+' : ''}
+                  {naira((dayData.takenTotal || 0) - (dayData.repaidTotal || 0))}
                 </span>
-              </li>
-            ))}
-          </ul>
+              </div>
+            </div>
+          )}
         </>
       ) : (
       <>

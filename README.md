@@ -4531,3 +4531,34 @@ enough. Turned off, not torn out:
     they were already paid at the bar.
 
 To restore: update branches set room_charge_approval_limit = 5000;
+
+
+## Credit and recovery kept apart (auditor's point)
+
+CREDIT PAGE, day view: credit taken and repayments were ONE list with
+repayments shown as negatives, so neither figure was readable. Now two
+sections with their own totals — "Credit taken on <date>" and
+"Repayments received on <date>" — closing with the day in one line:
+credit up, repayments down, net change in what customers owe. That is
+the accounting shape: credit raised increases receivables, a repayment
+reduces them and brings cash in.
+
+RECOVERED DEBT: gained the same date control. Picking a day shows the
+total recovered, WHO recovered it (split per collector), then one card
+per customer with each payment (method, collector, department, note)
+and what that customer STILL OWES, ending with the day's total and the
+total still owed by those customers.
+
+"Still owed" is the CURRENT balance, not the balance as it stood that
+evening — today's figure is what someone chasing a debt needs, and it is
+always right. Labelled on screen so it cannot be mistaken for a
+historical one. (An end-of-day balance is possible but needs replaying
+the ledger to that date; worth doing only if reconciliation demands it.)
+
+Matched to balances by customer NAME, which is safe: customers are
+unique per (branch_id, name).
+
+VERIFIED with the page's own derivation code: a day's payments only,
+two payments combining onto one customer line, a balance summing across
+departments, a settled customer reading "settled", the collector split,
+and ordering by size — 7 checks, all correct.

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { lagosToday, methodLabel, naira, startingDept } from '../lib/format'
-import { loadRecovery, updateRepayment, deleteRepayment, loadRoomPayments, deleteRoomPayment } from '../lib/data'
+import { deleteRepayment, deleteRoomPayment, loadBalances, loadRecovery, loadRoomPayments, updateRepayment } from '../lib/data'
 import { useToast } from '../components/Toast'
 import { OPENS_ON_ALL, OVERSIGHT, SUPERVISOR, is } from '../lib/roles'
 
@@ -28,6 +28,14 @@ export default function Recovery({ boot }) {
   const openingDept = () => is(staff.role, OPENS_ON_ALL) ? 'all' : startingDept(salesPoints, staff, locations)
   const [locId, setLocId] = useState(openingDept)
   const [rows, setRows] = useState(null)
+  // One day at a time, for reconciling a past day — the same control the
+  // Credit page has. Null = the rolling 60-day view.
+  const [dayFilter, setDayFilter] = useState(null)
+  // What each customer still owes. CURRENT balance, not the balance as
+  // it stood that evening: today's figure is what someone chasing the
+  // debt needs, and it is always right. Labelled as current so it is
+  // never mistaken for a historical one.
+  const [balances, setBalances] = useState([])
   const isReception = /reception/i.test(salesPoints.find(l => l.id === locId)?.name || '')
   // Whether this person can see room-payment recovery at all — a
   // role/assignment fact, not "which chip happens to be selected right
@@ -74,6 +82,8 @@ export default function Recovery({ boot }) {
   }, [staff.branch_id])
 
   const refresh = useCallback(() => {
+    loadBalances(staff.branch_id, locId === 'all' ? null : locId, null)
+      .then(setBalances).catch(() => setBalances([]))
     loadRecovery(staff.branch_id, locId === 'all' ? null : locId).then(setRows).catch(e => toast(e.message, 'error'))
   }, [staff.branch_id, locId])
   useEffect(refresh, [refresh])
@@ -131,6 +141,29 @@ export default function Recovery({ boot }) {
   const roomByMethod = {}
   for (const p of (roomPayments || [])) roomByMethod[p.method] = (roomByMethod[p.method] || 0) + Number(p.amount)
 
+  // Outstanding per customer, by name — customers are unique per branch,
+  // so the name is a safe key here.
+  const owedBy = {}
+  for (const b of (balances || [])) {
+    owedBy[b.name] = (owedBy[b.name] || 0) + Number(b.balance || 0)
+  }
+  const dayRows = dayFilter ? (rows || []).filter(r => r.paid_on === dayFilter) : []
+  const dayTotal = dayRows.reduce((t, r) => t + Number(r.amount), 0)
+  // One line per customer for the day: recovered, and what is still owed.
+  const dayByCustomer = Object.values(dayRows.reduce((acc, r) => {
+    const a = acc[r.customer_name] || (acc[r.customer_name] = {
+      name: r.customer_name, recovered: 0, payments: [], outstanding: owedBy[r.customer_name] || 0 })
+    a.recovered += Number(r.amount)
+    a.payments.push(r)
+    return acc
+  }, {})).sort((x, y) => y.recovered - x.recovered)
+  const dayByCollector = Object.entries(dayRows.reduce((acc, r) => {
+    const k = r.recovered_by_name || 'Unknown'
+    acc[k] = (acc[k] || 0) + Number(r.amount)
+    return acc
+  }, {})).sort((a, b) => b[1] - a[1])
+  const stillOwedAfter = dayByCustomer.reduce((t, c) => t + c.outstanding, 0)
+
   return (
     <div className="px-5">
       {salesPoints.length > 1 && (
@@ -152,6 +185,87 @@ export default function Recovery({ boot }) {
         </div>
       )}
 
+      {/* Pick a day to reconcile it; clear it for the rolling view. */}
+      <div className="flex items-center gap-2 py-2">
+        <input type="date" value={dayFilter || ''} max={lagosToday()}
+          onChange={e => setDayFilter(e.target.value || null)}
+          className="h-11 px-3 rounded-xl bg-raise border border-line tnum" />
+        {dayFilter
+          ? <button onClick={() => setDayFilter(null)}
+              className="h-11 px-3 rounded-xl border border-amber text-amber text-sm font-semibold">
+              Back to last 60 days
+            </button>
+          : <span className="text-dim text-sm">Pick a date to break down that day</span>}
+      </div>
+
+      {dayFilter ? (
+        <>
+          <div className="rounded-2xl border border-leaf bg-surface p-4 my-2">
+            <div className="flex items-baseline justify-between">
+              <span className="text-dim text-sm">Recovered on {dayFilter}</span>
+              <span className="tnum text-2xl font-bold text-leaf">{naira(dayTotal)}</span>
+            </div>
+            {!!dayByCollector.length && (
+              <div className="mt-2 pt-2 border-t border-line/60 space-y-1">
+                <div className="text-dim text-xs">Who recovered it</div>
+                {dayByCollector.map(([who, amt]) => (
+                  <div key={who} className="flex justify-between text-sm">
+                    <span className="text-dim truncate pr-2">{who}</span>
+                    <span className="tnum">{naira(amt)}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {!dayRows.length && (
+            <p className="text-dim py-8 text-center">Nothing recovered on {dayFilter}.</p>
+          )}
+
+          {dayByCustomer.map(c => (
+            <section key={c.name} className="mt-3 rounded-2xl border border-line bg-surface p-4">
+              <div className="flex items-baseline justify-between gap-3">
+                <span className="font-semibold truncate">{c.name}</span>
+                <span className="tnum font-bold text-leaf shrink-0">{naira(c.recovered)}</span>
+              </div>
+              {c.payments.map(r => (
+                <div key={r.id} className="flex justify-between text-sm mt-1 pl-3">
+                  <span className="text-dim truncate pr-2">
+                    {methodLabel[r.method] || r.method}
+                    {r.recovered_by_name && ` · ${r.recovered_by_name}`}
+                    {locId === 'all' && r.location_name ? ` · ${r.location_name}` : ''}
+                    {r.note && ` — ${r.note}`}
+                  </span>
+                  <span className="tnum text-dim shrink-0">{naira(r.amount)}</span>
+                </div>
+              ))}
+              <div className="flex justify-between text-sm mt-2 pt-2 border-t border-line/60">
+                <span className="text-dim">Still owed (as it stands today)</span>
+                <span className={`tnum font-bold ${c.outstanding > 0.009 ? 'text-clay' : 'text-leaf'}`}>
+                  {c.outstanding > 0.009 ? naira(c.outstanding) : 'settled'}
+                </span>
+              </div>
+            </section>
+          ))}
+
+          {!!dayRows.length && (
+            <div className="mt-4 pt-3 border-t-2 border-line space-y-1">
+              <div className="flex justify-between text-sm">
+                <span className="text-dim">Recovered on {dayFilter}</span>
+                <span className="tnum text-leaf">{naira(dayTotal)}</span>
+              </div>
+              <div className="flex justify-between font-bold">
+                <span>Still owed by these customers (today)</span>
+                <span className="tnum text-clay">{naira(stillOwedAfter)}</span>
+              </div>
+              <p className="text-dim text-xs pt-1">
+                The amount still owed is the balance as it stands now, not as it
+                stood at the end of {dayFilter}.
+              </p>
+            </div>
+          )}
+        </>
+      ) : (
       <>
       <div className="rounded-2xl border border-leaf bg-surface p-4 my-2">
         <div className="text-dim text-sm">Recovered in the last 60 days</div>
@@ -214,6 +328,7 @@ export default function Recovery({ boot }) {
 
       {!rows.length && <p className="py-8 text-center text-dim">No payments recorded yet.</p>}
       </>
+      )}
 
       {hasReceptionAccess && (
         <>
