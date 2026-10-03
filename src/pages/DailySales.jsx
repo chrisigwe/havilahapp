@@ -132,6 +132,7 @@ export default function DailySales({ boot }) {
     const charges = roomCharges.map(r => ({
       ...r, entryKind: 'roomCharge', sortAt: r.orders?.created_at,
       roomNumber: r.orders?.stays?.rooms?.room_number, guestName: r.orders?.stays?.guests?.full_name,
+      folioOutstanding: r.folioOutstanding, stayStatus: r.stayStatus,
     }))
     return [...sales, ...charges].sort((a, b) => (b.sortAt || '').localeCompare(a.sortAt || ''))
   }, [rows, roomCharges, roomChargeCategory])
@@ -330,6 +331,21 @@ export default function DailySales({ boot }) {
                 <div className="text-dim text-sm">
                   {r.qty} × {naira(r.unit_price)}
                   <br />Charged to Room {r.roomNumber || '—'}{r.guestName ? ` · ${r.guestName}` : ''}
+                  {/* A meal on this list means the food left the kitchen,
+                      not that anyone paid. Payment sits against the whole
+                      stay, so this is the GUEST'S BILL, not this line. */}
+                  {r.folioOutstanding != null && (
+                    <>
+                      <br />
+                      {r.folioOutstanding > 0.009
+                        ? <span className={r.stayStatus === 'checked_out' ? 'text-clay font-bold' : 'text-clay'}>
+                            {r.stayStatus === 'checked_out'
+                              ? `Checked out still owing ${naira(r.folioOutstanding)}`
+                              : `${naira(r.folioOutstanding)} still on this guest's bill`}
+                          </span>
+                        : <span className="text-leaf">Guest's bill settled</span>}
+                    </>
+                  )}
                 </div>
               ) : (
                 <div className="text-dim text-sm">

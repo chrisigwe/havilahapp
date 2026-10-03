@@ -1428,10 +1428,28 @@ export async function loadRoomCharges(branchId, date, category) {
   const { data, error } = await supabase.from('order_items')
     .select(`id, description, qty, unit_price, amount, order_id, order_type, damage_reason, writeoff_note, pr_meal,
              orders!inner(id, business_date, branch_id, served_by, created_at,
-                          stays(rooms(room_number), guests!guest_id(full_name)))`)
+                          stays(id, status, actual_out, rooms(room_number), guests!guest_id(full_name)))`)
     .eq('category', category).eq('orders.branch_id', branchId).eq('orders.business_date', date)
   if (error) throw error
-  return data || []
+  const rows = data || []
+
+  // Whether the guest's bill has been settled. Restaurant staff asked
+  // for this: a meal on the list says the food left the kitchen, not
+  // that anyone paid for it. A payment is recorded against the WHOLE
+  // stay, so this is the folio's position — not that line's — which is
+  // why it is labelled "this guest's bill", not "this meal".
+  const stayIds = [...new Set(rows.map(r => r.orders?.stays?.id).filter(Boolean))]
+  if (stayIds.length) {
+    const { data: folios } = await supabase.from('v_stay_folio')
+      .select('stay_id, outstanding, total_due').in('stay_id', stayIds)
+    const by = Object.fromEntries((folios || []).map(f => [f.stay_id, f]))
+    for (const r of rows) {
+      const f = by[r.orders?.stays?.id]
+      r.folioOutstanding = f ? Number(f.outstanding) : null
+      r.stayStatus = r.orders?.stays?.status || null
+    }
+  }
+  return rows
 }
 // ---------- Restaurant order type: PR/Damage and Staff write-offs ----------
 // Standard orders are unchanged — they go through the normal basket/

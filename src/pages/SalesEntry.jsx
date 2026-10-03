@@ -73,6 +73,10 @@ export default function SalesEntry({ boot }) {
   const ownLocationIds = new Set((locations || []).map(l => l.id))
   const canRecordAt = (id) => is(staff.role, MANAGEMENT) || ownLocationIds.has(id)
   const canRecordHere = canRecordAt(locationId)
+  // Mirrors moves_write after 283: anyone who can record, except an
+  // auditor. Deliberately NOT canOverrideVariance, which also governs
+  // backdating and variance overrides — different powers.
+  const canWriteOff = staff.role !== 'auditor' && canRecordHere
   const canApprove = is(staff.role, APPROVE_ROOM_CHARGES)
   // Restaurant and Reception don't behave like a normal sales
   // department — Restaurant is typed-order-only (no catalog stock to
@@ -521,7 +525,12 @@ export default function SalesEntry({ boot }) {
                 {tierLabel[t] || t}
               </button>
             ))}
-            {canOverrideVariance && (
+            {/* Bar and minimart staff record their own PR and breakages
+                (migration 283): making them find a manager meant it went
+                unrecorded and surfaced later as an unexplained shortage.
+                Every line shows on the daily close with who recorded it.
+                Auditors are excluded — they review write-offs. */}
+            {canWriteOff && (
               <button onClick={() => { setWriteoffMode(true); setPicking(true) }}
                 className="flex-1 h-12 rounded-xl border border-clay text-clay font-bold">
                 PR / Damage

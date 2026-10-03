@@ -4782,3 +4782,53 @@ Choosing anything but today shows which day it will appear in.
 Checked that orders.business_date has no validation trigger, so a
 backdated charge genuinely saves rather than being offered and then
 refused.
+
+
+## PR/Damage opened to bar and minimart (migration 283)
+
+moves_write required app_is_editor() for 'damage' and 'complimentary',
+so a bartender who broke a bottle had to find a manager — which in
+practice means it goes unrecorded and surfaces later as an unexplained
+shortage.
+
+A LOOSENING, stated plainly: a write-off removes stock with no payment,
+which is also how a shortage would be covered up. It is the same right
+deliberately taken from auditors in 255 — for a different reason: an
+auditor REVIEWS write-offs, so must not create them. Bar staff are the
+ones who actually break bottles. Auditors stay excluded.
+
+What keeps it honest, already built: the daily close itemises every PR
+and damage line with item, quantity, cost, reason and WHO RECORDED IT,
+and flags a damage line with no reason.
+
+App: the button is gated on canWriteOff (not an auditor, and can record
+at this department) — deliberately NOT canOverrideVariance, which also
+governs backdating and variance overrides. Verified app vs database
+across every role: 0 mismatches.
+
+Caught: canWriteOff was first declared ABOVE canRecordHere, which it
+depends on — a crash on page load that the build does not catch.
+
+
+## Restaurant: whether a meal charged to a room was paid for
+
+The Restaurant's Daily Sales ALREADY merged meals charged to rooms into
+its list, with room number and guest name (roomChargeCategory 'food').
+What it could not say — and what was actually asked for — is whether the
+guest paid.
+
+Each room-charge row now shows the guest's position:
+  "Guest's bill settled"
+  "N12,000 still on this guest's bill"
+  "Checked out still owing N5,000"   <- bold, the one that costs money
+loadRoomCharges fetches v_stay_folio for the stays involved, in one
+query for the whole list.
+
+Worded as the GUEST'S BILL, not this meal, because that is the truth: a
+payment is recorded against the whole stay, never allocated to a line.
+Saying "this meal is paid" would be inventing a fact. An overpaid folio
+reads as settled rather than showing a negative.
+
+Department totals are untouched — a room charge settles through the
+folio, not this department's till, and mixing them would misstate the
+day's takings.
