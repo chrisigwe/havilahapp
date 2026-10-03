@@ -4856,3 +4856,37 @@ called "Chidera/staff". It refuses rather than guessing if the AKA is
 already another customer's name at that branch (that is a merge, not a
 rename) or the account belongs to another employee. The customer id
 never changes, so past sales, repayments and receipts are untouched.
+
+
+## Bar, restaurant and front desk bars
+
+Checked the accounts first: every one of these 14 people has their OWN
+login, their own default, and it matches their assigned department —
+nothing to fix there. It also answers the restaurant question: Chef and
+Kitchen Assistant are role 'bar' defaulting to Restaurant, so they get
+the bar layout pointed at their own counter. No 'restaurant' role exists
+or is needed.
+
+FRONT DESK  Rooms · Sales · Credit · More, landing on ROOMS (was Sales ·
+  Rooms · Stock · More, landing on Sales). Guests are the job: Rooms
+  holds bookings, folios, payments and checkout. Sales second — it opens
+  on Reception for the close of day, and they sell from the minimart
+  too (they are assigned to both). Credit third: they now handle guest
+  balances and the bar accounts not linked to a guest.
+
+BAR         Sales · Credit · Recovered · More, landing on Sales. Selling
+  is the whole job so Sales stays first. Credit and Recovered replace
+  Stock: they take credit all shift and chase repayments, and both were
+  buried in More, while Stock is read-only for them.
+
+STOCK stays reachable in More for both — its menu entry was managers and
+auditors only, so dropping it from these bars would have removed their
+stock view entirely. Same trap as the auditor's bar earlier.
+
+A 'recovery' icon was added (outline + filled): Recovered debt had never
+been on a bar, so it had none and would have shown as bare text. Both
+rendered and checked for ink coverage.
+
+VERIFIED the way the page actually works (More hides anything on the
+bar): nothing appears twice, nobody lost a screen, and every tab on
+every bar has both icons.

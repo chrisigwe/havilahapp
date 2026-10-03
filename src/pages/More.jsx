@@ -21,9 +21,10 @@ const ITEMS = [
   { key: 'store', label: 'Store', hint: 'Receive stock and record transfers',
     roles: OVERSIGHT_ROLES },
   { key: 'stock', label: 'Stock', hint: 'Current stock on hand by department',
-    // auditor added: Stock left the auditor's bar for History, so this is
-    // how they reach it now.
-    roles: [...OVERSIGHT_ROLES, 'auditor'] },
+    // Roles whose BAR no longer carries Stock reach it here instead:
+    // the auditor (it left for History) and now bar/front_desk (it left
+    // for Credit). Without this they would lose the stock view entirely.
+    roles: [...OVERSIGHT_ROLES, 'auditor', 'bar', 'front_desk'] },
   { key: 'count',   label: 'Stock count', hint: 'Count your stock at end of shift',
     roles: ['bar', 'front_desk', 'storekeeper', 'manager', 'gm', 'admin', 'auditor'] },
   { key: 'catalog', label: 'Catalog', hint: 'Items, prices and what is active',

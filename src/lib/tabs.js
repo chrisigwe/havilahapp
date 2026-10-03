@@ -53,8 +53,25 @@ export function tabsFor(role, { recordsSales = false } = {}) {
     return [['count', 'Counts'], ['variance', 'Variances'], ['dailysales', 'Daily sales'],
             ['fix', 'History'], ['more', 'More']]
   }
+  if (role === 'front_desk') {
+    // Guests are the job: Rooms holds bookings, folios, payments and
+    // checkout, so they land there rather than on Sales. Sales is second
+    // (it opens on Reception — close of day, and they sell from the
+    // minimart too). Credit third: they now handle guest balances and
+    // the bar accounts not linked to a guest. Stock moves to More — they
+    // can only look at it.
+    return [['roomboard', 'Rooms'], ['sales', 'Sales'], ['credit', 'Credit'], ['more', 'More']]
+  }
+  if (role === 'bar') {
+    // Selling is the whole job, so Sales stays first and they land on
+    // it. Credit replaces Stock: they take credit all shift and chase
+    // repayments, and it was buried in More — while Stock is read-only
+    // for them and rarely needed mid-service.
+    // Covers the restaurant too: Chef and Kitchen Assistant are 'bar'
+    // defaulting to Restaurant, and the job has the same shape.
+    return [['sales', 'Sales'], ['credit', 'Credit'], ['recovery', 'Recovered'], ['more', 'More']]
+  }
   const t = [['sales', 'Sales']]
-  if (role === 'front_desk') t.push(['roomboard', 'Rooms'])
   if (STOCK_ROLES.includes(role)) t.push(['store', 'Store'])
   return [...t, ['stock', 'Stock'], ['more', 'More']]
 }
