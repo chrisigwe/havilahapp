@@ -2,11 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { naira, lagosToday } from '../lib/format'
 import { useToast } from '../components/Toast'
 import {
-  loadEmployees, saveEmployee, endEmployment,
-  loadPeriod, openPeriod, loadLines, updateLine,
-  addDeduction, removeDeduction, proposeCreditDeductions,
-  finalisePeriod, reopenPeriod,
-  loadPotNext, loadPayouts, savePayout, savingsBalances, lineTotals,
+  addDeduction, endEmployment, finalisePeriod, lineTotals, loadEmployees, loadLines, loadPayouts, loadPeriod, loadPotNext, openPeriod, proposeCreditDeductions, removeDeduction, reopenPeriod, saveEmployee, savePayout, savingsBalances, setEmployeeCreditAccount, updateLine,
 } from '../lib/payroll'
 
 const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June',
@@ -337,10 +333,13 @@ function EmployeeSheet({ value, employees, final, onClose, onSaved, toast }) {
           remark: f.remark || null,
         })
       } else {
+        // Everything except the credit link, which is saved separately
+        // because linking also RENAMES the credit account to the AKA.
         await saveEmployee({
           ...f, monthly_salary: Number(f.monthly_salary) || 0,
-          customer_id: f.customer_id || null, staff_id: f.staff_id || null,
+          customer_id: undefined, staff_id: f.staff_id || null,
         })
+        await setEmployeeCreditAccount(f.id, f.customer_id || null, f.aka || null)
       }
       onSaved()
     } catch (e) { toast(e.message, 'error') }
@@ -387,6 +386,18 @@ function EmployeeSheet({ value, employees, final, onClose, onSaved, toast }) {
         ) : (
           <>
             {txt('full_name', 'Full name')}
+            {txt('aka', 'Known as (for their credit account)')}
+            {f.aka && f.customer_id && (
+              <p className="text-amber text-sm -mt-2 mb-2">
+                Saving will rename their credit account to "{f.aka}".
+              </p>
+            )}
+            {!f.aka && (
+              <p className="text-dim text-xs -mt-2 mb-2">
+                e.g. "Mercy (staff)" — the name their bar and minimart credit is
+                recorded under. Keeps the naming consistent.
+              </p>
+            )}
             {/* Employee ID removed from the form at the user's request —
                 it is not used for anything. The column stays in the
                 database, so the codes already loaded from the Awka sheet

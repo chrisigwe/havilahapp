@@ -244,3 +244,18 @@ export function lineTotals(line, payoutAmount = 0, workingDays = 28) {
   return { dailyRate, earned, deductions, additions, contribution, savings,
            pot, net, gross: net, documented, gift, overThreshold: over }
 }
+
+// Link an employee to their credit account AND rename that account to
+// their AKA, in one database step (migration 285). One step matters: a
+// rename that half-applied would leave the link pointing at an account
+// still called "Chidera/staff".
+//
+// It refuses rather than guessing if the AKA is already another
+// customer's name at that branch, or the account belongs to someone
+// else.
+export async function setEmployeeCreditAccount(employeeId, customerId, aka) {
+  const { error } = await supabase.rpc('set_employee_credit_account', {
+    p_employee: employeeId, p_customer: customerId || null, p_aka: aka || null,
+  })
+  if (error) throw error
+}

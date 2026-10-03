@@ -50,7 +50,9 @@ export default function SalesEntry({ boot }) {
   const NO_ON_BEHALF = new Set(['a5ea88b6-80e7-4776-a491-78a509e589c6'])
   const canRecordOnBehalf = canOverrideVariance && !NO_ON_BEHALF.has(staff.id)
   // bar staff can reach back 4 days; editors go to the opening balance
-  const STAFF_BACKDATE_DAYS = 4
+  // Must match window_days in validate_sale_date (migration 284).
+  // If these drift, staff are offered dates the database refuses.
+  const STAFF_BACKDATE_DAYS = 7
   const todayDate = lagosToday()
   const [date, setDate] = useState(todayDate)
   const [openingDate, setOpeningDate] = useState(null)

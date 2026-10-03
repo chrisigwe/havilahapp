@@ -4832,3 +4832,27 @@ reads as settled rather than showing a negative.
 Department totals are untouched — a room charge settles through the
 folio, not this department's till, and mixing them would misstate the
 day's takings.
+
+
+## Backdating 7 days for all staff (284); employee AKA (285)
+
+284: validate_sale_date's window_days 4 -> 7, for all staff. The
+room-charge sheet was already extended to 7, so sales were quietly
+stricter. The app's STAFF_BACKDATE_DAYS changed in the same release and
+now carries a comment naming the migration — if the two drift, staff are
+offered dates the database refuses, or blocked from dates it allows.
+Editors still have no day limit; future dates and the opening-balance
+check are unchanged.
+
+285: payroll_employee.aka, and Option B as chosen — linking an employee
+to a credit account RENAMES that account to the AKA. The naming
+convention then stops depending on whoever types it at the till, which
+is what produced "Chidera/staff", "Kelvin  Staff", "JP(staff)" and
+"Chibuzo ( staff)".
+
+set_employee_credit_account() does the link and the rename in ONE step:
+a half-applied rename would leave the link pointing at an account still
+called "Chidera/staff". It refuses rather than guessing if the AKA is
+already another customer's name at that branch (that is a merge, not a
+rename) or the account belongs to another employee. The customer id
+never changes, so past sales, repayments and receipts are untouched.
