@@ -1,11 +1,30 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { naira } from '../lib/format'
 
 import { normalizeCustomerName as nameKey } from '../lib/customerName'
+import { findSimilarCustomers } from '../lib/data'
 
-export default function CustomerPicker({ customers, value, onPick, onCreate }) {
+export default function CustomerPicker({ customers, value, onPick, onCreate, branchId }) {
   const [q, setQ] = useState('')
   const [servedBy, setServedBy] = useState('')
+
+  // The list above is filtered by "contains", which cannot catch a
+  // misspelling: typing "Celeb" shows nothing even though "Caleb
+  // (staff)" exists, and a second record gets made. This asks the
+  // database for close names (migration 282) — reordered words, a
+  // letter out, or written differently — and puts them in front of the
+  // person BEFORE they create anything.
+  const [similar, setSimilar] = useState([])
+  const timer = useRef(null)
+  useEffect(() => {
+    if (!branchId || q.trim().length < 2) { setSimilar([]); return }
+    clearTimeout(timer.current)
+    // Waits for a pause in typing: one lookup, not one per keystroke.
+    timer.current = setTimeout(() => {
+      findSimilarCustomers(branchId, q).then(setSimilar).catch(() => setSimilar([]))
+    }, 350)
+    return () => clearTimeout(timer.current)
+  }, [q, branchId])
 
   const key = nameKey(q)
   const matches = useMemo(() => {
@@ -55,6 +74,27 @@ export default function CustomerPicker({ customers, value, onPick, onCreate }) {
 
       {key && !exact && (
         <div className="mt-3">
+          {/* Close names the list above would not have shown. */}
+          {!!similar.filter(x => !matches.some(m => m.id === x.id)).length && (
+            <div className="mb-3 rounded-xl border border-clay bg-surface p-3">
+              <p className="text-clay text-sm font-semibold">Did you mean one of these?</p>
+              <p className="text-dim text-xs mb-2">
+                A second record would split this person's debt in two.
+              </p>
+              {similar.filter(x => !matches.some(m => m.id === x.id)).map(x => (
+                <button key={x.id} onClick={() => onPick(x.id)}
+                  className="w-full flex items-center justify-between gap-2 h-11 px-3 mt-1
+                             rounded-lg border border-amber text-left">
+                  <span className="truncate">
+                    <span className="text-amber font-semibold">{x.name}</span>
+                    <span className="text-dim text-xs"> · {x.reason}</span>
+                  </span>
+                  <span className="tnum text-dim text-sm shrink-0">{naira(x.balance)}</span>
+                </button>
+              ))}
+            </div>
+          )}
+
           {!!matches.length && (
             <p className="text-amber text-sm mb-2">
               Check the list first — if this is the same person, tap their name.

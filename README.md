@@ -4725,3 +4725,41 @@ date.
 EMPLOYEE ID: removed from the payroll form and the staff list — it is
 not used for anything. The COLUMN stays, so the codes already loaded
 from the Awka sheet remain for cross-referencing the old workbooks.
+
+
+## Stopping duplicate customers (279-282 + till warning)
+
+279 merged the backlog: three chef records -> Chef Marvis (1,800), a
+SECOND "General manager" -> GM, Celeb + Caleb -> Caleb (staff) (8,100),
+then standardised the names. It aborts if the combined balances do not
+match what went in, and refuses a rename that would collide.
+
+THE CAUSE, found in the code: normalize_customer_name() STRIPS anything
+in brackets, so "Chidera (staff)" -> "chidera" but "Chidera/staff" ->
+"chidera staff" — different keys, so the unique index allows both. And
+"Celeb" vs "Caleb" are not similar under any rule the app applied.
+
+280 used trigram similarity. The LIVE TEST disproved it:
+    Caleb vs Celeb    0.33  <- the real duplicate, MISSED
+    Chidera vs Chioma 0.50  <- different people, FLAGGED
+No threshold fixes that — the true match scores lower than the false one.
+281 switched to edit distance (Caleb->Celeb is 1 letter, Chidera->Chioma
+is 3), scaled to name length. 282 added word-set comparison with a
+one-letter tolerance per word, catching "Mavis chef" vs "Chef Marvis"
+(reordered AND misspelled), which 281 missed.
+
+Final: 7/7 — catches all four real duplicates, and stays SILENT on
+Chioma, Daniel and a nonsense name. The silence matters as much: a
+warning that fires on ordinary names is one staff tap past.
+
+APP: CustomerPicker now asks the database as the name is typed (350ms
+after the last keystroke) and shows "Did you mean one of these?" with
+each close name, WHY it matched and what they owe — tappable, so the
+existing record is one tap away. Its own filter is "contains", which
+could never have caught a misspelling. A failed lookup returns empty
+and never blocks a sale. branchId passed at both call sites, or the
+check would silently never run.
+
+Daily Sales shows the GM a count of possible duplicates. The finder
+already existed on Corrections but nobody went looking — which is how
+"General manager" came back months after the first merge.

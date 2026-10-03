@@ -2002,3 +2002,16 @@ export async function loadBalancesAsAt(branchId, asAt, locationId) {
   if (error) throw error
   return data || []
 }
+
+// Existing customers close to a name being typed — same name written
+// differently, words reordered, or a letter out (migration 282).
+// Checked BEFORE creating, so the person sees the record they already
+// have instead of making a second one.
+export async function findSimilarCustomers(branchId, name) {
+  if (!name || name.trim().length < 2) return []
+  const { data, error } = await supabase.rpc('find_similar_customers', {
+    p_branch: branchId, p_name: name.trim(),
+  })
+  if (error) return []        // never block a sale on the warning failing
+  return data || []
+}

@@ -123,7 +123,7 @@ export default function CollectRefusedCharges({
               {credit > 0 && (
                 <div className="mt-3">
                   <div className="text-dim text-sm mb-1">Customer (required for credit)</div>
-                  <CustomerPicker customers={customers} value={customerId}
+                  <CustomerPicker branchId={branchId} customers={customers} value={customerId}
                     onPick={setCustomerId}
                     onCreate={async (name, servedBy) => {
                       const c = await onCreateCustomer(name, servedBy)

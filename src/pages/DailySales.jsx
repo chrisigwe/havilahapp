@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { naira, lagosToday, lagosDaysAgo, tierLabel, methodLabel, whoRecorded, paymentSummary } from '../lib/format'
-import { loadDailyFinancials, loadToday, loadReceptionActivity, loadReceptionDashboard,
-         loadRoomCharges, loadRoomsSoldInMonth, loadWriteoffsOnDate } from '../lib/data'
+import { findDuplicateCustomers, findDuplicateGuests, loadDailyFinancials, loadReceptionActivity, loadReceptionDashboard, loadRoomCharges, loadRoomsSoldInMonth, loadToday, loadWriteoffsOnDate } from '../lib/data'
 import { useToast } from '../components/Toast'
 import ReceptionDashboard from '../components/ReceptionDashboard'
 import WriteoffBreakdown from '../components/WriteoffBreakdown'
@@ -27,6 +26,11 @@ export default function DailySales({ boot }) {
   const [locId, setLocId] = useState('all')
   const [summary, setSummary] = useState(null)
   const [writeoffs, setWriteoffs] = useState(null)
+  // Duplicate customers and guests already have a finder on Corrections,
+  // but nobody goes looking — which is how "General manager" came back
+  // months after the first merge. A count where the GM already looks
+  // every day turns that into days rather than months.
+  const [dupeCount, setDupeCount] = useState(0)
   const [rows, setRows] = useState(null)
   const [receptionActivity, setReceptionActivity] = useState(null)
   const [receptionDashboard, setReceptionDashboard] = useState(null)
@@ -77,6 +81,13 @@ export default function DailySales({ boot }) {
     const loc = locId === 'all' ? null : locId
     setSummary(null); setRows(null); setReceptionActivity(null); setRoomCharges([]); setReceptionDashboard(null); setRoomsSold(null)
     setWriteoffs(null)
+    if (isGmOrAdmin) {
+      Promise.all([
+        findDuplicateCustomers(staff.branch_id).catch(() => []),
+        findDuplicateGuests(staff.branch_id).catch(() => []),
+      ]).then(([c, g]) => setDupeCount((c?.length || 0) + (g?.length || 0)))
+        .catch(() => setDupeCount(0))
+    }
     // Loaded BEFORE the Reception branch below, which returns early —
     // otherwise the breakdown would vanish on the Reception tab. On
     // failure, record the error so the section says so rather than
@@ -288,6 +299,18 @@ export default function DailySales({ boot }) {
               breakdown is shared with Sales so the two pages
               cannot drift apart again. */}
           <WriteoffBreakdown data={writeoffs} />
+
+          {isGmOrAdmin && dupeCount > 0 && (
+            <div className="mt-3 rounded-2xl border border-clay bg-surface p-4">
+              <p className="font-semibold text-clay">
+                {dupeCount} possible duplicate {dupeCount === 1 ? 'record' : 'records'}
+              </p>
+              <p className="text-dim text-sm mt-1">
+                Two records for one person split their debt in two. Review them
+                under More → Corrections → Reception.
+              </p>
+            </div>
+          )}
         </div>
       )}
 

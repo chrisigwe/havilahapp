@@ -1075,7 +1075,7 @@ export default function SalesEntry({ boot }) {
                 ? 'Customer (required for credit)'
                 : 'Customer (optional — for a named receipt)'}
             </div>
-              <CustomerPicker customers={customers} value={paying.customerId}
+              <CustomerPicker branchId={staff.branch_id} customers={customers} value={paying.customerId}
                 onPick={id => setPaying(p => ({ ...p, customerId: id }))}
                 onCreate={async (name, servedBy) => {
                   // Room-numbered accounts ("Room 203 Mr Vincent") are the
