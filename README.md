@@ -4705,3 +4705,23 @@ VERIFIED with the real lineTotals across seven cases: the GM's pot month,
 Martins with a 100,000 advance, someone exactly on 70,000 (no gift —
 strictly above), bar credit deducted, a part month, a 30-day divisor,
 and savings held back. All correct.
+
+
+## Backdating a stay payment; employee ID off the payroll form
+
+PAYMENT DATE: the folio's payment form hardcoded lagosToday(), so a
+guest who checks in one day and pays the next had the payment dated to
+whenever it was keyed in, landing in the wrong day's reception figures.
+There is now a "Date paid" field, defaulting to today and bounded
+between the stay's CHECK-IN DATE and today — a payment cannot predate
+the stay or be dated into the future. Choosing anything but today shows
+a line saying which day's takings it will count towards, since that is
+the consequence people would otherwise miss.
+
+Lower bound uses `checkIn` (folio value, falling back to the board's),
+not room.check_in_date alone, so a reopened stay does not block a valid
+date.
+
+EMPLOYEE ID: removed from the payroll form and the staff list — it is
+not used for anything. The COLUMN stays, so the codes already loaded
+from the Awka sheet remain for cross-referencing the old workbooks.

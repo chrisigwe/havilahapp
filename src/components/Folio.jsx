@@ -19,7 +19,10 @@ export default function Folio({ boot, room, onClose, onChanged }) {
   const toast = useToast()
   const [data, setData] = useState(null)
   const [branchSettings, setBranchSettings] = useState(null)
-  const [pay, setPay] = useState({ amount: '', method: 'pos', split: null })
+  // The payment DATE, not just today: a guest who checks in one day and
+  // pays the next should have the payment dated when it was taken, so the
+  // day's reception figures are right. Defaults to today.
+  const [pay, setPay] = useState({ amount: '', method: 'pos', split: null, date: lagosToday() })
   const [isOverstay, setIsOverstay] = useState(false)
   const [editing, setEditing] = useState(null)   // { dailyRate, billingCycle, scheduledOut, rateReason } while open
   const [billToSuggestions, setBillToSuggestions] = useState([])
@@ -133,11 +136,11 @@ export default function Folio({ boot, room, onClose, onChanged }) {
     setBusy(true)
     try {
       await recordStayPayment({
-        staff, stayId: room.stay_id, businessDate: lagosToday(),
+        staff, stayId: room.stay_id, businessDate: pay.date || lagosToday(),
         cycle: folio?.billing_cycle, parts: payParts, isOverstay,
       })
       toast('Payment recorded', 'success')
-      setPay({ amount: '', method: 'pos', split: null }); setIsOverstay(false)
+      setPay({ amount: '', method: 'pos', split: null, date: lagosToday() }); setIsOverstay(false)
       refresh(); onChanged?.()
     } catch (e) { toast(friendlyStayError(e), 'error') }
     setBusy(false)
@@ -386,6 +389,18 @@ export default function Folio({ boot, room, onClose, onChanged }) {
               <p className="text-dim text-sm mb-2">
                 Checked out on {room.actual_out}. Recording this settles the balance
                 without reopening the stay.
+              </p>
+            )}
+
+            <label className="block text-dim text-sm">Date paid</label>
+            <input type="date" value={pay.date || lagosToday()}
+              min={checkIn || undefined} max={lagosToday()}
+              onChange={e => setPay(p => ({ ...p, date: e.target.value }))}
+              className="mt-1 mb-3 h-12 w-full px-3 rounded-xl bg-raise border border-line tnum" />
+            {pay.date && pay.date !== lagosToday() && (
+              <p className="text-amber text-sm -mt-2 mb-3">
+                Dating this payment {pay.date}. It will count towards that day's
+                takings, not today's.
               </p>
             )}
 

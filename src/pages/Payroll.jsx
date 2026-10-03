@@ -287,7 +287,7 @@ function People({ employees, savings, onEdit, onAdd }) {
       <div className="flex-1 min-w-0">
         <div className="truncate">{e.full_name}</div>
         <div className="text-dim text-sm truncate">
-          {e.role_title}{e.employee_code ? ` · ${e.employee_code}` : ''}
+          {e.role_title}
           {e.ended_on ? ` · left ${e.ended_on}` : ''}
           {!e.customer_id ? ' · no credit account linked' : ''}
         </div>
@@ -387,7 +387,10 @@ function EmployeeSheet({ value, employees, final, onClose, onSaved, toast }) {
         ) : (
           <>
             {txt('full_name', 'Full name')}
-            {txt('employee_code', 'Employee ID')}
+            {/* Employee ID removed from the form at the user's request —
+                it is not used for anything. The column stays in the
+                database, so the codes already loaded from the Awka sheet
+                are kept for cross-referencing the old workbooks. */}
             {txt('role_title', 'Role')}
             <label className="block mt-3 text-dim text-sm">Tier</label>
             <select value={f.tier} onChange={e => set('tier', e.target.value)}
