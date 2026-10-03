@@ -28,7 +28,7 @@ const ITEMS = [
     roles: ['bar', 'front_desk', 'storekeeper', 'manager', 'gm', 'admin', 'auditor'] },
   { key: 'catalog', label: 'Catalog', hint: 'Items, prices and what is active',
     roles: ['gm', 'admin'] },
-  { key: 'payrollstaff', label: 'Payroll staff', hint: 'Salaries, bank details and credit links',
+  { key: 'payroll', label: 'Payroll', hint: 'Staff, monthly run, contributions and savings',
     roles: ['gm', 'admin'] },
   { key: 'variance', label: 'Variances', hint: 'Sales where collection did not match the goods sold',
     roles: ['storekeeper', 'manager', 'gm', 'admin', 'auditor'] },

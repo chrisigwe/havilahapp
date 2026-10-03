@@ -11,7 +11,7 @@ import RoomBoard from './pages/RoomBoard'
 import StaySettings from './pages/StaySettings'
 import { pulseAlert, setAppBadge, unlockAudio } from './lib/alert'
 import Catalog from './pages/Catalog'
-import PayrollStaff from './pages/PayrollStaff'
+import Payroll from './pages/Payroll'
 import Variances from './pages/Variances'
 import Recovery from './pages/Recovery'
 import More from './pages/More'
@@ -258,7 +258,7 @@ export default function App() {
         : tab === 'roomboard' ? <RoomBoard boot={boot} />
         : tab === 'staysettings' ? <StaySettings boot={boot} />
         : tab === 'catalog' ? <Catalog boot={boot} onChanged={refresh} />
-        : tab === 'payrollstaff' ? <PayrollStaff boot={boot} />
+        : tab === 'payroll' ? <Payroll boot={boot} />
         : tab === 'variance' ? <Variances boot={boot} />
         : tab === 'recovery' ? <Recovery boot={boot} />
         : tab === 'credit' ? <Credit boot={boot} />

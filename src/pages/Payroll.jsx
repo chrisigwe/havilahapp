@@ -92,7 +92,7 @@ export default function Payroll({ boot }) {
     Number(payouts.find(p => p.employee_id === employeeId)?.amount || 0)
 
   const totals = (lines || []).reduce((t, l) => {
-    const x = lineTotals(l, payoutFor(l.employee_id))
+    const x = lineTotals(l, payoutFor(l.employee_id), period?.working_days)
     t.salary += Number(l.monthly_salary || 0); t.deductions += x.deductions
     t.contribution += x.contribution; t.savings += x.savings
     t.net += x.net; t.documented += x.documented; t.gift += x.gift
@@ -193,7 +193,7 @@ export default function Payroll({ boot }) {
                       </thead>
                       <tbody>
                         {rows.map(l => {
-                          const x = lineTotals(l, payoutFor(l.employee_id))
+                          const x = lineTotals(l, payoutFor(l.employee_id), period?.working_days)
                           return (
                             <tr key={l.id} onClick={() => !final && setEditEmp({ line: l })}
                               className={final ? '' : 'cursor-pointer'}>

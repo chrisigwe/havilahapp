@@ -4677,3 +4677,31 @@ ones — a negative can never become a deduction on a payslip.
 Caught: the menu entry failed to write when the route script errored
 midway, leaving the screen unreachable; every menu key is now checked
 against the routes.
+
+
+## Payroll screen — a duplicate found, and three faults fixed
+
+A complete Payroll module (lib/payroll.js + pages/Payroll.jsx, 660
+lines) already existed, written in a response that was lost — the same
+as the earlier 259 draft. It was NEVER ROUTED and not in the menu, so it
+was unreachable, and I had started building a second one. The existing
+one is more complete (employees, periods, lines, deductions, pot,
+savings, print), so it is kept and routed; my PayrollStaff.jsx and the
+duplicate data.js functions are removed, leaving one source of truth.
+
+But it predated the clarifications, and had three faults:
+  1. THE GIFT RULE WAS WRONG. It used salary + payout, citing the GM's
+     350,000 -> 280,000. The right basis is what is ACTUALLY PAID:
+     250,000 - 50,000 paid in + 250,000 received = 450,000, so the gift
+     is 380,000. The sheet understated it by 100,000.
+  2. dailyRate was hardcoded to salary/28, ignoring the month's working
+     days — a 30-day month would have overpaid everyone slightly.
+  3. finalisePeriod did NOT clear the credit it deducted, so the agreed
+     behaviour was missing: the same money would sit owing in two
+     places. It now writes repayments with method 'payroll' (276), so
+     the debt clears WITHOUT counting as cash taken.
+
+VERIFIED with the real lineTotals across seven cases: the GM's pot month,
+Martins with a 100,000 advance, someone exactly on 70,000 (no gift —
+strictly above), bar credit deducted, a part month, a 30-day divisor,
+and savings held back. All correct.

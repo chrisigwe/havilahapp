@@ -117,11 +117,46 @@ export async function proposeCreditDeductions(branchId, lines) {
   return out
 }
 
+// Finalising freezes the month AND clears the credit it deducted: a
+// deduction settles that debt, so the customer balance must come down or
+// the same money sits owing in two places.
+//
+// Written with method 'payroll' (migration 276) so it NEVER counts as
+// cash taken — otherwise the day's "Debt recovered" and "Total income"
+// would include wages deducted, and whoever cashed up would be chasing
+// money that never arrived.
 export async function finalisePeriod(periodId, staffId) {
-  const { error } = await supabase.from('payroll_period')
+  const { data: period } = await supabase.from('payroll_period')
+    .select('id, branch_id, year, month, status').eq('id', periodId).single()
+  if (period?.status === 'final') throw new Error('That month is already finalised.')
+
+  const { data: lines } = await supabase.from('payroll_line')
+    .select('id, full_name, payroll_deduction(source, amount, location_id, customer_id)')
+    .eq('period_id', periodId)
+
+  const lastDay = new Date(period.year, period.month, 0).toISOString().slice(0, 10)
+  const repayments = []
+  for (const l of (lines || [])) {
+    for (const d of (l.payroll_deduction || [])) {
+      if (d.source !== 'credit' || !d.customer_id) continue
+      repayments.push({
+        branch_id: period.branch_id, customer_id: d.customer_id,
+        location_id: d.location_id, amount: d.amount, method: 'payroll',
+        paid_on: lastDay, note: `Deducted from ${l.full_name}'s salary`,
+        recorded_by: staffId, credit_staff_id: staffId,
+      })
+    }
+  }
+  if (repayments.length) {
+    const { error } = await supabase.from('credit_repayments').insert(repayments)
+    if (error) throw error
+  }
+
+  const { error: e2 } = await supabase.from('payroll_period')
     .update({ status: 'final', finalised_by: staffId, finalised_at: new Date().toISOString() })
     .eq('id', periodId)
-  if (error) throw error
+  if (e2) throw e2
+  return repayments.length
 }
 
 export async function reopenPeriod(periodId) {
@@ -178,24 +213,34 @@ export async function savingsBalances(branchId) {
 // Nnewi's sheet is the consistent one, so its formula is the model.
 // Awka's "Amount Receivable" column reads 0 for everyone — confirmed a
 // broken formula, and deliberately not reproduced.
-export function lineTotals(line, payoutAmount = 0) {
+export function lineTotals(line, payoutAmount = 0, workingDays = 28) {
   const salary = Number(line.monthly_salary || 0)
   const days = Number(line.days_worked || 0)
-  const dailyRate = salary / 28
+  // Divide by the MONTH's working days, not a fixed 28: a 30-day month
+  // paid on a 28-day divisor overpays everyone slightly.
+  const wd = Number(workingDays) || 28
+  const dailyRate = wd > 0 ? salary / wd : 0
   const earned = Math.round(dailyRate * days * 100) / 100
   const deductions = (line.payroll_deduction || []).reduce((t, d) => t + Number(d.amount), 0)
   const additions = Number(line.additions || 0)
   const contribution = Number(line.contribution || 0)   // paid INTO the pot
   const savings = Number(line.savings || 0)             // held back for themselves
-  const net = earned - deductions + additions - contribution - savings
+  const pot = Number(payoutAmount || 0)                 // taken OUT of the pot
 
-  // Over-70,000 rule, on salary plus what the pot PAID OUT to them this
-  // month (confirmed: the GM's 250,000 + 100,000 = 350,000 -> 70,000
-  // documented, 280,000 gift).
-  const gross = salary + Number(payoutAmount || 0)
-  const documented = Math.min(gross, 70000)
-  const gift = Math.max(0, gross - 70000)
+  // What actually reaches them this month, pot included.
+  const net = earned - deductions + additions - contribution - savings + pot
 
-  return { dailyRate, earned, deductions, additions, contribution, savings, net,
-           gross, documented, gift }
+  // Over-70,000 rule, on what they are ACTUALLY PAID — STRICTLY above,
+  // so someone on exactly 70,000 is unaffected.
+  //
+  // Corrected from an earlier reading that used salary + payout. For the
+  // GM in September that gave 350,000 and a gift of 280,000; the right
+  // basis is 250,000 - 50,000 paid in + 250,000 received = 450,000, so
+  // the gift is 380,000. September's sheet understated it by 100,000.
+  const over = net > 70000
+  const documented = over ? 70000 : net
+  const gift = over ? net - 70000 : 0
+
+  return { dailyRate, earned, deductions, additions, contribution, savings,
+           pot, net, gross: net, documented, gift, overThreshold: over }
 }
