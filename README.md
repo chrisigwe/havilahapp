@@ -4763,3 +4763,22 @@ check would silently never run.
 Daily Sales shows the GM a count of possible duplicates. The finder
 already existed on Corrections but nobody went looking — which is how
 "General manager" came back months after the first merge.
+
+
+## Fix: backdating a room charge bounced back to today
+
+Both save paths in RoomChargeSheet hardcoded `businessDate:
+lagosToday()`, so a date chosen for an ordinary charge was DISCARDED on
+save — which is what looked like the field bouncing back. The date input
+also lived inside the PR/Damage block, so for a normal charge it was
+never shown at all.
+
+Now ONE date for the whole sheet, in the header where it plainly applies
+to everything, and all three save paths (catalogue pick, typed charge,
+PR/damage) use it. Extended to 7 DAYS back as asked, never the future,
+so a charge missed over a weekend can still land on the right day.
+Choosing anything but today shows which day it will appear in.
+
+Checked that orders.business_date has no validation trigger, so a
+backdated charge genuinely saves rather than being offered and then
+refused.

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { naira, lagosToday, orderableLocations } from '../lib/format'
+import { lagosDaysAgo, lagosToday, naira, orderableLocations } from '../lib/format'
 import { searchLiveStays, chargeItemToRoom, chargeWriteoffToRoom } from '../lib/data'
 import RoomItemPicker from './RoomItemPicker'
 
@@ -38,6 +38,12 @@ export default function RoomChargeSheet({ boot, stockMap, onClose, toast }) {
     }) || null
   })()
   const [busy, setBusy] = useState(false)
+  // One date for every charge made from this sheet. It used to live
+  // inside the PR/Damage block only, and BOTH save paths hardcoded
+  // lagosToday() — so a date picked for an ordinary charge was thrown
+  // away on save, which is why it appeared to bounce back to today.
+  // Up to 7 days back, never the future.
+  const [chargeDate, setChargeDate] = useState(lagosToday())
 
   useEffect(() => {
     if (stay) return
@@ -54,7 +60,7 @@ export default function RoomChargeSheet({ boot, stockMap, onClose, toast }) {
       await chargeItemToRoom({
         staff, stayId: stay.id, item: pending.item,
         locationId: pending.loc.id, locationName: pending.loc.name,
-        qty: pending.qty, unitPrice: pending.unitPrice, businessDate: lagosToday(),
+        qty: pending.qty, unitPrice: pending.unitPrice, businessDate: chargeDate,
       })
       setCharged(c => [{ ...pending, at: Date.now() }, ...c])
       setPending(null)
@@ -75,12 +81,12 @@ export default function RoomChargeSheet({ boot, stockMap, onClose, toast }) {
       if (typing.orderType !== 'pr_damage') {
         await chargeItemToRoom({
           staff, stayId: stay.id, description: desc,
-          qty, unitPrice, businessDate: lagosToday(),
+          qty, unitPrice, businessDate: chargeDate,
           orderType: typing.orderType, writeoffNote: typing.writeoffNote,
         })
       } else {
         await chargeWriteoffToRoom({
-          staff, stayId: stay.id, description: desc, qty, unitPrice, businessDate: typing.date || lagosToday(),
+          staff, stayId: stay.id, description: desc, qty, unitPrice, businessDate: chargeDate,
           orderType: typing.orderType, damageReason: typing.damageReason, writeoffNote: typing.writeoffNote,
           prMeal: typing.prMeal,
         })
@@ -132,6 +138,21 @@ export default function RoomChargeSheet({ boot, stockMap, onClose, toast }) {
             <p className="text-dim mt-1">{stay.guests?.full_name}</p>
             <button onClick={() => { setStay(null); setCharged([]) }}
               className="text-dim text-sm underline mt-1">Change guest</button>
+
+            {/* Applies to every charge made here, catalogue or typed.
+                7 days back, so a charge missed over a weekend can still
+                be put on the right day. */}
+            <label className="block text-dim text-sm mt-4">Date of charge</label>
+            <input type="date" value={chargeDate}
+              min={lagosDaysAgo(7)} max={lagosToday()}
+              onChange={e => setChargeDate(e.target.value || lagosToday())}
+              className="mt-1 h-12 w-full px-3 rounded-xl bg-raise border border-line tnum" />
+            {chargeDate !== lagosToday() && (
+              <p className="text-amber text-sm mt-1">
+                Charging to {chargeDate}, not today. It will appear in that day's
+                figures and on the guest's bill for that date.
+              </p>
+            )}
 
             <button onClick={() => setPicking(true)}
               className="mt-6 w-full h-14 rounded-2xl border-2 border-amber text-amber text-lg font-bold">
@@ -233,9 +254,6 @@ export default function RoomChargeSheet({ boot, stockMap, onClose, toast }) {
                         <option value="dinner">Dinner</option>
                       </select>
                     )}
-                    <input type="date" value={typing.date || lagosToday()} max={lagosToday()}
-                      onChange={e => setTyping(t => ({ ...t, date: e.target.value }))}
-                      className="h-11 px-3 mb-2 rounded-xl bg-raise border border-line tnum" />
                     <input value={typing.writeoffNote}
                       onChange={e => setTyping(t => ({ ...t, writeoffNote: e.target.value }))}
                       placeholder="Who approved this / note"
