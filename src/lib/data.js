@@ -2002,3 +2002,80 @@ export async function loadBalancesAsAt(branchId, asAt, locationId) {
   if (error) throw error
   return data || []
 }
+
+// ---------- Payroll (GM/admin only; RLS enforces it regardless) ----------
+
+export async function loadPayrollEmployees(branchId, { includeLeavers = false } = {}) {
+  let q = supabase.from('payroll_employee')
+    .select(`id, employee_code, full_name, sex, role_title, tier, monthly_salary,
+             bank_name, bank_account, customer_id, started_on, ended_on, note,
+             customers(name)`)
+    .eq('branch_id', branchId)
+  if (!includeLeavers) q = q.is('ended_on', null)
+  const { data, error } = await q.order('tier').order('monthly_salary', { ascending: false })
+  if (error) throw error
+  return (data || []).map(e => ({ ...e, customerName: e.customers?.name || null }))
+}
+
+export async function savePayrollEmployee(branchId, emp) {
+  const row = {
+    branch_id: branchId,
+    employee_code: emp.employee_code || null,
+    full_name: emp.full_name?.trim(),
+    sex: emp.sex || null,
+    role_title: emp.role_title || null,
+    tier: emp.tier || 'junior',
+    monthly_salary: Number(emp.monthly_salary) || 0,
+    bank_name: emp.bank_name || null,
+    bank_account: emp.bank_account || null,
+    customer_id: emp.customer_id || null,
+    started_on: emp.started_on || null,
+    ended_on: emp.ended_on || null,
+    note: emp.note || null,
+  }
+  if (!row.full_name) throw new Error('A name is required.')
+  const { error } = emp.id
+    ? await supabase.from('payroll_employee').update(row).eq('id', emp.id)
+    : await supabase.from('payroll_employee').insert(row)
+  if (error) throw error
+}
+
+// Leavers are DATED, never deleted: past months must keep their people.
+export async function endPayrollEmployee(id, endedOn) {
+  const { error } = await supabase.from('payroll_employee')
+    .update({ ended_on: endedOn }).eq('id', id)
+  if (error) throw error
+}
+
+// Customers an employee could be linked to, for the credit pull. Staff
+// credit is recorded under names like "Chioma (staff)" / "Kelvin  Staff"
+// — the spelling is inconsistent, which is exactly why the link is
+// chosen once and stored rather than matched on the name every time.
+export async function loadLinkableCustomers(branchId) {
+  const { data, error } = await supabase.from('customers')
+    .select('id, name, phone')
+    .eq('branch_id', branchId).eq('is_active', true)
+    .order('name')
+  if (error) throw error
+  return data || []
+}
+
+// What a linked employee currently owes, by department — the basis for
+// the month's credit deductions.
+export async function loadStaffCreditOwing(branchId) {
+  const { data, error } = await supabase.from('v_customer_balances_by_staff')
+    .select('customer_id, location_id, balance')
+    .eq('branch_id', branchId)
+  if (error) throw error
+  const by = {}
+  for (const r of (data || [])) {
+    const bal = Number(r.balance || 0)
+    // Only positive balances: an overpaid account must never become a
+    // negative deduction on a payslip.
+    if (bal <= 0.009) continue
+    const e = by[r.customer_id] || (by[r.customer_id] = { total: 0, byLocation: {} })
+    e.total += bal
+    e.byLocation[r.location_id] = (e.byLocation[r.location_id] || 0) + bal
+  }
+  return by
+}

@@ -4625,3 +4625,55 @@ Per-item payment tracking would mean allocating every payment across
 individual charges — a much larger change, and not how a hotel folio
 normally works. Not built; flagged for the user to ask for if the
 accounting genuinely needs it.
+
+
+## Payroll module — database and staff setup (274-278)
+
+Replaces the two monthly workbooks for GM/admin only. The workbooks are
+NOT the same shape (Awka has Contribution + Gift + a PAYE block, Nnewi
+has Savings), and the two concepts turned out to be different things:
+  CONTRIBUTION  management pool, one member takes the pot each month
+  SAVINGS       an individual holding back their own salary, repaid to
+                THEM later
+So they are separate tables, not one column with two names.
+
+274  six tables. payroll_line COPIES salary/role/bank at the time, so a
+     finalised month cannot shift when someone is edited later.
+     payroll_deduction is ITEMISED, which the single "Deductions"
+     column could not be. All GM/admin only via is_supervisor().
+275b pot cycles with an ordered membership (Martins, Chioma,
+     Chimdiebube, Chukwudi, GM) and payroll_pot_next(). Each cycle keeps
+     its OWN list, so September still shows its five after October's
+     differ. ("position" is a reserved word — renamed turn_no.)
+276  'payroll' payment method. Payroll deductions clear the staff
+     member's credit as agreed, but a repayment feeds BOTH debtRecovered
+     and totalMoneyIn — so finalising a month would have reported the
+     whole deducted sum as money taken when no cash arrived.
+     get_daily_financials now excludes method 'payroll' from both and
+     reports debtClearedByPayroll separately. Not added to
+     branch_payment_methods, so it never appears at the till.
+277  36 employees loaded from the September sheets (18 per branch).
+278  OFFORDILE was ONE row at 100,000; it is TWO positions at 50,000
+     each that he covered. Corrected — at 100,000 the over-70,000 gift
+     rule would wrongly have applied to him.
+
+RULES CONFIRMED: gift applies STRICTLY ABOVE 70,000, to any tier, on
+what the person is actually paid that month (salary - contribution paid
++ pot received - deductions - savings). Four people sit exactly on
+70,000 and are unaffected. September's sheet understated the GM's gift
+by 100,000 (it used 350,000 instead of 450,000); nothing was filed, so
+it is entered correctly rather than carried over.
+
+APP so far: PayrollStaff screen (More -> Payroll staff, gm/admin).
+Employees by tier with salary, bank details and leaver dates, and the
+CREDIT LINK — staff credit exists under inconsistent names ("Chioma
+(staff)", "Kelvin  Staff", "Chidera/staff"), so the customer is chosen
+ONCE per employee and stored rather than matched by name each month.
+Each row shows what that link would pull, by department.
+
+VERIFIED: the credit pull excludes overpaid accounts entirely (Ikenna
+is at -600) and drops an overpaid department while keeping positive
+ones — a negative can never become a deduction on a payslip.
+Caught: the menu entry failed to write when the route script errored
+midway, leaving the screen unreachable; every menu key is now checked
+against the routes.
