@@ -4991,3 +4991,44 @@ never what they owe, or it rolls back.
 Caught: the sheet was first written with <Sheet>, which Folio does not
 have — it is local to other files. That would have crashed on opening.
 Rewritten in Folio's own overlay style.
+
+
+## Credit by month, for the staff credit analysis (294)
+
+The Credit page gains a MONTH control beside the day one. A day answers
+"what happened"; a month answers "what do they owe" — which is what the
+monthly analysis before payroll deductions needs.
+
+Four figures per customer, which together make a statement:
+  opening (owed at the end of the previous month), taken, repaid,
+  closing (owed at the end of this month). Staff are listed separately,
+  since they are who the deductions apply to.
+
+The CLOSING balance is everything outstanding, not just the month's own
+activity — normally what gets deducted — and the screen says so rather
+than leaving two numbers to be guessed between.
+
+customer_credit_for_month mirrors v_customer_balances_by_staff exactly,
+as 271 does: credit is the CREDIT PORTION of a sale, and the two sides
+are dated differently (sale by business_date, repayment by paid_on).
+VERIFIED on live data: 25 customers, 0 rows where opening + taken -
+repaid did not equal closing.
+
+Only one view shows at a time — picking a month clears the day and hides
+the balances, so a day's figure can never be read as a month's.
+
+## Verified: room charges are not customer credit (293)
+
+Q1 and Q3 both returned 0 on live data. A room charge is an ORDER on the
+guest's folio; customer credit comes from SALES with a credit payment.
+Different tables, so they never meet — now proved rather than assumed.
+Reception/Minimart CREDIT SALES do belong on the Credit list; that is a
+customer taking goods on credit, a different thing from a room charge.
+
+FOUND WHILE CHECKING, and flagged to the user: 193 Minimart credit sales
+totalling N250,100 have NO CUSTOMER — more than all named Minimart
+credit combined. Money owed by nobody: it cannot appear on the Credit
+list, be chased, or be deducted. Historic, one person recording them,
+and no longer possible since 257 made a customer compulsory for credit.
+Left for the user to decide: assign, write off, or leave. The monthly
+view excludes them, since they belong to no customer.

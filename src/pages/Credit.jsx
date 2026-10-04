@@ -1,10 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useToast } from '../components/Toast'
 import { lagosToday, methodLabel, naira, startingDept, tierLabel } from '../lib/format'
-import { loadBalances, loadCustomerLedger, saveRepayment, loadStaffForLocation,
-         deleteCustomer, deactivateCustomer, loadGuestBalances, recordStayPayment, loadFolio,
-         linkCustomerToGuest, searchSimilarGuests, moveWorkaroundToRoom,
-         loadUnlinkedCustomerBalances, loadCreditOnDate } from '../lib/data'
+import { deactivateCustomer, deleteCustomer, linkCustomerToGuest, loadBalances, loadCreditForMonth, loadCreditOnDate, loadCustomerLedger, loadFolio, loadGuestBalances, loadStaffForLocation, loadUnlinkedCustomerBalances, moveWorkaroundToRoom, recordStayPayment, saveRepayment, searchSimilarGuests } from '../lib/data'
 import { enqueue, flush, isConnectionError } from '../lib/outbox'
 import PaymentMethodPicker, { paymentParts, paymentAllocated } from '../components/PaymentMethodPicker'
 import FolioStatement from '../components/FolioStatement'
@@ -93,6 +90,11 @@ export default function Credit({ boot }) {
   // that day's activity instead; the two answer different
   // questions and showing them together would be confusing.
   const [dayFilter, setDayFilter] = useState('')
+  // A whole month, for the credit analysis that sets payroll
+  // deductions. Separate from the day view: a day answers "what
+  // happened", a month answers "what do they owe".
+  const [monthFilter, setMonthFilter] = useState(null)   // 'YYYY-MM'
+  const [monthRows, setMonthRows] = useState(null)
   const [dayData, setDayData] = useState(null)
   const [linkQuery, setLinkQuery] = useState('')
   const [linkResults, setLinkResults] = useState([])
@@ -164,6 +166,14 @@ export default function Credit({ boot }) {
     loadCreditOnDate(staff.branch_id, dayFilter, locId === 'all' ? null : locId)
       .then(setDayData).catch(e => toast(e.message, 'error'))
   }, [dayFilter, staff.branch_id, locId, toast])
+
+  useEffect(() => {
+    if (!monthFilter) { setMonthRows(null); return }
+    const [y, m] = monthFilter.split('-').map(Number)
+    setMonthRows(null)
+    loadCreditForMonth(staff.branch_id, y, m, locId)
+      .then(setMonthRows).catch(() => setMonthRows([]))
+  }, [monthFilter, locId, staff.branch_id])
 
   async function confirmLink(guest) {
     setLinkBusy(true)
@@ -319,7 +329,7 @@ export default function Credit({ boot }) {
           who took credit that day and what came back. */}
       <div className="flex items-center gap-2 py-2">
         <input type="date" value={dayFilter} max={lagosToday()}
-          onChange={e => setDayFilter(e.target.value)}
+          onChange={e => { setDayFilter(e.target.value); if (e.target.value) setMonthFilter(null) }}
           className="h-11 px-3 rounded-xl bg-surface border border-line tnum" />
         {dayFilter
           ? <button onClick={() => setDayFilter('')}
@@ -329,7 +339,79 @@ export default function Credit({ boot }) {
           : <span className="text-dim text-sm">Pick a date for that day's credit</span>}
       </div>
 
-      {dayFilter ? (
+      {/* A MONTH, for the credit analysis before payroll deductions. The
+          day view answers "what happened"; this answers "what do they
+          owe". Only one at a time — showing both would invite reading a
+          day's figure as a month's. */}
+      <div className="flex items-center gap-2 pb-2">
+        <input type="month" value={monthFilter || ''} max={lagosToday().slice(0, 7)}
+          onChange={e => { setMonthFilter(e.target.value || null); if (e.target.value) setDayFilter('') }}
+          className="h-11 px-3 rounded-xl bg-surface border border-line tnum" />
+        {monthFilter
+          ? <button onClick={() => setMonthFilter(null)}
+              className="h-11 px-3 rounded-xl border border-amber text-amber text-sm font-semibold">
+              Back to balances
+            </button>
+          : <span className="text-dim text-sm">Or a whole month, for deductions</span>}
+      </div>
+
+      {monthFilter && (() => {
+        if (monthRows === null) return <p className="text-dim py-8 text-center">Loading…</p>
+        if (!monthRows.length) {
+          return <p className="text-dim py-8 text-center">No credit activity that month.</p>
+        }
+        const staffRows = monthRows.filter(r => r.is_staff)
+        const otherRows = monthRows.filter(r => !r.is_staff)
+        const sum = (rows, k) => rows.reduce((t, r) => t + Number(r[k] || 0), 0)
+
+        const section = (title, rows, note) => !!rows.length && (
+          <section className="mt-4">
+            <div className="flex items-baseline justify-between pb-1 border-b border-line">
+              <h2 className="font-semibold">{title}</h2>
+              <span className="tnum font-bold text-clay">{naira(sum(rows, 'closing'))}</span>
+            </div>
+            {note && <p className="text-dim text-xs mt-1">{note}</p>}
+            {rows.map(r => (
+              <div key={r.customer_id} className="py-2 border-b border-line/60">
+                <div className="flex items-baseline justify-between gap-2">
+                  <span className="truncate">{r.name}</span>
+                  <span className={`tnum font-bold shrink-0 ${
+                    Number(r.closing) > 0.009 ? 'text-clay' : 'text-leaf'}`}>
+                    {Number(r.closing) > 0.009 ? naira(r.closing) : 'settled'}
+                  </span>
+                </div>
+                <div className="text-dim text-xs">
+                  owed {naira(r.opening)} at the start
+                  {' · '}took {naira(r.taken)}
+                  {' · '}repaid {naira(r.repaid)}
+                </div>
+              </div>
+            ))}
+          </section>
+        )
+
+        return (
+          <>
+            <div className="rounded-2xl border border-amber bg-surface p-4 my-2">
+              <div className="text-dim text-sm">Owed at the end of {monthFilter}</div>
+              <div className="tnum text-2xl font-bold text-clay">
+                {naira(sum(monthRows, 'closing'))}
+              </div>
+              <div className="text-dim text-sm mt-1">
+                took {naira(sum(monthRows, 'taken'))} · repaid {naira(sum(monthRows, 'repaid'))}
+                {' '}during the month
+              </div>
+            </div>
+
+            {section('Staff', staffRows,
+              'The closing figure is what each owes in total, not just this month — '
+              + 'that is normally what gets deducted.')}
+            {section('Everyone else', otherRows)}
+          </>
+        )
+      })()}
+
+      {monthFilter ? null : dayFilter ? (
         <>
           {/* Credit raised and repayments received are SEPARATE
               sections with separate totals. They were one list with
@@ -466,12 +548,12 @@ export default function Credit({ boot }) {
           departments, where they belong; under any other department a
           one-line pointer keeps them findable without pretending they
           belong there. */}
-      {!dayFilter && hasReceptionAccess && !isReception && locId !== 'all' && (
+      {!dayFilter && !monthFilter && hasReceptionAccess && !isReception && locId !== 'all' && (
         <p className="text-dim text-sm py-3">
           Guest room balances are under Reception.
         </p>
       )}
-      {!dayFilter && hasReceptionAccess && (isReception || locId === 'all') && (() => {
+      {!dayFilter && !monthFilter && hasReceptionAccess && (isReception || locId === 'all') && (() => {
         const gb = guestBalances || []
         // Must match what each ROW below displays and what
         // loadReceptionDashboard's deferredTotal uses. Summing only

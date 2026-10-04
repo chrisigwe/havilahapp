@@ -2090,3 +2090,18 @@ export async function moveRoomChargeDate(orderItemId, newDate) {
   })
   if (error) throw error
 }
+
+// A month's credit per customer: what they owed at the start, took,
+// repaid, and owe at the end (migration 294). This is the monthly staff
+// credit analysis that sets payroll deductions.
+//
+// Room charges cannot appear here — they are orders on a folio, never
+// sales with a credit payment (verified in 293).
+export async function loadCreditForMonth(branchId, year, month, locationId) {
+  const { data, error } = await supabase.rpc('customer_credit_for_month', {
+    p_branch: branchId, p_year: year, p_month: month,
+    p_location: locationId && locationId !== 'all' ? locationId : null,
+  })
+  if (error) throw error
+  return data || []
+}
