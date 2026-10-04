@@ -5096,3 +5096,23 @@ money. Verified across 6 cases.
 loadRecovery filters out method 'writeoff'. Payroll deductions DO stay
 on that page — that money is genuinely recovered, just from wages
 rather than a till.
+
+
+## The credit link had no picker at all
+
+The user could not find how to link an employee to their credit account
+— because there was NO WAY TO. The employee form saved customer_id and
+the list said "no credit account linked", but the form never offered a
+control to choose one, so it was always empty. The credit pull that the
+whole payroll deduction rests on therefore had nothing to work with.
+
+Not something removed: it was never there. When the AKA field was added
+I built the save path around a field the form did not have.
+
+Added: a customer picker on the employee form, fed by
+loadCustomersForLinking (the branch's active customers), with branchId
+passed into EmployeeSheet.
+
+ALSO FIXED while checking: the link was saved with f.id, which is
+undefined for a NEW employee — so linking anyone on creation would have
+silently done nothing. It now uses the id returned by saveEmployee.

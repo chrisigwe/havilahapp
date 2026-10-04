@@ -259,3 +259,16 @@ export async function setEmployeeCreditAccount(employeeId, customerId, aka) {
   })
   if (error) throw error
 }
+
+// Customers this employee's credit could sit under. Staff credit is
+// recorded as ordinary customer accounts ("Chioma (staff)"), so this is
+// simply the branch's active customers, newest activity aside — the GM
+// picks the right one once and it is stored.
+export async function loadCustomersForLinking(branchId) {
+  const { data, error } = await supabase.from('customers')
+    .select('id, name')
+    .eq('branch_id', branchId).eq('is_active', true)
+    .order('name')
+  if (error) throw error
+  return data || []
+}

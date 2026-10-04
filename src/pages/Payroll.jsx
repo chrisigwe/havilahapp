@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { naira, lagosToday } from '../lib/format'
 import { useToast } from '../components/Toast'
 import {
-  addDeduction, endEmployment, finalisePeriod, lineTotals, loadEmployees, loadLines, loadPayouts, loadPeriod, loadPotNext, openPeriod, proposeCreditDeductions, removeDeduction, reopenPeriod, saveEmployee, savePayout, savingsBalances, setEmployeeCreditAccount, updateLine,
+  addDeduction, endEmployment, finalisePeriod, lineTotals, loadCustomersForLinking, loadEmployees, loadLines, loadPayouts, loadPeriod, loadPotNext, openPeriod, proposeCreditDeductions, removeDeduction, reopenPeriod, saveEmployee, savePayout, savingsBalances, setEmployeeCreditAccount, updateLine,
 } from '../lib/payroll'
 
 const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June',
@@ -266,6 +266,7 @@ export default function Payroll({ boot }) {
 
       {editEmp && (
         <EmployeeSheet value={editEmp} employees={employees} final={final}
+          branchId={staff.branch_id}
           onClose={() => setEditEmp(null)}
           onSaved={async () => { setEditEmp(null); await refresh() }}
           toast={toast} />
@@ -315,7 +316,16 @@ function People({ employees, savings, onEdit, onAdd }) {
   )
 }
 
-function EmployeeSheet({ value, employees, final, onClose, onSaved, toast }) {
+function EmployeeSheet({ value, employees, final, onClose, onSaved, toast, branchId }) {
+  // The form saved customer_id but never offered a way to CHOOSE one, so
+  // no employee could ever be linked and the credit pull had nothing to
+  // work with. This is that missing picker.
+  const [customers, setCustomers] = useState([])
+  useEffect(() => {
+    if (!branchId) return
+    loadCustomersForLinking(branchId).then(setCustomers).catch(() => setCustomers([]))
+  }, [branchId])
+
   const isLine = !!value.line
   const [f, setF] = useState(isLine ? { ...value.line } : { ...value })
   const [busy, setBusy] = useState(false)
@@ -335,11 +345,13 @@ function EmployeeSheet({ value, employees, final, onClose, onSaved, toast }) {
       } else {
         // Everything except the credit link, which is saved separately
         // because linking also RENAMES the credit account to the AKA.
-        await saveEmployee({
+        const saved = await saveEmployee({
           ...f, monthly_salary: Number(f.monthly_salary) || 0,
           customer_id: undefined, staff_id: f.staff_id || null,
         })
-        await setEmployeeCreditAccount(f.id, f.customer_id || null, f.aka || null)
+        // Use the id from the SAVE, not f.id: a new employee has no id
+        // yet when this runs, so linking them would silently do nothing.
+        await setEmployeeCreditAccount(saved?.id || f.id, f.customer_id || null, f.aka || null)
       }
       onSaved()
     } catch (e) { toast(e.message, 'error') }
@@ -387,6 +399,22 @@ function EmployeeSheet({ value, employees, final, onClose, onSaved, toast }) {
           <>
             {txt('full_name', 'Full name')}
             {txt('aka', 'Known as (for their credit account)')}
+            <label className="block mt-3 text-dim text-sm">
+              Credit account (bar, minimart, restaurant)
+            </label>
+            <select value={f.customer_id || ''}
+              onChange={e => set('customer_id', e.target.value || null)}
+              className="h-12 w-full px-3 rounded-xl bg-surface border border-line">
+              <option value="">Not linked</option>
+              {customers.map(c => (
+                <option key={c.id} value={c.id}>{c.name}</option>
+              ))}
+            </select>
+            <p className="text-dim text-xs mt-1">
+              Links this person to the account their department credit is recorded
+              under, so it can be deducted from their pay. Most staff have none.
+            </p>
+
             {f.aka && f.customer_id && (
               <p className="text-amber text-sm -mt-2 mb-2">
                 Saving will rename their credit account to "{f.aka}".
