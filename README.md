@@ -5054,3 +5054,22 @@ The component previously rendered only when there were PR/damage
 figures, so a write-off with no PR that day would have shown nothing —
 exactly today's case. VERIFIED across 7 combinations: it appears when
 there is anything to report and stays hidden when there is not.
+
+
+## Crash fix: "Can't find variable: movingCharge"
+
+The move-charge sheet (292) was inserted AFTER Folio's closing brace, so
+it landed inside the tiny `Row` helper below it — which has no
+movingCharge. Row renders on every folio, so the Nnewi front desk hit
+the crash immediately on opening a guest.
+
+The build does not catch this: the file parses fine, and the reference
+is only resolved when Row renders. Moved back inside Folio, and checked
+that every movingCharge reference now sits in the component that
+declares it.
+
+Swept every file for the same class of fault — state used outside the
+component that owns it. The other 9 hits are PROPS with matching names
+(People({ employees, savings }), Allocation({ paying })), which is
+ordinary React; a text scan cannot tell them apart, so each was checked
+by hand. Only the Folio one was real.

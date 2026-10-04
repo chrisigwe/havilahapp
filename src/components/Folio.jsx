@@ -735,15 +735,7 @@ export default function Folio({ boot, room, onClose, onChanged }) {
           <button onClick={() => setDeletingLine(null)} className="mt-3 w-full h-12 text-dim">Cancel</button>
         </div>
       )}
-    </div>
-  )
-}
 
-function Row({ label, value }) {
-  return (
-    <div className="flex items-baseline justify-between py-1">
-      <span className="text-dim">{label}</span>
-      <span className="tnum">{naira(value)}</span>
     {/* Folio has no Sheet helper of its own — this matches the
         full-screen overlay its other panels use. */}
     {movingCharge && (
@@ -781,6 +773,15 @@ function Row({ label, value }) {
         </div>
       </div>
     )}
+    </div>
+  )
+}
+
+function Row({ label, value }) {
+  return (
+    <div className="flex items-baseline justify-between py-1">
+      <span className="text-dim">{label}</span>
+      <span className="tnum">{naira(value)}</span>
 
     </div>
   )
