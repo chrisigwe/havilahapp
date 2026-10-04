@@ -5073,3 +5073,26 @@ component that owns it. The other 9 hits are PROPS with matching names
 (People({ employees, savings }), Allocation({ paying })), which is
 ordinary React; a text scan cannot tell them apart, so each was checked
 by hand. Only the Folio one was real.
+
+
+## Write-off hidden from the Credit page (300)
+
+It was already an INACTIVE customer with a zero balance, so it never
+appeared in the balances list. But two places would still have shown it:
+
+  MONTHLY VIEW — it includes anyone with activity in the month, and the
+    write-off itself is activity, so October read "Written off —
+    unassigned Minimart credit, repaid N250,100". True, but not what
+    that screen is for.
+  RECOVERED DEBT — worse: it would have read as N250,100 RECOVERED, the
+    opposite of what happened. Nothing was collected.
+
+customer_credit_for_month now leaves out inactive customers whose
+closing balance is ZERO — the write-off and merged records alike. An
+inactive customer who STILL OWES stays visible: a debt does not stop
+existing because the account was closed, and hiding it would lose real
+money. Verified across 6 cases.
+
+loadRecovery filters out method 'writeoff'. Payroll deductions DO stay
+on that page — that money is genuinely recovered, just from wages
+rather than a till.
