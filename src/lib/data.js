@@ -2033,3 +2033,45 @@ export async function findSimilarCustomers(branchId, name) {
   if (error) return []        // never block a sale on the warning failing
   return data || []
 }
+
+// ---------- Staff accounts (GM/admin) ----------
+
+// Active staff at this branch, with their login email and when it was
+// last used — enough to see whether an account is still in use before
+// handing it to someone else.
+export async function loadStaffAccounts(branchId) {
+  const { data, error } = await supabase.from('staff')
+    .select('id, full_name, role, is_active, note')
+    .eq('branch_id', branchId).eq('is_active', true)
+    .order('role').order('full_name')
+  if (error) throw error
+  return data || []
+}
+
+// Hand an account to someone else: new password, and a dated note of who
+// holds it now. Runs on the server (reset-staff-password), because
+// changing another person's password needs a key that must never be in
+// a phone app.
+export async function resetStaffPassword(staffId, newPassword, newHolderName) {
+  const { data: { session } } = await supabase.auth.getSession()
+  if (!session) throw new Error('Not signed in')
+
+  const res = await fetch(
+    `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/reset-staff-password`,
+    { method: 'POST',
+      headers: { 'Content-Type': 'application/json',
+                 Authorization: `Bearer ${session.access_token}` },
+      body: JSON.stringify({ staffId, newPassword, newHolderName }) })
+  const out = await res.json().catch(() => ({ ok: false, error: 'No response from the server' }))
+  if (!out.ok) throw new Error(out.error || 'Could not reset the password')
+  return out
+}
+
+// A leaver on a PERSONAL login is deactivated, not reset: sign-in
+// requires is_active, so this locks them out immediately whatever their
+// password is, and every database rule checks it too.
+export async function deactivateStaff(staffId) {
+  const { error } = await supabase.from('staff')
+    .update({ is_active: false }).eq('id', staffId)
+  if (error) throw error
+}

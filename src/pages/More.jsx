@@ -31,6 +31,8 @@ const ITEMS = [
     roles: ['gm', 'admin'] },
   { key: 'payroll', label: 'Payroll', hint: 'Staff, monthly run, contributions and savings',
     roles: ['gm', 'admin'] },
+  { key: 'staffaccounts', label: 'Staff accounts', hint: 'Hand over a login, or switch one off',
+    roles: ['gm', 'admin'] },
   { key: 'variance', label: 'Variances', hint: 'Sales where collection did not match the goods sold',
     roles: ['storekeeper', 'manager', 'gm', 'admin', 'auditor'] },
   { key: 'fix',     label: 'Corrections', hint: 'Fix a mistake from today or yesterday',

@@ -4890,3 +4890,40 @@ rendered and checked for ink coverage.
 VERIFIED the way the page actually works (More hides anything on the
 bar): nothing appears twice, nobody lost a screen, and every tab on
 every bar has both icons.
+
+
+## Staff accounts: handover vs switching off (287 + reset-staff-password)
+
+CHECKED FIRST, and it changed the build: all 22 logins are linked by the
+STAFF ROW'S OWN ID — auth_user_id is empty for every one, the GM's
+included. The function as first written resolved logins through
+auth_user_id and would have failed for everybody. It now resolves the
+same way sign-in does.
+
+The emails also showed most accounts are already PERSONAL
+(chidera.mainbar@, kate.frontdesk@). Only the kitchen, store, manager
+and auditor logins are named for a job.
+
+Two situations, opposite actions, and the screen says so:
+  PERSONAL login, person leaves -> SWITCH OFF. Sign-in requires
+    is_active, so they are locked out immediately whatever the password
+    is, and every database rule checks it too. Stronger than a password
+    change, which can be changed back.
+  ROLE login, someone takes over -> CHANGE THE PASSWORD. Switching it
+    off would lock out the next holder.
+
+reset-staff-password runs on the server because changing another
+person's password needs the service-role key, which must never be in a
+phone app — anyone extracting it could reset ANY account. It verifies
+the CALLER's own token and refuses unless they are an active gm/admin,
+so a stolen build gets nobody anywhere without a GM's login. It also
+refuses to reset a gm/admin account, so one supervisor cannot lock
+another out; those stay in the Supabase dashboard. The screen hides
+gm/admin too, but the rule does not depend on the screen.
+
+HANDOVER NOTE (287, staff.note): History and every "recorded by" names
+the ACCOUNT, not the person. Once two chefs have held chef.awka@, an
+entry saying "Chef" could be either. The dated note — "3 Oct: handed
+over to Grace Nwosu (by GM)" — is what lets an old entry be read back to
+whoever actually made it. Reconstruction, not attribution: a personal
+login per person is still stronger for any role that can change records.

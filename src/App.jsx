@@ -12,6 +12,7 @@ import StaySettings from './pages/StaySettings'
 import { pulseAlert, setAppBadge, unlockAudio } from './lib/alert'
 import Catalog from './pages/Catalog'
 import Payroll from './pages/Payroll'
+import StaffAccounts from './pages/StaffAccounts'
 import Variances from './pages/Variances'
 import Recovery from './pages/Recovery'
 import More from './pages/More'
@@ -259,6 +260,7 @@ export default function App() {
         : tab === 'staysettings' ? <StaySettings boot={boot} />
         : tab === 'catalog' ? <Catalog boot={boot} onChanged={refresh} />
         : tab === 'payroll' ? <Payroll boot={boot} />
+        : tab === 'staffaccounts' ? <StaffAccounts boot={boot} />
         : tab === 'variance' ? <Variances boot={boot} />
         : tab === 'recovery' ? <Recovery boot={boot} />
         : tab === 'credit' ? <Credit boot={boot} />
