@@ -4964,3 +4964,30 @@ receipt — it was not a paid sale", as information.
 CORRECTIONS: restaurant staff (role 'bar') ALREADY have More ->
 Corrections and can fix their own entries from today and yesterday,
 payment type included. Nothing was needed; they need showing where it is.
+
+
+## GM can correct a room charge's date (migration 292)
+
+A room charge could be DATED when created (7 days back) but never
+corrected afterwards — Corrections covers sales and stock movements, not
+room charges. So every mistake needed hand-written SQL, as 291 did for
+Room 206. The restaurant charges meals to rooms daily, so it would have
+kept recurring.
+
+On the folio, each charge's date is now a button for gm/admin: tap it,
+pick the right day, done.
+
+THE AWKWARD PART, handled rather than papered over: business_date lives
+on the ORDER, not the item, and a guest's drinks and meal often share
+one order. Moving the order would move charges nobody asked to move. So
+when the order holds more than one item, the function moves THAT ITEM
+onto its own order on the new date and leaves the rest alone.
+
+Guards: gm/admin only (enforced in the database, not just the screen);
+never into the future; never before the guest checked in; and the
+guest's balance is compared before and after — only the day may change,
+never what they owe, or it rolls back.
+
+Caught: the sheet was first written with <Sheet>, which Folio does not
+have — it is local to other files. That would have crashed on opening.
+Rewritten in Folio's own overlay style.

@@ -1,8 +1,6 @@
 import { useEffect, useState } from 'react'
 import { naira, lagosToday, lagosTime, seesStayTimes, cyclesFor, nightsBetween, friendlyStayError } from '../lib/format'
-import { loadFolio, loadBranchStaySettings, recordStayPayment, checkOutStay,
-         reopenStay, updateStayDetails, updateOverstayFee, deleteStay,
-         updateOrderItem, deleteOrderItem, searchSimilarGuests } from '../lib/data'
+import { checkOutStay, deleteOrderItem, deleteStay, loadBranchStaySettings, loadFolio, moveRoomChargeDate, recordStayPayment, reopenStay, searchSimilarGuests, updateOrderItem, updateOverstayFee, updateStayDetails } from '../lib/data'
 import { useToast } from '../components/Toast'
 import PaymentMethodPicker, { paymentParts, paymentAllocated } from './PaymentMethodPicker'
 import FolioStatement from './FolioStatement'
@@ -23,6 +21,10 @@ export default function Folio({ boot, room, onClose, onChanged }) {
   // pays the next should have the payment dated when it was taken, so the
   // day's reception figures are right. Defaults to today.
   const [pay, setPay] = useState({ amount: '', method: 'pos', split: null, date: lagosToday() })
+  // Correcting the date of a charge already on the folio — GM/admin only
+  // (migration 292). Previously impossible: Corrections covers sales and
+  // stock movements, not room charges, so every mistake needed SQL.
+  const [movingCharge, setMovingCharge] = useState(null)
   const [isOverstay, setIsOverstay] = useState(false)
   const [editing, setEditing] = useState(null)   // { dailyRate, billingCycle, scheduledOut, rateReason } while open
   const [billToSuggestions, setBillToSuggestions] = useState([])
@@ -496,6 +498,16 @@ export default function Folio({ boot, room, onClose, onChanged }) {
                             Refused
                           </span>
                         )}
+                        {/* Dated wrongly at the till? A GM can move it to
+                            the right day without touching the amount. */}
+                        {is(staff.role, SUPERVISOR) && (
+                          <button
+                            onClick={() => setMovingCharge({ id: li.id, date: li.date,
+                                                             description: li.description })}
+                            className="shrink-0 text-xs text-dim underline">
+                            {li.date}
+                          </button>
+                        )}
                       </div>
                       <div className="text-dim text-sm">
                         {li.date} · {li.qty} × {naira(li.unit_price)}
@@ -732,6 +744,44 @@ function Row({ label, value }) {
     <div className="flex items-baseline justify-between py-1">
       <span className="text-dim">{label}</span>
       <span className="tnum">{naira(value)}</span>
+    {/* Folio has no Sheet helper of its own — this matches the
+        full-screen overlay its other panels use. */}
+    {movingCharge && (
+      <div className="fixed inset-0 z-50 bg-bg overflow-y-auto">
+        <div className="px-5 py-6">
+          <button onClick={() => setMovingCharge(null)} className="text-dim">Back</button>
+          <h3 className="mt-3 text-2xl font-bold">Move this charge</h3>
+          <p className="text-dim text-sm mt-1">{movingCharge.description}</p>
+
+          <label className="block text-dim text-sm mt-5">Date of the charge</label>
+          <input type="date" value={movingCharge.date || ''}
+            min={checkIn || undefined} max={lagosToday()}
+            onChange={e => setMovingCharge(m => ({ ...m, date: e.target.value }))}
+            className="mt-1 h-12 w-full px-3 rounded-xl bg-surface border border-line tnum" />
+          <p className="text-dim text-sm mt-2">
+            Only the day changes. The amount stays the same and the guest's balance
+            will not move — if it would, the change is refused.
+          </p>
+
+          <button disabled={busy || !movingCharge.date}
+            onClick={async () => {
+              setBusy(true)
+              try {
+                await moveRoomChargeDate(movingCharge.id, movingCharge.date)
+                toast('Charge moved to ' + movingCharge.date, 'success')
+                setMovingCharge(null); refresh(); onChanged?.()
+              } catch (e) { toast(e.message, 'error') }
+              setBusy(false)
+            }}
+            className="mt-6 w-full h-14 rounded-2xl bg-amber text-bg text-lg font-bold disabled:opacity-40">
+            {busy ? 'Moving…' : 'Move it'}
+          </button>
+          <button onClick={() => setMovingCharge(null)}
+            className="mt-2 w-full h-12 text-dim">Cancel</button>
+        </div>
+      </div>
+    )}
+
     </div>
   )
 }

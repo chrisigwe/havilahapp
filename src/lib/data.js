@@ -2075,3 +2075,18 @@ export async function deactivateStaff(staffId) {
     .update({ is_active: false }).eq('id', staffId)
   if (error) throw error
 }
+
+// Correct the date of a room charge (migration 292). GM/admin only, and
+// the database enforces that too.
+//
+// business_date sits on the ORDER, not the item, so if other charges
+// share that order the function moves THIS item onto its own order and
+// leaves the rest alone — otherwise a guest's drinks would travel with
+// their meal. The guest's balance is checked before and after: only the
+// day may change.
+export async function moveRoomChargeDate(orderItemId, newDate) {
+  const { error } = await supabase.rpc('move_room_charge_date', {
+    p_item: orderItemId, p_date: newDate,
+  })
+  if (error) throw error
+}
