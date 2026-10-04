@@ -5032,3 +5032,25 @@ list, be chased, or be deducted. Historic, one person recording them,
 and no longer possible since 257 made a customer compulsory for credit.
 Left for the user to decide: assign, write off, or leave. The monthly
 view excludes them, since they belong to no customer.
+
+
+## Debt settled without money coming in, now visible
+
+Both get_daily_financials figures existed but NEITHER reached the app:
+debtClearedByPayroll (276) and debtWrittenOff (296) were computed and
+then dropped on the way through loadDailyFinancials. So today N250,100
+was written off with nothing on screen to say so — correctly excluded
+from the day's income, but invisible.
+
+WriteoffBreakdown now ends with "Debt settled without money coming in —
+not part of the total above", listing deducted from wages and written
+off. Shown on BOTH pages, since they share the component.
+
+Kept separate from PR and damage above: those are stock given away,
+these are debt forgiven or taken from pay. Different things, and merging
+them would make neither readable.
+
+The component previously rendered only when there were PR/damage
+figures, so a write-off with no PR that day would have shown nothing —
+exactly today's case. VERIFIED across 7 combinations: it appears when
+there is anything to report and stays hidden when there is not.

@@ -319,6 +319,12 @@ export async function loadDailyFinancials(branchId, date, locationId) {
   return {
     byMethod: data.byMethod || {},
     nonRevenue: data.nonRevenue || [],
+    // Debt settled WITHOUT money changing hands: deducted from wages
+    // (276) or written off (296). Both are excluded from debtRecovered
+    // and totalMoneyIn, so they must be shown separately or a large
+    // settlement happens with nothing on screen to say so.
+    debtClearedByPayroll: Number(data.debtClearedByPayroll || 0),
+    debtWrittenOff: Number(data.debtWrittenOff || 0),
     grossSales: Number(data.grossSales || 0),
     received: Number(data.received || 0),
     creditRaised: Number(data.creditRaised || 0),

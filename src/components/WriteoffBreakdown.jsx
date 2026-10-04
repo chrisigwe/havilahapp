@@ -10,9 +10,14 @@ import { naira } from '../lib/format'
 // PR is a decision someone made; damage is a loss that needs checking
 // against the breakages. Each line names the item, quantity, cost,
 // reason and who recorded it.
-export default function WriteoffBreakdown({ data }) {
-  if (!data) return null
-  if (!data.error && !(data.prCost > 0 || data.damageCost > 0 || data.foodValue > 0)) return null
+export default function WriteoffBreakdown({ data, settled }) {
+  if (!data && !settled) return null
+  const byPayroll = Number(settled?.debtClearedByPayroll || 0)
+  const writtenOff = Number(settled?.debtWrittenOff || 0)
+  const hasSettled = byPayroll > 0.009 || writtenOff > 0.009
+  const hasWriteoffs = data && (data.error
+    || data.prCost > 0 || data.damageCost > 0 || data.foodValue > 0)
+  if (!hasWriteoffs && !hasSettled) return null
 
   return (
     <>
@@ -101,6 +106,32 @@ export default function WriteoffBreakdown({ data }) {
               )}
             </div>
           )}
+
+      {/* Debt settled with NO money changing hands — deducted from wages
+          or written off. Both are correctly excluded from the day's
+          income, which is exactly why they need saying: otherwise a
+          large settlement happens with nothing on screen to show for it.
+          Separate from PR and damage above: those are stock given away,
+          these are debt forgiven or recovered from pay. */}
+      {hasSettled && (
+        <div className="mt-3 pt-3 border-t-2 border-line">
+          <div className="text-dim text-sm mb-1">
+            Debt settled without money coming in — not part of the total above.
+          </div>
+          {byPayroll > 0.009 && (
+            <div className="flex justify-between text-sm">
+              <span className="text-dim">Deducted from wages</span>
+              <span className="tnum">{naira(byPayroll)}</span>
+            </div>
+          )}
+          {writtenOff > 0.009 && (
+            <div className="flex justify-between text-sm">
+              <span className="text-dim">Written off</span>
+              <span className="tnum text-clay">{naira(writtenOff)}</span>
+            </div>
+          )}
+        </div>
+      )}
     </>
   )
 }

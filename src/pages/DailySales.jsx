@@ -299,7 +299,7 @@ export default function DailySales({ boot }) {
           {/* The old totals-only block was here; the itemised
               breakdown is shared with Sales so the two pages
               cannot drift apart again. */}
-          <WriteoffBreakdown data={writeoffs} />
+          <WriteoffBreakdown data={writeoffs} settled={summary} />
 
           {isGmOrAdmin && dupeCount > 0 && (
             <div className="mt-3 rounded-2xl border border-clay bg-surface p-4">

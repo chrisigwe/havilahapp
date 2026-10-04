@@ -221,7 +221,8 @@ export default function SalesEntry({ boot }) {
       setSummary({ byMethod: r.byMethod, nonRevenue: r.nonRevenue })
       setRecon({ grossSales: r.grossSales, received: r.received, creditRaised: r.creditRaised,
                  debtRecovered: r.debtRecovered, recoveredBy: r.recoveredBy, totalMoneyIn: r.totalMoneyIn,
-                 unqualifiedCredit: r.unqualifiedCredit })
+                 unqualifiedCredit: r.unqualifiedCredit,
+                 debtClearedByPayroll: r.debtClearedByPayroll, debtWrittenOff: r.debtWrittenOff })
     }).catch(() => {})
     loadOpeningDate(staff.branch_id).then(setOpeningDate).catch(() => {})
 
@@ -802,7 +803,7 @@ export default function SalesEntry({ boot }) {
                 neither what broke nor why. Each line names the item,
                 quantity, cost, reason and who recorded it, so it can be
                 checked against the breakages. */}
-            <WriteoffBreakdown data={writeoffs} />
+            <WriteoffBreakdown data={writeoffs} settled={recon} />
 
           </div>
         )}
