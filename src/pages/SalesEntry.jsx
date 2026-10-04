@@ -185,7 +185,13 @@ export default function SalesEntry({ boot }) {
     Object.fromEntries((boot.allLocations || locations).map(l => [l.id, l])), [boot, locations])
 
   async function openReceipt(receiptId) {
-    if (!receiptId) { toast('No receipt for this entry', 'error'); return }
+    // PR, damage, staff meals and room charges are not paid sales, so
+    // they have no receipt. Say so plainly instead of reporting it as an
+    // error, which made staff think something had gone wrong.
+    if (!receiptId) {
+      toast('This entry has no receipt — it was not a paid sale', 'info')
+      return
+    }
     try { setReceipt(await loadReceipt(receiptId)) }
     catch (e) { toast(e.message, 'error') }
   }
@@ -1211,22 +1217,22 @@ export default function SalesEntry({ boot }) {
             ))}
           </div>
 
-          {restaurantOrder.orderType === 'pr_damage' && (
+          {restaurantOrder.orderType === 'staff' && (
             <>
               <p className="text-dim text-sm mt-3">
-                Not paid for — pick a reason if this was damaged, or note who approved it as PR.
+                A staff meal is free: it is not charged to anyone and does not
+                count as a sale.
               </p>
-              <Row label="Damage reason (if applicable)">
-                <select value={restaurantOrder.damageReason || ''}
-                  onChange={e => setRestaurantOrder(r => ({ ...r, damageReason: e.target.value || null }))}
+              {/* Moved here from PR/Damage — it is staff meals that are
+                  breakfast, lunch or dinner. */}
+              <Row label="Which meal">
+                <select value={restaurantOrder.prMeal || ''}
+                  onChange={e => setRestaurantOrder(r => ({ ...r, prMeal: e.target.value || null }))}
                   className="h-12 px-3 rounded-xl bg-surface border border-line">
-                  <option value="">Not damage — PR only</option>
-                  <option value="breakage">Breakage</option>
-                  <option value="expiry">Expiry</option>
-                  <option value="spillage">Spillage</option>
-                  <option value="theft">Theft</option>
-                  <option value="spoilage">Spoilage</option>
-                  <option value="other">Other</option>
+                  <option value="">Not specified</option>
+                  <option value="breakfast">Breakfast</option>
+                  <option value="lunch">Lunch</option>
+                  <option value="dinner">Dinner</option>
                 </select>
               </Row>
               <Row label="Date">
@@ -1234,19 +1240,60 @@ export default function SalesEntry({ boot }) {
                   onChange={e => setRestaurantOrder(r => ({ ...r, date: e.target.value }))}
                   className="h-12 px-3 rounded-xl bg-surface border border-line tnum" />
               </Row>
-              {!restaurantOrder.damageReason && (
-                <Row label="Which meal">
-                  <select value={restaurantOrder.prMeal || ''}
-                    onChange={e => setRestaurantOrder(r => ({ ...r, prMeal: e.target.value || null }))}
-                    className="h-12 px-3 rounded-xl bg-surface border border-line">
-                    <option value="">Not specified</option>
-                    <option value="breakfast">Breakfast</option>
-                    <option value="lunch">Lunch</option>
-                    <option value="dinner">Dinner</option>
-                  </select>
-                </Row>
+            </>
+          )}
+
+          {/* PR and DAMAGE are different things and are now asked for
+              separately: PR is a decision someone made, damage is a loss.
+              Each gets its own detail, so the daily close can show why. */}
+          {restaurantOrder.orderType === 'pr_damage' && (
+            <>
+              <div className="mt-3 flex gap-2">
+                {[['pr', 'PR / complimentary'], ['damage', 'Damaged / lost']].map(([k, label]) => (
+                  <button key={k}
+                    onClick={() => setRestaurantOrder(r => ({ ...r,
+                      prKind: k, damageReason: k === 'pr' ? null : (r.damageReason || 'spoilage') }))}
+                    className={`flex-1 h-12 rounded-xl border font-semibold ${
+                      (restaurantOrder.prKind || (restaurantOrder.damageReason ? 'damage' : 'pr')) === k
+                        ? 'bg-clay text-bg border-clay' : 'border-line text-dim'}`}>
+                    {label}
+                  </button>
+                ))}
+              </div>
+
+              {(restaurantOrder.prKind || (restaurantOrder.damageReason ? 'damage' : 'pr')) === 'damage' ? (
+                <>
+                  <p className="text-dim text-sm mt-3">
+                    Stock lost. Say how, so it can be checked against what was found.
+                  </p>
+                  <Row label="What happened">
+                    <select value={restaurantOrder.damageReason || 'spoilage'}
+                      onChange={e => setRestaurantOrder(r => ({ ...r, damageReason: e.target.value }))}
+                      className="h-12 px-3 rounded-xl bg-surface border border-line">
+                      <option value="breakage">Breakage</option>
+                      <option value="expiry">Expiry</option>
+                      <option value="spillage">Spillage</option>
+                      <option value="spoilage">Spoilage</option>
+                      <option value="theft">Theft</option>
+                      <option value="other">Other</option>
+                    </select>
+                  </Row>
+                </>
+              ) : (
+                <p className="text-dim text-sm mt-3">
+                  Given away free. Say who it was for and who approved it.
+                </p>
               )}
-              <label className="block mt-4 text-dim">Who approved this / note</label>
+
+              <Row label="Date">
+                <input type="date" value={restaurantOrder.date || date} max={todayDate}
+                  onChange={e => setRestaurantOrder(r => ({ ...r, date: e.target.value }))}
+                  className="h-12 px-3 rounded-xl bg-surface border border-line tnum" />
+              </Row>
+              <label className="block mt-4 text-dim">
+                {(restaurantOrder.prKind || (restaurantOrder.damageReason ? 'damage' : 'pr')) === 'damage'
+                  ? 'What happened, in your words' : 'Who it was for, and who approved it'}
+              </label>
               <input value={restaurantOrder.writeoffNote}
                 onChange={e => setRestaurantOrder(r => ({ ...r, writeoffNote: e.target.value }))}
                 placeholder="e.g. Approved by GM Chuka"
@@ -1271,12 +1318,10 @@ export default function SalesEntry({ boot }) {
               const desc = restaurantOrder.description.trim()
               const qty = restaurantOrder.qty
               const unitPrice = Number(restaurantOrder.unitPrice) || 0
-              // Standard and Staff are both real, paid orders — only
-              // PR/Damage is a genuine write-off with no payment at
-              // all. Staff still needs order_type carried through
-              // for reporting, so it goes into the basket the same
-              // way Standard does, just tagged.
-              if (restaurantOrder.orderType !== 'pr_damage') {
+              // Only STANDARD is a paid order. Staff meals are a
+              // benefit — free, and excluded from sales (migration 289) —
+              // so they save straight away like PR, with no payment step.
+              if (restaurantOrder.orderType === 'standard') {
                 addTypedOrder({ description: desc, qty, unitPrice, orderType: restaurantOrder.orderType,
                                 writeoffNote: restaurantOrder.writeoffNote })
                 setRestaurantOrder(null)
@@ -1296,14 +1341,18 @@ export default function SalesEntry({ boot }) {
                   orderType: restaurantOrder.orderType, damageReason: restaurantOrder.damageReason,
                   writeoffNote: restaurantOrder.writeoffNote, prMeal: restaurantOrder.prMeal,
                 })
-                toast('Recorded — not paid for', 'success')
+                toast(restaurantOrder.orderType === 'staff'
+                  ? 'Staff meal recorded' : 'Recorded — not paid for', 'success')
                 setRestaurantOrder(null); refresh()
               } catch (e) { toast('Not saved: ' + e.message, 'error') }
               setWriteoffBusy(false)
             }}
             disabled={writeoffBusy || !restaurantOrder.description.trim() || !Number(restaurantOrder.unitPrice)}
             className="mt-8 w-full h-16 rounded-2xl bg-amber text-bg text-xl font-bold disabled:opacity-40">
-            {writeoffBusy ? 'Saving…' : restaurantOrder.orderType !== 'pr_damage' ? 'Add to basket' : 'Save — not paid for'}
+            {writeoffBusy ? 'Saving…'
+              : restaurantOrder.orderType === 'standard' ? 'Add to basket'
+              : restaurantOrder.orderType === 'staff' ? 'Save staff meal'
+              : 'Save — not paid for'}
           </button>
         </Sheet>
       )}

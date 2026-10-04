@@ -4927,3 +4927,40 @@ entry saying "Chef" could be either. The dated note — "3 Oct: handed
 over to Grace Nwosu (by GM)" — is what lets an old entry be read back to
 whoever actually made it. Reconstruction, not attribution: a personal
 login per person is still stronger for any role that can change records.
+
+
+## Restaurant: staff meals, PR vs damage, and the receipt message
+
+STAFF MEALS ARE FREE (289). They now save immediately with no payment
+step, and are EXCLUDED from sales — the same treatment as PR. This
+reverses 164, which made order_type 'staff' count as paid revenue, so
+the old code sent them to the basket and Take Payment.
+
+Checked before applying (288): there are NO staff orders anywhere, in
+sales or order_items, at either branch. So no past day moves and no date
+cut-off is needed. Had any existed WITH payments, excluding them from
+gross while their payments still counted as received would have left
+money-in exceeding sales, showing as negative credit. 289 re-checks this
+and refuses if staff orders have appeared since.
+
+Both places that count them are changed: get_daily_financials (out of
+gross, into the non-revenue list so they are visible as given away) and
+v_stay_folio (a free meal must never reach a guest's bill).
+
+"WHICH MEAL" moved from PR/Damage to Staff — breakfast/lunch/dinner
+describes a staff meal, not a write-off.
+
+PR AND DAMAGE ARE NOW ASKED SEPARATELY. One choice between "PR /
+complimentary" and "Damaged / lost": damage asks what happened from a
+list, PR asks who it was for and who approved it, and the note label
+follows the choice. Before, damage was a dropdown whose blank option
+silently meant "PR", which is why the two were hard to tell apart later.
+
+"NO RECEIPT FOR THIS ENTRY" was not a fault: PR, damage, staff meals and
+room charges are not paid sales and have no receipt. It was worded as an
+error, so staff thought something had broken. Now: "This entry has no
+receipt — it was not a paid sale", as information.
+
+CORRECTIONS: restaurant staff (role 'bar') ALREADY have More ->
+Corrections and can fix their own entries from today and yesterday,
+payment type included. Nothing was needed; they need showing where it is.
