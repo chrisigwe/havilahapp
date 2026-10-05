@@ -893,16 +893,68 @@ export async function loadBranchStaySettings(branchId) {
 // doesn't need real fuzzy matching, and a simple ILIKE reliably
 // catches the shared-prefix misspellings that actually happen in
 // practice.
+// Who is RESPONSIBLE for a checked-out stay's unpaid balance: the guest it
+// is BILLED TO when one is linked, otherwise whoever stayed. The front
+// desk's rule is that the warning points at the person billed — so when
+// Mr Alphonso is billed for Mr Anthony's stay, it is Alphonso who is warned
+// when he books, and Anthony is not.
+//
+// Only a LINKED guest (stays.bill_to_guest_id) can be pointed at. Where
+// staff typed a name into "Bill to" without linking it, the app cannot tell
+// who that is, so the occupant keeps the warning and the typed text is shown
+// beside it. Linking it in the folio's Bill To editor moves the warning.
+//
+// Returns { guestId: { amount, notes: [...] } } for the guests asked about.
+export async function loadOwedByGuests(guestIds) {
+  const ids = [...new Set((guestIds || []).filter(Boolean))]
+  const out = {}
+  if (!ids.length) return out
+  const cols = 'id, guest_id, bill_to, bill_to_guest_id, rooms(room_number), guests!guest_id(full_name)'
+  const [own, billed] = await Promise.all([
+    supabase.from('stays').select(cols).in('guest_id', ids).eq('status', 'checked_out'),
+    supabase.from('stays').select(cols).in('bill_to_guest_id', ids).eq('status', 'checked_out'),
+  ])
+  const stays = new Map()
+  for (const st of [...(own.data || []), ...(billed.data || [])]) stays.set(st.id, st)
+  if (!stays.size) return out
+  const { data: folios } = await supabase.from('v_stay_folio')
+    .select('stay_id, outstanding').in('stay_id', [...stays.keys()]).gt('outstanding', 0.009)
+  for (const f of (folios || [])) {
+    const st = stays.get(f.stay_id)
+    if (!st) continue
+    const responsible = st.bill_to_guest_id || st.guest_id
+    if (!ids.includes(responsible)) continue      // someone we were not asked about
+    const slot = out[responsible] || (out[responsible] = { amount: 0, notes: [] })
+    slot.amount += Number(f.outstanding)
+    if (responsible !== st.guest_id) {
+      const room = st.rooms?.room_number ? `, Room ${st.rooms.room_number}` : ''
+      slot.notes.push(`billed to them for ${st.guests?.full_name || 'a guest'}${room}`)
+    } else if (st.bill_to) {
+      slot.notes.push(`billed to ${st.bill_to}`)  // typed text only — no guest to point at
+    }
+  }
+  return out
+}
+
+// Saves ONLY who a stay is billed to. The full editor re-sends the rate,
+// cycle and dates with it, which can fire the rate-adjustment trigger; a
+// change to Bill To alone should never touch those columns.
+export async function updateStayBillTo({ stayId, billTo, billToGuestId }) {
+  const { error } = await supabase.from('stays')
+    .update({ bill_to: billTo || null, bill_to_guest_id: billToGuestId || null })
+    .eq('id', stayId)
+  if (error) throw error
+}
+
 export async function searchSimilarGuests(branchId, query) {
   const q = query.trim()
   if (q.length < 3) return []
   // RETIRED records are excluded. The merge tool does not delete the
   // losing guest, it RENAMES it "[merged into Mr Onyeka] Mr Onyeka" — and
   // that name contains the survivor's, so a search for "Mr Onyeka" matched
-  // every retired duplicate too. They sort BEFORE the real one ("merged"
-  // < "Mr"), and the old cap of 5 was filled by exactly the five retired
-  // Onyeka records at Awka, so the live record — the one that owed
-  // 30,000 — never appeared.
+  // every retired duplicate. They sort BEFORE the real one ("merged" <
+  // "Mr"), and the old cap of 5 was filled by exactly the five retired
+  // Onyeka records at Awka, so the live record never appeared.
   const { data, error } = await supabase.from('guests')
     .select('id, full_name, phone')
     .eq('branch_id', branchId).ilike('full_name', `%${q}%`)
@@ -910,41 +962,15 @@ export async function searchSimilarGuests(branchId, query) {
     .order('full_name').limit(25)
   if (error) return []
   const rows = data || []
-  const ids = rows.map(r => r.id)
-  if (ids.length) {
-    // v_stay_folio exposes guest_id and status itself, so no embed is
-    // needed (a view has no foreign key back to its own source table).
-    const { data: folios } = await supabase.from('v_stay_folio')
-      .select('stay_id, guest_id, outstanding')
-      .in('guest_id', ids).eq('status', 'checked_out')
-      .gt('outstanding', 0.009)
-    const owing = {}, stayOf = []
-    for (const f of (folios || [])) {
-      owing[f.guest_id] = (owing[f.guest_id] || 0) + Number(f.outstanding)
-      stayOf.push([f.guest_id, f.stay_id])
-    }
-    // WHO the old bill was charged to, where staff typed one — so
-    // "owes 30,000" is never read as the occupant's own debt when it was
-    // billed to someone else.
-    const billed = {}
-    if (stayOf.length) {
-      const { data: stays } = await supabase.from('stays')
-        .select('id, bill_to').in('id', stayOf.map(x => x[1]))
-      const textOf = Object.fromEntries((stays || []).map(x => [x.id, x.bill_to]))
-      for (const [gid, sid] of stayOf) {
-        if (textOf[sid]) (billed[gid] ||= new Set()).add(textOf[sid])
-      }
-    }
-    for (const r of rows) {
-      r.owing = owing[r.id] || 0
-      r.billedTo = billed[r.id] ? [...billed[r.id]].join('; ') : null
-    }
-    // Anyone who owes comes first — the one thing the front desk most
-    // needs to see — then by name. Ranked AFTER fetching a wider pool, so a
-    // common name no longer hides the person who owes behind a cap.
-    rows.sort((x, y) => ((y.owing > 0) - (x.owing > 0)) || (y.owing - x.owing)
-      || String(x.full_name).localeCompare(String(y.full_name)))
+  const owed = await loadOwedByGuests(rows.map(r => r.id))
+  for (const r of rows) {
+    r.owing = owed[r.id]?.amount || 0
+    r.billedTo = owed[r.id]?.notes.length ? owed[r.id].notes.join('; ') : null
   }
+  // Anyone who owes comes first, then by name — ranked AFTER fetching a
+  // wider pool, so a common name cannot hide the person who owes.
+  rows.sort((x, y) => ((y.owing > 0) - (x.owing > 0)) || (y.owing - x.owing)
+    || String(x.full_name).localeCompare(String(y.full_name)))
   return rows.slice(0, 6)
 }
 
@@ -1065,16 +1091,8 @@ export async function loadPriorBalance(branchId, name, phone) {
     guestId = data?.[0]?.id || null
   }
   if (!guestId) return { amount: 0, billedTo: null }
-
-  const { data, error } = await supabase.from('v_stay_folio')
-    .select('stay_id, outstanding')
-    .eq('guest_id', guestId).eq('status', 'checked_out')
-    .gt('outstanding', 0.009)
-  if (error || !data?.length) return { amount: 0, billedTo: null }
-  const { data: stays } = await supabase.from('stays')
-    .select('bill_to').in('id', data.map(r => r.stay_id))
-  const billedTo = [...new Set((stays || []).map(x => x.bill_to).filter(Boolean))].join('; ')
-  return { amount: data.reduce((t, r) => t + Number(r.outstanding), 0), billedTo: billedTo || null }
+  const o = (await loadOwedByGuests([guestId]))[guestId]
+  return { amount: o?.amount || 0, billedTo: o?.notes.length ? o.notes.join('; ') : null }
 }
 
 export async function findOrCreateGuest(branchId, name, phone) {
@@ -1221,8 +1239,14 @@ export async function loadCheckoutsStillOwing(branchId) {
   const rows = folios || []
   if (!rows.length) return []
 
+  // Who each balance is BILLED TO — the person the front desk should chase.
+  const { data: billing } = await supabase.from('stays')
+    .select('id, bill_to, bill_to_guest_id').in('id', rows.map(r => r.stay_id))
+  const billBy = Object.fromEntries((billing || []).map(b => [b.id, b]))
   const roomIds = [...new Set(rows.map(r => r.room_id).filter(Boolean))]
-  const guestIds = [...new Set(rows.map(r => r.guest_id).filter(Boolean))]
+  const guestIds = [...new Set([
+    ...rows.map(r => r.guest_id), ...(billing || []).map(b => b.bill_to_guest_id),
+  ].filter(Boolean))]
   const [{ data: rooms }, { data: guests }] = await Promise.all([
     roomIds.length ? supabase.from('rooms').select('id, room_number').in('id', roomIds)
                    : Promise.resolve({ data: [] }),
@@ -1236,6 +1260,11 @@ export async function loadCheckoutsStillOwing(branchId) {
     room_number: roomBy[r.room_id]?.room_number,
     guest_name: guestBy[r.guest_id]?.full_name,
     guest_phone: guestBy[r.guest_id]?.phone,
+    // the linked guest's name if there is one, otherwise whatever was typed
+    billed_to: (billBy[r.stay_id]?.bill_to_guest_id
+      && billBy[r.stay_id].bill_to_guest_id !== r.guest_id
+      ? guestBy[billBy[r.stay_id].bill_to_guest_id]?.full_name : null)
+      || billBy[r.stay_id]?.bill_to || null,
   }))
 }
 

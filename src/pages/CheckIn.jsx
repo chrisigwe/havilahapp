@@ -155,7 +155,7 @@ export default function CheckIn({ boot, onDone }) {
                 {g.owing > 0.009 && (
                   <div className="text-clay text-sm font-semibold">
                     Owes {naira(g.owing)} from a previous stay
-                    {g.billedTo ? ` · billed to ${g.billedTo}` : ''}
+                    {g.billedTo ? ` · ${g.billedTo}` : ''}
                   </div>
                 )}
               </button>
@@ -186,7 +186,7 @@ export default function CheckIn({ boot, onDone }) {
           </p>
           {priorBilledTo && (
             <p className="text-clay text-sm mt-1">
-              That stay was billed to: {priorBilledTo}
+              ({priorBilledTo})
             </p>
           )}
           <p className="text-dim text-sm mt-1">

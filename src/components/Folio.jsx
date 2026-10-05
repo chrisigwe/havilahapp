@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { naira, lagosToday, lagosTime, seesStayTimes, cyclesFor, friendlyStayError } from '../lib/format'
-import { checkOutStay, deleteOrderItem, deleteStay, loadBranchStaySettings, loadFolio, moveRoomChargeDate, recordStayPayment, reopenStay, searchSimilarGuests, updateOrderItem, updateOverstayFee, updateStayDetails } from '../lib/data'
+import { checkOutStay, deleteOrderItem, deleteStay, loadBranchStaySettings, loadFolio, moveRoomChargeDate, recordStayPayment, reopenStay, searchSimilarGuests, updateOrderItem, updateOverstayFee, updateStayBillTo, updateStayDetails } from '../lib/data'
 import { useToast } from '../components/Toast'
 import PaymentMethodPicker, { paymentParts, paymentAllocated } from './PaymentMethodPicker'
 import FolioStatement from './FolioStatement'
@@ -217,7 +217,20 @@ export default function Folio({ boot, room, onClose, onChanged }) {
   async function saveEdit() {
     setBusy(true)
     try {
-      await updateStayDetails({
+      // If nothing but "Bill to" changed, save ONLY that. The full save
+      // re-sends the rate, cycle and dates, which can fire the
+      // rate-adjustment trigger — and linking who a checked-out stay is
+      // billed to should never touch the rate. The comparison uses the
+      // same expressions openEdit() filled the form with.
+      const same = editing.dailyRate === String(folio?.daily_rate ?? '')
+        && editing.billingCycle === (folio?.billing_cycle || cycles[0]?.value)
+        && editing.scheduledOut === (folio?.scheduled_out || room.scheduled_out)
+        && !editing.rateReason
+      if (same) {
+        await updateStayBillTo({
+          stayId: room.stay_id, billTo: editing.billTo.trim(), billToGuestId: editing.billToGuestId,
+        })
+      } else await updateStayDetails({
         stayId: room.stay_id, dailyRate: Number(editing.dailyRate),
         billingCycle: editing.billingCycle, scheduledOut: editing.scheduledOut,
         rateReason: editing.rateReason, billTo: editing.billTo.trim(), billToGuestId: editing.billToGuestId,

@@ -5451,3 +5451,35 @@ STILL OPEN, from the same data:
   - a retired "Onyeka Francis" record still holds 1 stay; merged records keep
     their phone numbers, so findOrCreateGuest can attach a NEW booking to a
     retired record.
+
+
+## The old-balance warning points at whoever is BILLED (the user's decision)
+
+Asked who the check-in warning should point at when a stay is billed to
+someone else, the answer was the person billed.
+
+RULE (loadOwedByGuests, one place, used by the dropdown, the typed-phone
+banner and the Rooms list): a checked-out stay's unpaid balance belongs to
+the guest it is BILLED TO when one is linked (stays.bill_to_guest_id),
+otherwise to whoever stayed. So when Mr Alphonso is billed for Mr Anthony's
+stay, Alphonso is warned when he books — "Owes 30,000 · billed to them for
+Mr Anthony, Room 101" — and Anthony is not.
+
+LIMIT, and it matters: only a LINKED guest can be pointed at. Mr Anthony's
+stay has only TYPED text ("Mr Alphonso, Room 205") and bill_to_guest_id is
+empty, so the app cannot know which guest record that is. Until it is linked,
+Anthony keeps the warning with the typed text beside it, and Alphonso gets
+none. Linking is done in the folio: tap the guest in the Rooms red list ->
+"Edit rate, cycle, or dates" -> Bill to -> pick Mr Alphonso -> Save.
+
+The editor used to re-send the rate, cycle and dates with the Bill To, which
+can fire the rate-adjustment trigger (whose definition I could not read: the
+only file that mentions it just prints the live one). A change to Bill To
+alone now saves ONLY bill_to and bill_to_guest_id (updateStayBillTo).
+
+The folio's Bill To suggestion list shares searchSimilarGuests, so it also
+stopped offering retired "[merged into ...]" duplicates.
+
+TESTED with Anthony, Alphonso and Onyeka's real records, 15 checks: typed-text
+case, linked case, both in one search, typed by phone, settled stay, no
+leakage onto Onyeka, Rooms list, and the narrow save. A mock, not a live test.

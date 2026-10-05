@@ -146,6 +146,7 @@ export default function RoomBoard({ boot }) {
                 <span className="text-clay text-sm truncate">
                   Room {g.room_number || '—'} · {g.guest_name || 'Guest'}
                   <span className="text-dim"> · left {g.actual_out}</span>
+                  {g.billed_to && <span className="text-dim"> · billed to {g.billed_to}</span>}
                 </span>
                 <span className="tnum font-bold text-clay shrink-0">{naira(g.outstanding)}</span>
               </button>
