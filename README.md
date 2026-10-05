@@ -5294,3 +5294,46 @@ VERIFIED with a realistic scenario (an advance, a credit deduction, a
 savings amount, a recorded payout, someone with neither): all 7 checks
 correct, including that an advance never becomes a repayment and a
 person with no savings produces no stray deposit row.
+
+
+## Credit pull: it deducted credit people had ALREADY PAID BACK (310)
+
+Asked to make sure pulled credit has not been settled. It had not been
+checked at all, and it was my error, made across two changes.
+
+The first scoping fix pulled the running balance (swept in arrears). The
+second pulled credit TAKEN in the month and never looked at repayments.
+September's own figures showed the gap, and I misread them: Chioma
+Okafor took 19,150, 4,050 still owed; GM took 49,550, 1,850 owed;
+Martins 33,800 taken, 30,400 owed; Chukwudi 39,500 / 25,100. Roughly
+98,000 more would have been deducted from Awka pay than was actually
+outstanding. I verified against "taken", the wrong benchmark, and told
+the user September was ready to finalise. It was not finalised.
+
+Also wrong in that version: it summed across departments and wrote NO
+department. Credit is tracked PER department (the balance view groups
+by location), so a repayment with no department would not have reduced
+any MainBar/OpenBar/Minimart debt on finalising.
+
+FIX:
+  customer_unsettled_credit_for_month, per customer AND department:
+    unsettled = greatest(0, least(taken_in_month, still_owed_now))
+  still_owed_now = credit to month end less EVERY repayment to date, so
+  FIFO as a credit book works, and credit repaid after month end still
+  counts. Overpaid or settled accounts propose nothing.
+
+  finalisePeriod re-checks every credit deduction against the current
+  balance and REFUSES (writing nothing) if credit was paid after the
+  pull. It refuses rather than caps: pay figures are already set, and
+  shaving the repayment would leave pay and the credit book disagreeing.
+  Cumulative, so two deductions on one debt are tested together. An
+  advance is never checked against credit.
+
+  The finalise button had NO error handling, so a refusal would have
+  been an unhandled rejection and the button would silently do nothing.
+  Now caught and shown for 15s, since it names people.
+
+VERIFIED with the real functions: GM 1,850 not 49,550, one row per
+department, overpaid and settled propose nothing, unlinked ignored;
+guard allows full, refuses partial and fully paid, refuses combined
+excess, ignores advances. 11/11, and a refusal writes nothing.

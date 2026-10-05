@@ -69,9 +69,11 @@ export default function Payroll({ boot }) {
       for (const l of withCustomer) {
         const items = proposed[l.customer_id] || []
         for (const it of items) {
-          // Never add the same automatic pull twice for this month —
-          // location_id is null now (one figure per month, not per
-          // department), so this checks the auto flag and source alone.
+          // Never add the same automatic pull twice. Checked against the
+          // deductions the line had BEFORE this pull started (not ones
+          // added a moment ago in this loop), so a person with credit at
+          // several departments gets one row each in a single pull, and
+          // a second press of the button adds nothing.
           const already = (l.payroll_deduction || []).some(d => d.auto && d.source === 'credit')
           if (already) continue
           await addDeduction(l.id, { source: 'credit', location_id: it.location_id,
@@ -272,7 +274,16 @@ export default function Payroll({ boot }) {
                   </button>
                 : <button onClick={async () => {
                       if (!window.confirm('Finalise this month? It will be frozen until reopened.')) return
-                      const r = await finalisePeriod(period.id, staff.id); refresh()
+                      let r
+                      // Had no error handling: a refused or failed
+                      // finalise was an unhandled rejection and the
+                      // button simply did nothing. Now that finalising can
+                      // REFUSE (credit paid since it was pulled), the
+                      // reason has to reach the screen, and for longer
+                      // than a normal toast since it names people.
+                      try { r = await finalisePeriod(period.id, staff.id) }
+                      catch (e) { toast(e.message, 'error', { duration: 15000 }); return }
+                      refresh()
                       // Says what actually moved, since finalising now
                       // commits three separate things silently otherwise —
                       // easy to assume it "just works" and not notice one

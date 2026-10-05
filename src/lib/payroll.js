@@ -117,17 +117,31 @@ export async function removeDeduction(id) {
 export async function proposeCreditDeductions(branchId, lines, year, month) {
   const ids = lines.map(l => l.customer_id).filter(Boolean)
   if (!ids.length || !year || !month) return {}
-  const { data, error } = await supabase.rpc('customer_credit_for_month', {
+  // UNSETTLED credit taken in the month, per department (migration 310).
+  //
+  // Two earlier versions were wrong:
+  //   - the first pulled the whole running balance, sweeping in arrears
+  //   - the second pulled credit TAKEN in the month and never looked at
+  //     repayments, so it deducted money people had already paid back
+  //     (GM took 49,550, only 1,850 still owed). It also summed across
+  //     departments and wrote none, so on finalising the repayment would
+  //     not have reduced any department's debt — credit is tracked per
+  //     department.
+  // The database works out, per customer and department, what is still
+  // unsettled first-in-first-out, counting every repayment to date.
+  const { data, error } = await supabase.rpc('customer_unsettled_credit_for_month', {
     p_branch: branchId, p_year: year, p_month: month,
   })
   if (error) throw error
   const out = {}
   for (const r of (data || [])) {
     if (!ids.includes(r.customer_id)) continue
-    const taken = Number(r.taken || 0)
-    if (taken <= 0.009) continue
-    out[r.customer_id] = [{ location_id: null, amount: taken,
-      note: `Credit taken in ${String(month).padStart(2, '0')}/${year}` }]
+    const amount = Number(r.unsettled || 0)
+    if (amount <= 0.009) continue            // settled — nothing to deduct
+    ;(out[r.customer_id] || (out[r.customer_id] = [])).push({
+      location_id: r.location_id, amount,
+      note: `Unsettled credit from ${String(month).padStart(2, '0')}/${year}`,
+    })
   }
   return out
 }
@@ -164,6 +178,50 @@ export async function finalisePeriod(periodId, staffId) {
     .eq('period_id', periodId)
 
   const lastDay = new Date(period.year, period.month, 0).toISOString().slice(0, 10)
+
+  // Re-check that every credit deduction is STILL owed. A deduction is
+  // worked out when credit is pulled, which can be days before the month
+  // is finalised; someone who pays their debt in between would otherwise
+  // be deducted from their pay for money they have already paid. Refuses
+  // outright rather than quietly capping: the pay figures are already
+  // set, and shaving the repayment would leave pay and the credit book
+  // disagreeing about how much was settled.
+  const custIds = [...new Set((lines || []).flatMap(l =>
+    (l.payroll_deduction || []).filter(d => d.source === 'credit' && d.customer_id)
+      .map(d => d.customer_id)))]
+  if (custIds.length) {
+    const { data: bal, error: bErr } = await supabase.from('v_customer_balances_by_staff')
+      .select('customer_id, location_id, balance')
+      .eq('branch_id', period.branch_id).in('customer_id', custIds)
+    if (bErr) throw bErr
+    const owed = {}   // `${customer}|${location}` -> still owed
+    const owedTotal = {}
+    for (const b of (bal || [])) {
+      const k = `${b.customer_id}|${b.location_id}`
+      owed[k] = (owed[k] || 0) + Number(b.balance || 0)
+      owedTotal[b.customer_id] = (owedTotal[b.customer_id] || 0) + Number(b.balance || 0)
+    }
+    const stale = []
+    for (const l of (lines || [])) {
+      for (const d of (l.payroll_deduction || [])) {
+        if (d.source !== 'credit' || !d.customer_id) continue
+        const key = `${d.customer_id}|${d.location_id}`
+        const left = d.location_id ? (owed[key] || 0) : (owedTotal[d.customer_id] || 0)
+        if (Number(d.amount) - left > 0.009) {
+          stale.push(`${l.full_name}: ${Number(d.amount).toLocaleString()} is set to be deducted but `
+            + `${Math.max(0, left).toLocaleString()} is still owed`)
+        }
+        // Cumulative: a second deduction against the same debt must be
+        // tested against what is left AFTER the first, not the full amount.
+        if (d.location_id) owed[key] = left - Number(d.amount)
+        owedTotal[d.customer_id] = (owedTotal[d.customer_id] || 0) - Number(d.amount)
+      }
+    }
+    if (stale.length) {
+      throw new Error('Not finalised — some credit has been paid since it was pulled. '
+        + 'Remove the old credit deductions and pull again.\n' + stale.join('\n'))
+    }
+  }
 
   // 1. Credit deductions settle department debt (unchanged from before).
   const repayments = []
