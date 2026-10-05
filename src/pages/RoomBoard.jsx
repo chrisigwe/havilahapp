@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react'
 import { naira, lagosToday, lagosTime, seesStayTimes } from '../lib/format'
-import { loadOccupancy, setRoomServiceStatus } from '../lib/data'
+import {
+  loadCheckoutsStillOwing, loadOccupancy, setRoomServiceStatus,
+} from '../lib/data'
 import CheckIn from './CheckIn'
 import Folio from '../components/Folio'
 import ReopenSearch from '../components/ReopenSearch'
@@ -48,6 +50,12 @@ export default function RoomBoard({ boot }) {
   const [checkingIn, setCheckingIn] = useState(false)
   const [openStay, setOpenStay] = useState(null)   // the room whose folio is open
   const [reopenSearching, setReopenSearching] = useState(false)
+  // Checked-out guests who still owe, no time limit — so a debt does
+  // not quietly fall off "Recently checked out" after 14 days.
+  const [owingCheckouts, setOwingCheckouts] = useState([])
+  useEffect(() => {
+    loadCheckoutsStillOwing(staff.branch_id).then(setOwingCheckouts).catch(() => setOwingCheckouts([]))
+  }, [staff.branch_id, openStay])  // openStay: refetch after a payment is recorded
   const [markingOOS, setMarkingOOS] = useState(null)   // the room being marked out of service
   const [oosReason, setOosReason] = useState('')
   const [oosBusy, setOosBusy] = useState(false)
@@ -117,6 +125,34 @@ export default function RoomBoard({ boot }) {
         className="w-full h-12 rounded-xl border border-line text-ink font-semibold mb-4">
         Recently checked out
       </button>
+
+      {/* Opens the same folio "Recently checked out" does — payment can
+          already be recorded on it without reopening the stay. */}
+      {!!owingCheckouts.length && (
+        <div className="mb-4 rounded-2xl border-2 border-clay bg-clay/10 p-4">
+          <p className="text-clay font-bold">
+            {owingCheckouts.length} guest{owingCheckouts.length === 1 ? '' : 's'} checked out
+            still owing
+          </p>
+          <div className="mt-2 space-y-2">
+            {owingCheckouts.map(g => (
+              <button key={g.stay_id} onClick={() => setOpenStay({
+                  // Matches what ReopenSearch's onPick supplies — that is
+                  // what Folio actually reads (room.stay_id, not .id).
+                  stay_id: g.stay_id, room_number: g.room_number, guest_name: g.guest_name,
+                  status: 'checked_out', actual_out: g.actual_out,
+                })}
+                className="w-full flex items-center justify-between gap-2 text-left">
+                <span className="text-clay text-sm truncate">
+                  Room {g.room_number || '—'} · {g.guest_name || 'Guest'}
+                  <span className="text-dim"> · left {g.actual_out}</span>
+                </span>
+                <span className="tnum font-bold text-clay shrink-0">{naira(g.outstanding)}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
 
       {!rooms.length && <p className="py-8 text-center text-dim">No rooms set up for this branch yet.</p>}
 

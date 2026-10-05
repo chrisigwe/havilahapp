@@ -63,17 +63,19 @@ export default function Payroll({ boot }) {
     try {
       const withCustomer = lines.map(l => ({
         ...l, customer_id: employees.find(e => e.id === l.employee_id)?.customer_id }))
-      const proposed = await proposeCreditDeductions(staff.branch_id, withCustomer)
+      const proposed = await proposeCreditDeductions(staff.branch_id, withCustomer, year, month)
       let added = 0
       for (const l of withCustomer) {
         const items = proposed[l.customer_id] || []
         for (const it of items) {
-          // Never add the same automatic deduction twice.
-          const already = (l.payroll_deduction || []).some(
-            d => d.auto && d.location_id === it.location_id)
+          // Never add the same automatic pull twice for this month —
+          // location_id is null now (one figure per month, not per
+          // department), so this checks the auto flag and source alone.
+          const already = (l.payroll_deduction || []).some(d => d.auto && d.source === 'credit')
           if (already) continue
           await addDeduction(l.id, { source: 'credit', location_id: it.location_id,
-                                     customer_id: l.customer_id, amount: it.amount, auto: true })
+                                     customer_id: l.customer_id, amount: it.amount,
+                                     note: it.note, auto: true })
           added++
         }
       }

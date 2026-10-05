@@ -101,18 +101,33 @@ export async function removeDeduction(id) {
 // What each linked employee currently owes at the departments, so the
 // month's deductions can be PROPOSED rather than typed. Nothing is
 // written here — the GM reviews and edits before anything is saved.
-export async function proposeCreditDeductions(branchId, lines) {
+// Proposes each employee's credit TAKEN DURING THIS MONTH, not their
+// whole running balance. Was pulling v_customer_balances_by_staff —
+// everything ever owed — so opening a fresh month could deduct arrears
+// from months already settled or already deducted elsewhere.
+//
+// Uses customer_credit_for_month (294), the same figures the Credit
+// page's monthly view shows, so what gets proposed here always matches
+// what the GM can see there.
+//
+// location_id is not in that function's output (it sums across
+// departments for the month), so the single deduction line is tagged
+// 'month' rather than a department — itemised by month instead of by
+// where it was taken.
+export async function proposeCreditDeductions(branchId, lines, year, month) {
   const ids = lines.map(l => l.customer_id).filter(Boolean)
-  if (!ids.length) return {}
-  const { data, error } = await supabase.from('v_customer_balances_by_staff')
-    .select('customer_id, location_id, balance')
-    .eq('branch_id', branchId).in('customer_id', ids)
+  if (!ids.length || !year || !month) return {}
+  const { data, error } = await supabase.rpc('customer_credit_for_month', {
+    p_branch: branchId, p_year: year, p_month: month,
+  })
   if (error) throw error
   const out = {}
   for (const r of (data || [])) {
-    if (Number(r.balance) <= 0.009) continue
-    ;(out[r.customer_id] || (out[r.customer_id] = []))
-      .push({ location_id: r.location_id, amount: Number(r.balance) })
+    if (!ids.includes(r.customer_id)) continue
+    const taken = Number(r.taken || 0)
+    if (taken <= 0.009) continue
+    out[r.customer_id] = [{ location_id: null, amount: taken,
+      note: `Credit taken in ${String(month).padStart(2, '0')}/${year}` }]
   }
   return out
 }

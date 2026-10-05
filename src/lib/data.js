@@ -1100,6 +1100,29 @@ export async function reopenStay(stayId) {
 // and RoomChargeSheet's guest search. Limited to a recent window so
 // the list stays short and relevant; genuinely old stays are a
 // data-correction job, not a same-day "undo".
+// Checked-out guests who still OWE something — no time limit, because a
+// debt does not expire. "Recently checked out" only searches 14 days and
+// caps at 30 results, with nothing marking who owes: a guest who left
+// three weeks ago with a balance falls off that search even though their
+// folio, room history and balance are all still sitting there untouched.
+// Oldest departure first, since that is the debt most at risk of being
+// forgotten. Uses the same folio a live stay does — payment can already
+// be recorded on it without reopening anything.
+export async function loadCheckoutsStillOwing(branchId) {
+  const { data, error } = await supabase.from('v_stay_folio')
+    .select(`stay_id, actual_out, outstanding,
+             stays!inner(status, rooms(room_number), guests!guest_id(full_name, phone))`)
+    .eq('branch_id', branchId).eq('stays.status', 'checked_out')
+    .gt('outstanding', 0.009)
+    .order('actual_out', { ascending: true })
+  if (error) throw error
+  return (data || []).map(r => ({
+    stay_id: r.stay_id, actual_out: r.actual_out, outstanding: Number(r.outstanding),
+    room_number: r.stays?.rooms?.room_number, guest_name: r.stays?.guests?.full_name,
+    guest_phone: r.stays?.guests?.phone,
+  }))
+}
+
 export async function searchRecentCheckouts(branchId, query) {
   const since = new Date(Date.now() - 14 * 864e5).toISOString().slice(0, 10)
   const { data, error } = await supabase.from('stays')

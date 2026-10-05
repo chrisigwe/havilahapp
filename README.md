@@ -5116,3 +5116,55 @@ passed into EmployeeSheet.
 ALSO FIXED while checking: the link was saved with f.id, which is
 undefined for a NEW employee — so linking anyone on creation would have
 silently done nothing. It now uses the id returned by saveEmployee.
+
+
+## Payroll pull scoped to the month (not whole arrears)
+
+proposeCreditDeductions pulled v_customer_balances_by_staff — an
+employee's ENTIRE current balance, whatever month it came from. Opening
+a fresh month pulled everything they had ever owed, including arrears
+already carried or already deducted elsewhere.
+
+Rewired through customer_credit_for_month (294) — the same figures the
+Credit page's monthly view shows — and proposes only TAKEN during that
+specific year/month, not the running closing balance. Payroll.jsx passes
+year and month through at the call site.
+
+location_id is now null on an auto-pulled deduction (the function sums
+across departments for the month, not per department); the duplicate
+check and the UI never referenced location_id for display, so nothing
+broke — the note ("Credit taken in 10/2026") now shows in its place,
+which is more informative than before.
+
+VERIFIED with the real function against three realistic cases: arrears
+from before the month excluded, a settled account proposing nothing, and
+new-this-month activity proposed correctly — all 5 checks correct.
+
+FLAGGED TO THE USER: arrears no longer get swept in automatically. A
+carried balance shows on the Credit page's monthly view as an opening
+figure and needs a deliberate manual deduction if the GM wants it
+collected that month.
+
+## Checked-out guests who still owe (RoomBoard)
+
+Nothing about a checked-out guest is actually lost — the stay, folio and
+guest record persist indefinitely, and payment can already be recorded
+on a checked-out stay without reopening it. The real gap was VISIBILITY:
+"Recently checked out" searches only 14 days and caps at 30 results, and
+nothing marks who still owes — a debt from three weeks ago silently
+falls off that search.
+
+loadCheckoutsStillOwing: checked-out stays with outstanding > 0, no time
+limit, oldest departure first (the debt most at risk of being
+forgotten). Shown on Rooms as a clay-bordered list above the board,
+mirroring the existing "reservations due today" block; only renders when
+non-empty.
+
+Tapping a name opens the SAME folio a live stay uses. Caught before
+shipping: the tap handler first passed {id: g.stay_id}, but Folio reads
+room.stay_id, not room.id — would have opened a blank folio with no
+error. Matched to the exact shape ReopenSearch's onPick already supplies
+and verified against it, rather than guessing a second time.
+
+Refetches when openStay changes, so recording a payment removes a
+settled guest from the list without a manual refresh.
