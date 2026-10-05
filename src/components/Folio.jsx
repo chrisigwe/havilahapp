@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { naira, lagosToday, lagosTime, seesStayTimes, cyclesFor, nightsBetween, friendlyStayError } from '../lib/format'
+import { naira, lagosToday, lagosTime, seesStayTimes, cyclesFor, friendlyStayError } from '../lib/format'
 import { checkOutStay, deleteOrderItem, deleteStay, loadBranchStaySettings, loadFolio, moveRoomChargeDate, recordStayPayment, reopenStay, searchSimilarGuests, updateOrderItem, updateOverstayFee, updateStayDetails } from '../lib/data'
 import { useToast } from '../components/Toast'
 import PaymentMethodPicker, { paymentParts, paymentAllocated } from './PaymentMethodPicker'

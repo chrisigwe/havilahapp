@@ -909,14 +909,18 @@ export async function searchSimilarGuests(branchId, query) {
   // one thing that matters before a new booking opens.
   const ids = rows.map(r => r.id)
   if (ids.length) {
+    // v_stay_folio exposes guest_id and status itself, so no embed is
+    // needed. An earlier version embedded `stays` INTO this view
+    // (stays!inner(...)) — but a view built from stays has no foreign key
+    // back to it, so that relationship cannot be resolved, and since this
+    // swallowed errors the owing figure would simply never have appeared.
     const { data: folios } = await supabase.from('v_stay_folio')
-      .select('outstanding, stays!inner(guest_id, status)')
-      .in('stays.guest_id', ids).eq('stays.status', 'checked_out')
+      .select('guest_id, outstanding')
+      .in('guest_id', ids).eq('status', 'checked_out')
       .gt('outstanding', 0.009)
     const owing = {}
     for (const f of (folios || [])) {
-      const gid = f.stays.guest_id
-      owing[gid] = (owing[gid] || 0) + Number(f.outstanding)
+      owing[f.guest_id] = (owing[f.guest_id] || 0) + Number(f.outstanding)
     }
     for (const r of rows) r.owing = owing[r.id] || 0
   }
@@ -1030,9 +1034,11 @@ export async function loadPriorBalance(branchId, name, phone) {
   }
   if (!guestId) return 0
 
+  // Filters on the view's OWN guest_id/status — no embed (see
+  // searchSimilarGuests for why embedding stays into this view fails).
   const { data, error } = await supabase.from('v_stay_folio')
-    .select('outstanding, stays!inner(guest_id, status)')
-    .eq('stays.guest_id', guestId).eq('stays.status', 'checked_out')
+    .select('outstanding')
+    .eq('guest_id', guestId).eq('status', 'checked_out')
     .gt('outstanding', 0.009)
   if (error) return 0
   return (data || []).reduce((t, r) => t + Number(r.outstanding), 0)
@@ -1167,17 +1173,36 @@ export async function reopenStay(stayId) {
 // forgotten. Uses the same folio a live stay does — payment can already
 // be recorded on it without reopening anything.
 export async function loadCheckoutsStillOwing(branchId) {
-  const { data, error } = await supabase.from('v_stay_folio')
-    .select(`stay_id, actual_out, outstanding,
-             stays!inner(status, rooms(room_number), guests!guest_id(full_name, phone))`)
-    .eq('branch_id', branchId).eq('stays.status', 'checked_out')
+  // The view carries status, actual_out, guest_id and room_id itself, so
+  // fetch the owing folios from it alone, then look rooms and guests up
+  // by id. Previously embedded `stays` into the view, which cannot be
+  // resolved (no foreign key from a view back to its own source table),
+  // and the caller swallows errors — so the list would have stayed empty
+  // with nothing to say why.
+  const { data: folios, error } = await supabase.from('v_stay_folio')
+    .select('stay_id, actual_out, outstanding, room_id, guest_id')
+    .eq('branch_id', branchId).eq('status', 'checked_out')
     .gt('outstanding', 0.009)
     .order('actual_out', { ascending: true })
   if (error) throw error
-  return (data || []).map(r => ({
+  const rows = folios || []
+  if (!rows.length) return []
+
+  const roomIds = [...new Set(rows.map(r => r.room_id).filter(Boolean))]
+  const guestIds = [...new Set(rows.map(r => r.guest_id).filter(Boolean))]
+  const [{ data: rooms }, { data: guests }] = await Promise.all([
+    roomIds.length ? supabase.from('rooms').select('id, room_number').in('id', roomIds)
+                   : Promise.resolve({ data: [] }),
+    guestIds.length ? supabase.from('guests').select('id, full_name, phone').in('id', guestIds)
+                    : Promise.resolve({ data: [] }),
+  ])
+  const roomBy = Object.fromEntries((rooms || []).map(r => [r.id, r]))
+  const guestBy = Object.fromEntries((guests || []).map(g => [g.id, g]))
+  return rows.map(r => ({
     stay_id: r.stay_id, actual_out: r.actual_out, outstanding: Number(r.outstanding),
-    room_number: r.stays?.rooms?.room_number, guest_name: r.stays?.guests?.full_name,
-    guest_phone: r.stays?.guests?.phone,
+    room_number: roomBy[r.room_id]?.room_number,
+    guest_name: guestBy[r.guest_id]?.full_name,
+    guest_phone: guestBy[r.guest_id]?.phone,
   }))
 }
 

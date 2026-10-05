@@ -177,7 +177,11 @@ export async function finalisePeriod(periodId, staffId) {
     .select('id, employee_id, full_name, savings, payroll_deduction(source, amount, location_id, customer_id)')
     .eq('period_id', periodId)
 
-  const lastDay = new Date(period.year, period.month, 0).toISOString().slice(0, 10)
+  // Built in UTC. new Date(year, month, 0) is LOCAL midnight, and on a
+  // Lagos phone converting that to UTC for printing gave 29 September,
+  // so every credit repayment and savings deposit would have been dated
+  // a day before the month ended.
+  const lastDay = new Date(Date.UTC(period.year, period.month, 0)).toISOString().slice(0, 10)
 
   // Re-check that every credit deduction is STILL owed. A deduction is
   // worked out when credit is pulled, which can be days before the month

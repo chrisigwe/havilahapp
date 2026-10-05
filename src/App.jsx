@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback, useRef } from 'react'
 import { supabase } from './lib/supabase'
-import { loadBootstrap, loadStaffIdentity, loadBranchData, loadMyVerifiedCounts } from './lib/data'
+import { loadStaffIdentity, loadBranchData, loadMyVerifiedCounts } from './lib/data'
 import Login from './pages/Login'
 import SalesEntry from './pages/SalesEntry'
 import Stock from './pages/Stock'
@@ -9,7 +9,7 @@ import Corrections from './pages/Corrections'
 import DailySales from './pages/DailySales'
 import RoomBoard from './pages/RoomBoard'
 import StaySettings from './pages/StaySettings'
-import { pulseAlert, setAppBadge, unlockAudio } from './lib/alert'
+import { audioReady, pulseAlert, setAppBadge, unlockAudio } from './lib/alert'
 import Catalog from './pages/Catalog'
 import Payroll from './pages/Payroll'
 import StaffAccounts from './pages/StaffAccounts'
@@ -160,24 +160,24 @@ export default function App() {
     return () => { cancelled = true; clearInterval(id) }
   }, [boot?.staff?.id])
 
-  // Browsers refuse to play audio until the user has interacted with
-  // the page, so arm it on the first tap and then stop listening.
+  // Browsers refuse to play audio until the user has interacted with the
+  // page. Listeners STAY for the life of the app and only act when the
+  // audio context is not running. They used to detach after the first
+  // successful unlock — but on iPhone the context is suspended again
+  // whenever the app is backgrounded, and with nothing left listening
+  // there was nothing to wake it: the chime stayed silent until the app
+  // was restarted. Cheap, since each call is a no-op once it is running.
   useEffect(() => {
-    // Keep listening until it actually works. The first tap can fail —
-    // the page may still be loading, and on iOS a context can be
-    // re-suspended when the app returns from the background — so
-    // once:true could leave the app permanently silent.
-    const arm = () => { if (unlockAudio()) detach() }
-    const detach = () => {
-      window.removeEventListener('pointerdown', arm)
-      window.removeEventListener('touchend', arm)
+    const wake = () => { if (!audioReady()) unlockAudio() }
+    const onShow = () => { if (document.visibilityState === 'visible') wake() }
+    window.addEventListener('pointerdown', wake)
+    window.addEventListener('touchend', wake)
+    document.addEventListener('visibilitychange', onShow)
+    return () => {
+      window.removeEventListener('pointerdown', wake)
+      window.removeEventListener('touchend', wake)
       document.removeEventListener('visibilitychange', onShow)
     }
-    const onShow = () => { if (document.visibilityState === 'visible') unlockAudio() }
-    window.addEventListener('pointerdown', arm)
-    window.addEventListener('touchend', arm)
-    document.addEventListener('visibilitychange', onShow)
-    return detach
   }, [])
 
   // Unfinished (draft) stock counts — the "incomplete task" nudge.

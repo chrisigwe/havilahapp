@@ -212,17 +212,17 @@ export default function RoomBoard({ boot }) {
                     {stateKey === 'reserved_due' && (
                       <p className="text-clay text-xs font-bold mt-0.5">
                         Reserved for {room.check_in_date === lagosToday() ? 'today' : 'since ' +
-                          new Date(room.check_in_date).toLocaleDateString('en-NG', { day: 'numeric', month: 'short' })}
+                          new Date(room.check_in_date + 'T12:00:00').toLocaleDateString('en-NG', { day: 'numeric', month: 'short' })}
                         — keep it free
                       </p>
                     )}
                     {stateKey === 'reserved' && (
                       <p className="text-dim text-xs mt-0.5">
-                        from {new Date(room.check_in_date).toLocaleDateString('en-NG', { day: 'numeric', month: 'short' })}
+                        from {new Date(room.check_in_date + 'T12:00:00').toLocaleDateString('en-NG', { day: 'numeric', month: 'short' })}
                       </p>
                     )}
                     <p className="text-dim text-xs tnum mt-0.5">
-                      out {new Date(room.scheduled_out).toLocaleDateString('en-NG',
+                      out {new Date(room.scheduled_out + 'T12:00:00').toLocaleDateString('en-NG',
                         { day: 'numeric', month: 'short' })}
                       {room.remaining_nights != null && room.remaining_nights >= 0
                         && ` · ${room.remaining_nights}n left`}

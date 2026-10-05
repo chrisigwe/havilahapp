@@ -1,5 +1,4 @@
 import { useEffect, useState } from 'react'
-import { naira } from '../lib/format'
 import { loadRoomsForSettings, loadBranchStaySettings, updateRoomRates,
          updateBranchOverstayDefault, loadStaffOfMonth, postStaffOfMonth,
          deleteStaffOfMonth } from '../lib/data'

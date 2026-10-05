@@ -9,18 +9,27 @@ export const lagosToday = () =>
 export const tierLabel = { general: 'Standard', lounge: 'Lounge', staff: 'Staff' }
 export const methodLabel = { pos: 'POS', cash: 'Cash', credit: 'Credit', transfer: 'Transfer' }
 
+// Calendar-date arithmetic done ENTIRELY IN UTC, so no device timezone
+// can shift the result. The previous addDays parsed the date at LOCAL
+// midnight and then converted to UTC to print it — on a Lagos phone
+// (UTC+1) local midnight is 23:00 the previous day in UTC, so every call
+// came back one day EARLY: addDays('2026-10-05', 1) returned
+// '2026-10-05'. That made the default check-out on every new booking the
+// same day as check-in, and shortened the "rooms sold this month" window
+// by a day. It only showed on UTC+ devices, which is why testing in UTC
+// never caught it.
+export const addDays = (iso, n) => {
+  const [y, m, d] = String(iso).slice(0, 10).split('-').map(Number)
+  return new Date(Date.UTC(y, m - 1, d + n)).toISOString().slice(0, 10)
+}
+
 // N days before the Lagos business date — matches lagos_today() - N in
 // the database exactly, so app-side windows never disagree with what
 // RLS actually permits.
 // n days before `from` (default today). The optional anchor exists for
 // pages where the date is a control rather than always "now" — Daily
 // Sales anchors its prior-day snapshot to the date being browsed.
-// Midday avoids any DST/offset rollover when stepping the date.
-export const lagosDaysAgo = (n, from) => {
-  const d = new Date((from || lagosToday()) + 'T12:00:00')
-  d.setDate(d.getDate() - n)
-  return d.toISOString().slice(0, 10)
-}
+export const lagosDaysAgo = (n, from) => addDays(from || lagosToday(), -n)
 
 // Who a sale is attributed to for display: the person it was
 // recorded on behalf of, if any, with a note on who actually typed
@@ -64,12 +73,6 @@ export const nameKey = (name) =>
 
 export const nightsBetween = (from, to) =>
   Math.max(1, Math.round((new Date(to) - new Date(from)) / 864e5))
-
-export const addDays = (iso, n) => {
-  const d = new Date(iso + 'T00:00:00')
-  d.setDate(d.getDate() + n)
-  return d.toISOString().slice(0, 10)
-}
 
 const CYCLE_LABELS = { one_off: 'One-off', daily: 'Daily', monthly: 'Monthly', pr: 'PR (free)' }
 const CYCLE_ORDER = ['one_off', 'daily', 'monthly', 'pr']

@@ -19,9 +19,11 @@ const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June',
 export default function Payroll({ boot }) {
   const { staff } = boot
   const toast = useToast()
-  const today = new Date(lagosToday())
-  const [year, setYear] = useState(today.getFullYear())
-  const [month, setMonth] = useState(today.getMonth() + 1)
+  // Read from the Lagos date string itself. new Date('2026-11-01') is UTC
+  // midnight, and the LOCAL getters on it give October for a device west
+  // of UTC — the wrong default month at every month boundary.
+  const [year, setYear] = useState(Number(lagosToday().slice(0, 4)))
+  const [month, setMonth] = useState(Number(lagosToday().slice(5, 7)))
   const [period, setPeriod] = useState(null)
   const [lines, setLines] = useState(null)
   const [payouts, setPayouts] = useState([])

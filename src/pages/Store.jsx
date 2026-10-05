@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useToast } from '../components/Toast'
-import { naira, lagosToday } from '../lib/format'
+import { lagosToday } from '../lib/format'
 import { loadStockMap, loadPopular, loadDepartmentHistory,
          loadReceiveHistory, loadMoveHistory, loadConvertHistory } from '../lib/data'
 import { supabase } from '../lib/supabase'
@@ -72,7 +72,6 @@ export default function Store({ boot }) {
   // draws from a department instead of the store
   const qtyAt = useMemo(
     () => (itemId, locId) => stockMap[`${itemId}:${locId}`] ?? 0, [stockMap])
-  const storeQty = (id) => qtyAt(id, store?.id)
 
   const sourceLocationId = mode === 'receive' ? null
     : mode === 'move' ? fromDept

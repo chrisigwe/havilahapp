@@ -1,5 +1,4 @@
 import { useEffect, useRef, useState } from 'react'
-import { supabase } from '../lib/supabase'
 import Logo from './Logo'
 import PendingBanner from './PendingBanner'
 import UpdateBanner from './UpdateBanner'

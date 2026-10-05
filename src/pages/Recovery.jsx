@@ -40,7 +40,6 @@ export default function Recovery({ boot }) {
   // now. The difference between the two is simply what has happened
   // since — more credit taken, or more repaid.
   const [asAtBalances, setAsAtBalances] = useState(null)
-  const isReception = /reception/i.test(salesPoints.find(l => l.id === locId)?.name || '')
   // Whether this person can see room-payment recovery at all — a
   // role/assignment fact, not "which chip happens to be selected right
   // now". loadRoomPayments is already branch-wide, not department-

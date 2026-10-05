@@ -37,8 +37,14 @@ self.addEventListener('fetch', (e) => {
   e.respondWith((async () => {
     try {
       const fresh = await fetch(e.request)
-      const cache = await caches.open(SHELL_CACHE)
-      cache.put(e.request, fresh.clone())
+      // Only cache GOOD responses. It used to cache everything, so a 404
+      // or 500 served during a deploy would be stored and then handed
+      // back in place of the real file the next time the phone was
+      // offline. A failed write (storage full) must not break the page.
+      if (fresh.ok) {
+        const clone = fresh.clone()
+        caches.open(SHELL_CACHE).then(c => c.put(e.request, clone)).catch(() => {})
+      }
       return fresh
     } catch (err) {
       const cached = await caches.match(e.request)

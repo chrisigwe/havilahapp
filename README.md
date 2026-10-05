@@ -5337,3 +5337,72 @@ VERIFIED with the real functions: GM 1,850 not 49,550, one row per
 department, overpaid and settled propose nothing, unlinked ignored;
 guard allows full, refuses partial and fully paid, refuses combined
 excess, ignores advances. 11/11, and a refusal writes nothing.
+
+
+## Audit pass: what was checked, what was found, what was NOT checked
+
+METHOD. ESLint for undefined variables and hook-order (the build cannot
+catch these: movingCharge and Sheet were exactly that); a parser that
+follows every query chain to list the functions, tables, columns and
+embedded relationships the app depends on; and a REAL PostgreSQL 16 into
+which the actual migration files were loaded, with real functions run
+against seeded data. Mocks cannot see what a real API or database
+accepts, which is how three bugs below got through.
+
+FOUND AND FIXED
+  1. Three of my own features embedded `stays` inside the `v_stay_folio`
+     VIEW (check-in "still owes" banner, Rooms "checked out still owing"
+     list, balances in the name dropdown). A view built from stays has no
+     foreign key back to it, so these likely failed — and each swallowed
+     its own error. Rewritten to filter on the view's own columns
+     (guest_id, status, actual_out, room_id), all confirmed to exist.
+     NOT proven that the old form failed; the rewrite is safe either way.
+  2. Audio unlock removed its own listeners after the first success; on
+     iPhone the context re-suspends when backgrounded, so nothing could
+     wake it and the chime stayed silent. Listeners now live for the app.
+  3. 312: customer_credit_for_month hid anyone whose NET activity in the
+     month was zero (took 500, repaid 500), so the Credit page's totals
+     were short. Test data: page 85,600/72,800 vs ledger 86,100/73,300.
+  4. Service worker cached ANY response including 404/500, and could hand
+     it back later when offline. Now only caches ok responses.
+  Plus unused imports/variables removed.
+
+VERIFIED IN REAL POSTGRES (stand-in tables + the real migration files):
+  310 unsettled credit (8 cases incl. first-in-first-out arrears, repaid
+  after month end, credit after month end); 294/271 agree with the live
+  balance view; get_daily_financials (payroll and write-offs out of money
+  in, PR and staff meals out of sales); find_similar_customers;
+  sync_sale_stock_movement (new sale deducts, edit keeps one movement,
+  historic sale with none gets none invented, delete removes it);
+  v_stay_folio (pending, PR and staff items stay off the bill);
+  move_room_charge_date (lone item, shared order, balance unchanged, 3
+  refusals); edit_sale permission matrix, 17/17.
+
+TWO MISTAKES IN MY OWN TESTING, caught and corrected
+  - I pre-seeded 263b into the scratch migration log, so the "real" run
+    skipped itself (its guard saw "already applied") and I reported a
+    pass that was a no-op. edit_sale did not even exist. Removed the seed
+    and re-ran; the rules then held.
+  - Migration ORDER matters: 263b defines the date rule by role and 264
+    narrows it to named people. Applied out of order, the scratch DB
+    wrongly let the Awka store manager change dates. In the live order,
+    17/17.
+
+311 AGAINST THE LIVE DATABASE returned 8 rows, all parser errors, none
+real: five were query ALIASES read as tables (recorder:recorded_by(...)
+labels the staff member as `recorder`), and three came from an
+apostrophe inside a code COMMENT that made the parser lose its place and
+attach columns to the wrong table. That same flaw had hidden one real
+column (sales.backdate_reason, created in migration 24). Parser fixed and
+311 regenerated: 26 functions, 39 tables/views, 300 columns, 23
+relationships. No function, relationship or genuine column was missing.
+
+NOT CHECKED: how pages render on phones; row-level-security policies;
+the offline queue's behaviour across different staff on one device; the
+payroll screens end to end in a browser (the SQL is tested for real, the
+JavaScript around it only with mocks); the LIVE definition of
+sync_sale_stock_movement, which 299/304 replaced from an older file —
+compare select pg_get_functiondef('sync_sale_stock_movement'::regproc).
+Superseded migration files (263, 275, 295, 300, 280, 281) remain in the
+outputs folder; their log guards make a re-run a no-op, but they are
+clutter and should not be run.
