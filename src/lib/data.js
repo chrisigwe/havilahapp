@@ -980,6 +980,45 @@ export async function loadBilledToYou(guestId) {
     }))
 }
 
+// What a guest owes from a PAST stay, if anything — looked up while
+// typing, BEFORE any stay is created, so front desk sees it while there
+// is still time to settle it or decide to carry it forward.
+//
+// READ-ONLY, deliberately separate from findOrCreateGuest: that function
+// CREATES a guest record on no match, which typing a new person's phone
+// number into this box would have triggered on every keystroke, for
+// people who might never actually check in.
+//
+// A guest cannot be "paused" across a resale of their room — the nights
+// would overlap someone else's stay and corrupt both bills — so a
+// returning guest is always a new stay; this is what carries their old
+// balance into view rather than into the room record.
+export async function loadPriorBalance(branchId, name, phone) {
+  const digits = (phone || '').replace(/\D/g, '')
+  let guestId = null
+  if (digits) {
+    const { data } = await supabase.from('guests')
+      .select('id').eq('branch_id', branchId).eq('phone_norm', digits).maybeSingle()
+    guestId = data?.id || null
+  }
+  if (!guestId) {
+    const key = nameKey(name)
+    if (!key) return 0
+    const { data } = await supabase.from('guests')
+      .select('id').eq('branch_id', branchId).eq('name_key', key)
+      .order('created_at').limit(1)
+    guestId = data?.[0]?.id || null
+  }
+  if (!guestId) return 0
+
+  const { data, error } = await supabase.from('v_stay_folio')
+    .select('outstanding, stays!inner(guest_id, status)')
+    .eq('stays.guest_id', guestId).eq('stays.status', 'checked_out')
+    .gt('outstanding', 0.009)
+  if (error) return 0
+  return (data || []).reduce((t, r) => t + Number(r.outstanding), 0)
+}
+
 export async function findOrCreateGuest(branchId, name, phone) {
   const digits = (phone || '').replace(/\D/g, '')
   if (digits) {

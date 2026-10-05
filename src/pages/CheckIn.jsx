@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from 'react'
 import { naira, lagosToday, nightsBetween, addDays, cyclesFor, friendlyStayError } from '../lib/format'
-import { loadFreeRooms, loadBranchStaySettings, findOrCreateGuest, createStay, searchSimilarGuests } from '../lib/data'
+import {
+  createStay, findOrCreateGuest, loadBranchStaySettings, loadFreeRooms, loadPriorBalance, searchSimilarGuests,
+} from '../lib/data'
 import { useToast } from '../components/Toast'
 
 const RATE_FIELDS = { standard: 'rate_standard', alternate: 'rate_alternate', short: 'rate_short' }
@@ -15,6 +17,23 @@ export default function CheckIn({ boot, onDone }) {
 
   const [name, setName] = useState('')
   const [phone, setPhone] = useState('')
+  // Checked as the phone number is typed — before a room is even
+  // chosen — so front desk sees an old balance while there is still
+  // time to settle it or decide to carry it, not after the new stay is
+  // already open.
+  const [priorBalance, setPriorBalance] = useState(0)
+  useEffect(() => {
+    const digits = phone.replace(/\D/g, '')
+    if (digits.length < 7) { setPriorBalance(0); return }
+    const t = setTimeout(async () => {
+      // Read-only lookup — never creates a guest, unlike
+      // findOrCreateGuest, which this box must not trigger on every
+      // keystroke for someone who may never actually check in.
+      try { setPriorBalance(await loadPriorBalance(staff.branch_id, name, phone)) }
+      catch { setPriorBalance(0) }
+    }, 400)
+    return () => clearTimeout(t)
+  }, [phone, name, staff.branch_id])
   const [roomId, setRoomId] = useState('')
   const [rateType, setRateType] = useState('standard')
   const [rateOverride, setRateOverride] = useState('')
@@ -127,6 +146,23 @@ export default function CheckIn({ boot, onDone }) {
           placeholder="Matches a returning guest to their history"
           className="h-14 w-full px-4 rounded-xl bg-surface border border-line placeholder:text-dim" />
       </div>
+
+      {/* Surfaced BEFORE a room is chosen, not after the new stay is
+          open — the moment there is still time to settle it, or decide
+          to carry it forward deliberately rather than discover it later
+          on an unrelated screen. */}
+      {priorBalance > 0.009 && (
+        <div className="mt-3 rounded-2xl border-2 border-clay bg-clay/10 p-4">
+          <p className="text-clay font-bold">
+            Still owes {naira(priorBalance)} from a previous stay
+          </p>
+          <p className="text-dim text-sm mt-1">
+            This is a new booking with its own bill. The old balance does not
+            carry over automatically — settle it now, or make a note to collect
+            it separately.
+          </p>
+        </div>
+      )}
 
       <div className="mt-4">
         <div className="text-dim mb-1">

@@ -5168,3 +5168,44 @@ and verified against it, rather than guessing a second time.
 
 Refetches when openStay changes, so recording a payment removes a
 settled guest from the list without a manual refresh.
+
+
+## Why a stay cannot be paused and resumed
+
+The user asked to check a guest out, sell the room while they are away,
+and resume their SAME stay on the SAME room when they return, bill
+continuing from where it stopped.
+
+Explained rather than built: a stay is check-in to check-out on ONE
+room, with a nightly rate applied across every night in between. If the
+room is sold to someone else in the gap, there is no way to later
+"resume" the first stay on that room — the second guest's nights sit in
+the middle of it, corrupting both bills and the room's occupancy
+history. A gap with someone else's stay inside it is not a pause, it is
+two stays with a guest in between.
+
+What IS achievable, and was built: the guest returns, books again
+(inevitably a new stay — findOrCreateGuest already matches by phone,
+confirmed by reading it, so they land on the SAME guest record whatever
+room they get), and their OLD balance is surfaced before the new stay is
+even created, so it is never silently forgotten or discovered late on an
+unrelated screen.
+
+## Prior-balance warning at check-in
+
+loadPriorBalance looks up a returning guest's old checked-out balance as
+the phone (or name) is typed, BEFORE a room is chosen. If they owe
+anything, a clay banner appears: "Still owes NX from a previous stay —
+this is a new booking with its own bill. The old balance does not carry
+over automatically."
+
+CAUGHT BEFORE SHIPPING: the first version called findOrCreateGuest to
+identify the guest, which CREATES a guest record on no match — so typing
+a brand-new phone number into this box would have inserted a guest for
+every keystroke-debounced attempt, for people who might never actually
+check in. Rewritten as a read-only lookup (phone first, name second,
+mirroring findOrCreateGuest's own matching order) that never inserts.
+
+VERIFIED with the real function: phone match, name match, a genuinely
+new phone number, and no match at all — 4/4 correct, and confirmed it
+never calls insert in any of them.
