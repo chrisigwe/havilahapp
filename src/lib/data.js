@@ -896,35 +896,56 @@ export async function loadBranchStaySettings(branchId) {
 export async function searchSimilarGuests(branchId, query) {
   const q = query.trim()
   if (q.length < 3) return []
+  // RETIRED records are excluded. The merge tool does not delete the
+  // losing guest, it RENAMES it "[merged into Mr Onyeka] Mr Onyeka" — and
+  // that name contains the survivor's, so a search for "Mr Onyeka" matched
+  // every retired duplicate too. They sort BEFORE the real one ("merged"
+  // < "Mr"), and the old cap of 5 was filled by exactly the five retired
+  // Onyeka records at Awka, so the live record — the one that owed
+  // 30,000 — never appeared.
   const { data, error } = await supabase.from('guests')
     .select('id, full_name, phone')
     .eq('branch_id', branchId).ilike('full_name', `%${q}%`)
-    .order('full_name').limit(5)
+    .not('full_name', 'ilike', '[merged into%')
+    .order('full_name').limit(25)
   if (error) return []
   const rows = data || []
-  // Nothing is truly unique here — phone is often withheld, names
-  // collide — so recognition works by RESEMBLANCE: the GM confirms a
-  // match by tapping it. Each suggestion shows what they owe from a
-  // past stay right there, so picking the right one also surfaces the
-  // one thing that matters before a new booking opens.
   const ids = rows.map(r => r.id)
   if (ids.length) {
     // v_stay_folio exposes guest_id and status itself, so no embed is
-    // needed. An earlier version embedded `stays` INTO this view
-    // (stays!inner(...)) — but a view built from stays has no foreign key
-    // back to it, so that relationship cannot be resolved, and since this
-    // swallowed errors the owing figure would simply never have appeared.
+    // needed (a view has no foreign key back to its own source table).
     const { data: folios } = await supabase.from('v_stay_folio')
-      .select('guest_id, outstanding')
+      .select('stay_id, guest_id, outstanding')
       .in('guest_id', ids).eq('status', 'checked_out')
       .gt('outstanding', 0.009)
-    const owing = {}
+    const owing = {}, stayOf = []
     for (const f of (folios || [])) {
       owing[f.guest_id] = (owing[f.guest_id] || 0) + Number(f.outstanding)
+      stayOf.push([f.guest_id, f.stay_id])
     }
-    for (const r of rows) r.owing = owing[r.id] || 0
+    // WHO the old bill was charged to, where staff typed one — so
+    // "owes 30,000" is never read as the occupant's own debt when it was
+    // billed to someone else.
+    const billed = {}
+    if (stayOf.length) {
+      const { data: stays } = await supabase.from('stays')
+        .select('id, bill_to').in('id', stayOf.map(x => x[1]))
+      const textOf = Object.fromEntries((stays || []).map(x => [x.id, x.bill_to]))
+      for (const [gid, sid] of stayOf) {
+        if (textOf[sid]) (billed[gid] ||= new Set()).add(textOf[sid])
+      }
+    }
+    for (const r of rows) {
+      r.owing = owing[r.id] || 0
+      r.billedTo = billed[r.id] ? [...billed[r.id]].join('; ') : null
+    }
+    // Anyone who owes comes first — the one thing the front desk most
+    // needs to see — then by name. Ranked AFTER fetching a wider pool, so a
+    // common name no longer hides the person who owes behind a cap.
+    rows.sort((x, y) => ((y.owing > 0) - (x.owing > 0)) || (y.owing - x.owing)
+      || String(x.full_name).localeCompare(String(y.full_name)))
   }
-  return rows
+  return rows.slice(0, 6)
 }
 
 // For the merge-guests tool — same substring search as above, but
@@ -1017,31 +1038,43 @@ export async function loadBilledToYou(guestId) {
 // returning guest is always a new stay; this is what carries their old
 // balance into view rather than into the room record.
 export async function loadPriorBalance(branchId, name, phone) {
+  const live = q => q.not('full_name', 'ilike', '[merged into%')
   const digits = (phone || '').replace(/\D/g, '')
   let guestId = null
   if (digits) {
+    // A retired record KEEPS its phone number (the merge only renames it),
+    // so a phone match can land on one. Follow the "[merged into X]" tag to
+    // the surviving record instead of reporting "no debt" for it.
     const { data } = await supabase.from('guests')
-      .select('id').eq('branch_id', branchId).eq('phone_norm', digits).maybeSingle()
-    guestId = data?.id || null
+      .select('id, full_name').eq('branch_id', branchId).eq('phone_norm', digits).maybeSingle()
+    if (data) {
+      const m = /^\[merged into (.+?)\]/i.exec(data.full_name || '')
+      if (m) {
+        const { data: survivor } = await live(supabase.from('guests')
+          .select('id').eq('branch_id', branchId).eq('full_name', m[1].trim())).limit(1)
+        guestId = survivor?.[0]?.id || null
+      } else guestId = data.id
+    }
   }
   if (!guestId) {
     const key = nameKey(name)
-    if (!key) return 0
-    const { data } = await supabase.from('guests')
-      .select('id').eq('branch_id', branchId).eq('name_key', key)
+    if (!key) return { amount: 0, billedTo: null }
+    const { data } = await live(supabase.from('guests')
+      .select('id').eq('branch_id', branchId).eq('name_key', key))
       .order('created_at').limit(1)
     guestId = data?.[0]?.id || null
   }
-  if (!guestId) return 0
+  if (!guestId) return { amount: 0, billedTo: null }
 
-  // Filters on the view's OWN guest_id/status — no embed (see
-  // searchSimilarGuests for why embedding stays into this view fails).
   const { data, error } = await supabase.from('v_stay_folio')
-    .select('outstanding')
+    .select('stay_id, outstanding')
     .eq('guest_id', guestId).eq('status', 'checked_out')
     .gt('outstanding', 0.009)
-  if (error) return 0
-  return (data || []).reduce((t, r) => t + Number(r.outstanding), 0)
+  if (error || !data?.length) return { amount: 0, billedTo: null }
+  const { data: stays } = await supabase.from('stays')
+    .select('bill_to').in('id', data.map(r => r.stay_id))
+  const billedTo = [...new Set((stays || []).map(x => x.bill_to).filter(Boolean))].join('; ')
+  return { amount: data.reduce((t, r) => t + Number(r.outstanding), 0), billedTo: billedTo || null }
 }
 
 export async function findOrCreateGuest(branchId, name, phone) {

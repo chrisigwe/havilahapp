@@ -5406,3 +5406,48 @@ compare select pg_get_functiondef('sync_sale_stock_movement'::regproc).
 Superseded migration files (263, 275, 295, 300, 280, 281) remain in the
 outputs folder; their log guards make a re-run a no-op, but they are
 clutter and should not be run.
+
+
+## Why Mr Onyeka's debt never showed in the booking dropdown
+
+Reported: typing "Mr Anthony" found one record with the right amount; typing
+"Mr Onyeka" found several and none showed what he owes.
+
+Query 313 showed the cause. The guest MERGE tool does not delete the losing
+record — it RENAMES it "[merged into Mr Onyeka] Mr Onyeka". That name
+contains the survivor's, so a search for "Mr Onyeka" matched every retired
+duplicate. In Postgres' collation "merged…" sorts BEFORE "Mr…", and
+searchSimilarGuests had a cap of 5 — and Awka holds EXACTLY FIVE retired
+Onyeka records (four "Mr Onyeka", one "Onyeka Francis"). They filled every
+slot and pushed the live record, the one owing 30,000, out. Anthony's retired
+duplicates are at Nnewi, so only his live record came back. A bug that
+predates the balance feature; the balance work exposed it.
+
+FIXED
+  - retired records ("[merged into%") are excluded from the search
+  - a wider pool (25) is fetched, then RANKED: anyone who owes first, then by
+    name, top 6 shown — so a common name can no longer hide the person who owes
+  - loadPriorBalance follows a "[merged into X]" tag to the surviving record:
+    a retired record KEEPS its phone number (the merge only renames it), so a
+    typed phone could land on a retired record and report "no debt"
+  - the old bill's "Bill To" text is carried through and shown, so Anthony's
+    30,000 reads "billed to Mr Alphonso, Room 205" rather than as his own debt
+
+MISTAKE OF MINE found on the way: I told the user each dropdown row shows
+"Owes NX". It never did. The edit was in a script that failed on a quoting
+error, and I did not go back and check that it applied. What they saw was the
+banner AFTER tapping. The line is now really on the rows, and I verified the
+file instead of assuming.
+
+TESTED with the user's actual 313 records and Postgres' sort rule. Old logic
+reproduces their failure exactly (5 retired rows, none owing); new logic
+finds the live Mr Onyeka at 30,000 and Anthony's with his billed-to text.
+8/8. A mock built on real data, NOT a live test.
+
+STILL OPEN, from the same data:
+  - Mr Anthony's "Bill To" is free text only ("Mr Alphonso, Room 205");
+    bill_to_guest_id is empty, so the app cannot tell who Alphonso is. The
+    structured link already exists in the folio's Bill To editor.
+  - a retired "Onyeka Francis" record still holds 1 stay; merged records keep
+    their phone numbers, so findOrCreateGuest can attach a NEW booking to a
+    retired record.

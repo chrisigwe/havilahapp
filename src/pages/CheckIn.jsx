@@ -28,16 +28,21 @@ export default function CheckIn({ boot, onDone }) {
   // balance while there is still time to settle it or decide to carry
   // it forward, not after the new stay is already open.
   const [priorBalance, setPriorBalance] = useState(0)
+  // Who the OLD stay was billed to, if staff typed one — so "owes 30,000"
+  // is never read as the occupant's own debt when it was someone else's.
+  const [priorBilledTo, setPriorBilledTo] = useState(null)
   useEffect(() => {
     if (confirmedGuestId) return   // already known — see the dropdown handler
     const digits = phone.replace(/\D/g, '')
-    if (digits.length < 7) { setPriorBalance(0); return }
+    if (digits.length < 7) { setPriorBalance(0); setPriorBilledTo(null); return }
     const t = setTimeout(async () => {
       // Read-only lookup — never creates a guest, unlike
       // findOrCreateGuest, which this box must not trigger on every
       // keystroke for someone who may never actually check in.
-      try { setPriorBalance(await loadPriorBalance(staff.branch_id, name, phone)) }
-      catch { setPriorBalance(0) }
+      try {
+        const r = await loadPriorBalance(staff.branch_id, name, phone)
+        setPriorBalance(r.amount); setPriorBilledTo(r.billedTo)
+      } catch { setPriorBalance(0); setPriorBilledTo(null) }
     }, 400)
     return () => clearTimeout(t)
   }, [phone, name, staff.branch_id, confirmedGuestId])
@@ -138,12 +143,21 @@ export default function CheckIn({ boot, onDone }) {
                   // Picking this IS confirming identity — no waiting on
                   // the phone-typing effect, and the balance is shown
                   // directly from what this search already fetched.
-                  setConfirmedGuestId(g.id); setPriorBalance(g.owing || 0)
+                  setConfirmedGuestId(g.id); setPriorBalance(g.owing || 0); setPriorBilledTo(g.billedTo || null)
                   setSuggestionsOpen(false); setSimilarGuests([])
                 }}
                 className="block w-full text-left px-4 py-3 hover:bg-raise">
                 <div className="font-semibold">{g.full_name}</div>
                 {g.phone && <div className="text-dim text-sm">{g.phone}</div>}
+                {/* Shown on the row itself, BEFORE anyone is picked — the
+                    earlier version only revealed a balance after the tap,
+                    and this line was never actually added to the list. */}
+                {g.owing > 0.009 && (
+                  <div className="text-clay text-sm font-semibold">
+                    Owes {naira(g.owing)} from a previous stay
+                    {g.billedTo ? ` · billed to ${g.billedTo}` : ''}
+                  </div>
+                )}
               </button>
             ))}
             <button type="button" onClick={() => { setSuggestionsOpen(false); setSimilarGuests([]) }}
@@ -170,6 +184,11 @@ export default function CheckIn({ boot, onDone }) {
           <p className="text-clay font-bold">
             Still owes {naira(priorBalance)} from a previous stay
           </p>
+          {priorBilledTo && (
+            <p className="text-clay text-sm mt-1">
+              That stay was billed to: {priorBilledTo}
+            </p>
+          )}
           <p className="text-dim text-sm mt-1">
             This is a new booking with its own bill. The old balance does not
             carry over automatically — settle it now, or make a note to collect
