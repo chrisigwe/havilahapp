@@ -30,6 +30,7 @@ export default function Payroll({ boot }) {
   const [employees, setEmployees] = useState([])
   const [busy, setBusy] = useState(false)
   const [editEmp, setEditEmp] = useState(null)
+  const [recordingPayout, setRecordingPayout] = useState(null)
   const [view, setView] = useState('month')   // 'month' | 'people'
 
   const final = period?.status === 'final'
@@ -163,11 +164,33 @@ export default function Payroll({ boot }) {
                 </div>
               </div>
 
-              {potNext && (
-                <p className="print:hidden text-dim text-sm mt-2">
-                  Pot: next turn is {potNext.full_name} (#{potNext.turn_no} of {potNext.members},
-                  {' '}{potNext.taken} taken so far).
-                </p>
+              {potNext && !final && (
+                <div className="print:hidden mt-2 rounded-xl border border-line p-3">
+                  <p className="text-dim text-sm">
+                    Pot: next turn is {potNext.full_name} (#{potNext.turn_no} of {potNext.members},
+                    {' '}{potNext.taken} taken so far).
+                  </p>
+                  {/* Nothing on this page could previously RECORD a
+                      payout — savePayout existed but nothing called it,
+                      and the rotation could never advance. This is the
+                      missing control. Who actually took it can differ
+                      from "next in line" (the GM covering a departed
+                      manager's share, say), so the name is editable. */}
+                  {!payouts.length ? (
+                    <button onClick={() => setRecordingPayout({
+                        employee_id: potNext.employee_id, amount: '', note: '' })}
+                      className="mt-2 h-10 px-3 rounded-lg border border-amber text-amber text-sm font-semibold">
+                      Record this month's payout
+                    </button>
+                  ) : (
+                    <p className="text-leaf text-sm mt-1">
+                      {payouts.map(p =>
+                        `${employees.find(e => e.id === p.employee_id)?.full_name || '?'}: ${naira(p.amount)}`
+                      ).join(', ')}
+                      {' '}— marked taken when this month is finalised.
+                    </p>
+                  )}
+                </div>
               )}
 
               {groups.map(g => {
@@ -249,8 +272,16 @@ export default function Payroll({ boot }) {
                   </button>
                 : <button onClick={async () => {
                       if (!window.confirm('Finalise this month? It will be frozen until reopened.')) return
-                      await finalisePeriod(period.id, staff.id); refresh()
-                      toast('Month finalised', 'success')
+                      const r = await finalisePeriod(period.id, staff.id); refresh()
+                      // Says what actually moved, since finalising now
+                      // commits three separate things silently otherwise —
+                      // easy to assume it "just works" and not notice one
+                      // part was skipped (e.g. no pot payout recorded).
+                      const parts = []
+                      if (r.repayments) parts.push(`${r.repayments} credit repayment(s)`)
+                      if (r.deposits) parts.push(`${r.deposits} savings deposit(s)`)
+                      if (r.payouts) parts.push(`${r.payouts} pot payout(s) marked taken`)
+                      toast(parts.length ? `Month finalised — ${parts.join(', ')}` : 'Month finalised', 'success')
                     }}
                     className="h-12 w-full rounded-xl bg-amber text-bg font-bold">
                     Finalise {MONTHS[month - 1]} {year}
@@ -264,6 +295,57 @@ export default function Payroll({ boot }) {
             </p>
           )}
         </>
+      )}
+
+      {recordingPayout && (
+        <div className="fixed inset-0 z-50 bg-bg overflow-y-auto">
+          <div className="px-5 py-6">
+            <button onClick={() => setRecordingPayout(null)} className="text-dim">Back</button>
+            <h3 className="mt-3 text-2xl font-bold">
+              Pot payout — {employees.find(e => e.id === recordingPayout.employee_id)?.full_name}
+            </h3>
+            <p className="text-dim text-sm mt-1">
+              Who actually took the pot this month, and how much. Does not have to
+              match "next in line" — change the name below if someone else took it.
+            </p>
+
+            <label className="block text-dim text-sm mt-4">Who took it</label>
+            <select value={recordingPayout.employee_id}
+              onChange={e => setRecordingPayout(r => ({ ...r, employee_id: e.target.value }))}
+              className="h-12 w-full px-3 rounded-xl bg-surface border border-line">
+              {employees.filter(e => e.tier === 'management').map(e => (
+                <option key={e.id} value={e.id}>{e.full_name}</option>
+              ))}
+            </select>
+
+            <label className="block text-dim text-sm mt-4">Amount</label>
+            <input type="number" inputMode="decimal" value={recordingPayout.amount}
+              onChange={e => setRecordingPayout(r => ({ ...r, amount: e.target.value }))}
+              className="h-12 w-full px-3 rounded-xl bg-surface border border-line tnum" />
+
+            <label className="block text-dim text-sm mt-4">Note</label>
+            <input value={recordingPayout.note}
+              onChange={e => setRecordingPayout(r => ({ ...r, note: e.target.value }))}
+              className="h-12 w-full px-3 rounded-xl bg-surface border border-line" />
+
+            <button disabled={busy || !recordingPayout.amount}
+              onClick={async () => {
+                setBusy(true)
+                try {
+                  await savePayout(period.id, recordingPayout.employee_id,
+                    Number(recordingPayout.amount), recordingPayout.note || null)
+                  toast('Payout recorded — marked taken when this month is finalised', 'success')
+                  setRecordingPayout(null); await refresh()
+                } catch (e) { toast(e.message, 'error') }
+                setBusy(false)
+              }}
+              className="mt-6 w-full h-14 rounded-2xl bg-amber text-bg text-lg font-bold disabled:opacity-40">
+              {busy ? 'Saving…' : 'Save payout'}
+            </button>
+            <button onClick={() => setRecordingPayout(null)}
+              className="mt-2 w-full h-12 text-dim">Cancel</button>
+          </div>
+        </div>
       )}
 
       {editEmp && (

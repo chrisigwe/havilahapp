@@ -5248,3 +5248,49 @@ confirmation.
 
 VERIFIED: two old stays for one guest sum correctly (4500), and a guest
 with no history shows a clean 0 rather than undefined.
+
+
+## Savings and the pot payout were never actually recorded — found while answering a question
+
+The user asked how savings and contributions work, and whether other
+deductions (Martins' advance) have room alongside the credit pull. The
+second was already true — lineTotals sums EVERY deduction row
+regardless of source, so advance and credit deductions were always
+summed together; nothing needed changing there.
+
+Checking the first uncovered two real gaps, not just a design question:
+
+  1. SAVINGS: typing an amount in "Held as savings" on a line correctly
+     REDUCED pay via lineTotals — but finalisePeriod never wrote
+     anything to payroll_savings_entry, the ledger savingsBalances()
+     reads from. "Saved NX" next to a name on the staff list could never
+     move, however many months were deducted. Confirmed by grep: no
+     insert into that table existed ANYWHERE in the app.
+
+  2. THE POT PAYOUT: savePayout() was fully written and imported into
+     Payroll.jsx — and never called by anything. No button existed to
+     record who took the pot. payroll_pot_member.taken_period_id (the
+     field marking a turn as done) was consequently never set anywhere
+     either, so payroll_pot_next() could never advance past whoever was
+     first in a cycle.
+
+Both fixed inside finalisePeriod, the one moment that should commit
+everything a month decided:
+  - a line's savings figure now writes a real 'deposit' entry, dated to
+    the month's last day, noted with whose salary it came from
+  - a payout recorded for the period (new UI: "Record this month's
+    payout", pre-filled to whoever's next but the name is editable,
+    since who actually takes it can differ from strict rotation order)
+    marks that member's taken_period_id, advancing the rotation
+
+finalisePeriod's return changed from a bare number to {repayments,
+deposits, payouts} — checked the one call site did not use the old
+return value, so nothing broke; the finalise button now reports what
+actually happened ("3 credit repayment(s), 2 savings deposit(s), 1 pot
+payout(s) marked taken") rather than a silent "Month finalised" that
+gave no indication whether the quieter parts worked.
+
+VERIFIED with a realistic scenario (an advance, a credit deduction, a
+savings amount, a recorded payout, someone with neither): all 7 checks
+correct, including that an advance never becomes a repayment and a
+person with no savings produces no stray deposit row.

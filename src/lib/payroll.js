@@ -140,16 +140,32 @@ export async function proposeCreditDeductions(branchId, lines, year, month) {
 // cash taken — otherwise the day's "Debt recovered" and "Total income"
 // would include wages deducted, and whoever cashed up would be chasing
 // money that never arrived.
+// Finalising is the one moment that commits everything the month
+// decided. Three things were only ever READ elsewhere in this file and
+// never WRITTEN by anything — found by checking, not assumed:
+//   1. a credit deduction settling department debt     (this was here)
+//   2. money typed as "held as savings" on a line NEVER reached
+//      payroll_savings_entry — the ledger savingsBalances() reads from.
+//      The deduction correctly reduced pay; nothing ever recorded that
+//      the money was being HELD. "Saved NX" on the staff list could
+//      never move, whatever was deducted.
+//   3. the pot payout: savePayout() existed but nothing called it, and
+//      payroll_pot_member.taken_period_id — the field that marks whose
+//      turn is done — was never set anywhere. The rotation could not
+//      advance even if a payout was recorded by hand.
+// All three now commit together here, or none do.
 export async function finalisePeriod(periodId, staffId) {
   const { data: period } = await supabase.from('payroll_period')
     .select('id, branch_id, year, month, status').eq('id', periodId).single()
   if (period?.status === 'final') throw new Error('That month is already finalised.')
 
   const { data: lines } = await supabase.from('payroll_line')
-    .select('id, full_name, payroll_deduction(source, amount, location_id, customer_id)')
+    .select('id, employee_id, full_name, savings, payroll_deduction(source, amount, location_id, customer_id)')
     .eq('period_id', periodId)
 
   const lastDay = new Date(period.year, period.month, 0).toISOString().slice(0, 10)
+
+  // 1. Credit deductions settle department debt (unchanged from before).
   const repayments = []
   for (const l of (lines || [])) {
     for (const d of (l.payroll_deduction || [])) {
@@ -167,11 +183,36 @@ export async function finalisePeriod(periodId, staffId) {
     if (error) throw error
   }
 
+  // 2. Money held as savings this month becomes a real deposit.
+  const deposits = (lines || [])
+    .filter(l => Number(l.savings) > 0.009)
+    .map(l => ({
+      employee_id: l.employee_id, period_id: periodId, entry_date: lastDay,
+      kind: 'deposit', amount: Number(l.savings),
+      note: `Held from ${l.full_name}'s ${period.year}-${String(period.month).padStart(2, '0')} salary`,
+    }))
+  if (deposits.length) {
+    const { error } = await supabase.from('payroll_savings_entry').insert(deposits)
+    if (error) throw error
+  }
+
+  // 3. A pot payout recorded for this period marks that member's turn
+  // as taken, so payroll_pot_next() moves on to whoever is next.
+  const { data: payouts } = await supabase.from('payroll_pot_payout')
+    .select('employee_id').eq('period_id', periodId)
+  if (payouts?.length) {
+    const { error } = await supabase.from('payroll_pot_member')
+      .update({ taken_period_id: periodId })
+      .in('employee_id', payouts.map(p => p.employee_id))
+      .is('taken_period_id', null)
+    if (error) throw error
+  }
+
   const { error: e2 } = await supabase.from('payroll_period')
     .update({ status: 'final', finalised_by: staffId, finalised_at: new Date().toISOString() })
     .eq('id', periodId)
   if (e2) throw e2
-  return repayments.length
+  return { repayments: repayments.length, deposits: deposits.length, payouts: payouts?.length || 0 }
 }
 
 export async function reopenPeriod(periodId) {
