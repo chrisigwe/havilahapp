@@ -17,12 +17,19 @@ export default function CheckIn({ boot, onDone }) {
 
   const [name, setName] = useState('')
   const [phone, setPhone] = useState('')
-  // Checked as the phone number is typed — before a room is even
-  // chosen — so front desk sees an old balance while there is still
-  // time to settle it or decide to carry it, not after the new stay is
-  // already open.
+  // Set when the person picks a suggestion from the name-matching
+  // dropdown below — that tap IS the confirmation of who this is, more
+  // reliable than any single field, since phone is often withheld and
+  // names collide. Cleared whenever they go back to typing, since
+  // editing the name or phone after confirming means they are not sure
+  // it was a match after all.
+  const [confirmedGuestId, setConfirmedGuestId] = useState(null)
+  // Checked before a room is even chosen, so front desk sees an old
+  // balance while there is still time to settle it or decide to carry
+  // it forward, not after the new stay is already open.
   const [priorBalance, setPriorBalance] = useState(0)
   useEffect(() => {
+    if (confirmedGuestId) return   // already known — see the dropdown handler
     const digits = phone.replace(/\D/g, '')
     if (digits.length < 7) { setPriorBalance(0); return }
     const t = setTimeout(async () => {
@@ -33,7 +40,7 @@ export default function CheckIn({ boot, onDone }) {
       catch { setPriorBalance(0) }
     }, 400)
     return () => clearTimeout(t)
-  }, [phone, name, staff.branch_id])
+  }, [phone, name, staff.branch_id, confirmedGuestId])
   const [roomId, setRoomId] = useState('')
   const [rateType, setRateType] = useState('standard')
   const [rateOverride, setRateOverride] = useState('')
@@ -116,7 +123,9 @@ export default function CheckIn({ boot, onDone }) {
 
       <div className="mt-5">
         <div className="text-dim mb-1">Guest name</div>
-        <input value={name} onChange={e => { setName(e.target.value); setSuggestionsOpen(true) }}
+        <input value={name} onChange={e => {
+            setName(e.target.value); setSuggestionsOpen(true); setConfirmedGuestId(null)
+          }}
           onFocus={() => setSuggestionsOpen(true)} autoFocus
           className="h-14 w-full px-4 rounded-xl bg-surface border border-line" />
         {suggestionsOpen && !!similarGuests.length && (
@@ -126,6 +135,10 @@ export default function CheckIn({ boot, onDone }) {
               <button key={g.id} type="button"
                 onClick={() => {
                   setName(g.full_name); setPhone(g.phone || '')
+                  // Picking this IS confirming identity — no waiting on
+                  // the phone-typing effect, and the balance is shown
+                  // directly from what this search already fetched.
+                  setConfirmedGuestId(g.id); setPriorBalance(g.owing || 0)
                   setSuggestionsOpen(false); setSimilarGuests([])
                 }}
                 className="block w-full text-left px-4 py-3 hover:bg-raise">
@@ -142,7 +155,8 @@ export default function CheckIn({ boot, onDone }) {
       </div>
       <div className="mt-4">
         <div className="text-dim mb-1">Phone number</div>
-        <input value={phone} onChange={e => setPhone(e.target.value)} inputMode="tel"
+        <input value={phone}
+          onChange={e => { setPhone(e.target.value); setConfirmedGuestId(null) }} inputMode="tel"
           placeholder="Matches a returning guest to their history"
           className="h-14 w-full px-4 rounded-xl bg-surface border border-line placeholder:text-dim" />
       </div>

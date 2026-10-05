@@ -901,7 +901,26 @@ export async function searchSimilarGuests(branchId, query) {
     .eq('branch_id', branchId).ilike('full_name', `%${q}%`)
     .order('full_name').limit(5)
   if (error) return []
-  return data || []
+  const rows = data || []
+  // Nothing is truly unique here — phone is often withheld, names
+  // collide — so recognition works by RESEMBLANCE: the GM confirms a
+  // match by tapping it. Each suggestion shows what they owe from a
+  // past stay right there, so picking the right one also surfaces the
+  // one thing that matters before a new booking opens.
+  const ids = rows.map(r => r.id)
+  if (ids.length) {
+    const { data: folios } = await supabase.from('v_stay_folio')
+      .select('outstanding, stays!inner(guest_id, status)')
+      .in('stays.guest_id', ids).eq('stays.status', 'checked_out')
+      .gt('outstanding', 0.009)
+    const owing = {}
+    for (const f of (folios || [])) {
+      const gid = f.stays.guest_id
+      owing[gid] = (owing[gid] || 0) + Number(f.outstanding)
+    }
+    for (const r of rows) r.owing = owing[r.id] || 0
+  }
+  return rows
 }
 
 // For the merge-guests tool — same substring search as above, but

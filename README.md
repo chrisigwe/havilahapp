@@ -5209,3 +5209,42 @@ mirroring findOrCreateGuest's own matching order) that never inserts.
 VERIFIED with the real function: phone match, name match, a genuinely
 new phone number, and no match at all — 4/4 correct, and confirmed it
 never calls insert in any of them.
+
+
+## Why there is no single unique identifier, and what was built instead
+
+Asked: since phone is unique, should it lead the form? Also raised:
+people are often reluctant to give it.
+
+Answer: nothing here is reliably unique. Phone is frequently withheld or
+shared within a household; a name alone collides and misspells; a
+national ID would be closer to unique but is more sensitive to store,
+not always carried at check-in, and slower to type than either.
+
+CheckIn already had the right shape for this, half-built: a "did you
+mean?" dropdown under the name field (searchSimilarGuests), where
+picking a suggestion fills in phone and selects the existing record.
+That was never connected to the prior-balance check added last turn, so
+confirming identity by name still left the balance lookup waiting on
+the phone-typing effect to independently rediscover the same person.
+
+Connected properly:
+  - searchSimilarGuests now also sums each candidate's OLD outstanding
+    balance (v_stay_folio, checked-out stays, summed across however many
+    old stays they have) and returns it as `owing`
+  - each suggestion in the dropdown shows "Owes NX from a previous stay"
+    right there, before the person is even picked
+  - tapping a suggestion sets priorBalance directly from that figure and
+    marks the guest as CONFIRMED (confirmedGuestId), which skips the
+    phone-typing effect entirely rather than running it a second time
+  - editing the name or phone afterwards clears confirmedGuestId, since
+    changing either means they are no longer sure it was a match
+
+So recognition works by resemblance and a human confirming it, not by
+forcing one field to be the key. Phone stays where it is on the form —
+reordering it alone would not have helped, since the real gap was that
+confirming identity by name did not yet DO anything with that
+confirmation.
+
+VERIFIED: two old stays for one guest sum correctly (4500), and a guest
+with no history shows a clean 0 rather than undefined.
