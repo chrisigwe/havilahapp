@@ -1725,15 +1725,20 @@ export async function postStaffOfMonth({ branchId, staffId, staffName, prizeAmou
     .limit(1).maybeSingle()
   if (e1) throw e1
 
+  // Returns the post's id: the prize is linked to payroll by it, so a
+  // same-day correction can replace the prize instead of doubling it.
   if (existing && existing.posted_at === today) {
     const { error } = await supabase.from('staff_of_month')
       .update({ staff_name: staffName, photo_url: photoUrl, prize_amount: prizeAmount }).eq('id', existing.id)
     if (error) throw error
+    return existing.id
   } else {
-    const { error } = await supabase.from('staff_of_month')
+    const { data: created, error } = await supabase.from('staff_of_month')
       .insert({ branch_id: branchId, staff_name: staffName, photo_url: photoUrl,
                 prize_amount: prizeAmount, posted_at: today, posted_by: staffId })
+      .select('id').single()
     if (error) throw error
+    return created.id
   }
 }
 

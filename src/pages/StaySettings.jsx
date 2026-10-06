@@ -2,8 +2,22 @@ import { useEffect, useState } from 'react'
 import { loadRoomsForSettings, loadBranchStaySettings, updateRoomRates,
          updateBranchOverstayDefault, loadStaffOfMonth, postStaffOfMonth,
          deleteStaffOfMonth } from '../lib/data'
+import { loadAwardPayroll, loadDraftPeriods, loadEmployees, setAwardPayroll } from '../lib/payroll'
+import { lagosToday } from '../lib/format'
 import { useToast } from '../components/Toast'
 import { SUPERVISOR, is } from '../lib/roles'
+
+const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June',
+  'July', 'August', 'September', 'October', 'November', 'December']
+
+// "SURNAME, Given Names" or a "Known as (staff)" name -> what the banner
+// should say. Only a starting suggestion: the name stays editable.
+function displayNameOf(emp) {
+  if (emp.aka) return emp.aka.replace(/\(staff\)/i, '').trim()
+  const given = String(emp.full_name || '').split(',')[1] || emp.full_name || ''
+  const first = given.trim().split(/\s+/)[0] || ''
+  return first.charAt(0).toUpperCase() + first.slice(1).toLowerCase()
+}
 
 const RATE_FIELDS = { standard: 'rate_standard', alternate: 'rate_alternate', short: 'rate_short' }
 
@@ -42,6 +56,13 @@ export default function StaySettings({ boot }) {
   const [somRemovePhoto, setSomRemovePhoto] = useState(false)
   const [somBusy, setSomBusy] = useState(false)
   const [confirmingSomDelete, setConfirmingSomDelete] = useState(false)
+  // Linking the prize to salary. Optional: with no employee chosen the post
+  // is the banner only, exactly as before.
+  const [employees, setEmployees] = useState([])
+  const [draftPeriods, setDraftPeriods] = useState([])
+  const [somEmployeeId, setSomEmployeeId] = useState('')
+  const [somPeriodId, setSomPeriodId] = useState('')
+  const [somLinked, setSomLinked] = useState(false)
 
   useEffect(() => {
     if (!canManageRooms) return
@@ -54,7 +75,19 @@ export default function StaySettings({ boot }) {
 
   useEffect(() => {
     if (!canPostStaffOfMonth) return
-    loadStaffOfMonth(staff.branch_id).then(e => { setSomEntry(e); setSomName(e?.staff_name || ''); setSomPrizeAmount(e ? String(e.prize_amount) : '10000') }).catch(() => setSomEntry(null))
+    loadStaffOfMonth(staff.branch_id).then(e => {
+      setSomEntry(e); setSomName(e?.staff_name || ''); setSomPrizeAmount(e ? String(e.prize_amount) : '10000')
+      // Pre-fill the salary link ONLY for a same-day correction, which updates
+      // that post in place. Any other post is a new row, so it starts blank
+      // rather than offering last month's winner.
+      if (e && e.posted_at === lagosToday()) {
+        loadAwardPayroll(e.id).then(l => {
+          setSomLinked(!!l); setSomEmployeeId(l?.employeeId || ''); setSomPeriodId(l?.periodId || '')
+        }).catch(() => {})
+      }
+    }).catch(() => setSomEntry(null))
+    loadEmployees(staff.branch_id).then(setEmployees).catch(() => setEmployees([]))
+    loadDraftPeriods(staff.branch_id).then(setDraftPeriods).catch(() => setDraftPeriods([]))
   }, [canPostStaffOfMonth, staff.branch_id])
 
   if (!canManageRooms) {
@@ -110,13 +143,32 @@ export default function StaySettings({ boot }) {
   async function saveStaffOfMonth() {
     setSomBusy(true)
     try {
-      await postStaffOfMonth({
+      const awardId = await postStaffOfMonth({
         branchId: staff.branch_id, staffId: staff.id, staffName: somName.trim(),
         prizeAmount: Number(somPrizeAmount) || 0,
         photoFile: somPhotoFile, removePhoto: somRemovePhoto,
         currentPhotoUrl: somEntry?.photo_url || null,
       })
-      toast('Staff of the Month posted', 'success')
+      // The banner is already posted; adding the prize to salary is a
+      // second step, and if it fails the GM must be told plainly that the
+      // money is NOT on anyone's payroll, not left to assume it worked.
+      if (somEmployeeId || somLinked) {
+        try {
+          const r = await setAwardPayroll(awardId, somEmployeeId || null, somPeriodId || null, Number(somPrizeAmount) || 0)
+          // Believe the DATABASE, not the form: with no month chosen it
+          // returns linked:false without an error, and saying "it is on
+          // their salary" then would be false.
+          setSomLinked(!!r?.linked)
+          if (somEmployeeId && !r?.linked) {
+            toast('Posted, but the prize was NOT added to salary — no open payroll month was chosen.',
+                  'error', { duration: 14000 })
+          } else {
+            toast(somEmployeeId ? 'Posted — the prize is on their salary' : 'Posted — prize taken off salary', 'success')
+          }
+        } catch (err) {
+          toast('Posted, but the prize was NOT added to salary: ' + err.message, 'error', { duration: 14000 })
+        }
+      } else toast('Staff of the Month posted', 'success')
       setSomPhotoFile(null); setSomPhotoPreview(null); setSomRemovePhoto(false)
       loadStaffOfMonth(staff.branch_id).then(e => { setSomEntry(e); setSomName(e?.staff_name || ''); setSomPrizeAmount(e ? String(e.prize_amount) : '10000') })
     } catch (e) { toast('Not saved: ' + e.message, 'error') }
@@ -127,7 +179,12 @@ export default function StaySettings({ boot }) {
     if (!somEntry) return
     setSomBusy(true)
     try {
+      // Take the prize off payroll first. If its month is already
+      // finalised this refuses, and the post is left alone rather than
+      // leaving paid money with no award behind it.
+      if (somLinked) await setAwardPayroll(somEntry.id, null, null, 0)
       await deleteStaffOfMonth(somEntry.id)
+      setSomLinked(false); setSomEmployeeId(''); setSomPeriodId('')
       toast('Post deleted', 'success')
       setConfirmingSomDelete(false)
       setSomEntry(null); setSomName(''); setSomPrizeAmount('10000'); setSomPhotoFile(null); setSomPhotoPreview(null); setSomRemovePhoto(false)
@@ -213,6 +270,44 @@ export default function StaySettings({ boot }) {
           <input value={somPrizeAmount} onChange={e => setSomPrizeAmount(e.target.value.replace(/[^0-9]/g, ''))}
             inputMode="numeric" placeholder="10000"
             className="h-12 w-full px-3 rounded-xl bg-raise border border-line tnum" />
+
+          {/* Pay the prize through salary. Optional. */}
+          <div className="mt-4 rounded-xl border border-line p-3">
+            <div className="text-dim text-sm mb-1">Add the prize to their salary</div>
+            <select value={somEmployeeId}
+              onChange={e => {
+                const id = e.target.value
+                setSomEmployeeId(id)
+                const emp = employees.find(x => x.id === id)
+                if (emp && !somName.trim()) setSomName(displayNameOf(emp))
+                if (id && !somPeriodId && draftPeriods[0]) setSomPeriodId(draftPeriods[0].id)
+              }}
+              className="h-12 w-full px-3 rounded-xl bg-raise border border-line">
+              <option value="">No — banner only</option>
+              {employees.map(emp => <option key={emp.id} value={emp.id}>{emp.full_name}</option>)}
+            </select>
+            {somEmployeeId && (draftPeriods.length ? (
+              <>
+                <div className="text-dim text-sm mt-3 mb-1">With which month's salary</div>
+                <select value={somPeriodId} onChange={e => setSomPeriodId(e.target.value)}
+                  className="h-12 w-full px-3 rounded-xl bg-raise border border-line">
+                  {draftPeriods.map(pd => (
+                    <option key={pd.id} value={pd.id}>{MONTHS[pd.month - 1]} {pd.year}</option>
+                  ))}
+                </select>
+                <p className="text-dim text-xs mt-2">
+                  Shown on their payroll line as "Staff of the Month prize". Only months not yet
+                  finalised are listed. Correcting this post today replaces the prize; it is
+                  never added twice.
+                </p>
+              </>
+            ) : (
+              <p className="text-clay text-sm mt-2">
+                No payroll month is open. Open one under Payroll first, otherwise the prize
+                cannot be added to salary.
+              </p>
+            ))}
+          </div>
 
           <div className="text-dim text-sm mt-3 mb-1">Photo (optional)</div>
           <input type="file" accept="image/*" onChange={pickSomPhoto} className="w-full text-sm" />

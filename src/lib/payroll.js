@@ -74,7 +74,7 @@ export async function openPeriod(branchId, year, month, workingDays = 28) {
 
 export async function loadLines(periodId) {
   const { data, error } = await supabase.from('payroll_line')
-    .select('*, payroll_deduction(*)')
+    .select('*, payroll_deduction(*), payroll_addition(*)')
     .eq('period_id', periodId)
   if (error) throw error
   return (data || []).sort((a, b) =>
@@ -340,7 +340,10 @@ export function lineTotals(line, payoutAmount = 0, workingDays = 28) {
   const dailyRate = wd > 0 ? salary / wd : 0
   const earned = Math.round(dailyRate * days * 100) / 100
   const deductions = (line.payroll_deduction || []).reduce((t, d) => t + Number(d.amount), 0)
+  // Typed additions PLUS itemised ones (the Staff of the Month prize lands
+  // here, labelled, so it is visible rather than folded into one number).
   const additions = Number(line.additions || 0)
+    + (line.payroll_addition || []).reduce((t, a) => t + Number(a.amount), 0)
   const contribution = Number(line.contribution || 0)   // paid INTO the pot
   const savings = Number(line.savings || 0)             // held back for themselves
   const pot = Number(payoutAmount || 0)                 // taken OUT of the pot
@@ -389,4 +392,69 @@ export async function loadCustomersForLinking(branchId) {
     .order('name')
   if (error) throw error
   return data || []
+}
+
+
+// ---------- raises (migration 314) ----------
+
+// Records the change, updates the employee, and updates every DRAFT month
+// from the effective month onward. Refused if a finalised month falls on
+// or after it, or if the month is in the future. `effectiveMonth` is
+// 'YYYY-MM-01'. The database enforces all of this; the screen only
+// reports what it says.
+export async function giveRaise(employeeId, newSalary, effectiveMonth, reason) {
+  const { data, error } = await supabase.rpc('give_raise', {
+    p_employee: employeeId, p_new_salary: Number(newSalary),
+    p_effective: effectiveMonth, p_reason: reason || null,
+  })
+  if (error) throw error
+  return data   // { effective, open_months_updated }
+}
+
+export async function loadSalaryHistory(employeeId) {
+  const { data, error } = await supabase.from('payroll_salary_change')
+    .select('id, effective_from, old_salary, new_salary, reason, created_at')
+    .eq('employee_id', employeeId)
+    .order('effective_from', { ascending: false }).order('created_at', { ascending: false })
+  if (error) throw error
+  return data || []
+}
+
+// ---------- itemised additions, and the Staff of the Month prize ----------
+
+export async function removeAddition(id) {
+  const { error } = await supabase.from('payroll_addition').delete().eq('id', id)
+  if (error) throw error
+}
+
+// Open (draft) months — the only ones a prize can be added to.
+export async function loadDraftPeriods(branchId) {
+  const { data, error } = await supabase.from('payroll_period')
+    .select('id, year, month').eq('branch_id', branchId).eq('status', 'draft')
+    .order('year').order('month')
+  if (error) throw error
+  return data || []
+}
+
+// Adds, MOVES or REMOVES the prize on the winner's payroll line, keyed on
+// the award post: a same-day correction replaces it rather than doubling
+// it. Passing no employee removes it.
+export async function setAwardPayroll(awardId, employeeId, periodId, amount) {
+  const { data, error } = await supabase.rpc('set_award_payroll', {
+    p_award: awardId, p_employee: employeeId || null,
+    p_period: periodId || null, p_amount: Number(amount) || 0,
+  })
+  if (error) throw error
+  return data
+}
+
+// Where an award's prize currently sits, if anywhere — to pre-fill the form.
+export async function loadAwardPayroll(awardId) {
+  if (!awardId) return null
+  const { data } = await supabase.from('payroll_addition')
+    .select('amount, payroll_line(employee_id, period_id)')
+    .eq('award_id', awardId).maybeSingle()
+  if (!data?.payroll_line) return null
+  return { employeeId: data.payroll_line.employee_id,
+           periodId: data.payroll_line.period_id, amount: Number(data.amount) }
 }

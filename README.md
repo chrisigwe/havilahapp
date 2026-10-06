@@ -5483,3 +5483,51 @@ stopped offering retired "[merged into ...]" duplicates.
 TESTED with Anthony, Alphonso and Onyeka's real records, 15 checks: typed-text
 case, linked case, both in one search, typed by phone, settled stay, no
 leakage onto Onyeka, Rooms list, and the narrow save. A mock, not a live test.
+
+
+## Raises with history, and the Staff of the Month prize on salary (314)
+
+RAISES. Before: edit the salary box on the employee form. No record of who,
+when or why — and it did not reach a month already open, because a payroll
+line COPIES the salary when its month is opened.
+
+give_raise() (GM/admin, database-enforced): records the change (old -> new,
+effective month, reason, who), updates the employee, and updates every DRAFT
+month from the effective month onward. Rules, all in the database:
+  - effective month = THIS month or earlier. A future raise is entered when
+    its month arrives, so the stored salary is never ahead of what is paid.
+  - REFUSED if any finalised month falls on or after it: committed pay is
+    never rewritten (reopen the month first).
+  - no mid-month proration: a raise takes effect from a whole month.
+A guard trigger refuses any other change to monthly_salary from the app, so
+every change leaves a trace; the SQL editor (auth.uid() null) is still
+allowed. The employee form therefore no longer sends the salary for an
+EXISTING employee; a new employee's starting salary is still entered there.
+A raise above 70,000 feeds the gift rule automatically.
+
+PRIZE. staff_of_month had only a typed name, photo and amount; nothing tied
+it to anyone's pay. The Settings post form now has an optional "Add the prize
+to their salary": pick the employee (the banner name is suggested from their
+name) and which OPEN month's salary carries it (default: the earliest open).
+The prize becomes a LABELLED line on their payroll line (payroll_addition,
+"Staff of the Month prize"), counted by lineTotals with the typed Addition,
+and removable on the month sheet while the month is open.
+  - keyed on the award post: a same-day correction REPLACES it, never doubles
+  - deleting the post removes it first; if its month is finalised that refuses
+    and the post is left alone
+  - a finalised month is never touched, in either direction
+  - the toast reports what the DATABASE did. With no month chosen it returns
+    linked:false without an error; the form must not say "on their salary".
+
+TESTED in real Postgres (22 checks): raise reaching both open months with the
+finalised one untouched; every refusal (finalised month, future, same salary,
+negative, non-supervisor); the guard (app refused, SQL editor allowed, other
+fields saved with salary unchanged); the prize landing, MOVING between people,
+being replaced, removed, refused into a finalised month, refused cross-branch,
+removed with the post, and refused removal once finalised. Plus 16 JS checks:
+totals with the prize, the 70,000 gift boundary, the exact RPC argument names,
+the name suggestion. NOT tested: the screens in a browser, or the live DB.
+
+Seeding mistake caught on the way: the test tried to add lines to a month it
+had already finalised and the database refused, which is the freeze rule
+working as intended.

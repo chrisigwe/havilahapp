@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { naira, lagosToday } from '../lib/format'
 import { useToast } from '../components/Toast'
 import {
-  addDeduction, endEmployment, finalisePeriod, lineTotals, loadCustomersForLinking, loadEmployees, loadLines, loadPayouts, loadPeriod, loadPotNext, openPeriod, proposeCreditDeductions, removeDeduction, reopenPeriod, saveEmployee, savePayout, savingsBalances, setEmployeeCreditAccount, updateLine,
+  addDeduction, endEmployment, finalisePeriod, giveRaise, lineTotals, loadCustomersForLinking, loadEmployees, loadLines, loadPayouts, loadPeriod, loadPotNext, loadSalaryHistory, openPeriod, proposeCreditDeductions, removeAddition, removeDeduction, reopenPeriod, saveEmployee, savePayout, savingsBalances, setEmployeeCreditAccount, updateLine,
 } from '../lib/payroll'
 
 const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June',
@@ -442,10 +442,14 @@ function EmployeeSheet({ value, employees, final, onClose, onSaved, toast, branc
       } else {
         // Everything except the credit link, which is saved separately
         // because linking also RENAMES the credit account to the AKA.
-        const saved = await saveEmployee({
-          ...f, monthly_salary: Number(f.monthly_salary) || 0,
-          customer_id: undefined, staff_id: f.staff_id || null,
-        })
+        // An EXISTING employee's salary is never sent from this form: the
+        // database refuses it, and every change must leave a record, so it
+        // goes through "Give a raise" below. A NEW employee's starting
+        // salary is entered here.
+        const payload = { ...f, customer_id: undefined, staff_id: f.staff_id || null }
+        if (f.id) delete payload.monthly_salary
+        else payload.monthly_salary = Number(f.monthly_salary) || 0
+        const saved = await saveEmployee(payload)
         // Use the id from the SAVE, not f.id: a new employee has no id
         // yet when this runs, so linking them would silently do nothing.
         await setEmployeeCreditAccount(saved?.id || f.id, f.customer_id || null, f.aka || null)
@@ -487,6 +491,29 @@ function EmployeeSheet({ value, employees, final, onClose, onSaved, toast, branc
             </p>
             {num('days_worked', 'Days worked')}
             {num('additions', 'Addition')}
+            {(f.payroll_addition || []).length > 0 && (
+              <div className="mt-3 rounded-xl border border-line p-3">
+                <p className="text-dim text-sm">Added automatically</p>
+                {f.payroll_addition.map(a => (
+                  <div key={a.id} className="flex items-center justify-between text-sm mt-1">
+                    <span>{a.note || a.source}</span>
+                    <span className="flex items-center gap-3">
+                      <span className="tnum">{naira(a.amount)}</span>
+                      {!final && (
+                        <button className="text-clay underline"
+                          onClick={async () => {
+                            try { await removeAddition(a.id); onSaved() }
+                            catch (e) { toast(e.message, 'error') }
+                          }}>Remove</button>
+                      )}
+                    </span>
+                  </div>
+                ))}
+                <p className="text-dim text-xs mt-2">
+                  Counted in this month's pay together with the Addition above.
+                </p>
+              </div>
+            )}
             {num('contribution', 'Paid into the pot')}
             {num('savings', 'Held as savings')}
             {txt('remark', 'Remark')}
@@ -534,7 +561,8 @@ function EmployeeSheet({ value, employees, final, onClose, onSaved, toast, branc
               <option value="management">Management staff</option>
               <option value="junior">Junior staff</option>
             </select>
-            {num('monthly_salary', 'Monthly salary')}
+            {f.id ? <SalaryPanel employee={f} onSaved={onSaved} toast={toast} />
+                  : num('monthly_salary', 'Monthly salary')}
             {txt('bank_name', 'Bank')}
             {txt('bank_account', 'Account number')}
             {txt('started_on', 'Started (YYYY-MM-DD)')}
@@ -559,6 +587,105 @@ function EmployeeSheet({ value, employees, final, onClose, onSaved, toast, branc
           {final ? 'Month is finalised' : busy ? 'Saving…' : 'Save'}
         </button>
       </div>
+    </div>
+  )
+}
+
+// Salary changes for an existing employee. Every change is recorded with
+// its effective month and reason, and reaches every OPEN month from that
+// month on; a finalised month is never rewritten, and a raise that would
+// reach into one is refused by the database.
+function SalaryPanel({ employee, onSaved, toast }) {
+  const [open, setOpen] = useState(false)
+  const [salary, setSalary] = useState('')
+  const [reason, setReason] = useState('')
+  const [history, setHistory] = useState([])
+  const [busy, setBusy] = useState(false)
+
+  // This month and the five before it. A raise cannot be dated in the
+  // future — enter it when its month arrives.
+  const now = new Date(lagosToday() + 'T12:00:00')
+  const months = Array.from({ length: 6 }, (_, i) => {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1)
+    return { value: `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`,
+             label: `${MONTHS[d.getMonth()]} ${d.getFullYear()}` }
+  })
+  const [month, setMonth] = useState(months[0].value)
+
+  useEffect(() => {
+    loadSalaryHistory(employee.id).then(setHistory).catch(() => setHistory([]))
+  }, [employee.id])
+
+  async function submit() {
+    setBusy(true)
+    try {
+      const r = await giveRaise(employee.id, salary, month, reason)
+      toast(`Recorded — ${r?.open_months_updated ?? 0} open month(s) updated`, 'success')
+      onSaved()
+    } catch (e) { toast(e.message, 'error', { duration: 9000 }) }
+    setBusy(false)
+  }
+  const monthLabel = d => {
+    const [y, m] = String(d).split('-').map(Number)
+    return `${MONTHS[m - 1]} ${y}`
+  }
+
+  return (
+    <div className="mt-3 rounded-2xl border border-line bg-surface p-4">
+      <div className="flex items-baseline justify-between">
+        <span className="text-dim text-sm">Monthly salary</span>
+        <span className="tnum font-bold">{naira(employee.monthly_salary)}</span>
+      </div>
+
+      {!open ? (
+        <button onClick={() => setOpen(true)}
+          className="mt-3 h-11 w-full rounded-xl border border-amber text-amber font-semibold">
+          Give a raise / change salary
+        </button>
+      ) : (
+        <div className="mt-3">
+          <label className="block text-dim text-sm">New monthly salary</label>
+          <input type="number" inputMode="decimal" value={salary}
+            onChange={e => setSalary(e.target.value)}
+            className="mt-1 h-12 w-full px-3 rounded-xl bg-raise border border-line tnum" />
+          {Number(salary) > 70000 && (
+            <p className="text-amber text-xs mt-1">
+              Above ₦70,000: the part above it is recorded as a gift in payroll.
+            </p>
+          )}
+          <label className="block mt-3 text-dim text-sm">Takes effect from</label>
+          <select value={month} onChange={e => setMonth(e.target.value)}
+            className="mt-1 h-12 w-full px-3 rounded-xl bg-raise border border-line">
+            {months.map(m => <option key={m.value} value={m.value}>{m.label}</option>)}
+          </select>
+          <label className="block mt-3 text-dim text-sm">Reason</label>
+          <input value={reason} onChange={e => setReason(e.target.value)}
+            placeholder="e.g. Annual review"
+            className="mt-1 h-12 w-full px-3 rounded-xl bg-raise border border-line" />
+          <p className="text-dim text-xs mt-2">
+            Every open month from that one onward is updated. A month that has already
+            been finalised is never changed — if the raise would reach one, it is refused.
+          </p>
+          <button onClick={submit} disabled={busy || !salary}
+            className="mt-3 h-12 w-full rounded-xl bg-amber text-bg font-bold disabled:opacity-40">
+            {busy ? 'Saving…' : 'Record the change'}
+          </button>
+          <button onClick={() => setOpen(false)} className="mt-2 w-full h-10 text-dim">Cancel</button>
+        </div>
+      )}
+
+      {history.length > 0 && (
+        <div className="mt-4 pt-3 border-t border-line/60">
+          <p className="text-dim text-xs mb-1">Salary history</p>
+          {history.map(h => (
+            <div key={h.id} className="text-sm mt-1">
+              <span className="tnum">{naira(h.old_salary)} → {naira(h.new_salary)}</span>
+              <span className="text-dim"> · from {monthLabel(h.effective_from)}</span>
+              {h.reason && <span className="text-dim"> · {h.reason}</span>}
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   )
 }
