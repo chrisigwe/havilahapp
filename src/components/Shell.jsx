@@ -91,6 +91,7 @@ export default function Shell({ staff, tab, onTab, children,
                     aria-current={active ? 'page' : undefined}
                     className={`w-full flex items-center gap-3 px-3 h-10 rounded-xl text-left text-[0.95rem]
                                 ${active ? 'bg-amber/20 text-amber font-bold' : 'text-dim hover:bg-white/5 hover:text-ink'}`}>
+                    <NavIcon tab={i.key} filled={active} className="w-5 h-5 shrink-0" />
                     <span className="flex-1">{i.label}</span>
                     {i.key === 'count' && pendingCount > 0 && (
                       <span className="min-w-[1.25rem] h-5 px-1 rounded-full bg-clay text-bg text-xs font-bold flex items-center justify-center">
@@ -160,8 +161,8 @@ export default function Shell({ staff, tab, onTab, children,
       <nav className="lg:hidden fixed bottom-3 inset-x-3 z-40"
         style={{ marginBottom: 'env(safe-area-inset-bottom)' }}>
         <div className="mx-auto max-w-md flex gap-1 p-1.5 rounded-[28px]
-                         bg-surface/35 backdrop-blur-2xl backdrop-saturate-150
-                         border border-white/15 shadow-[0_8px_32px_rgba(0,0,0,0.45)]">
+                         bg-surface/60 backdrop-blur-sm
+                         border border-white/10 shadow-[0_8px_32px_rgba(0,0,0,0.45)]">
           {tabs.map(([k, label]) => {
             const active = tab === k || (k === 'more' && MORE.includes(tab) && !directTabKeys.has(tab))
             return (

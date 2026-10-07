@@ -20,6 +20,14 @@ const PATHS = {
   fix: <path d="M3.5 12a8.5 8.5 0 1 0 2.5-6M3 3v4h4M12 8v4l2.5 2.5" />,
   // Recovered debt: a note with a return arrow — money coming back in.
   recovery: <path d="M3 7h14a1 1 0 0 1 1 1v7a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V8a1 1 0 0 1 1-1ZM10 10.5a1 1 0 1 0 0 3 1 1 0 0 0 0-3ZM19 4l2.5 2.5L19 9" />,
+  // Catalog: a price tag.
+  catalog: <path d="M20.6 13.4l-7.2 7.2a2 2 0 0 1-2.8 0L3 13V4h9l8.6 8.6a2 2 0 0 1 0 2.8ZM7.5 7.5h.01" />,
+  // Payroll: a banknote.
+  payroll: <path d="M3 7a1 1 0 0 1 1-1h16a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V7Zm9 2.5a2.5 2.5 0 1 0 0 5 2.5 2.5 0 0 0 0-5ZM6 10v.01M18 14v.01" />,
+  // Staff accounts: two people.
+  staffaccounts: <path d="M9 11a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7ZM2.5 20a6.5 6.5 0 0 1 13 0M17 5.2a3.5 3.5 0 0 1 0 6.6M18.5 14a6.5 6.5 0 0 1 3 6" />,
+  // Settings: sliders.
+  staysettings: <path d="M4 7h9M17 7h3M4 17h3M11 17h9M15 4.5v5M9 14.5v5" />,
   more: <path d="M5 12h.01M12 12h.01M19 12h.01" strokeWidth="3" />,
 }
 
