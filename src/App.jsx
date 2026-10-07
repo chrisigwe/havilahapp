@@ -14,6 +14,7 @@ import Catalog from './pages/Catalog'
 import Payroll from './pages/Payroll'
 import StaffAccounts from './pages/StaffAccounts'
 import Variances from './pages/Variances'
+import TillChecks from './pages/TillChecks'
 import Recovery from './pages/Recovery'
 import More from './pages/More'
 import { ToastHost } from './components/Toast'
@@ -261,6 +262,7 @@ export default function App() {
         : tab === 'catalog' ? <Catalog boot={boot} onChanged={refresh} />
         : tab === 'payroll' ? <Payroll boot={boot} />
         : tab === 'staffaccounts' ? <StaffAccounts boot={boot} />
+        : tab === 'tillchecks' ? <TillChecks boot={boot} />
         : tab === 'variance' ? <Variances boot={boot} />
         : tab === 'recovery' ? <Recovery boot={boot} />
         : tab === 'credit' ? <Credit boot={boot} />

@@ -2301,3 +2301,19 @@ export async function undoRecentReceipt(receiptId) {
   if (error) throw error
   if (!data) throw new Error('Nothing was undone — it may be older than 10 minutes.')
 }
+
+
+// Keeps the result of "Match your till" so managers can see who closes clean.
+// Never blocks the person: a failure here is silent.
+export async function recordTillCheck({ branchId, locationId, date, appPos, appCash, pos, cash }) {
+  const { error } = await supabase.rpc('record_till_check', {
+    p_branch: branchId, p_location: locationId, p_date: date,
+    p_app_pos: appPos, p_app_cash: appCash, p_pos: pos, p_cash: cash })
+  if (error) throw error
+}
+
+export async function loadTillChecks(branchId, days = 14) {
+  const { data, error } = await supabase.rpc('till_checks_report', { p_branch: branchId, p_days: days })
+  if (error) throw error
+  return data || { checks: [], missing: [] }
+}

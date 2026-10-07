@@ -20,7 +20,7 @@ import { moreItemsFor } from '../pages/More'
 // Pages that read better as a single column even on a big screen.
 const NARROW = ['sales', 'store', 'more', 'staysettings', 'staffaccounts']
 
-const MORE = ['dailysales', 'roomboard', 'credit', 'recovery', 'count', 'catalog', 'variance', 'fix',
+const MORE = ['tillchecks', 'dailysales', 'roomboard', 'credit', 'recovery', 'count', 'catalog', 'variance', 'fix',
               'staysettings', 'sales', 'store', 'stock']
 
 export default function Shell({ staff, tab, onTab, children,

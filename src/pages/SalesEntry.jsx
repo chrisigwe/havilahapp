@@ -6,7 +6,7 @@ import { loadStockMap, loadPopular, loadToday, saveBasket, saveWriteoff,
          loadStaffForLocation, loadReceptionActivity, loadReceptionDashboard, deleteEntry,
          loadRoomCharges, deleteOrderItem, saveRestaurantWriteoff, loadRoomsSoldInMonth,
          loadWriteoffsOnDate, loadLiveStays, chargeBasketToRoom,
-         getOrCreateGuestTab, updateSaleWithPayments, undoRecentReceipt } from '../lib/data'
+         getOrCreateGuestTab, updateSaleWithPayments, undoRecentReceipt, recordTillCheck } from '../lib/data'
 import { enqueue, flush, isConnectionError } from '../lib/outbox'
 import { useToast } from '../components/Toast'
 import ReceptionDashboard from '../components/ReceptionDashboard'
@@ -324,6 +324,10 @@ export default function SalesEntry({ boot }) {
     } catch (e) { toast('Not changed: ' + e.message, 'error') }
     setSwitchingId(null)
   }
+
+  const saveTillResult = (r) => recordTillCheck({
+    branchId: staff.branch_id, locationId, date,
+    appPos: r.appPos, appCash: r.appCash, pos: r.pos, cash: r.cash })
 
   async function undoLast() {
     if (!window.confirm('Undo the last sale? It will be removed as if it never happened.')) return
@@ -680,7 +684,7 @@ export default function SalesEntry({ boot }) {
       )}
 
       {isReception && receptionDashboard && (
-        <MatchTill rows={[]} posTotal={receptionDashboard.pos} cashTotal={receptionDashboard.cash} />
+        <MatchTill rows={[]} posTotal={receptionDashboard.pos} cashTotal={receptionDashboard.cash} onRecord={saveTillResult} />
       )}
 
       {isReception && (
@@ -815,7 +819,7 @@ export default function SalesEntry({ boot }) {
           <span className="tnum font-bold text-lg">{naira(todayTotal)}</span>
         </div>
 
-        <MatchTill rows={today} busyId={switchingId} onSwitch={switchPayment}
+        <MatchTill rows={today} busyId={switchingId} onSwitch={switchPayment} onRecord={saveTillResult}
           itemName={r => itemById[r.stock_item_id]?.name || r.description || ''} />
 
         {recon && (

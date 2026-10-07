@@ -35,6 +35,8 @@ const ITEMS = [
     roles: ['gm', 'admin'] },
   { key: 'staffaccounts', label: 'Staff accounts', hint: 'Hand over a login, or switch one off',
     roles: ['gm', 'admin'] },
+  { key: 'tillchecks', label: 'Till checks', hint: 'Who matched their till at close, and who did not',
+    roles: ['storekeeper', 'manager', 'gm', 'admin', 'auditor'] },
   { key: 'variance', label: 'Variances', hint: 'Sales where collection did not match the goods sold',
     roles: ['storekeeper', 'manager', 'gm', 'admin', 'auditor'] },
   { key: 'fix',     label: 'Corrections', hint: 'Fix a mistake from today or yesterday',

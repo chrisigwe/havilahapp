@@ -22,10 +22,12 @@ function sumMethod(rows, m) {
 }
 
 export default function MatchTill({ rows = [], posTotal = null, cashTotal = null,
-                                    itemName = () => '', onSwitch, busyId = null }) {
+                                    itemName = () => '', onSwitch, busyId = null, onRecord = null }) {
   const [open, setOpen] = useState(false)
   const [pos, setPos] = useState('')
   const [cash, setCash] = useState('')
+  const [saved, setSaved] = useState(false)
+  const [saving, setSaving] = useState(false)
 
   // Only paid sales: PR, damage and staff meals take no money.
   const sales = rows.filter(r => r.order_type !== 'pr_damage' && r.order_type !== 'staff')
@@ -106,10 +108,27 @@ export default function MatchTill({ rows = [], posTotal = null, cashTotal = null
         and finds the usual mistakes before you leave.
       </p>
 
-      <Row label="POS terminal total" app={appPos} value={pos} set={setPos}
+      <Row label="POS terminal total" app={appPos} value={pos} set={v => { setPos(v); setSaved(false) }}
            gap={posGap} ok={posOk} />
-      <Row label="Cash counted (today's sales)" app={appCash} value={cash} set={setCash}
+      <Row label="Cash counted (today's sales)" app={appCash} value={cash} set={v => { setCash(v); setSaved(false) }}
            gap={cashGap} ok={cashOk} />
+
+      {onRecord && hasPos && hasCash && (
+        saved ? (
+          <p className="mt-4 text-center text-leaf font-semibold">Result saved for your manager ✓</p>
+        ) : (
+          <button disabled={saving}
+            onClick={async () => {
+              setSaving(true)
+              try { await onRecord({ appPos, appCash, pos: Number(pos), cash: Number(cash) }); setSaved(true) }
+              catch { /* never block closing */ }
+              setSaving(false)
+            }}
+            className="mt-4 w-full h-12 rounded-xl bg-amber text-bg font-bold disabled:opacity-40">
+            {saving ? 'Saving…' : 'Save my result'}
+          </button>
+        )
+      )}
 
       {allOk && (
         <p className="mt-4 rounded-xl bg-leaf/15 text-leaf font-bold p-3 text-center">
