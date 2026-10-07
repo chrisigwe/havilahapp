@@ -330,6 +330,10 @@ export default function SalesEntry({ boot }) {
     finally { setSwitchingId(null) }
   }
 
+  const saveTillResult = (r) => recordTillCheck({
+    branchId: staff.branch_id, locationId, date,
+    appPos: r.appPos, appCash: r.appCash, pos: r.pos, cash: r.cash })
+
   async function undoLast() {
     if (!window.confirm('Undo the last sale? It will be removed as if it never happened.')) return
     try {
