@@ -8,6 +8,7 @@ import { tabsFor, countBadgeTabFor } from '../lib/tabs'
 import ReadOnlyBanner from './ReadOnlyBanner'
 import NotificationSetup from './NotificationSetup'
 import { signOutCleanly } from '../lib/push'
+import { moreItemsFor } from '../pages/More'
 
 // GM/admin/manager oversee everything rather than doing one
 // department's day-to-day work — their four most load-bearing
@@ -15,6 +16,9 @@ import { signOutCleanly } from '../lib/push'
 // owes what) get promoted to direct tabs; Sales/Store/Stock move
 // into More for them specifically, since storekeeper and other
 // department-scoped roles still need those as their own primary tabs.
+
+// Pages that read better as a single column even on a big screen.
+const NARROW = ['sales', 'store', 'more', 'staysettings', 'staffaccounts']
 
 const MORE = ['dailysales', 'roomboard', 'credit', 'recovery', 'count', 'catalog', 'variance', 'fix',
               'staysettings', 'sales', 'store', 'stock']
@@ -28,6 +32,7 @@ export default function Shell({ staff, tab, onTab, children,
   const tabs = tabsFor(staff.role, { recordsSales })
   const countBadgeTab = countBadgeTabFor(staff.role, { recordsSales })
   const directTabKeys = new Set(tabs.map(([k]) => k))
+  const moreItems = moreItemsFor(staff.role, recordsSales)
 
   // One-shot bounce when a tab becomes the selected one. Driven by a key
   // that changes on selection, so the animation restarts every time —
@@ -38,8 +43,75 @@ export default function Shell({ staff, tab, onTab, children,
     if (lastTab.current !== tab) { lastTab.current = tab; setPopKey(n => n + 1) }
   }, [tab])
   return (
-    <div className="min-h-dvh pb-24">
-      <header className="px-5 pt-5 pb-3 flex items-center justify-between gap-3">
+    <div className="min-h-dvh pb-24 lg:pb-8">
+      {/* Laptop and desktop: the tabs live in a left sidebar instead of the
+          floating bar. Same tabs, same More items, same badges — taken from
+          the same lists, so the two layouts cannot drift apart. */}
+      <aside className="hidden lg:flex fixed inset-y-0 left-0 w-60 flex-col border-r border-line bg-surface/40 z-30">
+        <div className="px-5 pt-6 pb-4">
+          <div className="flex items-center gap-2">
+            <Logo className="w-6 h-6 shrink-0" />
+            <span className="font-bold text-xl">Havilah</span>
+          </div>
+          <div className="text-dim text-sm mt-1 truncate">{staff.full_name}</div>
+          {branches.length > 1 && (
+            <select value={viewBranch || ''} onChange={e => onBranch(e.target.value)}
+              className="mt-3 w-full h-9 px-2 rounded-lg bg-surface border border-line text-sm">
+              {branches.map(b => (
+                <option key={b.id} value={b.id}>{b.slug.toUpperCase()}</option>
+              ))}
+            </select>
+          )}
+        </div>
+        <nav className="flex-1 overflow-y-auto px-3 pb-3">
+          {tabs.filter(([k]) => k !== 'more').map(([k, label]) => {
+            const active = tab === k
+            return (
+              <button key={k} onClick={() => onTab(k)}
+                aria-current={active ? 'page' : undefined}
+                className={`w-full flex items-center gap-3 px-3 h-11 rounded-xl text-left
+                            ${active ? 'bg-amber/20 text-amber font-bold' : 'text-dim hover:bg-white/5 hover:text-ink font-semibold'}`}>
+                <NavIcon tab={k} filled={active} className="w-5 h-5 shrink-0" />
+                <span className="flex-1">{label}</span>
+                {k === countBadgeTab && pendingCount > 0 && (
+                  <span className="min-w-[1.25rem] h-5 px-1 rounded-full bg-clay text-bg text-xs font-bold flex items-center justify-center">
+                    {pendingCount > 9 ? '9+' : pendingCount}
+                  </span>
+                )}
+              </button>
+            )
+          })}
+          {moreItems.length > 0 && (
+            <>
+              <div className="px-3 pt-5 pb-1 text-xs uppercase tracking-wide text-dim/70 font-semibold">More</div>
+              {moreItems.map(i => {
+                const active = tab === i.key
+                return (
+                  <button key={i.key} onClick={() => onTab(i.key)}
+                    aria-current={active ? 'page' : undefined}
+                    className={`w-full flex items-center gap-3 px-3 h-10 rounded-xl text-left text-[0.95rem]
+                                ${active ? 'bg-amber/20 text-amber font-bold' : 'text-dim hover:bg-white/5 hover:text-ink'}`}>
+                    <span className="flex-1">{i.label}</span>
+                    {i.key === 'count' && pendingCount > 0 && (
+                      <span className="min-w-[1.25rem] h-5 px-1 rounded-full bg-clay text-bg text-xs font-bold flex items-center justify-center">
+                        {pendingCount > 9 ? '9+' : pendingCount}
+                      </span>
+                    )}
+                  </button>
+                )
+              })}
+            </>
+          )}
+        </nav>
+        <div className="p-3 border-t border-line">
+          <button onClick={() => setConfirmingSignOut(true)}
+            className="w-full h-10 rounded-xl border border-line text-dim text-sm hover:text-ink">
+            Sign out
+          </button>
+        </div>
+      </aside>
+
+      <header className="lg:hidden px-5 pt-5 pb-3 flex items-center justify-between gap-3">
         <div className="flex items-center gap-2 min-w-0">
           <Logo className="w-5 h-5 shrink-0" />
           <span className="font-bold text-lg shrink-0">Havilah</span>
@@ -60,12 +132,16 @@ export default function Shell({ staff, tab, onTab, children,
           </button>
         </div>
       </header>
+      <div className="lg:pl-60">
+      <div className={`mx-auto lg:pt-6 ${NARROW.includes(tab) ? 'lg:max-w-3xl' : 'lg:max-w-6xl'}`}>
       <PendingBanner />
       <UpdateBanner />
       <StaffOfMonthBanner branchId={staff.branch_id} />
       <ReadOnlyBanner readOnly={staff.is_read_only} />
       <NotificationSetup staff={staff} alertEligible={alertEligible} />
       {children}
+      </div>
+      </div>
       {confirmingSignOut && (
         <div className="fixed inset-0 z-[70] bg-bg flex flex-col justify-center px-6">
           <h2 className="text-2xl font-bold">Sign out?</h2>
@@ -81,7 +157,7 @@ export default function Shell({ staff, tab, onTab, children,
             className="mt-3 w-full h-12 text-dim">Cancel</button>
         </div>
       )}
-      <nav className="fixed bottom-3 inset-x-3 z-40"
+      <nav className="lg:hidden fixed bottom-3 inset-x-3 z-40"
         style={{ marginBottom: 'env(safe-area-inset-bottom)' }}>
         <div className="mx-auto max-w-md flex gap-1 p-1.5 rounded-[28px]
                          bg-surface/35 backdrop-blur-2xl backdrop-saturate-150

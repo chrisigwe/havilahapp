@@ -43,6 +43,13 @@ const ITEMS = [
     roles: ['gm', 'admin'] },
 ]
 
+// What a role sees under More (nothing already on its bottom bar). Shared
+// with the laptop sidebar so the two can never disagree.
+export function moreItemsFor(role, recordsSales = false) {
+  const onBar = new Set(tabsFor(role, { recordsSales }).map(([k]) => k))
+  return ITEMS.filter(i => i.roles.includes(role) && !onBar.has(i.key))
+}
+
 export default function More({ boot, onGo, pendingCount = 0 }) {
   // dailysales/roomboard/credit are dedicated top-level tabs for
   // auditor/front_desk/oversight roles respectively, not More-menu
@@ -54,8 +61,7 @@ export default function More({ boot, onGo, pendingCount = 0 }) {
   // per-role exclusions, which is what let the auditor's Counts and
   // Variances show up in both places.
   const recordsSales = (boot.locations || []).some(l => l.is_sales_point && !l.is_store)
-  const onBar = new Set(tabsFor(boot.staff.role, { recordsSales }).map(([k]) => k))
-  const allowed = ITEMS.filter(i => i.roles.includes(boot.staff.role) && !onBar.has(i.key))
+  const allowed = moreItemsFor(boot.staff.role, recordsSales)
   return (
     <div className="px-5">
       <ul className="divide-y divide-line/60">
