@@ -314,21 +314,21 @@ export default function SalesEntry({ boot }) {
     setBasket(b => b.map(l => l.key === key ? { ...l, ...patch } : l))
   const dropLine = (key) => setBasket(b => b.filter(l => l.key !== key))
 
-  async function switchPayment(row, method) {
+  // Correct one of today's entries from "Match your Total Sales": a different
+  // quantity and/or a different way of paying. Returns false if it failed.
+  async function fixEntry(row, { qty, method }) {
     setSwitchingId(row.id)
     try {
       await updateSaleWithPayments(row.id, {
-        qty: row.qty, unitPrice: row.unit_price,
-        payments: [{ method, amount: row.amount }], businessDate: null })
-      toast('Changed to ' + methodLabel[method], 'success')
+        qty, unitPrice: row.unit_price,
+        payments: [{ method, amount: Number((qty * row.unit_price).toFixed(2)) }],
+        businessDate: null })
+      toast('Corrected', 'success')
       refresh()
-    } catch (e) { toast('Not changed: ' + e.message, 'error') }
-    setSwitchingId(null)
+      return true
+    } catch (e) { toast('Not corrected: ' + e.message, 'error'); return false }
+    finally { setSwitchingId(null) }
   }
-
-  const saveTillResult = (r) => recordTillCheck({
-    branchId: staff.branch_id, locationId, date,
-    appPos: r.appPos, appCash: r.appCash, pos: r.pos, cash: r.cash })
 
   async function undoLast() {
     if (!window.confirm('Undo the last sale? It will be removed as if it never happened.')) return
@@ -822,7 +822,9 @@ export default function SalesEntry({ boot }) {
           <span className="tnum font-bold text-lg">{naira(todayTotal)}</span>
         </div>
 
-        <MatchTill rows={today} busyId={switchingId} onSwitch={switchPayment} onRecord={saveTillResult}
+        <MatchTill rows={today} busyId={switchingId} onFix={fixEntry} onRecord={saveTillResult}
+          recovered={{ pos: recon?.recoveredBy?.pos, cash: recon?.recoveredBy?.cash }}
+          creditApp={recon ? recon.creditRaised : null}
           itemName={r => itemById[r.stock_item_id]?.name || r.description || ''} />
 
         {recon && (

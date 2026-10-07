@@ -37,7 +37,7 @@ const ITEMS = [
     roles: ['gm', 'admin'] },
   { key: 'mypay', label: 'My pay', hint: 'Your pay slip for each finished month',
     roles: ['bar', 'front_desk', 'storekeeper', 'manager', 'gm', 'admin', 'auditor'] },
-  { key: 'tillchecks', label: 'Till checks', hint: 'Who matched their till at close, and who did not',
+  { key: 'tillchecks', label: 'Total Sales checks', hint: 'Who matched their Total Sales at close, and who did not',
     roles: ['storekeeper', 'manager', 'gm', 'admin', 'auditor'] },
   { key: 'variance', label: 'Variances', hint: 'Sales where collection did not match the goods sold',
     roles: ['storekeeper', 'manager', 'gm', 'admin', 'auditor'] },

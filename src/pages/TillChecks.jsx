@@ -24,7 +24,7 @@ export default function TillChecks({ boot }) {
   return (
     <div className="px-5 pb-8">
       <p className="text-dim text-sm py-2">
-        What staff typed from the POS slip and the cash drawer when they matched their till. Last 14 days.
+        What staff typed from the POS slip and the cash drawer when they matched their Total Sales. Last 14 days.
       </p>
 
       <div className="grid grid-cols-3 gap-2 text-center">

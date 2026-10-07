@@ -2303,7 +2303,7 @@ export async function undoRecentReceipt(receiptId) {
 }
 
 
-// Keeps the result of "Match your till" so managers can see who closes clean.
+// Keeps the result of "Match your Total Sales" so managers can see who closes clean.
 // Never blocks the person: a failure here is silent.
 export async function recordTillCheck({ branchId, locationId, date, appPos, appCash, pos, cash }) {
   const { error } = await supabase.rpc('record_till_check', {
