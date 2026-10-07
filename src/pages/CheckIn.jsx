@@ -300,9 +300,27 @@ export default function CheckIn({ boot, onDone }) {
       </div>
 
       {room && nights > 0 && (
-        <div className="mt-4 flex items-baseline justify-between rounded-xl bg-surface border border-line px-4 py-3">
-          <span className="text-dim tnum">{nights} night{nights > 1 ? 's' : ''} × {naira(rate)}</span>
-          <span className="text-xl font-bold tnum">{naira(nights * rate)}</span>
+        <div className="mt-4 rounded-xl bg-surface border border-line px-4 py-3">
+          <div className="flex items-baseline justify-between gap-3">
+            <span className="text-dim tnum">
+              {rateLabels[rateType]} rate, {naira(rate)} × {nights} night{nights > 1 ? 's' : ''}
+            </span>
+            <span className="text-xl font-bold tnum">{naira(nights * rate)}</span>
+          </div>
+          {rate !== listRate && (
+            <p className="text-clay text-sm mt-2">
+              This is not the room's usual {rateLabels[rateType].toLowerCase()} rate ({naira(listRate)}).
+              Is that what was agreed?
+            </p>
+          )}
+          {rate === 0 && (
+            <p className="text-clay text-sm mt-2">The rate is ₦0 — the guest would pay nothing.</p>
+          )}
+          {nights > 14 && (
+            <p className="text-clay text-sm mt-2">
+              That is {nights} nights. Check the check-out date is right.
+            </p>
+          )}
         </div>
       )}
 

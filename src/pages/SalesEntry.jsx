@@ -21,6 +21,8 @@ import Receipt from '../components/Receipt'
 import MatchTill from '../components/MatchTill'
 import { APPROVE_ROOM_CHARGES, EDITOR, MANAGEMENT, OVERSIGHT, SUPERVISOR, is } from '../lib/roles'
 
+const niceDay = (d) => new Date(d + 'T12:00:00').toLocaleDateString('en-NG', { day: 'numeric', month: 'short' })
+
 export default function SalesEntry({ boot }) {
   const { staff, locations, allLocations, tiers, methods, items } = boot
   const approvalsOn = boot.roomChargeApprovalLimit != null
@@ -377,7 +379,7 @@ export default function SalesEntry({ boot }) {
 
   function chooseRoomBill(stay) {
     setPaying(p => ({ ...p, customerId: null, split: null, method: 'credit',
-      roomStay: { id: stay.id, room: stay.rooms?.room_number, guestName: stay.guests?.full_name } }))
+      roomStay: { id: stay.id, room: stay.rooms?.room_number, guestName: stay.guests?.full_name, since: stay.check_in_date } }))
     setGuestChoice(null); setRoomGuard(null)
   }
 
@@ -1063,6 +1065,9 @@ export default function SalesEntry({ boot }) {
               <div className="font-bold text-lg">
                 Room {paying.roomStay.room} · {paying.roomStay.guestName}
               </div>
+              {paying.roomStay.since && (
+                <div className="text-dim text-sm">Checked in {niceDay(paying.roomStay.since)}</div>
+              )}
               <p className="text-dim text-sm mt-1">
                 The whole sale ({naira(basketTotal)}) goes on this guest's room bill
                 and is collected at checkout.
@@ -1096,8 +1101,12 @@ export default function SalesEntry({ boot }) {
                 <div className="font-bold">
                   Room {guestChoice.rooms?.room_number} · {guestChoice.guests?.full_name}
                 </div>
+                <p className="mt-2 text-sm font-semibold">
+                  Charge {naira(basketTotal)} to Room {guestChoice.rooms?.room_number} · {guestChoice.guests?.full_name}
+                  {guestChoice.check_in_date ? ` (checked in ${niceDay(guestChoice.check_in_date)})` : ''}
+                </p>
                 <p className="text-dim text-sm mt-1">
-                  Check the guest's name matches before charging.
+                  Is this the right guest? Check the name and room before charging.
                 </p>
                 <button onClick={() => chooseRoomBill(guestChoice)}
                   className="mt-3 w-full h-12 rounded-xl bg-amber text-bg font-bold">
