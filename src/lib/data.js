@@ -2326,3 +2326,19 @@ export async function loadMyPay() {
   if (error) throw error
   return data || { linked: false, months: [] }
 }
+
+
+// ---------- Shift handover notes ----------
+export async function loadHandoverNotes(branchId, locationId) {
+  const { data, error } = await supabase.rpc('list_handover_notes', { p_branch: branchId, p_location: locationId })
+  if (error) throw error
+  return data || []
+}
+export async function addHandoverNote(branchId, locationId, body) {
+  const { error } = await supabase.rpc('add_handover_note', { p_branch: branchId, p_location: locationId, p_body: body })
+  if (error) throw error
+}
+export async function ackHandoverNote(id) {
+  const { error } = await supabase.rpc('ack_handover_note', { p_note: id })
+  if (error) throw error
+}

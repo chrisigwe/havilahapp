@@ -19,6 +19,7 @@ import RoomChargeSheet from '../components/RoomChargeSheet'
 import CustomerPicker from '../components/CustomerPicker'
 import Receipt from '../components/Receipt'
 import MatchTill from '../components/MatchTill'
+import HandoverNotes from '../components/HandoverNotes'
 import { APPROVE_ROOM_CHARGES, EDITOR, MANAGEMENT, OVERSIGHT, SUPERVISOR, is } from '../lib/roles'
 
 const niceDay = (d) => new Date(d + 'T12:00:00').toLocaleDateString('en-NG', { day: 'numeric', month: 'short' })
@@ -673,6 +674,8 @@ export default function SalesEntry({ boot }) {
           but you can only record sales at your own departments.
         </p>
       )}
+
+      <HandoverNotes branchId={staff.branch_id} locationId={locationId} />
 
       {approvalsOn && isReception && canApprove && (
         <RoomChargeApprovals branchId={staff.branch_id} onDecided={refresh} />
