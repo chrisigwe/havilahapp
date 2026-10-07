@@ -6,7 +6,7 @@ import { loadStockMap, loadPopular, loadToday, saveBasket, saveWriteoff,
          loadStaffForLocation, loadReceptionActivity, loadReceptionDashboard, deleteEntry,
          loadRoomCharges, deleteOrderItem, saveRestaurantWriteoff, loadRoomsSoldInMonth,
          loadWriteoffsOnDate, loadLiveStays, chargeBasketToRoom,
-         getOrCreateGuestTab } from '../lib/data'
+         getOrCreateGuestTab, updateSaleWithPayments, undoRecentReceipt } from '../lib/data'
 import { enqueue, flush, isConnectionError } from '../lib/outbox'
 import { useToast } from '../components/Toast'
 import ReceptionDashboard from '../components/ReceptionDashboard'
@@ -18,6 +18,7 @@ import ItemPicker from '../components/ItemPicker'
 import RoomChargeSheet from '../components/RoomChargeSheet'
 import CustomerPicker from '../components/CustomerPicker'
 import Receipt from '../components/Receipt'
+import MatchTill from '../components/MatchTill'
 import { APPROVE_ROOM_CHARGES, EDITOR, MANAGEMENT, OVERSIGHT, SUPERVISOR, is } from '../lib/roles'
 
 export default function SalesEntry({ boot }) {
@@ -111,6 +112,8 @@ export default function SalesEntry({ boot }) {
   const [roomCharges, setRoomCharges] = useState([])   // Restaurant only: food charged to rooms
   const [receptionActivity, setReceptionActivity] = useState([])
   const [receptionDashboard, setReceptionDashboard] = useState(null)
+  const [lastReceiptAt, setLastReceiptAt] = useState(0)
+  const [switchingId, setSwitchingId] = useState(null)
   const [roomsSold, setRoomsSold] = useState(null)
   const [writeoffs, setWriteoffs] = useState(null)
   // In-house guests offered at the credit step, so a guest's drinks go
@@ -308,12 +311,45 @@ export default function SalesEntry({ boot }) {
     setBasket(b => b.map(l => l.key === key ? { ...l, ...patch } : l))
   const dropLine = (key) => setBasket(b => b.filter(l => l.key !== key))
 
+  async function switchPayment(row, method) {
+    setSwitchingId(row.id)
+    try {
+      await updateSaleWithPayments(row.id, {
+        qty: row.qty, unitPrice: row.unit_price,
+        payments: [{ method, amount: row.amount }], businessDate: null })
+      toast('Changed to ' + methodLabel[method], 'success')
+      refresh()
+    } catch (e) { toast('Not changed: ' + e.message, 'error') }
+    setSwitchingId(null)
+  }
+
+  async function undoLast() {
+    if (!window.confirm('Undo the last sale? It will be removed as if it never happened.')) return
+    try {
+      await undoRecentReceipt(lastReceiptId)
+      toast('Last sale undone', 'success')
+      setLastReceiptId(null); refresh()
+    } catch (e) { toast('Not undone: ' + e.message, 'error') }
+  }
+
   // finding 4: warn before recording more than the location holds
   function startPayment() {
     const over = basket.filter(l => l.item && l.qty > onHand(l.item.id, l.locationId))
     if (over.length) {
       const names = over.map(l => `${l.item.name} (${onHand(l.item.id, l.locationId)} left, selling ${l.qty})`).join('\n')
       if (!window.confirm(`More than the shelf shows:\n\n${names}\n\nRecord anyway?`)) return
+    }
+    // Rushing fat-finger check: a quantity far above what this item usually
+    // sells in a day is more often a typo (12 instead of 2) than a sale.
+    const big = basket.filter(l => {
+      if (!l.item) return false
+      const soldToday = Math.max(0, ...today.filter(r => r.stock_item_id === l.item.id)
+        .map(r => Number(r.qty) || 0))
+      return l.qty >= Math.max(10, 4 * soldToday)
+    })
+    if (big.length) {
+      const names = big.map(l => `${l.item.name} × ${l.qty}`).join('\n')
+      if (!window.confirm(`That is a big quantity:\n\n${names}\n\nIs it right?`)) return
     }
     setPaying({
       method: methods[0], split: null,
@@ -430,7 +466,7 @@ export default function SalesEntry({ boot }) {
         const rid = await saveBasket({ staff, locationId, lines: basket, payments,
                                        date, customerId, backdateReason, onBehalfOf })
         toast(`Saved · ${basket.length} item${basket.length > 1 ? 's' : ''} · ${naira(basketTotal)}`, 'success')
-        setLastReceiptId(rid)
+        setLastReceiptId(rid); setLastReceiptAt(Date.now())
       } catch (e) {
         if (!isConnectionError(e)) throw e
         enqueue({ kind: 'basket', payload })
@@ -641,6 +677,10 @@ export default function SalesEntry({ boot }) {
           canSeeInternal={isGmOrAdmin} roomsSold={roomsSold} showRoomsSold={isGmOrAdmin} />
       )}
 
+      {isReception && receptionDashboard && (
+        <MatchTill rows={[]} posTotal={receptionDashboard.pos} cashTotal={receptionDashboard.cash} />
+      )}
+
       {isReception && (
         <div className="mt-3">
           <button onClick={() => setShowYesterday(x => !x)}
@@ -753,6 +793,13 @@ export default function SalesEntry({ boot }) {
         </button>
       )}
 
+      {lastReceiptId && Date.now() - lastReceiptAt < 10 * 60 * 1000 && lastReceiptAt > 0 && (
+        <button onClick={undoLast}
+          className="mt-2 w-full h-11 rounded-xl border border-line text-dim font-semibold text-sm">
+          Wrong? Undo the last sale (10 minutes)
+        </button>
+      )}
+
       {!isReception && (
       <section className="mt-6">
         <div className="flex items-baseline justify-between">
@@ -765,6 +812,9 @@ export default function SalesEntry({ boot }) {
           </div>
           <span className="tnum font-bold text-lg">{naira(todayTotal)}</span>
         </div>
+
+        <MatchTill rows={today} busyId={switchingId} onSwitch={switchPayment}
+          itemName={r => itemById[r.stock_item_id]?.name || r.description || ''} />
 
         {recon && (
           <div className="mt-3 rounded-2xl border border-amber bg-surface p-4">

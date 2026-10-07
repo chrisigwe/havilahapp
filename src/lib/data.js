@@ -2292,3 +2292,12 @@ export async function loadCreditForMonth(branchId, year, month, locationId) {
   if (error) throw error
   return data || []
 }
+
+
+// Takes back a sale just recorded (by the same person, within 10 minutes).
+// One database step; the database enforces who and when.
+export async function undoRecentReceipt(receiptId) {
+  const { data, error } = await supabase.rpc('undo_recent_receipt', { p_receipt: receiptId })
+  if (error) throw error
+  if (!data) throw new Error('Nothing was undone — it may be older than 10 minutes.')
+}
