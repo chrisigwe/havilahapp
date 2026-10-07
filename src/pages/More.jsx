@@ -1,4 +1,6 @@
+import { useState } from 'react'
 import { tabsFor } from '../lib/tabs'
+import { BUILD_ID, checkForNewVersion } from '../lib/swUpdate'
 import { MANAGEMENT } from '../lib/roles'
 // Was named OVERSIGHT_ROLES but has always been manager/gm/admin.
 const OVERSIGHT_ROLES = MANAGEMENT
@@ -79,6 +81,28 @@ export default function More({ boot, onGo, pendingCount = 0 }) {
         ))}
         {!allowed.length && <li className="py-8 text-center text-dim">Nothing else here for your role.</li>}
       </ul>
+      <VersionLine />
+    </div>
+  )
+}
+
+// Shows which build this phone is running and lets anyone check for a
+// newer one on demand — the way to confirm a deployment has arrived.
+function VersionLine() {
+  const [msg, setMsg] = useState('')
+  const built = /^\d+$/.test(BUILD_ID)
+    ? new Date(Number(BUILD_ID)).toLocaleString('en-GB', { dateStyle: 'medium', timeStyle: 'short' })
+    : 'development'
+  async function check() {
+    setMsg('Checking…')
+    const found = await checkForNewVersion()
+    setMsg(found ? '' : 'You have the latest version.')
+  }
+  return (
+    <div className="py-6 text-center text-dim text-sm">
+      <div>Version built {built}</div>
+      <button onClick={check} className="mt-2 underline">Check for updates</button>
+      {msg && <div className="mt-1">{msg}</div>}
     </div>
   )
 }

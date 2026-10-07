@@ -84,8 +84,8 @@ export default function Shell({ staff, tab, onTab, children,
       <nav className="fixed bottom-3 inset-x-3 z-40"
         style={{ marginBottom: 'env(safe-area-inset-bottom)' }}>
         <div className="mx-auto max-w-md flex gap-1 p-1.5 rounded-[28px]
-                         bg-surface/70 backdrop-blur-xl backdrop-saturate-150
-                         border border-white/10 shadow-[0_8px_32px_rgba(0,0,0,0.45)]">
+                         bg-surface/35 backdrop-blur-2xl backdrop-saturate-150
+                         border border-white/15 shadow-[0_8px_32px_rgba(0,0,0,0.45)]">
           {tabs.map(([k, label]) => {
             const active = tab === k || (k === 'more' && MORE.includes(tab) && !directTabKeys.has(tab))
             return (

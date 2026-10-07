@@ -25,6 +25,7 @@ export default function InstallHint() {
   const [deferred, setDeferred] = useState(null)   // android prompt event
   const [show, setShow] = useState(false)
   const [iosHint, setIosHint] = useState(false)
+  const [androidHint, setAndroidHint] = useState(null)   // 'chrome' | 'other'
 
   useEffect(() => {
     // already installed? never show.
@@ -45,7 +46,21 @@ export default function InstallHint() {
     let t
     if (isSafari) t = setTimeout(() => { setIosHint(true); setShow(true) }, 3000)
 
-    return () => { window.removeEventListener('beforeinstallprompt', onPrompt); clearTimeout(t) }
+    // Android where the browser never offers the one-tap install. Common
+    // on Redmi/Xiaomi: their own browser can't install apps at all, and
+    // even Chrome needs a permission. Say what to do instead of showing
+    // nothing.
+    const ua = window.navigator.userAgent
+    const isAndroid = /android/i.test(ua)
+    let t2
+    if (isAndroid) {
+      const realChrome = /chrome\//i.test(ua) && !/miuibrowser|xiaomi|ucbrowser|opr\/|opera|samsungbrowser|edga|firefox|; wv\)|fban|fbav|instagram|line\//i.test(ua)
+      t2 = setTimeout(() => {
+        setAndroidHint(prev => prev || (realChrome ? 'chrome' : 'other'))
+        setShow(true)
+      }, 6000)
+    }
+    return () => { window.removeEventListener('beforeinstallprompt', onPrompt); clearTimeout(t); clearTimeout(t2) }
   }, [])
 
   function dismiss() {
@@ -64,7 +79,28 @@ export default function InstallHint() {
 
   return (
     <div className="fixed bottom-24 inset-x-4 z-40 rounded-2xl border border-amber bg-surface p-4 shadow-lg">
-      {iosHint ? (
+      {androidHint ? (
+        <>
+          <div className="font-semibold">Add Havilah to your home screen</div>
+          {androidHint === 'chrome' ? (
+            <div className="text-dim text-sm mt-1">
+              Tap the <span className="text-ink">⋮ menu</span> at the top right of Chrome, then
+              {' '}<span className="text-ink">“Install app”</span> or
+              {' '}<span className="text-ink">“Add to Home screen”</span>.
+              On Redmi/Xiaomi, if nothing appears afterwards: Settings → Apps → Chrome →
+              {' '}<span className="text-ink">Other permissions</span> → allow
+              {' '}<span className="text-ink">“Create shortcuts on home screen”</span>.
+            </div>
+          ) : (
+            <div className="text-dim text-sm mt-1">
+              This browser can't install apps. Open <span className="text-ink">havilahsuite.netlify.app</span>
+              {' '}in <span className="text-ink">Google Chrome</span>, then use its ⋮ menu →
+              {' '}<span className="text-ink">“Install app.”</span>
+            </div>
+          )}
+          <button onClick={dismiss} className="mt-3 text-dim text-sm underline">Got it</button>
+        </>
+      ) : iosHint ? (
         <>
           <div className="font-semibold">Add Havilah to your Home Screen</div>
           <div className="text-dim text-sm mt-1">

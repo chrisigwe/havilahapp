@@ -13,6 +13,8 @@ import { resolve } from 'path'
 // build, so sw.js is genuinely different every time, which is what
 // actually makes update detection (and the "new version ready"
 // banner) work at all.
+const BUILD_ID = String(Date.now())
+
 function stampServiceWorker() {
   return {
     name: 'stamp-service-worker',
@@ -21,11 +23,16 @@ function stampServiceWorker() {
       const stamped = readFileSync(path, 'utf8')
         .replace(/havilah-shell-v\d+/, `havilah-shell-${Date.now()}`)
       writeFileSync(path, stamped)
+      // A plain file the app can fetch to ask "is the code I'm running
+      // still the newest?" — works on phones even when the service
+      // worker misbehaves.
+      writeFileSync(resolve(__dirname, 'dist/version.json'), JSON.stringify({ id: BUILD_ID }))
     },
   }
 }
 
 export default defineConfig({
+  define: { __BUILD_ID__: JSON.stringify(BUILD_ID) },
   plugins: [react(), tailwindcss(), stampServiceWorker()],
   // Without this, a crash in production only ever shows minified
   // names like "el" or "ns" — permanently undecodable. With it, the
