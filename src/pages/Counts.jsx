@@ -23,6 +23,16 @@ const STAFF_COUNT = ['bar', 'front_desk']
 // Auditor removed (255): a count is evidence, and the auditor reviews it.
 const CAN_DELETE_COUNT = ['storekeeper', 'manager', 'gm', 'admin']
 
+// A typed count far from what the system expects is more often a slip
+// (240 for 24, 2 for 20) than a real loss. Flag it for a second look.
+function looksOff(l) {
+  if (l.counted_qty === null || l.counted_qty === undefined) return false
+  const sys = Number(l.system_qty), got = Number(l.counted_qty)
+  const diff = Math.abs(got - sys)
+  if (diff < 5) return false
+  return sys === 0 ? got >= 10 : diff / Math.abs(sys) >= 0.5
+}
+
 export default function Counts({ boot }) {
   const { staff, allLocations, locations, items } = boot
   const canManageAny = MANAGE_ANY.includes(staff.role)
@@ -134,6 +144,12 @@ export default function Counts({ boot }) {
     if (missing > 0) {
       toast(`${missing} item${missing > 1 ? 's' : ''} with stock here still need a count entered`, 'error')
       return
+    }
+    const odd = open.lines.filter(looksOff)
+    if (odd.length) {
+      const list = odd.slice(0, 8).map(l =>
+        `${itemById[l.stock_item_id]?.name || '—'}: system ${l.system_qty}, you counted ${l.counted_qty}`).join('\n')
+      if (!window.confirm(`These counts are far from what the system expects:\n\n${list}${odd.length > 8 ? `\n…and ${odd.length - 8} more` : ''}\n\nRecount them if unsure. Submit anyway?`)) return
     }
     setBusy(true)
     try { await submitCount(open.count.id); setOpen(null); refresh() }
@@ -265,7 +281,7 @@ export default function Counts({ boot }) {
                   const diff = l.counted_qty === null ? null
                     : Number(l.counted_qty) - Number(l.system_qty)
                   return (
-                    <li key={l.stock_item_id} className="py-3 flex items-center gap-3">
+                    <li key={l.stock_item_id} className="py-3 flex flex-wrap items-center gap-x-3">
                       <span className="flex-1 min-w-0 truncate">
                         {itemById[l.stock_item_id]?.name || '—'}
                       </span>
@@ -275,7 +291,8 @@ export default function Counts({ boot }) {
                           value={l.counted_qty ?? ''} placeholder="—"
                           onChange={e => setLine(l.stock_item_id, e.target.value)}
                           className={`h-11 w-20 px-2 rounded-lg bg-surface border tnum text-center ${
-                            l.pending ? 'border-amber'
+                            looksOff(l) ? 'border-clay'
+                            : l.pending ? 'border-amber'
                             : (Number(l.system_qty) !== 0 && l.counted_qty === null) ? 'border-clay'
                             : 'border-line'}`} />
                       ) : (open.count.status === 'submitted' && canAdjust) ? (
@@ -303,6 +320,11 @@ export default function Counts({ boot }) {
                         : diff > 0 ? 'text-leaf' : 'text-clay'}`}>
                         {diff === null ? '' : diff > 0 ? `+${diff}` : diff}
                       </span>
+                      {open.count.status === 'draft' && looksOff(l) && (
+                        <p className="basis-full text-clay text-sm mt-1">
+                          System expects {l.system_qty}, you typed {l.counted_qty}. Count again to be sure.
+                        </p>
+                      )}
                     </li>
                   )
                 })}
