@@ -18,21 +18,21 @@ import { moreItemsFor } from '../pages/More'
 // department-scoped roles still need those as their own primary tabs.
 
 // Pages that read better as a single column even on a big screen.
-const NARROW = ['sales', 'store', 'more', 'staysettings', 'staffaccounts']
+const NARROW = ['sales', 'store', 'more', 'mypay', 'staysettings', 'staffaccounts']
 
-const MORE = ['tillchecks', 'dailysales', 'roomboard', 'credit', 'recovery', 'count', 'catalog', 'variance', 'fix',
+const MORE = ['mypay', 'tillchecks', 'dailysales', 'roomboard', 'credit', 'recovery', 'count', 'catalog', 'variance', 'fix',
               'staysettings', 'sales', 'store', 'stock']
 
 export default function Shell({ staff, tab, onTab, children,
                                 branches = [], viewBranch, onBranch, pendingCount = 0,
-                                alertEligible = false, recordsSales = false }) {
+                                alertEligible = false, recordsSales = false, hasPay = false }) {
   const [confirmingSignOut, setConfirmingSignOut] = useState(false)
   // The bar comes from tabsFor() — the single definition shared with
   // the More menu and the landing screen. See lib/tabs.js.
   const tabs = tabsFor(staff.role, { recordsSales })
   const countBadgeTab = countBadgeTabFor(staff.role, { recordsSales })
   const directTabKeys = new Set(tabs.map(([k]) => k))
-  const moreItems = moreItemsFor(staff.role, recordsSales)
+  const moreItems = moreItemsFor(staff.role, recordsSales, hasPay)
 
   // One-shot bounce when a tab becomes the selected one. Driven by a key
   // that changes on selection, so the animation restarts every time —

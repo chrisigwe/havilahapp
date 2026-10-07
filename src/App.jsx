@@ -15,13 +15,14 @@ import Payroll from './pages/Payroll'
 import StaffAccounts from './pages/StaffAccounts'
 import Variances from './pages/Variances'
 import TillChecks from './pages/TillChecks'
+import MyPay from './pages/MyPay'
 import Recovery from './pages/Recovery'
 import More from './pages/More'
 import { ToastHost } from './components/Toast'
 import { registerHandlers, flush } from './lib/outbox'
 import { saveBasket, saveWriteoff, saveMovements, loadBranches,
          saveRepayment, saveCountLine, loadPendingVerifications,
-         loadUnfinishedCounts } from './lib/data'
+         loadUnfinishedCounts, loadMyPay } from './lib/data'
 import Credit from './pages/Credit'
 import Counts from './pages/Counts'
 import Shell from './components/Shell'
@@ -41,6 +42,7 @@ export default function App() {
   const [viewBranch, setViewBranch] = useState(null)
   const [pendingCount, setPendingCount] = useState(0)
   const [pendingLoaded, setPendingLoaded] = useState(false)
+  const [myPay, setMyPay] = useState(null)
   const prevPending = useRef(null)
   // Declared here, not beside their effect below: the badge effect's
   // dependency array references justVerified and dep arrays ARE
@@ -98,6 +100,12 @@ export default function App() {
   }, [identity, viewBranch])
 
   useEffect(refresh, [refresh])
+
+  // Own pay slips: only people whose login GM/admin linked to a payroll employee.
+  useEffect(() => {
+    if (!boot?.staff?.id) { setMyPay(null); return }
+    loadMyPay().then(setMyPay).catch(() => setMyPay(null))
+  }, [boot?.staff?.id])
 
   // badge for auditor/storekeeper/manager/gm/admin: how many counts
   // are waiting for verification right now. Refetches on branch
@@ -238,6 +246,7 @@ export default function App() {
       viewBranch={boot.viewBranchId} onBranch={setViewBranch}
       pendingCount={pendingCount}
       alertEligible
+      hasPay={!!myPay?.linked}
       recordsSales={(boot.locations || []).some(l => l.is_sales_point && !l.is_store)}>
       {unfinished.length > 0 && tab !== 'count' && (
         <button onClick={() => setTab('count')}
@@ -255,13 +264,14 @@ export default function App() {
       )}
       {tab === 'sales' ? <SalesEntry boot={boot} />
         : tab === 'store' ? <Store boot={boot} />
-        : tab === 'more' ? <More boot={boot} onGo={setTab} pendingCount={pendingCount} />
+        : tab === 'more' ? <More boot={boot} onGo={setTab} pendingCount={pendingCount} hasPay={!!myPay?.linked} />
         : tab === 'dailysales' ? <DailySales boot={boot} />
         : tab === 'roomboard' ? <RoomBoard boot={boot} />
         : tab === 'staysettings' ? <StaySettings boot={boot} />
         : tab === 'catalog' ? <Catalog boot={boot} onChanged={refresh} />
         : tab === 'payroll' ? <Payroll boot={boot} />
         : tab === 'staffaccounts' ? <StaffAccounts boot={boot} />
+        : tab === 'mypay' ? <MyPay data={myPay} />
         : tab === 'tillchecks' ? <TillChecks boot={boot} />
         : tab === 'variance' ? <Variances boot={boot} />
         : tab === 'recovery' ? <Recovery boot={boot} />

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { naira, lagosToday } from '../lib/format'
 import { useToast } from '../components/Toast'
+import { loadStaffAccounts } from '../lib/data'
 import {
   addDeduction, endEmployment, finalisePeriod, giveRaise, lineTotals, loadCustomersForLinking, loadEmployees, loadLines, loadPayouts, loadPeriod, loadPotNext, loadSalaryHistory, openPeriod, proposeCreditDeductions, removeAddition, removeDeduction, reopenPeriod, saveEmployee, savePayout, savingsBalances, setEmployeeCreditAccount, updateLine,
 } from '../lib/payroll'
@@ -423,8 +424,10 @@ function EmployeeSheet({ value, employees, final, onClose, onSaved, toast, branc
   // no employee could ever be linked and the credit pull had nothing to
   // work with. This is that missing picker.
   const [customers, setCustomers] = useState([])
+  const [logins, setLogins] = useState([])
   useEffect(() => {
     if (!branchId) return
+    loadStaffAccounts(branchId).then(setLogins).catch(() => setLogins([]))
     loadCustomersForLinking(branchId).then(setCustomers).catch(() => setCustomers([]))
   }, [branchId])
 
@@ -542,6 +545,20 @@ function EmployeeSheet({ value, employees, final, onClose, onSaved, toast, branc
             <p className="text-dim text-xs mt-1">
               Links this person to the account their department credit is recorded
               under, so it can be deducted from their pay. Most staff have none.
+            </p>
+
+            <label className="block mt-3 text-dim text-sm">App login (for "My pay")</label>
+            <select value={f.staff_id || ''}
+              onChange={e => set('staff_id', e.target.value || null)}
+              className="h-12 w-full px-3 rounded-xl bg-surface border border-line">
+              <option value="">Not linked</option>
+              {logins.map(l => (
+                <option key={l.id} value={l.id}>{l.full_name} · {l.role}</option>
+              ))}
+            </select>
+            <p className="text-dim text-xs mt-1">
+              Lets this person see their own finished months under More → My pay.
+              Only link a login that this one person uses, never a shared one.
             </p>
 
             {f.aka && f.customer_id && (

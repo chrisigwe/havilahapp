@@ -2317,3 +2317,12 @@ export async function loadTillChecks(branchId, days = 14) {
   if (error) throw error
   return data || { checks: [], missing: [] }
 }
+
+
+// The signed-in person's OWN finalised pay months (empty unless GM/admin has
+// linked their login to a payroll employee). The database decides what is returned.
+export async function loadMyPay() {
+  const { data, error } = await supabase.rpc('my_pay')
+  if (error) throw error
+  return data || { linked: false, months: [] }
+}

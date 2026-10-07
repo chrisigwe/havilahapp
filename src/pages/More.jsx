@@ -35,6 +35,8 @@ const ITEMS = [
     roles: ['gm', 'admin'] },
   { key: 'staffaccounts', label: 'Staff accounts', hint: 'Hand over a login, or switch one off',
     roles: ['gm', 'admin'] },
+  { key: 'mypay', label: 'My pay', hint: 'Your pay slip for each finished month',
+    roles: ['bar', 'front_desk', 'storekeeper', 'manager', 'gm', 'admin', 'auditor'] },
   { key: 'tillchecks', label: 'Till checks', hint: 'Who matched their till at close, and who did not',
     roles: ['storekeeper', 'manager', 'gm', 'admin', 'auditor'] },
   { key: 'variance', label: 'Variances', hint: 'Sales where collection did not match the goods sold',
@@ -47,12 +49,13 @@ const ITEMS = [
 
 // What a role sees under More (nothing already on its bottom bar). Shared
 // with the laptop sidebar so the two can never disagree.
-export function moreItemsFor(role, recordsSales = false) {
+export function moreItemsFor(role, recordsSales = false, hasPay = false) {
   const onBar = new Set(tabsFor(role, { recordsSales }).map(([k]) => k))
-  return ITEMS.filter(i => i.roles.includes(role) && !onBar.has(i.key))
+  // "My pay" appears only for people whose login is linked to a payroll employee.
+  return ITEMS.filter(i => i.roles.includes(role) && !onBar.has(i.key) && (i.key !== 'mypay' || hasPay))
 }
 
-export default function More({ boot, onGo, pendingCount = 0 }) {
+export default function More({ boot, onGo, pendingCount = 0, hasPay = false }) {
   // dailysales/roomboard/credit are dedicated top-level tabs for
   // auditor/front_desk/oversight roles respectively, not More-menu
   // destinations for THEM — hidden here so each doesn't appear in two
@@ -63,7 +66,7 @@ export default function More({ boot, onGo, pendingCount = 0 }) {
   // per-role exclusions, which is what let the auditor's Counts and
   // Variances show up in both places.
   const recordsSales = (boot.locations || []).some(l => l.is_sales_point && !l.is_store)
-  const allowed = moreItemsFor(boot.staff.role, recordsSales)
+  const allowed = moreItemsFor(boot.staff.role, recordsSales, hasPay)
   return (
     <div className="px-5">
       <ul className="divide-y divide-line/60">
