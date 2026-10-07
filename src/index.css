@@ -166,3 +166,12 @@ input[type="date"]::-webkit-calendar-picker-indicator:hover { opacity: 0.75; }
   .nav-tab, .nav-tab > span, .nav-tab:hover .nav-ico,
   .nav-tab:focus-visible .nav-ico { transform: none !important; }
 }
+
+/* A sheet that exists only to be printed (payroll). Hidden on screen; the
+   print rules above already force .print-portal to display. */
+.print-only { display: none; }
+@media print {
+  /* eleven columns on A4 portrait: tighter type so nothing wraps badly */
+  .print-only .invoice-print { font-size: 8.5pt; }
+  .print-only .invoice-table th, .print-only .invoice-table td { padding: 2pt 3pt; }
+}

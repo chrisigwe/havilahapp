@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { naira, lagosToday } from '../lib/format'
 import { useToast } from '../components/Toast'
 import {
@@ -104,6 +105,117 @@ export default function Payroll({ boot }) {
 
   const groups = ['management', 'junior']
 
+  const sheet = period ? (
+    <div className="invoice-print">
+      <div className="invoice-head">
+        <h1 className="text-2xl font-bold">Havilah Suite Ltd</h1>
+        <div className="flex items-baseline justify-between">
+          <p className="text-dim">{boot.branchName} · Payroll · {MONTHS[month - 1]} {year}</p>
+          <p className="text-dim text-sm">
+            {final ? 'Final' : 'Draft'} · {period.working_days} working days
+          </p>
+        </div>
+      </div>
+
+      {potNext && !final && (
+        <div className="print:hidden mt-2 rounded-xl border border-line p-3">
+          <p className="text-dim text-sm">
+            Pot: next turn is {potNext.full_name} (#{potNext.turn_no} of {potNext.members},
+            {' '}{potNext.taken} taken so far).
+          </p>
+          {/* Nothing on this page could previously RECORD a
+              payout — savePayout existed but nothing called it,
+              and the rotation could never advance. This is the
+              missing control. Who actually took it can differ
+              from "next in line" (the GM covering a departed
+              manager's share, say), so the name is editable. */}
+          {!payouts.length ? (
+            <button onClick={() => setRecordingPayout({
+                employee_id: potNext.employee_id, amount: '', note: '' })}
+              className="mt-2 h-10 px-3 rounded-lg border border-amber text-amber text-sm font-semibold">
+              Record this month's payout
+            </button>
+          ) : (
+            <p className="text-leaf text-sm mt-1">
+              {payouts.map(p =>
+                `${employees.find(e => e.id === p.employee_id)?.full_name || '?'}: ${naira(p.amount)}`
+              ).join(', ')}
+              {' '}— marked taken when this month is finalised.
+            </p>
+          )}
+        </div>
+      )}
+
+      {groups.map(g => {
+        const rows = (lines || []).filter(l => l.tier === g)
+        if (!rows.length) return null
+        return (
+          <section key={g} className="mt-4">
+            <h2 className="font-bold uppercase text-sm tracking-wide">
+              {g === 'management' ? 'Management staff' : 'Junior staff'}
+            </h2>
+            <table className="invoice-table w-full mt-1">
+              <thead>
+                <tr>
+                  <th>Name</th><th>Role</th>
+                  <th className="num">Salary</th><th className="num">Days</th>
+                  <th className="num">Deductions</th><th className="num">Add</th>
+                  <th className="num">Contrib</th><th className="num">Savings</th>
+                  <th className="num">Net pay</th>
+                  <th className="num">Documented</th><th className="num">Gift</th>
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map(l => {
+                  const x = lineTotals(l, payoutFor(l.employee_id), period?.working_days)
+                  return (
+                    <tr key={l.id} onClick={() => !final && setEditEmp({ line: l })}
+                      className={final ? '' : 'cursor-pointer'}>
+                      <td>{l.full_name}</td>
+                      <td className="text-dim">{l.role_title}</td>
+                      <td className="num tnum">{naira(l.monthly_salary)}</td>
+                      <td className="num tnum">{l.days_worked}</td>
+                      <td className="num tnum">{x.deductions ? naira(x.deductions) : '—'}</td>
+                      <td className="num tnum">{x.additions ? naira(x.additions) : '—'}</td>
+                      <td className="num tnum">{x.contribution ? naira(x.contribution) : '—'}</td>
+                      <td className="num tnum">{x.savings ? naira(x.savings) : '—'}</td>
+                      <td className={`num tnum font-bold ${x.net < 0 ? 'text-clay' : ''}`}>
+                        {naira(x.net)}
+                      </td>
+                      <td className="num tnum">{naira(x.documented)}</td>
+                      <td className="num tnum">{x.gift ? naira(x.gift) : '—'}</td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </section>
+        )
+      })}
+
+      <div className="invoice-balance mt-4 pt-2">
+        <table className="invoice-table w-full">
+          <tbody>
+            <tr><td>Total salary</td><td className="num tnum">{naira(totals.salary)}</td></tr>
+            <tr><td>Total deductions</td><td className="num tnum">{naira(totals.deductions)}</td></tr>
+            <tr><td>Paid into the pot</td><td className="num tnum">{naira(totals.contribution)}</td></tr>
+            <tr><td>Held as savings</td><td className="num tnum">{naira(totals.savings)}</td></tr>
+            <tr><td className="font-bold">Total net pay</td>
+                <td className="num tnum font-bold">{naira(totals.net)}</td></tr>
+            <tr><td>Documented</td><td className="num tnum">{naira(totals.documented)}</td></tr>
+            <tr><td>Recorded as gift</td><td className="num tnum">{naira(totals.gift)}</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div className="invoice-foot mt-6 text-dim text-sm">
+        {final
+          ? `Finalised${period.finalised_at ? ' ' + period.finalised_at.slice(0, 10) : ''}.`
+          : 'Draft — figures may still change.'}
+      </div>
+    </div>
+  ) : null
+
   return (
     <div className="px-5 pb-28">
       <div className="print:hidden">
@@ -156,116 +268,9 @@ export default function Payroll({ boot }) {
             )}
           </div>
 
-          {period && (
-            <div className="invoice-print">
-              <div className="invoice-head">
-                <h1 className="text-2xl font-bold">Havilah Suite Ltd</h1>
-                <div className="flex items-baseline justify-between">
-                  <p className="text-dim">{boot.branchName} · Payroll · {MONTHS[month - 1]} {year}</p>
-                  <p className="text-dim text-sm">
-                    {final ? 'Final' : 'Draft'} · {period.working_days} working days
-                  </p>
-                </div>
-              </div>
-
-              {potNext && !final && (
-                <div className="print:hidden mt-2 rounded-xl border border-line p-3">
-                  <p className="text-dim text-sm">
-                    Pot: next turn is {potNext.full_name} (#{potNext.turn_no} of {potNext.members},
-                    {' '}{potNext.taken} taken so far).
-                  </p>
-                  {/* Nothing on this page could previously RECORD a
-                      payout — savePayout existed but nothing called it,
-                      and the rotation could never advance. This is the
-                      missing control. Who actually took it can differ
-                      from "next in line" (the GM covering a departed
-                      manager's share, say), so the name is editable. */}
-                  {!payouts.length ? (
-                    <button onClick={() => setRecordingPayout({
-                        employee_id: potNext.employee_id, amount: '', note: '' })}
-                      className="mt-2 h-10 px-3 rounded-lg border border-amber text-amber text-sm font-semibold">
-                      Record this month's payout
-                    </button>
-                  ) : (
-                    <p className="text-leaf text-sm mt-1">
-                      {payouts.map(p =>
-                        `${employees.find(e => e.id === p.employee_id)?.full_name || '?'}: ${naira(p.amount)}`
-                      ).join(', ')}
-                      {' '}— marked taken when this month is finalised.
-                    </p>
-                  )}
-                </div>
-              )}
-
-              {groups.map(g => {
-                const rows = (lines || []).filter(l => l.tier === g)
-                if (!rows.length) return null
-                return (
-                  <section key={g} className="mt-4">
-                    <h2 className="font-bold uppercase text-sm tracking-wide">
-                      {g === 'management' ? 'Management staff' : 'Junior staff'}
-                    </h2>
-                    <table className="invoice-table w-full mt-1">
-                      <thead>
-                        <tr>
-                          <th>Name</th><th>Role</th>
-                          <th className="num">Salary</th><th className="num">Days</th>
-                          <th className="num">Deductions</th><th className="num">Add</th>
-                          <th className="num">Contrib</th><th className="num">Savings</th>
-                          <th className="num">Net pay</th>
-                          <th className="num">Documented</th><th className="num">Gift</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {rows.map(l => {
-                          const x = lineTotals(l, payoutFor(l.employee_id), period?.working_days)
-                          return (
-                            <tr key={l.id} onClick={() => !final && setEditEmp({ line: l })}
-                              className={final ? '' : 'cursor-pointer'}>
-                              <td>{l.full_name}</td>
-                              <td className="text-dim">{l.role_title}</td>
-                              <td className="num tnum">{naira(l.monthly_salary)}</td>
-                              <td className="num tnum">{l.days_worked}</td>
-                              <td className="num tnum">{x.deductions ? naira(x.deductions) : '—'}</td>
-                              <td className="num tnum">{x.additions ? naira(x.additions) : '—'}</td>
-                              <td className="num tnum">{x.contribution ? naira(x.contribution) : '—'}</td>
-                              <td className="num tnum">{x.savings ? naira(x.savings) : '—'}</td>
-                              <td className={`num tnum font-bold ${x.net < 0 ? 'text-clay' : ''}`}>
-                                {naira(x.net)}
-                              </td>
-                              <td className="num tnum">{naira(x.documented)}</td>
-                              <td className="num tnum">{x.gift ? naira(x.gift) : '—'}</td>
-                            </tr>
-                          )
-                        })}
-                      </tbody>
-                    </table>
-                  </section>
-                )
-              })}
-
-              <div className="invoice-balance mt-4 pt-2">
-                <table className="invoice-table w-full">
-                  <tbody>
-                    <tr><td>Total salary</td><td className="num tnum">{naira(totals.salary)}</td></tr>
-                    <tr><td>Total deductions</td><td className="num tnum">{naira(totals.deductions)}</td></tr>
-                    <tr><td>Paid into the pot</td><td className="num tnum">{naira(totals.contribution)}</td></tr>
-                    <tr><td>Held as savings</td><td className="num tnum">{naira(totals.savings)}</td></tr>
-                    <tr><td className="font-bold">Total net pay</td>
-                        <td className="num tnum font-bold">{naira(totals.net)}</td></tr>
-                    <tr><td>Documented</td><td className="num tnum">{naira(totals.documented)}</td></tr>
-                    <tr><td>Recorded as gift</td><td className="num tnum">{naira(totals.gift)}</td></tr>
-                  </tbody>
-                </table>
-              </div>
-
-              <div className="invoice-foot mt-6 text-dim text-sm">
-                {final
-                  ? `Finalised${period.finalised_at ? ' ' + period.finalised_at.slice(0, 10) : ''}.`
-                  : 'Draft — figures may still change.'}
-              </div>
-            </div>
-          )}
+          {sheet}
+          {period && createPortal(
+            <div className="print-portal print-only">{sheet}</div>, document.body)}
 
           {period && (
             <div className="print:hidden mt-6">
