@@ -2255,9 +2255,12 @@ export async function resetStaffPassword(staffId, newPassword, newHolderName) {
 // requires is_active, so this locks them out immediately whatever their
 // password is, and every database rule checks it too.
 export async function deactivateStaff(staffId) {
-  const { error } = await supabase.from('staff')
-    .update({ is_active: false }).eq('id', staffId)
+  const { error } = await supabase.rpc('deactivate_staff', { p_staff: staffId })
   if (error) throw error
+  // Read it back: a switch-off that quietly changed nothing used to be
+  // reported as done.
+  const { data } = await supabase.from('staff').select('is_active').eq('id', staffId).maybeSingle()
+  if (data && data.is_active) throw new Error('The account is still active - the switch-off did not apply.')
 }
 
 // Correct the date of a room charge (migration 292). GM/admin only, and
