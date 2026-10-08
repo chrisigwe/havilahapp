@@ -815,6 +815,30 @@ export async function loadOccupancy(branchId) {
     String(a.room_number).localeCompare(String(b.room_number), undefined, { numeric: true }))
 }
 
+// Reservations not yet arrived (status 'reserved'), soonest first, with the
+// room and guest — so front desk can see them BEFORE selling the room.
+// Includes ones already due (check_in_date <= today) that nobody has
+// checked in yet. `days` limits how far ahead; omit for all.
+export async function loadUpcomingReservations(branchId, days = null) {
+  let q = supabase.from('stays')
+    .select(`id, room_id, check_in_date, scheduled_out,
+             rooms(room_number, is_internal), guests!guest_id(full_name, phone)`)
+    .eq('branch_id', branchId).eq('status', 'reserved')
+    .order('check_in_date', { ascending: true })
+  if (days != null) q = q.lte('check_in_date', addDays(lagosToday(), days))
+  const { data, error } = await q
+  if (error) throw error
+  return (data || [])
+    .filter(s => !s.rooms?.is_internal)
+    .map(s => ({
+      stayId: s.id, roomId: s.room_id, roomNumber: s.rooms?.room_number,
+      guest: s.guests?.full_name || 'Guest', phone: s.guests?.phone || null,
+      checkIn: s.check_in_date, scheduledOut: s.scheduled_out,
+    }))
+    .sort((a, b) => a.checkIn.localeCompare(b.checkIn) ||
+      String(a.roomNumber).localeCompare(String(b.roomNumber), undefined, { numeric: true }))
+}
+
 // ---------- Check-in & new bookings ----------
 // Same shared front-desk schema as Room Board and room charges —
 // stays/guests/rooms/room_categories, confirmed directly against the

@@ -3,6 +3,7 @@ import Logo from './Logo'
 import PendingBanner from './PendingBanner'
 import UpdateBanner from './UpdateBanner'
 import StaffOfMonthBanner from './StaffOfMonthBanner'
+import ReservationBanner from './ReservationBanner'
 import NavIcon from './NavIcon'
 import { tabsFor, countBadgeTabFor } from '../lib/tabs'
 import ReadOnlyBanner from './ReadOnlyBanner'
@@ -138,6 +139,9 @@ export default function Shell({ staff, tab, onTab, children,
       <PendingBanner />
       <UpdateBanner />
       <StaffOfMonthBanner branchId={staff.branch_id} />
+      {['front_desk', 'manager', 'gm', 'admin'].includes(staff.role) && (
+        <ReservationBanner branchId={staff.branch_id} tab={tab} onTab={onTab} />
+      )}
       <ReadOnlyBanner readOnly={staff.is_read_only} />
       <NotificationSetup staff={staff} alertEligible={alertEligible} />
       {children}

@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
-import { naira, lagosToday, lagosTime, seesStayTimes } from '../lib/format'
+import { naira, lagosToday, lagosTime, seesStayTimes, addDays } from '../lib/format'
 import {
-  loadCheckoutsStillOwing, loadOccupancy, setRoomServiceStatus,
+  loadCheckoutsStillOwing, loadOccupancy, setRoomServiceStatus, loadUpcomingReservations,
 } from '../lib/data'
 import CheckIn from './CheckIn'
 import Folio from '../components/Folio'
@@ -35,6 +35,22 @@ function stateOf(room) {
   return 'occupied'
 }
 
+const shortDate = d => new Date(String(d).slice(0, 10) + 'T12:00:00')
+  .toLocaleDateString('en-NG', { day: 'numeric', month: 'short' })
+
+// "Booked: Name from 12 Oct" on a room that has a reservation OTHER than the
+// stay the card is already showing (vacant room with a later booking, or an
+// occupied room someone has reserved for after the current guest leaves).
+function NextBooking({ room, reservations }) {
+  const next = reservations.find(r => r.roomId === room.room_id && r.stayId !== room.stay_id)
+  if (!next) return null
+  return (
+    <p className="text-amber text-xs font-semibold mt-1">
+      Booked: {next.guest} from {shortDate(next.checkIn)}
+    </p>
+  )
+}
+
 export default function RoomBoard({ boot }) {
   const { staff } = boot
   const toast = useToast()
@@ -61,7 +77,13 @@ export default function RoomBoard({ boot }) {
   const [oosBusy, setOosBusy] = useState(false)
   const [rooms, setRooms] = useState(null)
 
-  const refresh = () => { loadOccupancy(staff.branch_id).then(setRooms).catch(() => setRooms([])) }
+  // Every reservation not yet arrived, so a room that looks free (or is
+  // occupied right now) still shows that someone has booked it later.
+  const [reservations, setReservations] = useState([])
+  const refresh = () => {
+    loadOccupancy(staff.branch_id).then(setRooms).catch(() => setRooms([]))
+    loadUpcomingReservations(staff.branch_id).then(setReservations).catch(() => setReservations([]))
+  }
   useEffect(refresh, [staff.branch_id])
 
   async function confirmMarkOOS() {
@@ -158,20 +180,34 @@ export default function RoomBoard({ boot }) {
       {!rooms.length && <p className="py-8 text-center text-dim">No rooms set up for this branch yet.</p>}
 
       {(() => {
-        const dueToday = (rooms || []).filter(r => stateOf(r) === 'reserved_due')
-        if (!dueToday.length) return null
+        const today = lagosToday()
+        const due = reservations.filter(r => r.checkIn <= today)
+        const soon = reservations.filter(r => r.checkIn > today && r.checkIn <= addDays(today, 7))
+        if (!due.length && !soon.length) return null
+        const line = r => (
+          <p key={r.stayId} className="text-sm">
+            <b>Room {r.roomNumber}</b> — {r.guest}
+            <span className="text-dim"> · {r.checkIn <= today ? (r.checkIn === today ? 'today' : 'since ' + shortDate(r.checkIn))
+              : r.checkIn === addDays(today, 1) ? 'tomorrow' : shortDate(r.checkIn)}
+              {' → out '}{shortDate(r.scheduledOut)}</span>
+          </p>
+        )
         return (
-          <div className="mb-4 rounded-2xl border-2 border-clay bg-clay/10 p-4">
-            <p className="text-clay font-bold">
-              {dueToday.length} reservation{dueToday.length === 1 ? '' : 's'} due — keep {dueToday.length === 1 ? 'this room' : 'these rooms'} free
-            </p>
-            <div className="mt-2 space-y-1">
-              {dueToday.map(r => (
-                <p key={r.room_id} className="text-clay text-sm">
-                  Room {r.room_number} — {r.guest_name}
+          <div className="mb-4 space-y-3">
+            {!!due.length && (
+              <div className="rounded-2xl border-2 border-clay bg-clay/10 p-4 text-clay">
+                <p className="font-bold">
+                  {due.length} reservation{due.length === 1 ? '' : 's'} due — keep {due.length === 1 ? 'this room' : 'these rooms'} free
                 </p>
-              ))}
-            </div>
+                <div className="mt-2 space-y-1">{due.map(line)}</div>
+              </div>
+            )}
+            {!!soon.length && (
+              <div className="rounded-2xl border border-amber bg-amber/10 p-4 text-amber">
+                <p className="font-bold">Booked in advance — coming in the next 7 days</p>
+                <div className="mt-2 space-y-1">{soon.map(line)}</div>
+              </div>
+            )}
           </div>
         )
       })()}
@@ -237,10 +273,12 @@ export default function RoomBoard({ boot }) {
                     {room.bill_to && (
                       <p className="text-amber text-xs font-semibold mt-0.5 truncate">→ {room.bill_to}</p>
                     )}
+                    <NextBooking room={room} reservations={reservations} />
                   </>
                 ) : (
                   <>
                     <p className="text-dim text-sm mt-2">Ready to let</p>
+                    <NextBooking room={room} reservations={reservations} />
                     {canManageRooms && (
                       <button onClick={(e) => { e.stopPropagation(); setMarkingOOS(room); setOosReason('') }}
                         className="mt-2 h-8 px-3 rounded-lg border border-clay text-clay text-sm font-semibold">

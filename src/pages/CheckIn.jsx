@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { naira, lagosToday, nightsBetween, addDays, cyclesFor, friendlyStayError } from '../lib/format'
 import {
-  createStay, findOrCreateGuest, loadBranchStaySettings, loadFreeRooms, loadPriorBalance, searchSimilarGuests,
+  createStay, findOrCreateGuest, loadBranchStaySettings, loadFreeRooms, loadPriorBalance, searchSimilarGuests, loadUpcomingReservations,
 } from '../lib/data'
 import { useToast } from '../components/Toast'
 
@@ -87,6 +87,16 @@ export default function CheckIn({ boot, onDone }) {
       setRoomId(cur => list.some(r => r.id === cur) ? cur : null)
     }).catch(() => setRooms([]))
   }, [staff.branch_id, checkIn, scheduledOut])
+
+  // Rooms left out of the list above because someone has reserved them
+  // for dates that overlap this booking — said out loud, so a missing
+  // room is explained rather than a mystery.
+  const [reservations, setReservations] = useState([])
+  useEffect(() => {
+    loadUpcomingReservations(staff.branch_id).then(setReservations).catch(() => setReservations([]))
+  }, [staff.branch_id])
+  const heldBack = (checkIn && scheduledOut)
+    ? reservations.filter(r => r.checkIn < scheduledOut && checkIn < r.scheduledOut) : []
 
   useEffect(() => {
     loadBranchStaySettings(staff.branch_id).then(s => {
@@ -210,6 +220,16 @@ export default function CheckIn({ boot, onDone }) {
             </option>
           ))}
         </select>
+        {!!heldBack.length && (
+          <div className="mt-2 rounded-xl border border-amber bg-amber/10 px-4 py-3 text-sm">
+            <p className="text-amber font-semibold">Not in the list — already reserved for these dates:</p>
+            {heldBack.map(r => (
+              <p key={r.stayId} className="text-dim">
+                Room {r.roomNumber} — {r.guest}, {r.checkIn} to {r.scheduledOut}
+              </p>
+            ))}
+          </div>
+        )}
       </div>
 
       <div className="mt-4 flex gap-3">
