@@ -76,13 +76,17 @@ export default function RoomChargeTracker({ branchId, locationId = null, refresh
                           Collected {naira(p.amount)} by {p.by || 'staff'} · {dShort(p.date)} · {String(p.method || '').toUpperCase()} · {p.dept}
                         </p>
                       ))}
-                      {l.status === 'settled_reception' && (
-                        <p className="text-amber text-sm">
-                          Guest has paid, but Reception took it as its own
-                          {(l.payments || []).length ? ` (${l.payments.map(p => `${p.by || 'staff'}, ${dShort(p.date)}`).join('; ')})` : ''}.
-                          Ask the front desk to move that payment to {l.dept || 'your department'} so it counts in your total.
-                        </p>
-                      )}
+                      {l.status === 'settled_reception' && (() => {
+                        // Only money taken on or after the day this was sold could have paid for it.
+                        const since = (l.payments || []).filter(p => String(p.date) >= String(l.date))
+                        return (
+                          <p className="text-amber text-sm">
+                            The guest's bill is settled, but the money was recorded under Reception
+                            {since.length ? ` — taken since this was sold: ${since.map(p => `${naira(p.amount)} by ${p.by || 'staff'}, ${dShort(p.date)}`).join('; ')}` : ''}.
+                            If any of it was for this item, ask the front desk to move that payment to {l.dept || 'your department'} (Folio → Change department).
+                          </p>
+                        )
+                      })()}
                     </div>
                     <div className="text-right shrink-0">
                       <p className="tnum font-semibold">{naira(isOwing ? left : l.amount)}</p>
