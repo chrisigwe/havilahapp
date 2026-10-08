@@ -1,3 +1,4 @@
+import RoomChargeTracker from '../components/RoomChargeTracker'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { naira, lagosToday, lagosDaysAgo, tierLabel, methodLabel, whoRecorded, paymentSummary } from '../lib/format'
 import { findDuplicateCustomers, findDuplicateGuests, loadDailyFinancials, loadReceptionActivity, loadReceptionDashboard, loadRoomCharges, loadRoomsSoldInMonth, loadToday, loadWriteoffsOnDate } from '../lib/data'
@@ -313,6 +314,10 @@ export default function DailySales({ boot }) {
             </div>
           )}
         </div>
+      )}
+
+      {!isReception && (
+        <RoomChargeTracker branchId={staff.branch_id} locationId={locId === 'all' ? null : locId} />
       )}
 
       <div className="flex items-baseline justify-between mt-4">

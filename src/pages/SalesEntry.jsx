@@ -14,6 +14,7 @@ import WriteoffBreakdown from '../components/WriteoffBreakdown'
 import RoomChargeApprovals from '../components/RoomChargeApprovals'
 import CollectRefusedCharges from '../components/CollectRefusedCharges'
 import MyPendingRoomCharges from '../components/MyPendingRoomCharges'
+import RoomChargeTracker from '../components/RoomChargeTracker'
 import ItemPicker from '../components/ItemPicker'
 import RoomChargeSheet from '../components/RoomChargeSheet'
 import CustomerPicker from '../components/CustomerPicker'
@@ -684,6 +685,10 @@ export default function SalesEntry({ boot }) {
       )}
 
       <HandoverNotes branchId={staff.branch_id} locationId={locationId} />
+
+      {!isReception && (
+        <RoomChargeTracker branchId={staff.branch_id} locationId={locationId} refreshKey={lastReceiptAt} />
+      )}
 
       {approvalsOn && isReception && canApprove && (
         <RoomChargeApprovals branchId={staff.branch_id} onDecided={refresh} />

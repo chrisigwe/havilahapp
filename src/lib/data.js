@@ -815,6 +815,17 @@ export async function loadOccupancy(branchId) {
     String(a.room_number).localeCompare(String(b.room_number), undefined, { numeric: true }))
 }
 
+// Everything a department (or, with no location, every department of the
+// branch) has charged to rooms: unpaid and part-paid lines however old, plus
+// recently settled ones. See migration 337 for how a line is judged.
+export async function loadDepartmentRoomCharges(branchId, locationId = null, days = 14) {
+  const { data, error } = await supabase.rpc('department_room_charges', {
+    p_branch: branchId, p_location: locationId || null, p_days: days,
+  })
+  if (error) throw error
+  return data || []
+}
+
 // Reservations not yet arrived (status 'reserved'), soonest first, with the
 // room and guest — so front desk can see them BEFORE selling the room.
 // Includes ones already due (check_in_date <= today) that nobody has
