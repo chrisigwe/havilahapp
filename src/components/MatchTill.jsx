@@ -20,6 +20,29 @@ const sumMethod = (rows, m) => rows.reduce((s, r) =>
   s + (r.sale_payments || []).filter(p => p.method === m)
       .reduce((a, p) => a + Number(p.amount), 0), 0)
 
+// One amount field. Module-level on purpose: a component defined inside another
+// is a NEW component on every render, so the input remounted on each keystroke
+// and the cursor jumped out after every digit.
+function AmountRow({ label, hint, app, value, onChange, gap, ok, higher, lower }) {
+  return (
+    <div className="mt-3">
+      <div className="flex items-baseline justify-between gap-2">
+        <label className="font-semibold">{label}</label>
+        <span className="text-dim text-sm shrink-0">App has <span className="tnum">{naira(app)}</span></span>
+      </div>
+      {hint && <p className="text-dim text-xs">{hint}</p>}
+      <input type="number" inputMode="decimal" value={value}
+        onChange={e => onChange(e.target.value)} placeholder="0"
+        className="mt-1 w-full h-12 px-3 rounded-xl bg-raise border border-line tnum text-lg" />
+      {value !== '' && (
+        <p className={`mt-1 text-sm font-semibold ${ok ? 'text-leaf' : 'text-clay'}`}>
+          {ok ? 'Matches ✓' : `${naira(Math.abs(gap))} ${gap > 0 ? higher : lower}`}
+        </p>
+      )}
+    </div>
+  )
+}
+
 export default function MatchTill({ rows = [], posTotal = null, cashTotal = null,
                                     recovered = {}, folio = {}, creditApp = null,
                                     itemName = () => '', onFix, busyId = null, onRecord = null }) {
@@ -93,23 +116,9 @@ export default function MatchTill({ rows = [], posTotal = null, cashTotal = null
       || (b.created_at || '').localeCompare(a.created_at || ''))
   const visible = showAll || anyGap ? list : []
 
-  const Row = ({ label, hint, app, value, set, gap, ok, higher, lower }) => (
-    <div className="mt-3">
-      <div className="flex items-baseline justify-between gap-2">
-        <label className="font-semibold">{label}</label>
-        <span className="text-dim text-sm shrink-0">App has <span className="tnum">{naira(app)}</span></span>
-      </div>
-      {hint && <p className="text-dim text-xs">{hint}</p>}
-      <input type="number" inputMode="decimal" value={value}
-        onChange={e => { set(e.target.value); setSaved(false) }} placeholder="0"
-        className="mt-1 w-full h-12 px-3 rounded-xl bg-raise border border-line tnum text-lg" />
-      {value !== '' && (
-        <p className={`mt-1 text-sm font-semibold ${ok ? 'text-leaf' : 'text-clay'}`}>
-          {ok ? 'Matches ✓' : `${naira(Math.abs(gap))} ${gap > 0 ? higher : lower}`}
-        </p>
-      )}
-    </div>
-  )
+  // Typing in a field must not unmount it, so the row is a module-level component
+  // (defined here it was re-created on every keystroke and the field lost focus).
+  const edit = setter => v => { setter(v); setSaved(false) }
 
   const fixer = (r) => {
     const pays = r.sale_payments || []
@@ -167,14 +176,14 @@ export default function MatchTill({ rows = [], posTotal = null, cashTotal = null
         Type what you have in hand and the app shows where it does not agree.
       </p>
 
-      <Row label="POS slip total" app={appPos} value={pos} set={setPos} gap={posGap} ok={posOk}
+      <AmountRow label="POS slip total" app={appPos} value={pos} onChange={edit(setPos)} gap={posGap} ok={posOk}
         hint={[Number(recovered.pos) > 0 && `Includes ${naira(recovered.pos)} of old debt paid by POS`, Number(folio.pos) > 0 && `Includes ${naira(folio.pos)} paid on room folios through your POS`].filter(Boolean).join('. ') || null}
         higher="more on the app than on the POS slip" lower="less on the app than on the POS slip" />
-      <Row label="Cash in your drawer" app={appCash} value={cash} set={setCash} gap={cashGap} ok={cashOk}
+      <AmountRow label="Cash in your drawer" app={appCash} value={cash} onChange={edit(setCash)} gap={cashGap} ok={cashOk}
         hint={[Number(recovered.cash) > 0 && `Includes ${naira(recovered.cash)} of old debt paid in cash`, Number(folio.cash) > 0 && `Includes ${naira(folio.cash)} paid on room folios in cash`].filter(Boolean).join('. ') || null}
         higher="more cash than the app expects" lower="less cash than the app expects" />
       {showCredit && (
-        <Row label="Credit you gave today" app={appCredit} value={credit} set={setCredit} gap={creditGap} ok={creditOk}
+        <AmountRow label="Credit you gave today" app={appCredit} value={credit} onChange={edit(setCredit)} gap={creditGap} ok={creditOk}
           hint="From your own record of who took on credit (leave empty if you keep none)"
           higher="more credit on the app than you recorded" lower="less credit on the app than you recorded" />
       )}
