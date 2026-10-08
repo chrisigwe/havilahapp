@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { naira, lagosToday } from '../lib/format'
 import { useToast } from '../components/Toast'
-import { loadStaffAccounts } from '../lib/data'
+import { loadStaffAccounts, loadPossibleDuplicateAccounts } from '../lib/data'
 import {
   addDeduction, endEmployment, finalisePeriod, giveRaise, lineTotals, loadCustomersForLinking, loadEmployees, loadLines, loadPayouts, loadPeriod, loadPotNext, loadSalaryHistory, openPeriod, proposeCreditDeductions, removeAddition, removeDeduction, reopenPeriod, saveEmployee, savePayout, savingsBalances, setEmployeeCreditAccount, updateLine,
 } from '../lib/payroll'
@@ -32,6 +32,7 @@ export default function Payroll({ boot }) {
   const [potNext, setPotNext] = useState(null)
   const [savings, setSavings] = useState({})
   const [employees, setEmployees] = useState([])
+  const [dupAccts, setDupAccts] = useState([])
   const [busy, setBusy] = useState(false)
   const [editEmp, setEditEmp] = useState(null)
   const [recordingPayout, setRecordingPayout] = useState(null)
@@ -48,6 +49,7 @@ export default function Payroll({ boot }) {
       setEmployees(await loadEmployees(staff.branch_id, { includeLeavers: true }))
       setPotNext(await loadPotNext(staff.branch_id))
       setSavings(await savingsBalances(staff.branch_id))
+      setDupAccts(await loadPossibleDuplicateAccounts(staff.branch_id).catch(() => []))
     } catch (e) { toast(e.message, 'error') }
   }, [staff.branch_id, year, month, toast])
 
@@ -275,13 +277,35 @@ export default function Payroll({ boot }) {
 
           {period && (
             <div className="print:hidden mt-6">
+              {!final && dupAccts.length > 0 && (
+                <div className="mb-4 rounded-2xl border border-clay bg-surface p-4">
+                  <p className="font-semibold text-clay">Possible duplicate credit accounts</p>
+                  <p className="text-dim text-xs mt-1 mb-2">
+                    Only the account linked to the employee is deducted from pay.
+                    Credit sitting on another account of the same person is missed.
+                    Merge them in Corrections (Reception tab) before finalising.
+                  </p>
+                  {dupAccts.map((d, i) => (
+                    <div key={i} className="py-2 border-t border-line/60 first:border-0 text-sm">
+                      <div className="font-semibold">{d.employee_name}</div>
+                      <div className="text-dim">Linked: {d.linked_name || 'no account linked'}</div>
+                      <div className="flex justify-between gap-2">
+                        <span className="truncate">Also: {d.other_name}</span>
+                        <span className="tnum shrink-0 text-clay">{naira(d.other_balance)}</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
               {final
                 ? <button onClick={async () => { await reopenPeriod(period.id); refresh() }}
                     className="h-12 w-full rounded-xl border border-clay text-clay font-semibold">
                     Reopen this month to change it
                   </button>
                 : <button onClick={async () => {
-                      if (!window.confirm('Finalise this month? It will be frozen until reopened.')) return
+                      if (!window.confirm(dupAccts.length
+                        ? `Finalise this month? It will be frozen until reopened.\n\nWarning: ${dupAccts.length} possible duplicate credit account${dupAccts.length === 1 ? '' : 's'} (${[...new Set(dupAccts.map(d => d.employee_name))].join(', ')}) may hold credit that is not being deducted.`
+                        : 'Finalise this month? It will be frozen until reopened.')) return
                       let r
                       // Had no error handling: a refused or failed
                       // finalise was an unhandled rejection and the

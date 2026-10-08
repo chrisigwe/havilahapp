@@ -2341,6 +2341,15 @@ export async function loadMyPay() {
 }
 
 
+// Current employees whose name matches ANOTHER credit account that is not
+// the payroll-linked one (e.g. "Auditor chioma" next to "Chioma (staff)").
+// GM/admin only; any failure is treated as "none found" by the caller.
+export async function loadPossibleDuplicateAccounts(branchId) {
+  const { data, error } = await supabase.rpc('payroll_possible_duplicate_accounts', { p_branch: branchId })
+  if (error) throw error
+  return data || []
+}
+
 // ---------- Shift handover notes ----------
 export async function loadHandoverNotes(branchId, locationId) {
   const { data, error } = await supabase.rpc('list_handover_notes', { p_branch: branchId, p_location: locationId })
