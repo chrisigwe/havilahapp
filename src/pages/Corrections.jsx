@@ -7,6 +7,7 @@ import { loadActivity, deleteEntry, updateEntry, loadAudit,
          findDuplicateCustomers, mergeCustomers } from '../lib/data'
 import { useToast } from '../components/Toast'
 import MergeGuestsSheet from '../components/MergeGuestsSheet'
+import MergeCustomersSheet from '../components/MergeCustomersSheet'
 import { MANAGEMENT, RECEPTION_EDIT, SUPERVISOR, is } from '../lib/roles'
 
 export default function Corrections({ boot }) {
@@ -92,6 +93,7 @@ export default function Corrections({ boot }) {
   // spellings sharing no phone, initials or prefix. Moved here from
   // Settings so every merge lives in ONE place.
   const [manualMerge, setManualMerge] = useState(false)
+  const [manualCust, setManualCust] = useState(false)
   const [liveStays, setLiveStays] = useState(null)
   const [guestEdit, setGuestEdit] = useState(null)
 
@@ -430,57 +432,6 @@ export default function Corrections({ boot }) {
             <div className="mt-4 rounded-2xl border border-clay bg-surface p-4">
               <p className="font-semibold">Possible duplicate customers</p>
               <p className="text-dim text-xs mt-1 mb-3">
-                Credit accounts, not room guests. Balances and departments are
-                shown because the name alone is rarely enough to tell which
-                record to keep. Merging moves every sale and repayment onto the
-                one you keep.
-              </p>
-              {custDupes.map((d, i) => (
-                <div key={i} className="py-2 border-t border-line/60 first:border-0">
-                  <div className="text-xs text-dim mb-1">{d.reason}</div>
-                  <div className="text-sm">
-                    <div className="flex justify-between gap-2">
-                      <span className="truncate">{d.name_a}
-                        <span className="text-dim"> · {d.depts_a}</span>
-                      </span>
-                      <span className="tnum shrink-0 text-clay">{naira(d.bal_a)}</span>
-                    </div>
-                    <div className="flex justify-between gap-2">
-                      <span className="truncate">{d.name_b}
-                        <span className="text-dim"> · {d.depts_b}</span>
-                      </span>
-                      <span className="tnum shrink-0 text-clay">{naira(d.bal_b)}</span>
-                    </div>
-                  </div>
-                  <div className="flex gap-2 mt-2">
-                    <button
-                      onClick={() => setMergingCust({
-                        survivorId: d.cust_a, survivorName: d.name_a,
-                        dupId: d.cust_b, dupName: d.name_b,
-                        total: Number(d.bal_a) + Number(d.bal_b) })}
-                      className="flex-1 h-9 rounded-lg border border-line text-dim text-xs px-2 truncate">
-                      Keep "{d.name_a}"
-                    </button>
-                    <button
-                      onClick={() => setMergingCust({
-                        survivorId: d.cust_b, survivorName: d.name_b,
-                        dupId: d.cust_a, dupName: d.name_a,
-                        total: Number(d.bal_a) + Number(d.bal_b) })}
-                      className="flex-1 h-9 rounded-lg border border-line text-dim text-xs px-2 truncate">
-                      Keep "{d.name_b}"
-                    </button>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-          {canMerge && custDupes?.length === 0 && (
-            <p className="text-dim text-sm mt-2">No likely duplicate customers found.</p>
-          )}
-          {canMerge && !!custDupes?.length && (
-            <div className="mt-4 rounded-2xl border border-clay bg-surface p-4">
-              <p className="font-semibold">Possible duplicate customers</p>
-              <p className="text-dim text-xs mt-1 mb-3">
                 Credit accounts at the bars, minimart and restaurant. Balance and
                 departments are shown so you can see which record holds the real
                 history before choosing. Merging moves every sale and repayment
@@ -521,6 +472,12 @@ export default function Corrections({ boot }) {
           )}
           {canMerge && custDupes?.length === 0 && (
             <p className="text-dim text-sm mt-4">No likely duplicate customers found.</p>
+          )}
+          {canMerge && (
+            <button onClick={() => setManualCust(true)}
+              className="mt-3 w-full h-11 rounded-xl border border-line text-dim font-semibold text-sm">
+              Merge two credit accounts not listed above
+            </button>
           )}
         </>
       ) : view === 'history' ? (
@@ -667,36 +624,9 @@ export default function Corrections({ boot }) {
           onClose={() => { setManualMerge(false); refreshDupes(); refreshGuests() }} />
       )}
 
-      {mergingCust && (
-        <Sheet onClose={() => setMergingCust(null)}>
-          <h3 className="text-xl font-bold">Merge customer records</h3>
-          <div className="mt-4 rounded-2xl border border-line bg-surface p-4">
-            <div className="text-dim text-sm">Keeping</div>
-            <div className="font-semibold">{mergingCust.survivorName}</div>
-            <div className="text-dim text-sm mt-3">Merging in and closing</div>
-            <div className="font-semibold text-clay">{mergingCust.dupName}</div>
-            <div className="text-dim text-sm mt-3">Combined balance after merge</div>
-            <div className="tnum font-bold text-clay">{naira(mergingCust.total)}</div>
-          </div>
-          <p className="text-dim text-sm mt-4">
-            Every sale and repayment under "{mergingCust.dupName}" moves onto
-            "{mergingCust.survivorName}", so their debts combine into the single
-            figure above. The closed record is renamed and kept, not deleted, so
-            receipts already issued still resolve.
-          </p>
-          <p className="text-clay text-sm mt-3">
-            This moves real money between accounts. Be sure they are the same
-            person — undoing it means re-pointing each sale by hand.
-          </p>
-          <button onClick={doMergeCustomers} disabled={busy}
-            className="mt-5 h-12 w-full rounded-xl bg-clay text-bg font-bold disabled:opacity-40">
-            {busy ? 'Merging…' : `Merge into ${mergingCust.survivorName}`}
-          </button>
-          <button onClick={() => setMergingCust(null)}
-            className="mt-2 h-12 w-full rounded-xl border border-line text-dim font-semibold">
-            Cancel
-          </button>
-        </Sheet>
+      {manualCust && (
+        <MergeCustomersSheet boot={boot}
+          onClose={() => { setManualCust(false); refreshCustDupes() }} />
       )}
 
       {mergingCust && (

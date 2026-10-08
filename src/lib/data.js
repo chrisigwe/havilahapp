@@ -1860,6 +1860,19 @@ export async function findDuplicateCustomers(branchId) {
   return data || []
 }
 
+// All active credit accounts in a branch with what each owes, for the
+// manual merge picker (pairs the finder cannot detect).
+export async function loadCustomerAccountsForMerge(branchId) {
+  const { data: custs, error } = await supabase.from('customers')
+    .select('id, name').eq('branch_id', branchId).eq('is_active', true).order('name')
+  if (error) throw error
+  const { data: bals } = await supabase.from('v_customer_balances_by_staff')
+    .select('customer_id, balance').eq('branch_id', branchId)
+  const owed = new Map()
+  for (const b of bals || []) owed.set(b.customer_id, (owed.get(b.customer_id) || 0) + Number(b.balance || 0))
+  return (custs || []).map(c => ({ ...c, balance: owed.get(c.id) || 0 }))
+}
+
 export async function mergeCustomers(survivorId, duplicateIds) {
   // Parameter names are p_keep / p_merge — the signature that already
   // existed in the database. Kept rather than renamed so anything else
