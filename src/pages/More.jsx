@@ -49,10 +49,14 @@ const ITEMS = [
 
 // What a role sees under More (nothing already on its bottom bar). Shared
 // with the laptop sidebar so the two can never disagree.
-export function moreItemsFor(role, recordsSales = false, hasPay = false) {
+export function moreItemsFor(role, recordsSales = false, hasPay = false, readOnly = false) {
   const onBar = new Set(tabsFor(role, { recordsSales }).map(([k]) => k))
   // "My pay" appears only for people whose login is linked to a payroll employee.
-  return ITEMS.filter(i => i.roles.includes(role) && !onBar.has(i.key) && (i.key !== 'mypay' || hasPay))
+  // View-only accounts (the Demo login) never see pay: the database refuses
+  // them too (migration 330), this just keeps the menu honest.
+  const payKeys = ['payroll', 'mypay']
+  return ITEMS.filter(i => i.roles.includes(role) && !onBar.has(i.key)
+    && (i.key !== 'mypay' || hasPay) && !(readOnly && payKeys.includes(i.key)))
 }
 
 export default function More({ boot, onGo, pendingCount = 0, hasPay = false }) {
@@ -66,7 +70,7 @@ export default function More({ boot, onGo, pendingCount = 0, hasPay = false }) {
   // per-role exclusions, which is what let the auditor's Counts and
   // Variances show up in both places.
   const recordsSales = (boot.locations || []).some(l => l.is_sales_point && !l.is_store)
-  const allowed = moreItemsFor(boot.staff.role, recordsSales, hasPay)
+  const allowed = moreItemsFor(boot.staff.role, recordsSales, hasPay, !!boot.staff.is_read_only)
   return (
     <div className="px-5">
       <ul className="divide-y divide-line/60">

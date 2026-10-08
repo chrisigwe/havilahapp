@@ -32,7 +32,7 @@ export default function Shell({ staff, tab, onTab, children,
   const tabs = tabsFor(staff.role, { recordsSales })
   const countBadgeTab = countBadgeTabFor(staff.role, { recordsSales })
   const directTabKeys = new Set(tabs.map(([k]) => k))
-  const moreItems = moreItemsFor(staff.role, recordsSales, hasPay)
+  const moreItems = moreItemsFor(staff.role, recordsSales, hasPay, !!staff.is_read_only)
 
   // One-shot bounce when a tab becomes the selected one. Driven by a key
   // that changes on selection, so the animation restarts every time —

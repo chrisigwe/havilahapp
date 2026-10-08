@@ -269,9 +269,9 @@ export default function App() {
         : tab === 'roomboard' ? <RoomBoard boot={boot} />
         : tab === 'staysettings' ? <StaySettings boot={boot} />
         : tab === 'catalog' ? <Catalog boot={boot} onChanged={refresh} />
-        : tab === 'payroll' ? <Payroll boot={boot} />
+        : tab === 'payroll' && !boot.staff.is_read_only ? <Payroll boot={boot} />
         : tab === 'staffaccounts' ? <StaffAccounts boot={boot} />
-        : tab === 'mypay' ? <MyPay data={myPay} />
+        : tab === 'mypay' && !boot.staff.is_read_only ? <MyPay data={myPay} />
         : tab === 'tillchecks' ? <TillChecks boot={boot} />
         : tab === 'variance' ? <Variances boot={boot} />
         : tab === 'recovery' ? <Recovery boot={boot} />
