@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { naira, lagosToday } from '../lib/format'
 import { useToast } from '../components/Toast'
-import { loadStaffAccounts, loadPossibleDuplicateAccounts } from '../lib/data'
+import { loadLoginsForPayroll, loadPossibleDuplicateAccounts } from '../lib/data'
 import {
   addDeduction, endEmployment, finalisePeriod, giveRaise, lineTotals, loadCustomersForLinking, loadEmployees, loadLines, loadPayouts, loadPeriod, loadPotNext, loadSalaryHistory, openPeriod, proposeCreditDeductions, removeAddition, removeDeduction, reopenPeriod, saveEmployee, savePayout, savingsBalances, setEmployeeCreditAccount, updateLine,
 } from '../lib/payroll'
@@ -451,7 +451,7 @@ function EmployeeSheet({ value, employees, final, onClose, onSaved, toast, branc
   const [logins, setLogins] = useState([])
   useEffect(() => {
     if (!branchId) return
-    loadStaffAccounts(branchId).then(setLogins).catch(() => setLogins([]))
+    loadLoginsForPayroll(branchId).then(setLogins).catch(() => setLogins([]))
     loadCustomersForLinking(branchId).then(setCustomers).catch(() => setCustomers([]))
   }, [branchId])
 

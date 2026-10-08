@@ -2245,6 +2245,19 @@ export async function loadStaffAccounts(branchId) {
   return data || []
 }
 
+// Logins that can be linked to a payroll record in this branch: this
+// branch's own accounts PLUS GM/admin accounts from any branch, because the
+// GM works in both and is paid separately by each.
+export async function loadLoginsForPayroll(branchId) {
+  const { data, error } = await supabase.from('staff')
+    .select('id, full_name, role, branch_id, is_active')
+    .eq('is_active', true)
+    .or(`branch_id.eq.${branchId},role.in.(gm,admin)`)
+    .order('role').order('full_name')
+  if (error) throw error
+  return data || []
+}
+
 // Hand an account to someone else: new password, and a dated note of who
 // holds it now. Runs on the server (reset-staff-password), because
 // changing another person's password needs a key that must never be in

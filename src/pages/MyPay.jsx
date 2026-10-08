@@ -15,6 +15,7 @@ export default function MyPay({ data }) {
       No finished month yet. Your pay slip shows here once the month is finalised.</p>
   }
 
+  const manyBranches = new Set(data.months.map(m => m.branch)).size > 1
   return (
     <div className="px-5 pb-8">
       <p className="text-dim text-sm py-2">Only you can see this. Shows each finished month.</p>
@@ -22,9 +23,11 @@ export default function MyPay({ data }) {
         const t = lineTotals(m, m.pot, m.working_days)
         const extra = [...(m.payroll_addition || [])]
         return (
-          <section key={`${m.year}-${m.month}`} className="mt-4 rounded-2xl border border-line bg-surface p-4">
+          <section key={`${m.year}-${m.month}-${m.branch}`} className="mt-4 rounded-2xl border border-line bg-surface p-4">
             <div className="flex items-baseline justify-between">
-              <h2 className="font-bold text-lg">{MONTHS[m.month - 1]} {m.year}</h2>
+              <h2 className="font-bold text-lg">{MONTHS[m.month - 1]} {m.year}
+                {manyBranches && m.branch && <span className="text-dim text-sm font-normal"> · {m.branch}</span>}
+              </h2>
               <span className="text-dim text-sm tnum">{m.days_worked} of {m.working_days} days</span>
             </div>
             <div className="mt-1 text-dim text-sm">You received</div>
