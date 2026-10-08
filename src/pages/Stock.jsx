@@ -1,10 +1,21 @@
 import { useEffect, useMemo, useState } from 'react'
 import { loadStockMap } from '../lib/data'
+import { OPENS_ON_ALL, is } from '../lib/roles'
 
 export default function Stock({ boot }) {
   const { staff, locations, items, seesAll } = boot
   const [stockMap, setStockMap] = useState({})
-  const [locId, setLocId] = useState('all')
+  // Opens on the person's own department (their default), so a bartender
+  // lands on their bar, not the whole branch. Auditor, GM and admin watch
+  // everything, so they open on all, same rule as Recovery.
+  const [locId, setLocId] = useState(() =>
+    !is(staff.role, OPENS_ON_ALL) && staff.default_location_id
+      && locations.some(l => l.id === staff.default_location_id)
+      ? staff.default_location_id : 'all')
+  // A branch switch can leave the chosen department behind: fall back to all.
+  useEffect(() => {
+    if (locId !== 'all' && !locations.some(l => l.id === locId)) setLocId('all')
+  }, [locations, locId])
   const [q, setQ] = useState('')
 
   // Read-only for everyone. Auditors used to record PR/damage write-offs
