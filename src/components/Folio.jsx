@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { naira, lagosToday, lagosTime, seesStayTimes, cyclesFor, friendlyStayError } from '../lib/format'
-import { checkOutStay, deleteOrderItem, deleteStay, loadBranchStaySettings, loadFolio, moveRoomChargeDate, recordStayPayment, reopenStay, searchSimilarGuests, updateOrderItem, updateOverstayFee, updateStayBillTo, updateStayDetails } from '../lib/data'
+import { checkOutStay, deleteOrderItem, deleteStay, loadBranchStaySettings, loadFolio, moveRoomChargeDate, recordStayPayment, setPaymentDepartment, reopenStay, searchSimilarGuests, updateOrderItem, updateOverstayFee, updateStayBillTo, updateStayDetails } from '../lib/data'
 import { useToast } from '../components/Toast'
 import PaymentMethodPicker, { paymentParts, paymentAllocated } from './PaymentMethodPicker'
 import FolioStatement from './FolioStatement'
@@ -11,7 +11,7 @@ import { MANAGEMENT, SUPERVISOR, is } from '../lib/roles'
 const SUPERVISOR_ROLES = MANAGEMENT
 
 export default function Folio({ boot, room, onClose, onChanged }) {
-  const { staff } = boot
+  const { staff, allLocations, locations } = boot
   const payMethods = ['pos', 'cash']   // deliberately fixed, not derived from branch config —
                                         // Rooms payment is POS/Cash only, no Transfer
   const toast = useToast()
@@ -26,6 +26,11 @@ export default function Folio({ boot, room, onClose, onChanged }) {
   // stock movements, not room charges, so every mistake needed SQL.
   const [movingCharge, setMovingCharge] = useState(null)
   const [isOverstay, setIsOverstay] = useState(false)
+  // Money that went through ANOTHER department's POS/cash (e.g. a MainBar bill
+  // charged to the room, then paid on the bar's terminal). Empty = Reception.
+  const [payLoc, setPayLoc] = useState('')
+  const [payLocOpen, setPayLocOpen] = useState(false)
+  const [movingPay, setMovingPay] = useState(null)   // { id, loc } while changing an existing payment's department
   const [editing, setEditing] = useState(null)   // { dailyRate, billingCycle, scheduledOut, rateReason } while open
   const [billToSuggestions, setBillToSuggestions] = useState([])
   const [billToOpen, setBillToOpen] = useState(false)
@@ -139,11 +144,28 @@ export default function Folio({ boot, room, onClose, onChanged }) {
     try {
       await recordStayPayment({
         staff, stayId: room.stay_id, businessDate: pay.date || lagosToday(),
-        cycle: folio?.billing_cycle, parts: payParts, isOverstay,
+        cycle: folio?.billing_cycle, parts: payParts, isOverstay, locationId: payLoc || null,
       })
       toast('Payment recorded', 'success')
       setPay({ amount: '', method: 'pos', split: null, date: lagosToday() }); setIsOverstay(false)
+      setPayLoc(''); setPayLocOpen(false)
       refresh(); onChanged?.()
+    } catch (e) { toast(friendlyStayError(e), 'error') }
+    setBusy(false)
+  }
+
+  // Departments that can take a room payment: real sales points of THIS stay's
+  // branch, never the store and never Reception itself (that is the default).
+  const deptOptions = (allLocations || locations || []).filter(l =>
+    l.is_sales_point && !l.is_store && !/reception/i.test(l.name)
+    && (!folio?.branch_id || !l.branch_id || l.branch_id === folio.branch_id))
+
+  async function saveMovedPayment() {
+    setBusy(true)
+    try {
+      await setPaymentDepartment(movingPay.id, movingPay.loc || null)
+      toast('Payment moved', 'success')
+      setMovingPay(null); refresh(); onChanged?.()
     } catch (e) { toast(friendlyStayError(e), 'error') }
     setBusy(false)
   }
@@ -436,6 +458,30 @@ export default function Folio({ boot, room, onClose, onChanged }) {
                 value={pay} onChange={v => setPay(p => ({ ...p, ...v }))} />
             </div>
 
+            {deptOptions.length > 0 && (
+              payLocOpen ? (
+                <div className="mt-3 rounded-xl border border-line bg-raise p-3">
+                  <label className="block text-dim text-sm">Money went through</label>
+                  <select value={payLoc} onChange={e => setPayLoc(e.target.value)}
+                    className="mt-1 h-12 w-full px-3 rounded-xl bg-surface border border-line">
+                    <option value="">Reception (this desk)</option>
+                    {deptOptions.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
+                  </select>
+                  {payLoc && (
+                    <p className="text-amber text-sm mt-2">
+                      This payment will count in {deptOptions.find(l => l.id === payLoc)?.name}'s
+                      Total Sales, not Reception's.
+                    </p>
+                  )}
+                </div>
+              ) : (
+                <button onClick={() => setPayLocOpen(true)}
+                  className="mt-3 text-dim text-sm underline">
+                  Paid on a department's POS, e.g. MainBar? Choose it
+                </button>
+              )
+            )}
+
             <label className="flex items-center gap-2 text-dim mt-3">
               <input type="checkbox" checked={isOverstay} onChange={e => setIsOverstay(e.target.checked)} />
               Over-stay payment
@@ -567,6 +613,28 @@ export default function Folio({ boot, room, onClose, onChanged }) {
                       {p.method.toUpperCase()}{p.is_overstay ? ' · over-stay' : ''}
                     </div>
                     <div className="text-dim text-sm">{p.business_date}{p.remark ? ` · ${p.remark}` : ''}</div>
+                    {p.collected?.name && (
+                      <div className="text-amber text-sm">Collected at {p.collected.name}</div>
+                    )}
+                    {movingPay?.id === p.id ? (
+                      <div className="mt-2">
+                        <select value={movingPay.loc}
+                          onChange={e => setMovingPay(m => ({ ...m, loc: e.target.value }))}
+                          className="h-11 w-full px-3 rounded-xl bg-raise border border-line">
+                          <option value="">Reception (this desk)</option>
+                          {deptOptions.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
+                        </select>
+                        <div className="flex gap-2 mt-2">
+                          <button onClick={saveMovedPayment} disabled={busy}
+                            className="flex-1 h-10 rounded-lg bg-amber text-bg font-semibold disabled:opacity-40">Save</button>
+                          <button onClick={() => setMovingPay(null)}
+                            className="flex-1 h-10 rounded-lg border border-line text-dim">Cancel</button>
+                        </div>
+                      </div>
+                    ) : (deptOptions.length > 0 && (
+                      <button onClick={() => setMovingPay({ id: p.id, loc: p.location_id || '' })}
+                        className="text-dim text-xs underline mt-1">Change department</button>
+                    ))}
                   </div>
                   <span className="tnum font-semibold">{naira(p.amount)}</span>
                 </li>

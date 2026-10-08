@@ -21,7 +21,7 @@ const sumMethod = (rows, m) => rows.reduce((s, r) =>
       .reduce((a, p) => a + Number(p.amount), 0), 0)
 
 export default function MatchTill({ rows = [], posTotal = null, cashTotal = null,
-                                    recovered = {}, creditApp = null,
+                                    recovered = {}, folio = {}, creditApp = null,
                                     itemName = () => '', onFix, busyId = null, onRecord = null }) {
   const [open, setOpen] = useState(false)
   const [pos, setPos] = useState('')
@@ -36,8 +36,8 @@ export default function MatchTill({ rows = [], posTotal = null, cashTotal = null
   // Only paid sales: PR, damage and staff meals take no money.
   const sales = rows.filter(r => r.order_type !== 'pr_damage' && r.order_type !== 'staff')
   // The drawer and the terminal also hold money from OLD debts paid today.
-  const appPos = posTotal ?? round2(sumMethod(sales, 'pos') + Number(recovered.pos || 0))
-  const appCash = cashTotal ?? round2(sumMethod(sales, 'cash') + Number(recovered.cash || 0))
+  const appPos = posTotal ?? round2(sumMethod(sales, 'pos') + Number(recovered.pos || 0) + Number(folio.pos || 0))
+  const appCash = cashTotal ?? round2(sumMethod(sales, 'cash') + Number(recovered.cash || 0) + Number(folio.cash || 0))
   const appCredit = creditApp ?? round2(sumMethod(sales, 'credit'))
   const showCredit = creditApp !== null || rows.length > 0
 
@@ -75,7 +75,7 @@ export default function MatchTill({ rows = [], posTotal = null, cashTotal = null
     return (
       <button onClick={() => setOpen(true)}
         className="mt-3 w-full h-12 rounded-xl border border-amber text-amber font-semibold">
-        Match your Total Sales before you leave
+        Match your Total Sales for the day
       </button>
     )
   }
@@ -168,10 +168,10 @@ export default function MatchTill({ rows = [], posTotal = null, cashTotal = null
       </p>
 
       <Row label="POS slip total" app={appPos} value={pos} set={setPos} gap={posGap} ok={posOk}
-        hint={Number(recovered.pos) > 0 ? `Includes ${naira(recovered.pos)} of old debt paid by POS` : null}
+        hint={[Number(recovered.pos) > 0 && `Includes ${naira(recovered.pos)} of old debt paid by POS`, Number(folio.pos) > 0 && `Includes ${naira(folio.pos)} paid on room folios through your POS`].filter(Boolean).join('. ') || null}
         higher="more on the app than on the POS slip" lower="less on the app than on the POS slip" />
       <Row label="Cash in your drawer" app={appCash} value={cash} set={setCash} gap={cashGap} ok={cashOk}
-        hint={Number(recovered.cash) > 0 ? `Includes ${naira(recovered.cash)} of old debt paid in cash` : null}
+        hint={[Number(recovered.cash) > 0 && `Includes ${naira(recovered.cash)} of old debt paid in cash`, Number(folio.cash) > 0 && `Includes ${naira(folio.cash)} paid on room folios in cash`].filter(Boolean).join('. ') || null}
         higher="more cash than the app expects" lower="less cash than the app expects" />
       {showCredit && (
         <Row label="Credit you gave today" app={appCredit} value={credit} set={setCredit} gap={creditGap} ok={creditOk}

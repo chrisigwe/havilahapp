@@ -1151,7 +1151,7 @@ export async function loadFolio(stayId) {
       .select('id, business_date, served_by, settlement, approval_status, decision_note, order_items(id, category, description, qty, unit_price, amount, order_type, damage_reason, writeoff_note, pr_meal)')
       .eq('stay_id', stayId).order('business_date', { ascending: false }),
     supabase.from('payments')
-      .select('id, business_date, method, amount, is_overstay, remark')
+      .select('id, business_date, method, amount, is_overstay, remark, location_id, received_by, collected:stock_locations!location_id(name)')
       .eq('stay_id', stayId).order('business_date', { ascending: false }),
     supabase.from('v_stay_folio').select('*').eq('stay_id', stayId).maybeSingle(),
     // v_stay_folio has daily_rate/billing_cycle but not the raw
@@ -1182,11 +1182,13 @@ export async function loadFolio(stayId) {
 // settlement but several tenders in the ledger — same split-row
 // pattern as Credit's split repayments. parts is [{method, amount}],
 // already filtered to non-zero entries by the caller.
-export async function recordStayPayment({ staff, stayId, businessDate, cycle, parts, isOverstay }) {
+export async function recordStayPayment({ staff, stayId, businessDate, cycle, parts, isOverstay, locationId = null }) {
   const rows = parts.filter(p => Number(p.amount) > 0).map(p => ({
     branch_id: staff.branch_id, stay_id: stayId, business_date: businessDate,
     method: p.method, amount: Number(p.amount), is_overstay: !!isOverstay, cycle,
     received_by: staff.id,
+    // Department whose POS/cash took the money; empty = Reception (migration 336).
+    location_id: locationId || null,
   }))
   if (!rows.length) return
   const { error } = await supabase.from('payments').insert(rows)
@@ -1415,15 +1417,18 @@ export async function loadRoomRateProgress(branchId) {
 export async function loadReceptionDashboard(branchId, date) {
   const [{ data: todayPayments, error: e1 }, { data: occ, error: e5 }] = await Promise.all([
     supabase.from('payments')
-      .select('method, amount, stay_id').eq('branch_id', branchId).eq('business_date', date),
+      .select('method, amount, stay_id, location_id').eq('branch_id', branchId).eq('business_date', date),
     supabase.from('v_occupancy_today')
       .select('stay_id, room_number, guest_name, outstanding')
       .eq('branch_id', branchId).eq('status', 'occupied'),
   ])
   if (e1) throw e1
   if (e5) throw e5
-  const pos = (todayPayments || []).filter(p => p.method === 'pos').reduce((s, p) => s + Number(p.amount), 0)
-  const cash = (todayPayments || []).filter(p => p.method === 'cash').reduce((s, p) => s + Number(p.amount), 0)
+  // Room payments taken through ANOTHER department's POS/cash (location_id set)
+  // belong to that department's total, not Reception's (migration 336).
+  const atFrontDesk = (todayPayments || []).filter(p => !p.location_id)
+  const pos = atFrontDesk.filter(p => p.method === 'pos').reduce((s, p) => s + Number(p.amount), 0)
+  const cash = atFrontDesk.filter(p => p.method === 'cash').reduce((s, p) => s + Number(p.amount), 0)
 
   const paidTodayByStay = {}
   for (const p of (todayPayments || [])) {
@@ -1555,6 +1560,23 @@ export async function loadRoomPayments(branchId, days = 60) {
     .order('business_date', { ascending: false })
   if (error) throw error
   return data || []
+}
+
+// Move a room payment to the department whose till took the money, or back to
+// Reception (locationId = null). Server decides who may (migration 336).
+export async function setPaymentDepartment(paymentId, locationId) {
+  const { error } = await supabase.rpc('set_payment_department', {
+    p_payment: paymentId, p_location: locationId || null })
+  if (error) throw error
+}
+
+// What a department collected on room folios on a day: {pos, cash}. Part of
+// that department's Match Total Sales.
+export async function loadFolioCollectedAt(branchId, date, locationId) {
+  const { data, error } = await supabase.rpc('folio_collected_at', {
+    p_branch: branchId, p_date: date, p_location: locationId })
+  if (error) throw error
+  return { pos: Number(data?.pos || 0), cash: Number(data?.cash || 0) }
 }
 
 // GM/admin cleanup for a practice payment — a single, self-contained

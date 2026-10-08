@@ -6,7 +6,7 @@ import { loadStockMap, loadPopular, loadToday, saveBasket, saveWriteoff,
          loadStaffForLocation, loadReceptionActivity, loadReceptionDashboard, deleteEntry,
          loadRoomCharges, deleteOrderItem, saveRestaurantWriteoff, loadRoomsSoldInMonth,
          loadWriteoffsOnDate, loadLiveStays, chargeBasketToRoom,
-         getOrCreateGuestTab, updateSaleWithPayments, undoRecentReceipt, recordTillCheck } from '../lib/data'
+         getOrCreateGuestTab, updateSaleWithPayments, undoRecentReceipt, recordTillCheck, loadFolioCollectedAt } from '../lib/data'
 import { enqueue, flush, isConnectionError } from '../lib/outbox'
 import { useToast } from '../components/Toast'
 import ReceptionDashboard from '../components/ReceptionDashboard'
@@ -115,6 +115,8 @@ export default function SalesEntry({ boot }) {
   const [roomCharges, setRoomCharges] = useState([])   // Restaurant only: food charged to rooms
   const [receptionActivity, setReceptionActivity] = useState([])
   const [receptionDashboard, setReceptionDashboard] = useState(null)
+  // Room payments taken through THIS department's POS/cash (migration 336).
+  const [folioIn, setFolioIn] = useState({ pos: 0, cash: 0 })
   const [lastReceiptAt, setLastReceiptAt] = useState(0)
   const [switchingId, setSwitchingId] = useState(null)
   const [roomsSold, setRoomsSold] = useState(null)
@@ -230,6 +232,8 @@ export default function SalesEntry({ boot }) {
                  unqualifiedCredit: r.unqualifiedCredit,
                  debtClearedByPayroll: r.debtClearedByPayroll, debtWrittenOff: r.debtWrittenOff })
     }).catch(() => {})
+    loadFolioCollectedAt(staff.branch_id, date, locationId)
+      .then(setFolioIn).catch(() => setFolioIn({ pos: 0, cash: 0 }))
     loadOpeningDate(staff.branch_id).then(setOpeningDate).catch(() => {})
 
     if (canOverrideVariance) {
@@ -828,6 +832,7 @@ export default function SalesEntry({ boot }) {
 
         <MatchTill rows={today} busyId={switchingId} onFix={fixEntry} onRecord={saveTillResult}
           recovered={{ pos: recon?.recoveredBy?.pos, cash: recon?.recoveredBy?.cash }}
+          folio={folioIn}
           // Credit comes from the person's own entries (what they actually gave),
           // NOT the day summary's "credit raised", which leaves out credit not
           // repaid by noon next day and so showed 0 for same-day credit.
