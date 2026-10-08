@@ -82,7 +82,7 @@ export default function SalesEntry({ boot }) {
   // Mirrors moves_write after 283: anyone who can record, except an
   // auditor. Deliberately NOT canOverrideVariance, which also governs
   // backdating and variance overrides — different powers.
-  const canWriteOff = staff.role !== 'auditor' && canRecordHere
+  const canWriteOff = (staff.role !== 'auditor' || !!staff.can_record_sales) && canRecordHere
   const canApprove = is(staff.role, APPROVE_ROOM_CHARGES)
   // Restaurant and Reception don't behave like a normal sales
   // department — Restaurant is typed-order-only (no catalog stock to
