@@ -15,7 +15,7 @@ const STOCK_ROLES = ['storekeeper', 'manager', 'gm', 'admin']
 // Now: the bar comes from here; More hides anything that is on the bar;
 // and a role lands on its FIRST tab. Change a role's tabs here and all
 // three follow.
-export function tabsFor(role, { recordsSales = false } = {}) {
+export function tabsFor(role, { recordsSales = false, canRecordSales = false } = {}) {
   if (role === 'manager') {
     // The manager runs the day. Daily sales first for the whole-branch
     // picture on arrival. Sales second: it opens on their default,
@@ -50,7 +50,10 @@ export function tabsFor(role, { recordsSales = false } = {}) {
     // those counts reveal, review the day's sales, then History — every
     // edit and deletion at the branch, the evidence that shows tampering.
     // Stock moves to More, which auditors can now reach.
+    // An auditor GM/admin has switched on for recording (staff.can_record_sales,
+    // per person, not per role) also gets the Sales page.
     return [['count', 'Counts'], ['variance', 'Variances'], ['dailysales', 'Daily sales'],
+            ...(canRecordSales ? [['sales', 'Sales']] : []),
             ['fix', 'History'], ['more', 'More']]
   }
   if (role === 'front_desk') {

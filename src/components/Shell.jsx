@@ -29,10 +29,10 @@ export default function Shell({ staff, tab, onTab, children,
   const [confirmingSignOut, setConfirmingSignOut] = useState(false)
   // The bar comes from tabsFor() — the single definition shared with
   // the More menu and the landing screen. See lib/tabs.js.
-  const tabs = tabsFor(staff.role, { recordsSales })
-  const countBadgeTab = countBadgeTabFor(staff.role, { recordsSales })
+  const tabs = tabsFor(staff.role, { recordsSales, canRecordSales: !!staff.can_record_sales })
+  const countBadgeTab = countBadgeTabFor(staff.role, { recordsSales, canRecordSales: !!staff.can_record_sales })
   const directTabKeys = new Set(tabs.map(([k]) => k))
-  const moreItems = moreItemsFor(staff.role, recordsSales, hasPay, !!staff.is_read_only)
+  const moreItems = moreItemsFor(staff.role, recordsSales, hasPay, !!staff.is_read_only, !!staff.can_record_sales)
 
   // One-shot bounce when a tab becomes the selected one. Driven by a key
   // that changes on selection, so the animation restarts every time —
