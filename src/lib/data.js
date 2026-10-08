@@ -1605,6 +1605,14 @@ export async function setPaymentDepartment(paymentId, locationId) {
   if (error) throw error
 }
 
+// Move only PART of a lump payment to a department (migration 339); the
+// guest's total paid does not change.
+export async function splitPaymentToDepartment(paymentId, amount, locationId) {
+  const { error } = await supabase.rpc('split_payment_to_department', {
+    p_payment: paymentId, p_amount: amount, p_location: locationId })
+  if (error) throw error
+}
+
 // What a department collected on room folios on a day: {pos, cash}. Part of
 // that department's Match Total Sales.
 export async function loadFolioCollectedAt(branchId, date, locationId) {

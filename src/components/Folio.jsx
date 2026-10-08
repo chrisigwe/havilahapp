@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { naira, lagosToday, lagosTime, seesStayTimes, cyclesFor, friendlyStayError } from '../lib/format'
-import { checkOutStay, deleteOrderItem, deleteStay, loadBranchStaySettings, loadFolio, moveRoomChargeDate, recordStayPayment, setPaymentDepartment, reopenStay, searchSimilarGuests, updateOrderItem, updateOverstayFee, updateStayBillTo, updateStayDetails } from '../lib/data'
+import { checkOutStay, deleteOrderItem, deleteStay, loadBranchStaySettings, loadFolio, moveRoomChargeDate, recordStayPayment, setPaymentDepartment, splitPaymentToDepartment, reopenStay, searchSimilarGuests, updateOrderItem, updateOverstayFee, updateStayBillTo, updateStayDetails } from '../lib/data'
 import { useToast } from '../components/Toast'
 import PaymentMethodPicker, { paymentParts, paymentAllocated } from './PaymentMethodPicker'
 import FolioStatement from './FolioStatement'
@@ -163,7 +163,12 @@ export default function Folio({ boot, room, onClose, onChanged }) {
   async function saveMovedPayment() {
     setBusy(true)
     try {
-      await setPaymentDepartment(movingPay.id, movingPay.loc || null)
+      const part = Number(movingPay.part)
+      if (movingPay.loc && movingPay.part !== '' && part > 0 && part < Number(movingPay.total)) {
+        await splitPaymentToDepartment(movingPay.id, part, movingPay.loc)
+      } else {
+        await setPaymentDepartment(movingPay.id, movingPay.loc || null)
+      }
       toast('Payment moved', 'success')
       setMovingPay(null); refresh(); onChanged?.()
     } catch (e) { toast(friendlyStayError(e), 'error') }
@@ -624,6 +629,22 @@ export default function Folio({ boot, room, onClose, onChanged }) {
                           <option value="">Reception (this desk)</option>
                           {deptOptions.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
                         </select>
+                        {movingPay.loc && (
+                          <div className="mt-2">
+                            <label className="text-dim text-sm">
+                              How much of this {naira(p.amount)} was for that department?
+                            </label>
+                            <input type="number" inputMode="decimal" value={movingPay.part}
+                              onChange={e => setMovingPay(m => ({ ...m, part: e.target.value }))}
+                              className="mt-1 h-11 w-full px-3 rounded-xl bg-raise border border-line tnum" />
+                            {Number(movingPay.part) > 0 && Number(movingPay.part) < Number(p.amount) && (
+                              <p className="text-amber text-sm mt-1">
+                                {naira(movingPay.part)} goes to that department; {naira(Number(p.amount) - Number(movingPay.part))} stays
+                                {p.collected?.name ? ` at ${p.collected.name}` : ' with Reception'}. The guest's total paid does not change.
+                              </p>
+                            )}
+                          </div>
+                        )}
                         <div className="flex gap-2 mt-2">
                           <button onClick={saveMovedPayment} disabled={busy}
                             className="flex-1 h-10 rounded-lg bg-amber text-bg font-semibold disabled:opacity-40">Save</button>
@@ -632,7 +653,7 @@ export default function Folio({ boot, room, onClose, onChanged }) {
                         </div>
                       </div>
                     ) : (deptOptions.length > 0 && (
-                      <button onClick={() => setMovingPay({ id: p.id, loc: p.location_id || '' })}
+                      <button onClick={() => setMovingPay({ id: p.id, loc: p.location_id || '', part: String(p.amount), total: p.amount })}
                         className="text-dim text-xs underline mt-1">Change department</button>
                     ))}
                   </div>
