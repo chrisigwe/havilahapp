@@ -828,7 +828,10 @@ export default function SalesEntry({ boot }) {
 
         <MatchTill rows={today} busyId={switchingId} onFix={fixEntry} onRecord={saveTillResult}
           recovered={{ pos: recon?.recoveredBy?.pos, cash: recon?.recoveredBy?.cash }}
-          creditApp={recon ? recon.creditRaised : null}
+          // Credit comes from the person's own entries (what they actually gave),
+          // NOT the day summary's "credit raised", which leaves out credit not
+          // repaid by noon next day and so showed 0 for same-day credit.
+          creditApp={today.length ? null : (recon ? recon.creditRaised : null)}
           itemName={r => itemById[r.stock_item_id]?.name || r.description || ''} />
 
         {recon && (

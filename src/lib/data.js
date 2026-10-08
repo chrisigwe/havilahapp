@@ -328,6 +328,7 @@ export async function loadDailyFinancials(branchId, date, locationId) {
     grossSales: Number(data.grossSales || 0),
     received: Number(data.received || 0),
     creditRaised: Number(data.creditRaised || 0),
+    unqualifiedCredit: Number(data.unqualifiedCredit || 0),
     debtRecovered: Number(data.debtRecovered || 0),
     recoveredBy: data.recoveredBy || {},
     totalMoneyIn: Number(data.totalMoneyIn || 0),
