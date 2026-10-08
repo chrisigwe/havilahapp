@@ -133,7 +133,7 @@ export default function DailySales({ boot }) {
     const charges = roomCharges.map(r => ({
       ...r, entryKind: 'roomCharge', sortAt: r.orders?.created_at,
       roomNumber: r.orders?.stays?.rooms?.room_number, guestName: r.orders?.stays?.guests?.full_name,
-      folioOutstanding: r.folioOutstanding, stayStatus: r.stayStatus,
+      folioOutstanding: r.folioOutstanding, stayStatus: r.stayStatus, lineStatus: r.lineStatus,
     }))
     return [...sales, ...charges].sort((a, b) => (b.sortAt || '').localeCompare(a.sortAt || ''))
   }, [rows, roomCharges, roomChargeCategory])
@@ -339,7 +339,17 @@ export default function DailySales({ boot }) {
                   {/* A meal on this list means the food left the kitchen,
                       not that anyone paid. Payment sits against the whole
                       stay, so this is the GUEST'S BILL, not this line. */}
-                  {r.folioOutstanding != null && (
+                  {r.lineStatus ? (
+                    <>
+                      <br />
+                      {{ paid: <span className="text-leaf">Paid</span>,
+                         part: <span className="text-amber">Part paid</span>,
+                         unpaid: <span className={r.stayStatus === 'checked_out' ? 'text-clay font-bold' : 'text-clay'}>
+                           {r.stayStatus === 'checked_out' ? 'Unpaid — guest has checked out' : 'Not yet paid'}</span>,
+                         settled_reception: <span className="text-amber">Paid, but taken at Reception — see the list above</span>,
+                      }[r.lineStatus]}
+                    </>
+                  ) : r.folioOutstanding != null && (
                     <>
                       <br />
                       {r.folioOutstanding > 0.009

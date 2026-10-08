@@ -1693,6 +1693,14 @@ export async function loadRoomCharges(branchId, date, category) {
       r.folioOutstanding = f ? Number(f.outstanding) : null
       r.stayStatus = r.orders?.stays?.status || null
     }
+    // This LINE's own status (paid / unpaid / settled at Reception), so a
+    // Restaurant meal is not flagged because of a bar item on the same bill.
+    try {
+      const { data: judged } = await supabase.rpc('department_room_charges', {
+        p_branch: branchId, p_location: null, p_days: 90 })
+      const byId = Object.fromEntries((judged || []).map(l => [l.id, l.status]))
+      for (const r of rows) r.lineStatus = byId[r.id] || null
+    } catch { /* falls back to the guest-bill wording */ }
   }
   return rows
 }
