@@ -67,7 +67,7 @@ export default function App() {
   // identity (auth check + staff row) only needs to run once per
   // session — not once per branch switch
   useEffect(() => {
-    if (!session) { setIdentity(undefined); setBoot(null); landedRef.current = false; return }
+    if (!session) { setIdentity(undefined); setBoot(null); setViewBranch(null); setMyPay(null); landedRef.current = false; return }
     loadStaffIdentity().then(staff => setIdentity(staff === undefined ? null : (staff || false)))
       .catch(e => setErr(e.message))
   }, [session])
