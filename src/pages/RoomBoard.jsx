@@ -204,7 +204,7 @@ export default function RoomBoard({ boot }) {
             )}
             {!!soon.length && (
               <div className="rounded-2xl border border-amber bg-amber/10 p-4 text-amber">
-                <p className="font-bold">Booked in advance — coming in the next 7 days</p>
+                <p className="font-bold">Upcoming reservations — do not sell these rooms for the dates shown</p>
                 <div className="mt-2 space-y-1">{soon.map(line)}</div>
               </div>
             )}
