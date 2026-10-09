@@ -76,14 +76,14 @@ export default function Attendance({ boot }) {
             ? <p className="text-sm text-leaf mt-1">Set · staff count as on site within {data.geofence.radius_m} m</p>
             : <p className="text-sm text-clay mt-1">Not set yet. Nobody can be marked on site until you set it.</p>}
           <div className="mt-3 flex items-center gap-2">
-            <label className="text-dim text-sm shrink-0" htmlFor="rad">Radius (m)</label>
+            <label className="text-dim text-sm" htmlFor="rad">Radius (m)</label>
             <input id="rad" type="number" inputMode="numeric" min="30" max="1000" value={radius}
-              onChange={e => setRadius(e.target.value)} className="h-10 w-24 px-3 rounded-xl bg-raise border border-line tnum" />
-            <button onClick={setHere} disabled={busy}
-              className="flex-1 h-10 rounded-xl border-2 border-amber text-amber text-sm font-bold disabled:opacity-50">
-              {busy ? 'Getting location…' : data.geofence?.set ? 'Reset to where I am now' : 'Set to where I am now'}
-            </button>
+              onChange={e => setRadius(e.target.value)} className="h-9 w-20 px-2 rounded-lg bg-raise border border-line text-sm tnum" />
           </div>
+          <button onClick={setHere} disabled={busy}
+            className="mt-3 h-9 px-4 rounded-lg border border-amber text-amber text-sm font-semibold disabled:opacity-50">
+            {busy ? 'Getting location…' : data.geofence?.set ? 'Reset to where I am now' : 'Set to where I am now'}
+          </button>
           <p className="text-dim text-xs mt-2">Stand inside the branch (the middle of the property is best) when you do this.</p>
         </section>
       )}
