@@ -369,6 +369,11 @@ export default function DailySales({ boot }) {
                   <br />{paymentSummary(r)} · {whoRecorded(r)}
                 </div>
               )}
+              {!!r.order_stock_used?.length && (
+                <div className="text-dim text-sm">
+                  Stock used: {r.order_stock_used.map(u => `${Number(u.qty)} × ${u.stock_items?.name || 'item'}`).join(', ')}
+                </div>
+              )}
             </div>
             <div className="tnum font-semibold">{naira(r.amount ?? r.qty * r.unit_price)}</div>
           </li>

@@ -131,15 +131,21 @@ export async function loadPopular(branchId) {
 }
 
 export async function loadToday(branchId, date, locationId) {
-  let q = supabase
-    .from('sales')
-    .select(`id, stock_item_id, description, location_id, tier, qty, unit_price, amount, created_at,
+  const cols = `id, stock_item_id, description, location_id, tier, qty, unit_price, amount, created_at,
              receipt_id, business_date, recorded_by, on_behalf_of, order_type, damage_reason, writeoff_note, pr_meal,
              recorder:recorded_by(full_name), stood_in_for:on_behalf_of(full_name),
-             sale_payments(method, amount)`)
-    .eq('branch_id', branchId).eq('business_date', date)
-  if (locationId) q = q.eq('location_id', locationId)
-  const { data, error } = await q.order('created_at', { ascending: false })
+             sale_payments(method, amount)`
+  const run = (extra) => {
+    let q = supabase.from('sales').select(cols + extra)
+      .eq('branch_id', branchId).eq('business_date', date)
+    if (locationId) q = q.eq('location_id', locationId)
+    return q.order('created_at', { ascending: false })
+  }
+  // "Stock used" rows ride along when the database has them (migration 340b);
+  // if it does not yet, the list must still load exactly as before.
+  const first = await run(', order_stock_used(qty, stock_items(name))')
+  if (!first.error) return first.data
+  const { data, error } = await run('')
   if (error) throw error
   return data
 }
@@ -198,8 +204,28 @@ export async function saveBasket({ staff, locationId, lines, payments, date, cus
       const { error: e2 } = await supabase.from('sale_payments').insert(rows)
       if (e2) throw e2
     }
+    // Stock used with this order (water, extra chicken ...): comes off the
+    // department's stock and is tied to the order — migration 340b. Done
+    // last so a failure here can never leave a half-saved sale; if it does
+    // fail, say clearly that the order itself WAS saved.
+    if (line.stockUsed?.length) {
+      try { await recordStockUsed(sale.id, line.stockUsed) }
+      catch (e) {
+        throw Object.assign(new Error(
+          `The order WAS saved, but the stock used was not recorded (${e.message}). Do not enter the order again — tell your manager.`),
+          { partial: true })
+      }
+    }
   }
   return receipt
+}
+
+export async function recordStockUsed(saleId, used) {
+  const { error } = await supabase.rpc('record_stock_used', {
+    p_sale: saleId,
+    p_lines: used.map(u => ({ item: u.item.id, qty: Number(u.qty) })),
+  })
+  if (error) throw error
 }
 
 export async function saveWriteoff({ staff, item, locationId, kind, qty, unitValue, note, date, damageReason }) {
@@ -1713,15 +1739,23 @@ export async function loadRoomCharges(branchId, date, category) {
 
 export async function saveRestaurantWriteoff({ staff, locationId, businessDate,
                                                 description, qty, unitPrice,
-                                                orderType, damageReason, writeoffNote, prMeal }) {
-  const { error } = await supabase.from('sales').insert({
+                                                orderType, damageReason, writeoffNote, prMeal, stockUsed }) {
+  const { data: row, error } = await supabase.from('sales').insert({
     branch_id: staff.branch_id, business_date: businessDate, occurred_at: new Date().toISOString(),
     stock_item_id: null, description, location_id: locationId, tier: 'general',
     qty, unit_price: unitPrice, recorded_by: staff.id,
     order_type: orderType, damage_reason: damageReason || null, writeoff_note: writeoffNote || null,
     pr_meal: prMeal || null,
-  })
+  }).select('id').single()
   if (error) throw error
+  if (stockUsed?.length) {
+    try { await recordStockUsed(row.id, stockUsed) }
+    catch (e) {
+      throw Object.assign(new Error(
+        `The order WAS saved, but the stock used was not recorded (${e.message}). Do not enter the order again — tell your manager.`),
+        { partial: true })
+    }
+  }
 }
 
 export async function chargeWriteoffToRoom({ staff, stayId, businessDate,

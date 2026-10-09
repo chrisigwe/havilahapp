@@ -175,6 +175,7 @@ export default function SalesEntry({ boot }) {
   const [lastReceiptId, setLastReceiptId] = useState(null)
   const [roomCharging, setRoomCharging] = useState(false)
   const [restaurantOrder, setRestaurantOrder] = useState(null)
+  const [pickingUsed, setPickingUsed] = useState(false)   // choosing stock used with a restaurant order
 
   const itemById = useMemo(() => Object.fromEntries(items.map(i => [i.id, i])), [items])
   // Restaurant food charged to a room never showed up here before —
@@ -299,13 +300,14 @@ export default function SalesEntry({ boot }) {
   // attributed to Restaurant's own daily figures regardless of which
   // bar rings it up, matching the earlier decision on how that
   // revenue should count.
-  function addTypedOrder({ description, qty, unitPrice, orderType, writeoffNote }) {
+  function addTypedOrder({ description, qty, unitPrice, orderType, writeoffNote, stockUsed }) {
     const restaurant = (boot.allLocations || []).find(l => /restaurant/i.test(l.name))
     setBasket(b => [...b, { key: crypto.randomUUID(), item: null, description,
                             tier: 'general', qty, unitPrice, priceOverridden: true,
                             locationId: restaurant?.id, locationName: restaurant?.name || 'Restaurant',
                             orderType: orderType === 'staff' ? 'staff' : 'standard',
-                            writeoffNote: writeoffNote || null }])
+                            writeoffNote: writeoffNote || null,
+                            stockUsed: (stockUsed || []).map(u => ({ item: u.item, qty: u.qty })) }])
   }
 
   // switching the basket tier reprices everything already in it, EXCEPT
@@ -475,7 +477,8 @@ export default function SalesEntry({ boot }) {
           item: l.item ? { id: l.item.id, name: l.item.name } : null,
           description: l.description || null,
           tier: l.tier, qty: l.qty, unitPrice: l.unitPrice, locationId: l.locationId,
-          orderType: l.orderType, writeoffNote: l.writeoffNote })),
+          orderType: l.orderType, writeoffNote: l.writeoffNote,
+          stockUsed: (l.stockUsed || []).map(u => ({ item: { id: u.item.id, name: u.item.name }, qty: u.qty })) })),
         payments, backdateReason, onBehalfOf,
       }
       try {
@@ -490,7 +493,8 @@ export default function SalesEntry({ boot }) {
       }
       setBasket([]); setPaying(null); setDefaultTier('general'); refresh(); flush()
     } catch (e) {
-      toast('Not saved: ' + e.message, 'error')
+      if (e.partial) { setBasket([]); setPaying(null); refresh() }
+      toast((e.partial ? '' : 'Not saved: ') + e.message, 'error')
     }
     setBusy(false)
   }
@@ -616,7 +620,7 @@ export default function SalesEntry({ boot }) {
 
       {!isReception && canRecordHere && (
         <button onClick={() => setRestaurantOrder({ description: '', qty: 1, unitPrice: '',
-          orderType: 'standard', damageReason: null, writeoffNote: '', prMeal: null, date: null })}
+          orderType: 'standard', damageReason: null, writeoffNote: '', prMeal: null, date: null, used: [] })}
           className="mt-3 w-full h-12 rounded-xl border border-line text-ink font-semibold">
           Add a restaurant order
         </button>
@@ -800,6 +804,11 @@ export default function SalesEntry({ boot }) {
                   className="h-11 w-11 rounded-xl bg-raise border border-line text-2xl">+</button>
                 <span className="tnum w-20 text-right">{naira(l.qty * l.unitPrice)}</span>
               </div>
+              {!!l.stockUsed?.length && (
+                <p className="text-dim text-sm mt-1">
+                  Stock used: {l.stockUsed.map(u => `${u.qty} × ${u.item.name}`).join(', ')}
+                </p>
+              )}
               {l.item && l.qty > onHand(l.item.id, l.locationId) && (
                 <p className="text-clay text-sm mt-1">Only {l.item && onHand(l.item.id, l.locationId)} on the shelf</p>
               )}
@@ -951,6 +960,11 @@ export default function SalesEntry({ boot }) {
                       <span className="ml-2 text-amber">backdated</span>
                     )}
                     <br />{paymentSummary(r)} · {whoRecorded(r)}
+                  </div>
+                )}
+                {!!r.order_stock_used?.length && (
+                  <div className="text-dim text-sm">
+                    Stock used: {r.order_stock_used.map(u => `${Number(u.qty)} × ${u.stock_items?.name || 'item'}`).join(', ')}
                   </div>
                 )}
               </div>
@@ -1272,7 +1286,7 @@ export default function SalesEntry({ boot }) {
       {restaurantOrder && (
         <Sheet onClose={() => setRestaurantOrder(null)}>
           <h2 className="text-2xl font-bold">Restaurant order</h2>
-          <p className="text-dim mt-1">Typed, not tracked as stock — counts toward Restaurant's takings.</p>
+          <p className="text-dim mt-1">Typed, not tracked as stock — counts toward Restaurant's takings. Use + Stock Used for anything taken from Restaurant stock with it.</p>
           <Row label="What was ordered">
             <input value={restaurantOrder.description} autoFocus
               onChange={e => setRestaurantOrder(r => ({ ...r, description: e.target.value }))}
@@ -1291,6 +1305,57 @@ export default function SalesEntry({ boot }) {
               onChange={e => setRestaurantOrder(r => ({ ...r, unitPrice: e.target.value }))}
               placeholder="0" className="h-12 w-36 px-3 rounded-xl bg-surface border border-line tnum" />
           </Row>
+
+          {/* Stock used with this order — comes off Restaurant's stock and is
+              tied to this order, for accountability. Never changes the price. */}
+          {(() => {
+            const rest = (boot.allLocations || []).find(l => /restaurant/i.test(l.name))
+            const used = restaurantOrder.used || []
+            const setUsed = fn => setRestaurantOrder(r => ({ ...r, used: fn(r.used || []) }))
+            return (
+              <div className="mt-4">
+                <button type="button" onClick={() => setPickingUsed(true)}
+                  className="w-full h-12 rounded-xl border-2 border-amber text-amber font-bold">
+                  + Stock Used
+                </button>
+                {!!used.length && (
+                  <ul className="mt-2 divide-y divide-line/60 rounded-xl border border-line bg-surface px-3">
+                    {used.map(u => {
+                      const left = stockMap[`${u.item.id}:${rest?.id}`] ?? 0
+                      return (
+                        <li key={u.item.id} className="py-2">
+                          <div className="flex items-center gap-2">
+                            <span className="flex-1 min-w-0 truncate font-semibold">{u.item.name}</span>
+                            <button onClick={() => setUsed(l => l.map(x => x.item.id === u.item.id ? { ...x, qty: Math.max(1, x.qty - 1) } : x))}
+                              className="h-9 w-9 rounded-lg bg-raise border border-line text-xl">−</button>
+                            <span className="tnum w-7 text-center font-bold">{u.qty}</span>
+                            <button onClick={() => setUsed(l => l.map(x => x.item.id === u.item.id ? { ...x, qty: x.qty + 1 } : x))}
+                              className="h-9 w-9 rounded-lg bg-raise border border-line text-xl">+</button>
+                            <button onClick={() => setUsed(l => l.filter(x => x.item.id !== u.item.id))}
+                              className="h-9 px-2 text-clay text-sm font-semibold">Remove</button>
+                          </div>
+                          {u.qty > left && <p className="text-clay text-xs mt-1">Only {left} in Restaurant stock</p>}
+                        </li>
+                      )
+                    })}
+                  </ul>
+                )}
+                {pickingUsed && (
+                  <ItemPicker
+                    items={items.filter(i => rest && stockMap[`${i.id}:${rest.id}`] !== undefined)}
+                    stockMap={stockMap} locationId={rest?.id} hidePrice zClass="z-[60]"
+                    placeholder="Search Restaurant stock"
+                    onPick={item => {
+                      setPickingUsed(false)
+                      setUsed(l => l.some(x => x.item.id === item.id)
+                        ? l.map(x => x.item.id === item.id ? { ...x, qty: x.qty + 1 } : x)
+                        : [...l, { item, qty: 1 }])
+                    }}
+                    onClose={() => setPickingUsed(false)} />
+                )}
+              </div>
+            )
+          })()}
 
           <label className="block mt-4 text-dim">Order type</label>
           <div className="mt-2 flex gap-2">
@@ -1407,9 +1472,14 @@ export default function SalesEntry({ boot }) {
               // Only STANDARD is a paid order. Staff meals are a
               // benefit — free, and excluded from sales (migration 289) —
               // so they save straight away like PR, with no payment step.
+              const usedNow = restaurantOrder.used || []
+              const restLoc = (boot.allLocations || []).find(l => /restaurant/i.test(l.name))
+              const overUsed = usedNow.filter(u => u.qty > (stockMap[`${u.item.id}:${restLoc?.id}`] ?? 0))
+              if (overUsed.length && !window.confirm(
+                    `More than Restaurant stock shows:\n\n${overUsed.map(u => `${u.item.name} (${stockMap[`${u.item.id}:${restLoc?.id}`] ?? 0} left, using ${u.qty})`).join('\n')}\n\nRecord anyway?`)) return
               if (restaurantOrder.orderType === 'standard') {
                 addTypedOrder({ description: desc, qty, unitPrice, orderType: restaurantOrder.orderType,
-                                writeoffNote: restaurantOrder.writeoffNote })
+                                writeoffNote: restaurantOrder.writeoffNote, stockUsed: usedNow })
                 setRestaurantOrder(null)
                 return
               }
@@ -1426,11 +1496,15 @@ export default function SalesEntry({ boot }) {
                   description: desc, qty, unitPrice,
                   orderType: restaurantOrder.orderType, damageReason: restaurantOrder.damageReason,
                   writeoffNote: restaurantOrder.writeoffNote, prMeal: restaurantOrder.prMeal,
+                  stockUsed: usedNow,
                 })
                 toast(restaurantOrder.orderType === 'staff'
                   ? 'Staff meal recorded' : 'Recorded — not paid for', 'success')
                 setRestaurantOrder(null); refresh()
-              } catch (e) { toast('Not saved: ' + e.message, 'error') }
+              } catch (e) {
+                if (e.partial) { setRestaurantOrder(null); refresh() }
+                toast((e.partial ? '' : 'Not saved: ') + e.message, 'error')
+              }
               setWriteoffBusy(false)
             }}
             disabled={writeoffBusy || !restaurantOrder.description.trim() || !Number(restaurantOrder.unitPrice)}

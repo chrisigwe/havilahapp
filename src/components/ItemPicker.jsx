@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { naira } from '../lib/format'
 
-export default function ItemPicker({ items, stockMap, locationId, popular, onPick, onClose }) {
+export default function ItemPicker({ items, stockMap, locationId, popular = {}, onPick, onClose,
+                                    hidePrice = false, zClass = 'z-40', placeholder = 'Search drinks and items' }) {
   const [q, setQ] = useState('')
   const inputRef = useRef(null)
   useEffect(() => { inputRef.current?.focus() }, [])
@@ -20,10 +21,10 @@ export default function ItemPicker({ items, stockMap, locationId, popular, onPic
   }, [items, q, popular])
 
   return (
-    <div className="fixed inset-0 z-40 bg-bg flex flex-col">
+    <div className={`fixed inset-0 ${zClass} bg-bg flex flex-col`}>
       <div className="p-4 flex gap-3 items-center border-b border-line">
         <input ref={inputRef} value={q} onChange={e => setQ(e.target.value)}
-          placeholder="Search drinks and items"
+          placeholder={placeholder}
           className="flex-1 h-13 px-4 rounded-xl bg-surface border border-line placeholder:text-dim" />
         <button onClick={onClose} className="text-dim px-2 py-3">Cancel</button>
       </div>
@@ -35,7 +36,7 @@ export default function ItemPicker({ items, stockMap, locationId, popular, onPic
               className="w-full text-left px-5 py-4 border-b border-line/60 flex items-center gap-3 active:bg-surface">
               <div className="flex-1 min-w-0">
                 <div className="font-semibold truncate">{item.name}</div>
-                <div className="text-dim text-sm tnum">{naira(item.selling_price)}</div>
+                {!hidePrice && <div className="text-dim text-sm tnum">{naira(item.selling_price)}</div>}
               </div>
               <div className={`tnum text-right text-sm ${onHand <= 0 ? 'text-clay' : 'text-leaf'}`}>
                 {onHand} left
