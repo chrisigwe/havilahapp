@@ -2,6 +2,7 @@ import { supabase } from './supabase'
 import { lagosDaysAgo, lagosToday, addDays, nameKey } from './format'
 import { normalizeCustomerName } from './customerName'
 import { SUPERVISOR } from './roles'
+import { tracked } from './activity'
 
 export async function loadBranches() {
   const { data, error } = await supabase.from('branches')
@@ -152,7 +153,7 @@ export async function loadToday(branchId, date, locationId) {
 
 // Records a basket: one sales row per line, with the basket's payment
 // split allocated across those lines in order.
-export async function saveBasket({ staff, locationId, lines, payments, date, customerId, backdateReason, receiptId, onBehalfOf }) {
+async function _saveBasket({ staff, locationId, lines, payments, date, customerId, backdateReason, receiptId, onBehalfOf }) {
   const receipt = receiptId || crypto.randomUUID()
   const buckets = payments.filter(p => Number(p.amount) > 0)
     .map(p => ({ method: p.method, left: Number(p.amount) }))
@@ -240,7 +241,7 @@ export async function recordStockUsed(saleId, used) {
   if (error) throw error
 }
 
-export async function saveWriteoff({ staff, item, locationId, kind, qty, unitValue, note, date, damageReason }) {
+async function _saveWriteoff({ staff, item, locationId, kind, qty, unitValue, note, date, damageReason }) {
   const { error } = await supabase.from('stock_movements').insert({
     branch_id: staff.branch_id,
     stock_item_id: item.id,
@@ -301,7 +302,7 @@ export async function loadActivity(branchId, days = 14, ownOnlyStaffId = null, l
   ].sort((a, b) => (b.created_at || '').localeCompare(a.created_at || ''))
 }
 
-export async function deleteEntry(entry) {
+async function _deleteEntry(entry) {
   if (entry.kind === 'sale') {
     // One database step, GM/admin only: payments and sale are removed
     // together or not at all. Two client calls (payments, then sale)
@@ -460,7 +461,7 @@ export async function loadCustomerLedger(branchId, customerId, locationId, staff
   return { credit, repayments: repays.data }
 }
 
-export async function saveRepayment({ staff, customerId, amount, method, paidOn, note, locationId, creditStaffId }) {
+async function _saveRepayment({ staff, customerId, amount, method, paidOn, note, locationId, creditStaffId }) {
   const { error } = await supabase.from('credit_repayments').insert({
     branch_id: staff.branch_id, customer_id: customerId, location_id: locationId || null,
     credit_staff_id: creditStaffId || staff.id,
@@ -492,7 +493,7 @@ export async function saveCountLine(countId, itemId, qty) {
   if (error) throw error
 }
 
-export async function submitCount(countId) {
+async function _submitCount(countId) {
   const { error } = await supabase.rpc('submit_stock_count', { p_count: countId })
   if (error) throw error
 }
@@ -518,12 +519,12 @@ export async function postOpeningBalance(countId) {
   if (error) throw error
 }
 
-export async function verifyCount(countId) {
+async function _verifyCount(countId) {
   const { error } = await supabase.rpc('verify_stock_count', { p_count: countId })
   if (error) throw error
 }
 
-export async function deleteCount(countId) {
+async function _deleteCount(countId) {
   const { error: e1 } = await supabase.from('stock_count_lines').delete().eq('count_id', countId)
   if (e1) throw e1
   const { error } = await supabase.from('stock_counts').delete().eq('id', countId)
@@ -621,12 +622,12 @@ export async function updateRepayment(id, patch) {
 // Deleting one — narrower than editing: Admin/GM only, enforced by
 // its own RLS policy (repay_remove), confirmed and narrowed
 // specifically for this rather than assumed to already match.
-export async function deleteRepayment(id) {
+async function _deleteRepayment(id) {
   const { error } = await supabase.from('credit_repayments').delete().eq('id', id)
   if (error) throw error
 }
 
-export async function saveMovements(rows) {
+async function _saveMovements(rows) {
   const { error } = await supabase.from('stock_movements').insert(rows)
   if (error) throw error
 }
@@ -816,7 +817,7 @@ export async function searchLiveStays(branchId, query) {
 // OR description (no item, no locationId) for a typed restaurant
 // order — always category 'food', no stock link, matching how
 // walk-in restaurant orders work in the normal Sales flow.
-export async function chargeItemToRoom({ staff, stayId, item, locationId, locationName,
+async function _chargeItemToRoom({ staff, stayId, item, locationId, locationName,
                                           description, qty, unitPrice, businessDate,
                                           orderType, writeoffNote, stockUsed }) {
   const category = item
@@ -1272,7 +1273,7 @@ export async function loadFolio(stayId) {
 // settlement but several tenders in the ledger — same split-row
 // pattern as Credit's split repayments. parts is [{method, amount}],
 // already filtered to non-zero entries by the caller.
-export async function recordStayPayment({ staff, stayId, businessDate, cycle, parts, isOverstay, locationId = null }) {
+async function _recordStayPayment({ staff, stayId, businessDate, cycle, parts, isOverstay, locationId = null }) {
   const rows = parts.filter(p => Number(p.amount) > 0).map(p => ({
     branch_id: staff.branch_id, stay_id: stayId, business_date: businessDate,
     method: p.method, amount: Number(p.amount), is_overstay: !!isOverstay, cycle,
@@ -1285,7 +1286,7 @@ export async function recordStayPayment({ staff, stayId, businessDate, cycle, pa
   if (error) throw error
 }
 
-export async function checkOutStay(stayId, actualOut) {
+async function _checkOutStay(stayId, actualOut) {
   const { error } = await supabase.from('stays')
     .update({ status: 'checked_out', actual_out: actualOut, updated_at: new Date().toISOString() })
     .eq('id', stayId)
@@ -1419,7 +1420,7 @@ export async function loadReceptionActivity(branchId, date) {
 // database level (is_supervisor()), confirmed against its real body
 // rather than assumed; the app-side role check below is just for
 // showing the right UI, not the actual security.
-export async function deleteStay(stayId) {
+async function _deleteStay(stayId) {
   const { error } = await supabase.rpc('delete_stay', { target: stayId })
   if (error) throw error
 }
@@ -1683,7 +1684,7 @@ export async function loadFolioCollectedAt(branchId, date, locationId) {
 // real, live room, the room's actual booking and every other real
 // charge/payment on it are completely untouched — only the one
 // erroneous payment row goes.
-export async function deleteRoomPayment(paymentId) {
+async function _deleteRoomPayment(paymentId) {
   const { error } = await supabase.from('payments').delete().eq('id', paymentId)
   if (error) throw error
 }
@@ -1702,7 +1703,7 @@ export async function updateOrderItem(orderItemId, patch) {
   if (error) throw error
 }
 
-export async function deleteOrderItem(orderItemId, orderId) {
+async function _deleteOrderItem(orderItemId, orderId) {
   const { error: e1 } = await supabase.from('order_items').delete().eq('id', orderItemId)
   if (e1) throw e1
   const { data: remaining, error: e2 } = await supabase.from('order_items')
@@ -1766,7 +1767,7 @@ export async function loadRoomCharges(branchId, date, category) {
 // write-off (saveWriteoff) bypasses the sales basket entirely rather
 // than trying to thread "no payment required" through it.
 
-export async function saveRestaurantWriteoff({ staff, locationId, businessDate,
+async function _saveRestaurantWriteoff({ staff, locationId, businessDate,
                                                 description, qty, unitPrice,
                                                 orderType, damageReason, writeoffNote, prMeal, stockUsed }) {
   const { data: row, error } = await supabase.from('sales').insert({
@@ -1785,7 +1786,7 @@ export async function saveRestaurantWriteoff({ staff, locationId, businessDate,
   }
 }
 
-export async function chargeWriteoffToRoom({ staff, stayId, businessDate,
+async function _chargeWriteoffToRoom({ staff, stayId, businessDate,
                                               description, qty, unitPrice,
                                               orderType, damageReason, writeoffNote, prMeal, stockUsed }) {
   const { data: order, error: oErr } = await supabase.from('orders').insert({
@@ -2214,7 +2215,7 @@ export async function loadWriteoffsOnDate(branchId, date, locationId) {
 // Stock still deducts: order_items with a stock_item_id and location_id
 // fire trg_order_item_stock_movement (migration 108b). Typed lines with
 // no catalogue item deduct nothing — the same rule as everywhere else.
-export async function chargeBasketToRoom({ staff, stayId, lines, locationId, date, locById }) {
+async function _chargeBasketToRoom({ staff, stayId, lines, locationId, date, locById }) {
   const categoryFor = (locId) => {
     const n = locById?.[locId]?.name || ''
     return /restaurant/i.test(n) ? 'food' : /minimart/i.test(n) ? 'minimart' : 'drink'
@@ -2303,12 +2304,12 @@ export async function loadRoomChargesByStatus(branchId, status) {
   })
 }
 
-export async function approveRoomCharge(orderId, note) {
+async function _approveRoomCharge(orderId, note) {
   const { error } = await supabase.rpc('approve_room_charge', { p_order: orderId, p_note: note || null })
   if (error) throw error
 }
 
-export async function rejectRoomCharge(orderId, note) {
+async function _rejectRoomCharge(orderId, note) {
   const { error } = await supabase.rpc('reject_room_charge', { p_order: orderId, p_note: note })
   if (error) throw error
 }
@@ -2469,7 +2470,7 @@ export async function undoRecentReceipt(receiptId) {
 
 // Keeps the result of "Match your Total Sales" so managers can see who closes clean.
 // Never blocks the person: a failure here is silent.
-export async function recordTillCheck({ branchId, locationId, date, appPos, appCash, pos, cash }) {
+async function _recordTillCheck({ branchId, locationId, date, appPos, appCash, pos, cash }) {
   const { error } = await supabase.rpc('record_till_check', {
     p_branch: branchId, p_location: locationId, p_date: date,
     p_app_pos: appPos, p_app_cash: appCash, p_pos: pos, p_cash: cash })
@@ -2514,4 +2515,35 @@ export async function addHandoverNote(branchId, locationId, body) {
 export async function ackHandoverNote(id) {
   const { error } = await supabase.rpc('ack_handover_note', { p_note: id })
   if (error) throw error
+}
+
+
+// Saves that are logged to the GM's Staff activity screen (see lib/activity.js).
+export const saveBasket = tracked('Recorded a sale', _saveBasket)
+export const saveWriteoff = tracked('Recorded a write-off / PR / staff item', _saveWriteoff)
+export const saveRestaurantWriteoff = tracked('Recorded a restaurant write-off', _saveRestaurantWriteoff)
+export const saveRepayment = tracked('Recorded a credit repayment', _saveRepayment)
+export const submitCount = tracked('Submitted a stock count', _submitCount)
+export const verifyCount = tracked('Verified a stock count', _verifyCount)
+export const saveMovements = tracked('Recorded a stock movement', _saveMovements)
+export const chargeItemToRoom = tracked('Charged an item to a room', _chargeItemToRoom)
+export const chargeBasketToRoom = tracked('Charged items to a room', _chargeBasketToRoom)
+export const chargeWriteoffToRoom = tracked('Charged a PR/staff order to a room', _chargeWriteoffToRoom)
+export const recordStayPayment = tracked('Recorded a room payment', _recordStayPayment)
+export const checkOutStay = tracked('Checked a guest out', _checkOutStay)
+export const recordTillCheck = tracked('Entered Total Sales at close', _recordTillCheck)
+export const approveRoomCharge = tracked('Approved a room charge', _approveRoomCharge)
+export const rejectRoomCharge = tracked('Refused a room charge', _rejectRoomCharge)
+export const deleteEntry = tracked('Deleted an entry', _deleteEntry)
+export const deleteStay = tracked('Deleted a stay', _deleteStay)
+export const deleteRoomPayment = tracked('Deleted a room payment', _deleteRoomPayment)
+export const deleteOrderItem = tracked('Deleted a room-charge item', _deleteOrderItem)
+export const deleteCount = tracked('Deleted a stock count', _deleteCount)
+export const deleteRepayment = tracked('Deleted a repayment', _deleteRepayment)
+
+// GM / admin only (the database refuses anyone else).
+export async function loadStaffActivity(branchId, days = 30) {
+  const { data, error } = await supabase.rpc('staff_activity_report', { p_branch: branchId, p_days: days })
+  if (error) throw error
+  return data || []
 }

@@ -31,6 +31,8 @@ import InstallHint from './components/InstallHint'
 import { OVERSIGHT } from './lib/roles'
 import { signOutCleanly } from './lib/push'
 import { landingTabFor } from './lib/tabs'
+import { logActivity, PAGE_NAMES } from './lib/activity'
+import Activity from './pages/Activity'
 
 export default function App() {
   const [session, setSession] = useState(undefined) // undefined = loading
@@ -88,6 +90,34 @@ export default function App() {
     // screen can never drift from the bar's order.
     setTab(landingTabFor(identity.role))
   }, [identity])
+
+  // Page visits for the GM's Staff activity screen. One entry per page opened;
+  // staying on a page is not re-logged, but coming back to the app after a
+  // long absence (30+ minutes in the background) logs the page again, so each
+  // return to work counts as a visit.
+  const lastPage = useRef({ tab: null, at: 0 })
+  useEffect(() => {
+    if (!identity?.id || !PAGE_NAMES[tab]) return
+    // Right after sign-in the tab is still the placeholder; the landing effect swaps it next render.
+    if (lastPage.current.tab === null && tab === 'sales' && landingTabFor(identity.role) !== 'sales') return
+    if (lastPage.current.tab === tab && Date.now() - lastPage.current.at < 30 * 60000) return
+    lastPage.current = { tab, at: Date.now() }
+    logActivity('page', PAGE_NAMES[tab])
+  }, [tab, identity?.id])
+  useEffect(() => {
+    if (!identity?.id) return
+    const back = () => {
+      if (document.visibilityState !== 'visible') return
+      if (Date.now() - lastPage.current.at >= 30 * 60000 && PAGE_NAMES[tabRef.current]) {
+        lastPage.current = { tab: tabRef.current, at: Date.now() }
+        logActivity('page', PAGE_NAMES[tabRef.current])
+      }
+    }
+    document.addEventListener('visibilitychange', back)
+    return () => document.removeEventListener('visibilitychange', back)
+  }, [identity?.id])
+  const tabRef = useRef(tab)
+  tabRef.current = tab
 
   const refresh = useCallback(() => {
     if (identity === undefined) return          // still loading identity
@@ -271,6 +301,7 @@ export default function App() {
         : tab === 'catalog' ? <Catalog boot={boot} onChanged={refresh} />
         : tab === 'payroll' && !boot.staff.is_read_only ? <Payroll boot={boot} />
         : tab === 'staffaccounts' ? <StaffAccounts boot={boot} />
+        : tab === 'activity' ? <Activity boot={boot} />
         : tab === 'mypay' && !boot.staff.is_read_only ? <MyPay data={myPay} />
         : tab === 'tillchecks' ? <TillChecks boot={boot} />
         : tab === 'variance' ? <Variances boot={boot} />
