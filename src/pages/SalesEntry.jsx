@@ -15,6 +15,7 @@ import RoomChargeApprovals from '../components/RoomChargeApprovals'
 import CollectRefusedCharges from '../components/CollectRefusedCharges'
 import MyPendingRoomCharges from '../components/MyPendingRoomCharges'
 import RoomChargeTracker from '../components/RoomChargeTracker'
+import StockUsedField from '../components/StockUsedField'
 import ItemPicker from '../components/ItemPicker'
 import RoomChargeSheet from '../components/RoomChargeSheet'
 import CustomerPicker from '../components/CustomerPicker'
@@ -175,7 +176,6 @@ export default function SalesEntry({ boot }) {
   const [lastReceiptId, setLastReceiptId] = useState(null)
   const [roomCharging, setRoomCharging] = useState(false)
   const [restaurantOrder, setRestaurantOrder] = useState(null)
-  const [pickingUsed, setPickingUsed] = useState(false)   // choosing stock used with a restaurant order
 
   const itemById = useMemo(() => Object.fromEntries(items.map(i => [i.id, i])), [items])
   // Restaurant food charged to a room never showed up here before —
@@ -611,7 +611,7 @@ export default function SalesEntry({ boot }) {
         </div>
       )}
 
-      {!isReception && (
+      {(!isReception || canRecordHere) && (
         <button onClick={() => setRoomCharging(true)}
           className="mt-3 w-full h-12 rounded-xl border border-line text-ink font-semibold">
           Charge to a room
@@ -1279,7 +1279,7 @@ export default function SalesEntry({ boot }) {
       )}
 
       {roomCharging && (
-        <RoomChargeSheet boot={boot} stockMap={stockMap} toast={toast}
+        <RoomChargeSheet boot={boot} stockMap={stockMap} toast={toast} fromReception={isReception}
           onClose={() => setRoomCharging(false)} />
       )}
 
@@ -1308,54 +1308,10 @@ export default function SalesEntry({ boot }) {
 
           {/* Stock used with this order — comes off Restaurant's stock and is
               tied to this order, for accountability. Never changes the price. */}
-          {(() => {
-            const rest = (boot.allLocations || []).find(l => /restaurant/i.test(l.name))
-            const used = restaurantOrder.used || []
-            const setUsed = fn => setRestaurantOrder(r => ({ ...r, used: fn(r.used || []) }))
-            return (
-              <div className="mt-4">
-                <button type="button" onClick={() => setPickingUsed(true)}
-                  className="w-full h-12 rounded-xl border-2 border-amber text-amber font-bold">
-                  + Stock Used
-                </button>
-                {!!used.length && (
-                  <ul className="mt-2 divide-y divide-line/60 rounded-xl border border-line bg-surface px-3">
-                    {used.map(u => {
-                      const left = stockMap[`${u.item.id}:${rest?.id}`] ?? 0
-                      return (
-                        <li key={u.item.id} className="py-2">
-                          <div className="flex items-center gap-2">
-                            <span className="flex-1 min-w-0 truncate font-semibold">{u.item.name}</span>
-                            <button onClick={() => setUsed(l => l.map(x => x.item.id === u.item.id ? { ...x, qty: Math.max(1, x.qty - 1) } : x))}
-                              className="h-9 w-9 rounded-lg bg-raise border border-line text-xl">−</button>
-                            <span className="tnum w-7 text-center font-bold">{u.qty}</span>
-                            <button onClick={() => setUsed(l => l.map(x => x.item.id === u.item.id ? { ...x, qty: x.qty + 1 } : x))}
-                              className="h-9 w-9 rounded-lg bg-raise border border-line text-xl">+</button>
-                            <button onClick={() => setUsed(l => l.filter(x => x.item.id !== u.item.id))}
-                              className="h-9 px-2 text-clay text-sm font-semibold">Remove</button>
-                          </div>
-                          {u.qty > left && <p className="text-clay text-xs mt-1">Only {left} in Restaurant stock</p>}
-                        </li>
-                      )
-                    })}
-                  </ul>
-                )}
-                {pickingUsed && (
-                  <ItemPicker
-                    items={items.filter(i => rest && stockMap[`${i.id}:${rest.id}`] !== undefined)}
-                    stockMap={stockMap} locationId={rest?.id} hidePrice zClass="z-[60]"
-                    placeholder="Search Restaurant stock"
-                    onPick={item => {
-                      setPickingUsed(false)
-                      setUsed(l => l.some(x => x.item.id === item.id)
-                        ? l.map(x => x.item.id === item.id ? { ...x, qty: x.qty + 1 } : x)
-                        : [...l, { item, qty: 1 }])
-                    }}
-                    onClose={() => setPickingUsed(false)} />
-                )}
-              </div>
-            )
-          })()}
+          <StockUsedField used={restaurantOrder.used || []}
+            setUsed={fn => setRestaurantOrder(r => ({ ...r, used: fn(r.used || []) }))}
+            items={items} stockMap={stockMap}
+            restaurantId={(boot.allLocations || []).find(l => /restaurant/i.test(l.name))?.id} />
 
           <label className="block mt-4 text-dim">Order type</label>
           <div className="mt-2 flex gap-2">

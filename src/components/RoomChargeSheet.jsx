@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { lagosDaysAgo, lagosToday, naira, orderableLocations } from '../lib/format'
 import { searchLiveStays, chargeItemToRoom, chargeWriteoffToRoom } from '../lib/data'
 import RoomItemPicker from './RoomItemPicker'
+import StockUsedField from './StockUsedField'
 
 // Charges items to a hotel room/guest stay — the front desk's own
 // side of this (their FolioDrawer) adds one item at a time, each its
@@ -13,9 +14,13 @@ import RoomItemPicker from './RoomItemPicker'
 // stock (picked via RoomItemPicker); restaurant orders are typed —
 // no catalog item, no stock tracking, since a plate of food isn't a
 // countable stock unit.
-export default function RoomChargeSheet({ boot, stockMap, onClose, toast }) {
+export default function RoomChargeSheet({ boot, stockMap, onClose, toast, fromReception = false }) {
   const { staff, items, allLocations } = boot
-  const orderable = orderableLocations(allLocations).filter(l => !/restaurant/i.test(l.name))
+  // Drinks come from the MAIN BAR only (and minimart items from Minimart), and
+  // only the front desk adds them here. Other departments charge their own
+  // goods through their till, and use this sheet for restaurant orders.
+  const orderable = orderableLocations(allLocations).filter(l => /main\s*bar|minimart/i.test(l.name))
+  const restaurantId = (allLocations || []).find(l => /restaurant/i.test(l.name))?.id
   const [q, setQ] = useState('')
   const [stays, setStays] = useState(null)
   const [stay, setStay] = useState(null)
@@ -83,12 +88,13 @@ export default function RoomChargeSheet({ boot, stockMap, onClose, toast }) {
           staff, stayId: stay.id, description: desc,
           qty, unitPrice, businessDate: chargeDate,
           orderType: typing.orderType, writeoffNote: typing.writeoffNote,
+          stockUsed: typing.used || [],
         })
       } else {
         await chargeWriteoffToRoom({
           staff, stayId: stay.id, description: desc, qty, unitPrice, businessDate: chargeDate,
           orderType: typing.orderType, damageReason: typing.damageReason, writeoffNote: typing.writeoffNote,
-          prMeal: typing.prMeal,
+          prMeal: typing.prMeal, stockUsed: typing.used || [],
         })
       }
       setCharged(c => [{ description: desc, qty, unitPrice, typed: true,
@@ -97,7 +103,10 @@ export default function RoomChargeSheet({ boot, stockMap, onClose, toast }) {
         ? `${qty} × ${desc} charged to Room ${stay.rooms?.room_number}`
         : `${qty} × ${desc} recorded — not paid for`, 'success')
       setTyping(null)
-    } catch (e) { toast('Not saved: ' + e.message, 'error') }
+    } catch (e) {
+      if (e.partial) setTyping(null)
+      toast((e.partial ? '' : 'Not saved: ') + e.message, 'error')
+    }
     setBusy(false)
   }
 
@@ -154,13 +163,15 @@ export default function RoomChargeSheet({ boot, stockMap, onClose, toast }) {
               </p>
             )}
 
-            <button onClick={() => setPicking(true)}
-              className="mt-6 w-full h-14 rounded-2xl border-2 border-amber text-amber text-lg font-bold">
-              + Add a drink or minimart item
-            </button>
+            {fromReception && (
+              <button onClick={() => setPicking(true)}
+                className="mt-6 w-full h-14 rounded-2xl border-2 border-amber text-amber text-lg font-bold">
+                + Add a drink or minimart item
+              </button>
+            )}
             <button onClick={() => setTyping({ description: '', qty: 1, unitPrice: '',
-              orderType: 'standard', damageReason: null, writeoffNote: '', prMeal: null, date: null })}
-              className="mt-3 w-full h-14 rounded-2xl border-2 border-line text-ink text-lg font-bold">
+              orderType: 'standard', damageReason: null, writeoffNote: '', prMeal: null, date: null, used: [] })}
+              className={`${fromReception ? 'mt-3' : 'mt-6'} w-full h-14 rounded-2xl border-2 border-line text-ink text-lg font-bold`}>
               + Add a restaurant order
             </button>
 
@@ -221,7 +232,11 @@ export default function RoomChargeSheet({ boot, stockMap, onClose, toast }) {
                     className="h-11 flex-1 px-3 rounded-xl bg-raise border border-line tnum text-right placeholder:text-dim" />
                 </div>
 
-                <div className="flex gap-2 mb-3">
+                <StockUsedField used={typing.used || []}
+                  setUsed={fn => setTyping(t => ({ ...t, used: fn(t.used || []) }))}
+                  items={items} stockMap={stockMap} restaurantId={restaurantId} />
+
+                <div className="flex gap-2 mb-3 mt-3">
                   {[['standard', 'Standard'], ['pr_damage', 'PR / Damage'], ['staff', 'Staff']].map(([k, label]) => (
                     <button key={k} onClick={() => setTyping(t => ({ ...t, orderType: k }))}
                       className={`flex-1 h-10 rounded-lg border text-sm font-semibold ${typing.orderType === k

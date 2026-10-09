@@ -211,14 +211,26 @@ export async function saveBasket({ staff, locationId, lines, payments, date, cus
     if (line.stockUsed?.length) {
       try { await recordStockUsed(sale.id, line.stockUsed) }
       catch (e) {
-        throw Object.assign(new Error(
-          `The order WAS saved, but the stock used was not recorded (${e.message}). Do not enter the order again — tell your manager.`),
-          { partial: true })
+        throw partialStockError(e)
       }
     }
   }
   return receipt
 }
+
+export async function recordOrderItemStockUsed(orderItemId, used) {
+  const { error } = await supabase.rpc('record_order_item_stock_used', {
+    p_item: orderItemId,
+    p_lines: used.map(u => ({ item: u.item.id, qty: Number(u.qty) })),
+  })
+  if (error) throw error
+}
+
+// The order WAS saved; only the stock-used part failed — say so plainly so
+// nobody enters the charge twice.
+const partialStockError = (e) => Object.assign(new Error(
+  `The order WAS saved, but the stock used was not recorded (${e.message}). Do not enter it again — tell your manager.`),
+  { partial: true })
 
 export async function recordStockUsed(saleId, used) {
   const { error } = await supabase.rpc('record_stock_used', {
@@ -806,7 +818,7 @@ export async function searchLiveStays(branchId, query) {
 // walk-in restaurant orders work in the normal Sales flow.
 export async function chargeItemToRoom({ staff, stayId, item, locationId, locationName,
                                           description, qty, unitPrice, businessDate,
-                                          orderType, writeoffNote }) {
+                                          orderType, writeoffNote, stockUsed }) {
   const category = item
     ? (/restaurant/i.test(locationName || '') ? 'food'
        : /minimart/i.test(locationName || '') ? 'minimart' : 'drink')
@@ -816,15 +828,18 @@ export async function chargeItemToRoom({ staff, stayId, item, locationId, locati
     settlement: 'charged_to_room', served_by: staff.id,
   }).select('id').single()
   if (oErr) throw oErr
-  const { error: iErr } = await supabase.from('order_items').insert({
+  const { data: oi, error: iErr } = await supabase.from('order_items').insert({
     order_id: order.id, category,
     stock_item_id: item?.id || null, location_id: item ? locationId : null,
     description: item ? item.name : description, qty, unit_price: unitPrice,
     order_type: orderType === 'staff' ? 'staff' : 'standard', writeoff_note: writeoffNote || null,
-  })
+  }).select('id').single()
   if (iErr) {
     await supabase.from('orders').delete().eq('id', order.id)
     throw iErr
+  }
+  if (stockUsed?.length) {
+    try { await recordOrderItemStockUsed(oi.id, stockUsed) } catch (e) { throw partialStockError(e) }
   }
   return order.id
 }
@@ -848,6 +863,20 @@ export async function loadDepartmentRoomCharges(branchId, locationId = null, day
   const { data, error } = await supabase.rpc('department_room_charges', {
     p_branch: branchId, p_location: locationId || null, p_days: days,
   })
+  if (error) throw error
+  return data || []
+}
+
+// Stock used with restaurant orders on one day (migration 340b/341), for the
+// daily report: every item taken from stock, and the order it was used with.
+export async function loadStockUsedOnDay(branchId, date, locationId = null) {
+  let q = supabase.from('order_stock_used')
+    .select(`id, qty, location_id, stock_items(name),
+             sales(description, order_type, writeoff_note, recorder:recorded_by(full_name)),
+             order_items(description, order_type, orders(served:served_by(full_name), stays(rooms(room_number))))`)
+    .eq('branch_id', branchId).eq('business_date', date).order('created_at', { ascending: true })
+  if (locationId) q = q.eq('location_id', locationId)
+  const { data, error } = await q
   if (error) throw error
   return data || []
 }
@@ -1751,30 +1780,31 @@ export async function saveRestaurantWriteoff({ staff, locationId, businessDate,
   if (stockUsed?.length) {
     try { await recordStockUsed(row.id, stockUsed) }
     catch (e) {
-      throw Object.assign(new Error(
-        `The order WAS saved, but the stock used was not recorded (${e.message}). Do not enter the order again — tell your manager.`),
-        { partial: true })
+      throw partialStockError(e)
     }
   }
 }
 
 export async function chargeWriteoffToRoom({ staff, stayId, businessDate,
                                               description, qty, unitPrice,
-                                              orderType, damageReason, writeoffNote, prMeal }) {
+                                              orderType, damageReason, writeoffNote, prMeal, stockUsed }) {
   const { data: order, error: oErr } = await supabase.from('orders').insert({
     branch_id: staff.branch_id, stay_id: stayId, business_date: businessDate,
     settlement: 'charged_to_room', served_by: staff.id,
   }).select('id').single()
   if (oErr) throw oErr
-  const { error: iErr } = await supabase.from('order_items').insert({
+  const { data: oi, error: iErr } = await supabase.from('order_items').insert({
     order_id: order.id, category: 'food', stock_item_id: null, location_id: null,
     description, qty, unit_price: unitPrice,
     order_type: orderType, damage_reason: damageReason || null, writeoff_note: writeoffNote || null,
     pr_meal: prMeal || null,
-  })
+  }).select('id').single()
   if (iErr) {
     await supabase.from('orders').delete().eq('id', order.id)
     throw iErr
+  }
+  if (stockUsed?.length) {
+    try { await recordOrderItemStockUsed(oi.id, stockUsed) } catch (e) { throw partialStockError(e) }
   }
 }
 
