@@ -2547,3 +2547,14 @@ export async function loadStaffActivity(branchId, days = 30) {
   if (error) throw error
   return data || []
 }
+
+// ---------- Attendance by location (migration 346), GM / admin only ----------
+export async function loadAttendance(branchId, days = 14) {
+  const { data, error } = await supabase.rpc('attendance_report', { p_branch: branchId, p_days: days })
+  if (error) throw error
+  return data || { geofence: { set: false }, people: [] }
+}
+export async function setBranchGeofence(branchId, lat, lng, radius = 150) {
+  const { error } = await supabase.rpc('set_branch_geofence', { p_branch: branchId, p_lat: lat, p_lng: lng, p_radius: radius })
+  if (error) throw error
+}

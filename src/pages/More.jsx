@@ -37,6 +37,8 @@ const ITEMS = [
     roles: ['gm', 'admin'] },
   { key: 'activity', label: 'Staff activity', hint: 'Who uses the app, which pages and what they do',
     roles: ['gm', 'admin'] },
+  { key: 'attendance', label: 'Attendance', hint: 'Who is at the branch, first in and last seen',
+    roles: ['gm', 'admin'] },
   { key: 'mypay', label: 'My pay', hint: 'Your pay slip for each finished month',
     roles: ['bar', 'front_desk', 'storekeeper', 'manager', 'gm', 'admin', 'auditor'] },
   { key: 'tillchecks', label: 'Total Sales checks', hint: 'Who matched their Total Sales at close, and who did not',

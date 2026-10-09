@@ -33,6 +33,8 @@ import { signOutCleanly } from './lib/push'
 import { landingTabFor } from './lib/tabs'
 import { logActivity, PAGE_NAMES } from './lib/activity'
 import Activity from './pages/Activity'
+import Attendance from './pages/Attendance'
+import { startPresence } from './lib/presence'
 
 export default function App() {
   const [session, setSession] = useState(undefined) // undefined = loading
@@ -118,6 +120,12 @@ export default function App() {
   }, [identity?.id])
   const tabRef = useRef(tab)
   tabRef.current = tab
+
+  // Attendance by location (9am-8pm, not GM/admin): see lib/presence.js.
+  useEffect(() => {
+    if (!identity?.id) return
+    return startPresence(identity)
+  }, [identity?.id, identity?.role])
 
   const refresh = useCallback(() => {
     if (identity === undefined) return          // still loading identity
@@ -302,6 +310,7 @@ export default function App() {
         : tab === 'payroll' && !boot.staff.is_read_only ? <Payroll boot={boot} />
         : tab === 'staffaccounts' ? <StaffAccounts boot={boot} />
         : tab === 'activity' ? <Activity boot={boot} />
+        : tab === 'attendance' ? <Attendance boot={boot} />
         : tab === 'mypay' && !boot.staff.is_read_only ? <MyPay data={myPay} />
         : tab === 'tillchecks' ? <TillChecks boot={boot} />
         : tab === 'variance' ? <Variances boot={boot} />
