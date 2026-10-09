@@ -4,7 +4,7 @@ import { naira, lagosToday } from '../lib/format'
 import { useToast } from '../components/Toast'
 import { loadLoginsForPayroll, loadPossibleDuplicateAccounts } from '../lib/data'
 import {
-  addDeduction, endEmployment, finalisePeriod, giveRaise, lineTotals, loadCustomersForLinking, loadEmployees, loadLines, loadPayouts, loadPeriod, loadPotNext, loadSalaryHistory, openPeriod, proposeCreditDeductions, removeAddition, removeDeduction, reopenPeriod, saveEmployee, savePayout, savingsBalances, setEmployeeCreditAccount, updateLine,
+  addDeduction, endEmployment, finalisePeriod, giveRaise, lineTotals, loadCustomersForLinking, loadEmployees, loadLines, loadPayouts, loadPeriod, loadPotNext, loadSalaryHistory, openPeriod, proposeCreditDeductions, proposeLinkedDeductions, loadResponsibleLinks, setCustomerResponsible, loadAccountBalances, removeAddition, removeDeduction, reopenPeriod, saveEmployee, savePayout, savingsBalances, setEmployeeCreditAccount, updateLine,
 } from '../lib/payroll'
 
 const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June',
@@ -80,7 +80,8 @@ export default function Payroll({ boot }) {
           // added a moment ago in this loop), so a person with credit at
           // several departments gets one row each in a single pull, and
           // a second press of the button adds nothing.
-          const already = (l.payroll_deduction || []).some(d => d.auto && d.source === 'credit')
+          const already = (l.payroll_deduction || []).some(d => d.auto && d.source === 'credit'
+            && d.customer_id === l.customer_id)
           if (already) continue
           await addDeduction(l.id, { source: 'credit', location_id: it.location_id,
                                      customer_id: l.customer_id, amount: it.amount,
@@ -88,8 +89,29 @@ export default function Payroll({ boot }) {
           added++
         }
       }
+      // Accounts this person is responsible for (customers and guests the GM linked
+      // to them). One line per account and department, never repeated on a second press.
+      let linkedAdded = 0
+      try {
+        const links = await loadResponsibleLinks(staff.branch_id)
+        const linked = await proposeLinkedDeductions(staff.branch_id, links, year, month)
+        for (const l of lines) {
+          for (const it of (linked[l.employee_id] || [])) {
+            const dup = (l.payroll_deduction || []).some(d => d.source === 'credit'
+              && d.customer_id === it.customer_id && (d.location_id || null) === (it.location_id || null))
+            if (dup) continue
+            await addDeduction(l.id, { source: 'credit', location_id: it.location_id,
+                                       customer_id: it.customer_id, amount: it.amount,
+                                       note: it.note, auto: true })
+            linkedAdded++
+          }
+        }
+      } catch (e) {
+        if (!/function|does not exist/i.test(e.message)) throw e   // 348 not run yet: skip quietly
+      }
+      added += linkedAdded
       await refresh()
-      toast(added ? `${added} credit deduction(s) added — check them before finalising`
+      toast(added ? `${added} credit deduction(s) added${linkedAdded ? ` (${linkedAdded} from linked accounts)` : ''} — check them before finalising`
                   : 'No outstanding department credit to deduct', added ? 'success' : 'info')
     } catch (e) { toast(e.message, 'error') }
     setBusy(false)
@@ -585,6 +607,8 @@ function EmployeeSheet({ value, employees, final, onClose, onSaved, toast, branc
               Only link a login that this one person uses, never a shared one.
             </p>
 
+            {f.id && <ResponsibleAccounts employee={f} branchId={branchId} customers={customers} toast={toast} />}
+
             {f.aka && f.customer_id && (
               <p className="text-amber text-sm -mt-2 mb-2">
                 Saving will rename their credit account to "{f.aka}".
@@ -769,6 +793,99 @@ function Deductions({ line, onChanged, toast }) {
           }}
           className="h-11 px-4 rounded-xl border border-amber text-amber font-semibold">Add</button>
       </div>
+    </div>
+  )
+}
+
+
+// The credit customers and guests this person answers for. When money cannot be
+// collected from them, "Pull credit" proposes it as a deduction from THIS
+// person's salary (the GM approves each line). An account has one responsible
+// person; linking it here moves it from anyone else.
+function ResponsibleAccounts({ employee, branchId, customers, toast }) {
+  const [links, setLinks] = useState(null)
+  const [balances, setBalances] = useState({})
+  const [adding, setAdding] = useState(false)
+  const [q, setQ] = useState('')
+  const [busy, setBusy] = useState(false)
+
+  const refresh = useCallback(() => {
+    loadResponsibleLinks(branchId).then(async all => {
+      setLinks(all)
+      const mine = all.filter(l => l.employee_id === employee.id).map(l => l.customer_id)
+      setBalances(await loadAccountBalances(branchId, mine).catch(() => ({})))
+    }).catch(() => setLinks('off'))
+  }, [branchId, employee.id])
+  useEffect(() => { refresh() }, [refresh])
+
+  if (links === 'off') return null          // 348 not run yet
+  if (!links) return <p className="text-dim text-sm mt-3">Loading linked accounts…</p>
+
+  const mine = links.filter(l => l.employee_id === employee.id)
+  const ownerOf = Object.fromEntries(links.map(l => [l.customer_id, l]))
+  const needle = q.trim().toLowerCase()
+  const choices = (customers || []).filter(c => c.id !== employee.customer_id
+      && !mine.some(m => m.customer_id === c.id)
+      && (!needle || c.name.toLowerCase().includes(needle))).slice(0, 25)
+
+  async function link(c) {
+    const other = ownerOf[c.id]
+    if (other && !window.confirm(`${c.name} is currently linked to ${other.employee_name}. Move it to ${employee.full_name}?`)) return
+    setBusy(true)
+    try { await setCustomerResponsible(c.id, employee.id); setQ(''); setAdding(false); refresh()
+      toast(`${c.name} linked to ${employee.full_name}`, 'success')
+    } catch (e) { toast(e.message, 'error') }
+    setBusy(false)
+  }
+  async function unlink(l) {
+    if (!window.confirm(`Stop holding ${employee.full_name} responsible for ${l.customer_name}?`)) return
+    setBusy(true)
+    try { await setCustomerResponsible(l.customer_id, null); refresh() }
+    catch (e) { toast(e.message, 'error') }
+    setBusy(false)
+  }
+
+  return (
+    <div className="mt-4 rounded-2xl border border-line bg-surface p-4">
+      <p className="font-bold">Accounts they are responsible for</p>
+      <p className="text-dim text-xs mt-1">
+        Customers and guests who took credit and have not paid. If it cannot be collected,
+        it is proposed as a deduction from {employee.full_name}'s salary.
+      </p>
+      {!mine.length && <p className="text-dim text-sm mt-3">None linked.</p>}
+      <ul className="mt-2 divide-y divide-line/60">
+        {mine.map(l => (
+          <li key={l.customer_id} className="py-2 flex items-center gap-3">
+            <div className="flex-1 min-w-0">
+              <p className="font-semibold truncate">{l.customer_name}</p>
+              <p className="text-dim text-xs">
+                {balances[l.customer_id] > 0.009 ? `Owes ${naira(balances[l.customer_id])} now` : 'Owes nothing now'}
+              </p>
+            </div>
+            <button onClick={() => unlink(l)} disabled={busy} className="h-9 px-3 rounded-lg border border-line text-dim text-sm">Remove</button>
+          </li>
+        ))}
+      </ul>
+      {!adding
+        ? <button onClick={() => setAdding(true)} className="mt-3 h-10 px-4 rounded-lg border border-amber text-amber text-sm font-semibold">+ Link a customer or guest</button>
+        : (
+          <div className="mt-3">
+            <input value={q} onChange={e => setQ(e.target.value)} placeholder="Search customer or guest name"
+              className="h-11 w-full px-3 rounded-xl bg-raise border border-line" />
+            <ul className="mt-2 max-h-60 overflow-y-auto divide-y divide-line/60">
+              {choices.map(c => (
+                <li key={c.id}>
+                  <button onClick={() => link(c)} disabled={busy} className="w-full text-left py-2.5 px-1">
+                    <span className="font-semibold">{c.name}</span>
+                    {ownerOf[c.id] && <span className="text-amber text-xs"> · linked to {ownerOf[c.id].employee_name}</span>}
+                  </button>
+                </li>
+              ))}
+              {!choices.length && <li className="py-3 text-dim text-sm">No match.</li>}
+            </ul>
+            <button onClick={() => { setAdding(false); setQ('') }} className="mt-2 h-9 px-3 rounded-lg border border-line text-dim text-sm">Cancel</button>
+          </div>
+        )}
     </div>
   )
 }

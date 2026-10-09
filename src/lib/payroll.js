@@ -174,7 +174,7 @@ export async function finalisePeriod(periodId, staffId) {
   if (period?.status === 'final') throw new Error('That month is already finalised.')
 
   const { data: lines } = await supabase.from('payroll_line')
-    .select('id, employee_id, full_name, savings, payroll_deduction(source, amount, location_id, customer_id)')
+    .select('id, employee_id, full_name, savings, payroll_deduction(source, amount, location_id, customer_id, note)')
     .eq('period_id', periodId)
 
   // Built in UTC. new Date(year, month, 0) is LOCAL midnight, and on a
@@ -235,7 +235,10 @@ export async function finalisePeriod(periodId, staffId) {
       repayments.push({
         branch_id: period.branch_id, customer_id: d.customer_id,
         location_id: d.location_id, amount: d.amount, method: 'payroll',
-        paid_on: lastDay, note: `Deducted from ${l.full_name}'s salary`,
+        paid_on: lastDay,
+        note: String(d.note || '').startsWith('Linked account')
+          ? `Recovered from ${l.full_name}'s salary (responsible for this account)`
+          : `Deducted from ${l.full_name}'s salary`,
         recorded_by: staffId, credit_staff_id: staffId,
       })
     }
@@ -457,4 +460,58 @@ export async function loadAwardPayroll(awardId) {
   if (!data?.payroll_line) return null
   return { employeeId: data.payroll_line.employee_id,
            periodId: data.payroll_line.period_id, amount: Number(data.amount) }
+}
+
+
+// ---------- accounts a staff member is responsible for (migration 348) ----------
+
+// Who answers for each credit customer / guest account (GM / admin only; the
+// database refuses everyone else). One responsible person per account.
+export async function loadResponsibleLinks(branchId) {
+  const { data, error } = await supabase.rpc('customer_responsibles', { p_branch: branchId })
+  if (error) throw error
+  return data || []
+}
+
+// employeeId null = unlink.
+export async function setCustomerResponsible(customerId, employeeId) {
+  const { error } = await supabase.rpc('set_customer_responsible', {
+    p_customer: customerId, p_employee: employeeId || null,
+  })
+  if (error) throw error
+}
+
+// What each linked account still owes right now, to show beside the link.
+export async function loadAccountBalances(branchId, customerIds) {
+  if (!customerIds.length) return {}
+  const { data, error } = await supabase.from('v_customer_balances_by_staff')
+    .select('customer_id, balance').eq('branch_id', branchId).in('customer_id', customerIds)
+  if (error) throw error
+  const out = {}
+  for (const b of (data || [])) out[b.customer_id] = (out[b.customer_id] || 0) + Number(b.balance || 0)
+  return out
+}
+
+// The month's UNSETTLED credit on the accounts each employee is responsible for,
+// the same figures and the same first-in-first-out rule as their own credit
+// (customer_unsettled_credit_for_month). Returns { employeeId: [lines] }.
+// Nothing is written here: the GM sees the lines and decides.
+export async function proposeLinkedDeductions(branchId, links, year, month) {
+  if (!links.length || !year || !month) return {}
+  const byCustomer = Object.fromEntries(links.map(l => [l.customer_id, l]))
+  const { data, error } = await supabase.rpc('customer_unsettled_credit_for_month', {
+    p_branch: branchId, p_year: year, p_month: month,
+  })
+  if (error) throw error
+  const out = {}
+  for (const r of (data || [])) {
+    const link = byCustomer[r.customer_id]
+    const amount = Number(r.unsettled || 0)
+    if (!link || amount <= 0.009) continue
+    ;(out[link.employee_id] || (out[link.employee_id] = [])).push({
+      customer_id: r.customer_id, location_id: r.location_id, amount,
+      note: `Linked account ${link.customer_name}: unsettled credit from ${String(month).padStart(2, '0')}/${year}`,
+    })
+  }
+  return out
 }
