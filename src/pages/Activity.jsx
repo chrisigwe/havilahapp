@@ -72,11 +72,11 @@ export default function Activity({ boot }) {
       <p className="text-dim text-sm mt-1">
         Pages each person opened and the key things they did. Counts start from the day this was switched on.
       </p>
-      <div className="mt-3 flex gap-2">
+      <div className="mt-3 grid grid-cols-3 gap-2">
         {[7, 30, 90].map(d => (
           <button key={d} onClick={() => setDays(d)}
-            className={`h-10 px-4 rounded-xl border text-sm font-semibold ${days === d ? 'border-amber text-amber' : 'border-line text-dim'}`}>
-            Last {d} days
+            className={`h-9 px-2 rounded-xl border text-xs font-semibold whitespace-nowrap ${days === d ? 'border-amber text-amber' : 'border-line text-dim'}`}>
+            {d} days
           </button>
         ))}
       </div>

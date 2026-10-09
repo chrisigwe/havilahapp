@@ -661,8 +661,8 @@ export async function loadStaffForLocation(branchId, locationId) {
     .order('full_name')
   if (error) return []
   return data
-    .filter(s => !locationId || !s.staff_locations.length
-                 || s.staff_locations.some(l => l.location_id === locationId))
+    .filter(s => !locationId || !(s.staff_locations || []).length
+                 || (s.staff_locations || []).some(l => l.location_id === locationId))
     .map(({ staff_locations, ...s }) => s)
 }
 export async function deleteCustomer(customerId) {
@@ -2480,7 +2480,7 @@ async function _recordTillCheck({ branchId, locationId, date, appPos, appCash, p
 export async function loadTillChecks(branchId, days = 14) {
   const { data, error } = await supabase.rpc('till_checks_report', { p_branch: branchId, p_days: days })
   if (error) throw error
-  return data || { checks: [], missing: [] }
+  return { checks: data?.checks || [], missing: data?.missing || [] }
 }
 
 
