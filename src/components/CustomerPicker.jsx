@@ -39,7 +39,14 @@ export default function CustomerPicker({ customers, value, onPick, onCreate, bra
     return () => clearTimeout(timer.current)
   }, [q, branchId])
 
-  const key = nameKey(q)
+  // Room-numbered accounts ("Room 207 Mr Obitex", "rm 207 Obitex") split a
+  // guest's debt from their folio. The database now refuses them; this
+  // explains why before anyone gets that far, and looks the guest up by
+  // the name left once the room is taken out.
+  const ROOM_RE = /\b(room|rm)\.?\s*\d+/ig
+  const outside = q.replace(/\(.*?\)/g, ' ')
+  const roomName = /\b(room|rm)\.?\s*\d+/i.test(outside) || /^\s*\d{3}\s*$/.test(q)
+  const key = nameKey(roomName ? outside.replace(ROOM_RE, ' ') : q)
   const matches = useMemo(() => {
     if (!key) return customers.slice(0, 8)
     return customers.filter(c => nameKey(c.name).includes(key) || key.includes(nameKey(c.name)))
@@ -95,7 +102,14 @@ export default function CustomerPicker({ customers, value, onPick, onCreate, bra
         </p>
       )}
 
-      {key && !exact && (
+      {roomName && (
+        <p className="mt-3 rounded-xl border border-clay p-3 text-clay text-sm">
+          Do not put the room number in the name. Type the guest's own name and pick
+          the account above. To bill a room guest, choose "In-house guest?" and charge their room.
+        </p>
+      )}
+
+      {key && !exact && !roomName && (
         <div className="mt-3">
           {/* Close names the list above would not have shown. */}
           {!!strong.length && (
