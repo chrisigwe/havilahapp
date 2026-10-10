@@ -24,6 +24,9 @@ export default function RoomChargeSheet({ boot, stockMap, onClose, toast, fromRe
   const orderable = fromReception
     ? all.filter(l => /open\s*bar/i.test(l.name))
     : all.filter(l => l.id === deptId)
+  // Restaurant types its orders (with + Stock Used); it has no Sell Item.
+  const isRestaurantDept = !fromReception &&
+    /restaurant/i.test((allLocations || []).find(l => l.id === deptId)?.name || '')
   const restaurantId = (allLocations || []).find(l => /restaurant/i.test(l.name))?.id
   const [q, setQ] = useState('')
   const [stays, setStays] = useState(null)
@@ -167,14 +170,16 @@ export default function RoomChargeSheet({ boot, stockMap, onClose, toast, fromRe
               </p>
             )}
 
-            <button onClick={() => setPicking(true)}
-              className="mt-6 w-full h-14 rounded-2xl border-2 border-amber text-amber text-lg font-bold">
-              + Sell Item
-            </button>
-            {fromReception && (
+            {!isRestaurantDept && (
+              <button onClick={() => setPicking(true)}
+                className="mt-6 w-full h-14 rounded-2xl border-2 border-amber text-amber text-lg font-bold">
+                + Sell Item
+              </button>
+            )}
+            {(fromReception || isRestaurantDept) && (
               <button onClick={() => setTyping({ description: '', qty: 1, unitPrice: '',
                 orderType: 'standard', damageReason: null, writeoffNote: '', prMeal: null, date: null, used: [] })}
-                className="mt-3 w-full h-14 rounded-2xl border-2 border-line text-ink text-lg font-bold">
+                className={`${isRestaurantDept ? 'mt-6' : 'mt-3'} w-full h-14 rounded-2xl border-2 border-line text-ink text-lg font-bold`}>
                 + Add a restaurant order
               </button>
             )}
