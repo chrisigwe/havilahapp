@@ -18,11 +18,11 @@ export default function RoomChargeSheet({ boot, stockMap, onClose, toast, fromRe
   const { staff, items, allLocations } = boot
   // Each department sells its OWN stock to a room (OpenBar -> OpenBar
   // stock, MainBar -> MainBar, Minimart -> Minimart, Restaurant ->
-  // Restaurant). Reception has no stock of its own: it sells OpenBar
+  // Restaurant). Reception has no stock of its own: it sells MainBar
   // stock, and is the only place that also types restaurant orders.
   const all = orderableLocations(allLocations)
   const orderable = fromReception
-    ? all.filter(l => /open\s*bar/i.test(l.name))
+    ? all.filter(l => /main\s*bar/i.test(l.name))
     : all.filter(l => l.id === deptId)
   // Restaurant types its orders (with + Stock Used); it has no Sell Item.
   const isRestaurantDept = !fromReception &&
