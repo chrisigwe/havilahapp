@@ -1407,12 +1407,17 @@ export async function updateOverstayFee(stayId, amount) {
 export async function loadReceptionActivity(branchId, date) {
   const { data, error } = await supabase.from('payments')
     .select(`id, method, amount, is_overstay, remark, created_at, received_by,
-             staff:received_by(full_name),
+             staff:received_by(full_name), location_id,
+             collected:stock_locations!location_id(name),
              stays(id, rooms(room_number), guests!guest_id(full_name))`)
     .eq('branch_id', branchId).eq('business_date', date)
     .order('created_at', { ascending: false })
   if (error) throw error
-  return data || []
+  // Money a guest paid at another department's till (e.g. "charge to a
+  // room" settled at MainBar) belongs to THAT department's sales and
+  // cash-up. Showing it here counted it twice and inflated Front Desk.
+  // Payments with no department, or taken at Reception/Front Desk, stay.
+  return (data || []).filter(p => !p.location_id || /reception|front/i.test(p.collected?.name || ''))
 }
 
 // Deletes an entire training booking — stay, its orders/order_items,
