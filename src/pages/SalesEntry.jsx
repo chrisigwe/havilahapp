@@ -667,7 +667,7 @@ export default function SalesEntry({ boot }) {
       )}
 
       {approvalsOn && !isReception && canRecordHere && (
-        <CollectRefusedCharges branchId={staff.branch_id} locationId={locationId}
+        <CollectRefusedCharges branchId={staff.branch_id} locationId={locationId} canOverride={isGmOrAdmin}
           methods={methods} customers={customers}
           onCreateCustomer={async (name, servedBy) => {
             try {
@@ -1192,7 +1192,7 @@ export default function SalesEntry({ boot }) {
                 ? 'Customer (required for credit)'
                 : 'Customer (optional — for a named receipt)'}
             </div>
-              <CustomerPicker branchId={staff.branch_id} customers={customers} value={paying.customerId}
+              <CustomerPicker branchId={staff.branch_id} canOverride={isGmOrAdmin} customers={customers} value={paying.customerId}
                 onPick={id => setPaying(p => ({ ...p, customerId: id }))}
                 onCreate={async (name, servedBy) => {
                   // Room-numbered accounts ("Room 203 Mr Vincent") are the

@@ -15,7 +15,7 @@ import CustomerPicker from './CustomerPicker'
 // rare, and a short list anyone at the bar can act on beats hiding one
 // because it was rung up at the other counter.
 export default function CollectRefusedCharges({
-  branchId, locationId, methods, customers, onCreateCustomer, onCollected,
+  branchId, locationId, methods, customers, onCreateCustomer, onCollected, canOverride,
 }) {
   const toast = useToast()
   const [rows, setRows] = useState(null)
@@ -123,7 +123,7 @@ export default function CollectRefusedCharges({
               {credit > 0 && (
                 <div className="mt-3">
                   <div className="text-dim text-sm mb-1">Customer (required for credit)</div>
-                  <CustomerPicker branchId={branchId} customers={customers} value={customerId}
+                  <CustomerPicker branchId={branchId} canOverride={!!canOverride} customers={customers} value={customerId}
                     onPick={setCustomerId}
                     onCreate={async (name, servedBy) => {
                       const c = await onCreateCustomer(name, servedBy)
