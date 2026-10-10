@@ -10,36 +10,46 @@ const daysAgo = d => Math.round((new Date(lagosToday()) - new Date(String(d).sli
 // collected, kept on screen until it is — so a charge sold on Monday is still
 // here on Thursday if the guest has not paid it, instead of vanishing with the
 // day. Read-only; payments are recorded on the guest's folio at Reception.
-export default function RoomChargeTracker({ branchId, locationId = null, refreshKey = 0 }) {
+// mode 'recovered' is the Recovery page's view of the same lines: only what
+// has actually been collected from guests' folios for this department.
+export default function RoomChargeTracker({ branchId, locationId = null, refreshKey = 0, mode = 'owing' }) {
+  const recovered = mode === 'recovered'
   const [lines, setLines] = useState(null)
   const [showDone, setShowDone] = useState(false)
-  const [open, setOpen] = useState(false)
+  const [open, setOpen] = useState(mode === 'recovered')
 
   useEffect(() => {
     if (!branchId) return
     setLines(null)
-    loadDepartmentRoomCharges(branchId, locationId).then(setLines).catch(() => setLines([]))
+    loadDepartmentRoomCharges(branchId, locationId, mode === 'recovered' ? 60 : 14).then(setLines).catch(() => setLines([]))
   }, [branchId, locationId, refreshKey])
 
   if (!lines) return null
   const owing = lines.filter(l => l.status === 'unpaid' || l.status === 'part')
   const done = lines.filter(l => !(l.status === 'unpaid' || l.status === 'part'))
-  if (!owing.length && !done.length) return null
+  const collectedLines = lines.filter(l => Number(l.paid_amt || 0) > 0)
+  if (recovered && !collectedLines.length) return null
+  if (!recovered && !owing.length && !done.length) return null
   const owedTotal = owing.reduce((s, l) => s + Math.max(0, Number(l.amount) - Number(l.paid_amt || 0)), 0)
-  const shown = showDone ? lines : owing
+  const collectedTotal = collectedLines.reduce((s, l) => s + Number(l.paid_amt || 0), 0)
+  const shown = recovered ? collectedLines : showDone ? lines : owing
 
   return (
     <section className="mt-4 rounded-2xl border border-line bg-surface">
       <button onClick={() => setOpen(o => !o)} className="w-full text-left px-4 py-3 flex items-center gap-3">
         <div className="flex-1 min-w-0">
-          <p className="font-bold">Room charges awaiting payment</p>
+          <p className="font-bold">{recovered ? 'Room charges recovered' : 'Room charges awaiting payment'}</p>
           <p className="text-dim text-sm">
-            {owing.length
+            {recovered
+              ? `${collectedLines.length} item${collectedLines.length === 1 ? '' : 's'} collected from guests' bills, last 60 days`
+              : owing.length
               ? `${owing.length} item${owing.length === 1 ? '' : 's'} not yet collected`
               : 'Everything charged to rooms has been collected'}
           </p>
         </div>
-        {owing.length > 0 && <span className="tnum font-bold text-clay">{naira(owedTotal)}</span>}
+        {recovered
+          ? <span className="tnum font-bold text-leaf">{naira(collectedTotal)}</span>
+          : owing.length > 0 && <span className="tnum font-bold text-clay">{naira(owedTotal)}</span>}
         <span className="text-dim">{open ? '−' : '+'}</span>
       </button>
 
@@ -99,7 +109,7 @@ export default function RoomChargeTracker({ branchId, locationId = null, refresh
               )
             })}
           </ul>
-          {done.length > 0 && (
+          {!recovered && done.length > 0 && (
             <button onClick={() => setShowDone(s => !s)}
               className="mt-2 w-full h-10 rounded-xl border border-line text-dim text-sm font-semibold">
               {showDone ? 'Hide' : 'Show'} collected items ({done.length}, last 14 days)

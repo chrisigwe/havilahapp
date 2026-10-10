@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useToast } from '../components/Toast'
 import { lagosToday, methodLabel, naira, startingDept, tierLabel } from '../lib/format'
+import RoomChargeTracker from '../components/RoomChargeTracker'
 import { deactivateCustomer, deleteCustomer, linkCustomerToGuest, loadBalances, loadCreditForMonth, loadCreditOnDate, loadCustomerLedger, loadFolio, loadGuestBalances, loadStaffForLocation, loadUnlinkedCustomerBalances, moveWorkaroundToRoom, recordStayPayment, saveRepayment, searchSimilarGuests } from '../lib/data'
 import { enqueue, flush, isConnectionError } from '../lib/outbox'
 import PaymentMethodPicker, { paymentParts, paymentAllocated } from '../components/PaymentMethodPicker'
@@ -548,6 +549,9 @@ export default function Credit({ boot }) {
           departments, where they belong; under any other department a
           one-line pointer keeps them findable without pretending they
           belong there. */}
+      {!dayFilter && !monthFilter && !isReception && (
+        <RoomChargeTracker branchId={staff.branch_id} locationId={locId === 'all' ? null : locId} />
+      )}
       {!dayFilter && !monthFilter && hasReceptionAccess && !isReception && locId !== 'all' && (
         <p className="text-dim text-sm py-3">
           Guest room balances are under Reception.

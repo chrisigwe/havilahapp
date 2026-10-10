@@ -14,12 +14,16 @@ import StockUsedField from './StockUsedField'
 // stock (picked via RoomItemPicker); restaurant orders are typed —
 // no catalog item, no stock tracking, since a plate of food isn't a
 // countable stock unit.
-export default function RoomChargeSheet({ boot, stockMap, onClose, toast, fromReception = false }) {
+export default function RoomChargeSheet({ boot, stockMap, onClose, toast, fromReception = false, deptId = null }) {
   const { staff, items, allLocations } = boot
-  // Drinks come from the MAIN BAR only (and minimart items from Minimart), and
-  // only the front desk adds them here. Other departments charge their own
-  // goods through their till, and use this sheet for restaurant orders.
-  const orderable = orderableLocations(allLocations).filter(l => /main\s*bar|minimart/i.test(l.name))
+  // Each department sells its OWN stock to a room (OpenBar -> OpenBar
+  // stock, MainBar -> MainBar, Minimart -> Minimart, Restaurant ->
+  // Restaurant). Reception has no stock of its own: it sells OpenBar
+  // stock, and is the only place that also types restaurant orders.
+  const all = orderableLocations(allLocations)
+  const orderable = fromReception
+    ? all.filter(l => /open\s*bar/i.test(l.name))
+    : all.filter(l => l.id === deptId)
   const restaurantId = (allLocations || []).find(l => /restaurant/i.test(l.name))?.id
   const [q, setQ] = useState('')
   const [stays, setStays] = useState(null)
@@ -163,17 +167,17 @@ export default function RoomChargeSheet({ boot, stockMap, onClose, toast, fromRe
               </p>
             )}
 
+            <button onClick={() => setPicking(true)}
+              className="mt-6 w-full h-14 rounded-2xl border-2 border-amber text-amber text-lg font-bold">
+              + Sell Item
+            </button>
             {fromReception && (
-              <button onClick={() => setPicking(true)}
-                className="mt-6 w-full h-14 rounded-2xl border-2 border-amber text-amber text-lg font-bold">
-                + Add a drink or minimart item
+              <button onClick={() => setTyping({ description: '', qty: 1, unitPrice: '',
+                orderType: 'standard', damageReason: null, writeoffNote: '', prMeal: null, date: null, used: [] })}
+                className="mt-3 w-full h-14 rounded-2xl border-2 border-line text-ink text-lg font-bold">
+                + Add a restaurant order
               </button>
             )}
-            <button onClick={() => setTyping({ description: '', qty: 1, unitPrice: '',
-              orderType: 'standard', damageReason: null, writeoffNote: '', prMeal: null, date: null, used: [] })}
-              className={`${fromReception ? 'mt-3' : 'mt-6'} w-full h-14 rounded-2xl border-2 border-line text-ink text-lg font-bold`}>
-              + Add a restaurant order
-            </button>
 
             {pending && (
               <div className="mt-4 rounded-2xl border border-amber bg-surface p-4">

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { lagosToday, methodLabel, naira, startingDept } from '../lib/format'
 import { deleteRepayment, deleteRoomPayment, loadBalances, loadBalancesAsAt, loadRecovery, loadRoomPayments, updateRepayment } from '../lib/data'
 import { useToast } from '../components/Toast'
+import RoomChargeTracker from '../components/RoomChargeTracker'
 import { OPENS_ON_ALL, OVERSIGHT, SUPERVISOR, is } from '../lib/roles'
 
 // Deliberately excludes storekeeper — an explicit choice, not an
@@ -319,6 +320,11 @@ export default function Recovery({ boot }) {
           ))}
         </div>
       </div>
+
+      {!/reception/i.test(salesPoints.find(l => l.id === locId)?.name || '') && (
+        <RoomChargeTracker mode="recovered" branchId={staff.branch_id}
+          locationId={locId === 'all' ? null : locId} />
+      )}
 
       {byDay.map(([day, items]) => (
         <section key={day} className="mt-4">

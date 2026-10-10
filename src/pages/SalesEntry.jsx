@@ -1279,7 +1279,7 @@ export default function SalesEntry({ boot }) {
       )}
 
       {roomCharging && (
-        <RoomChargeSheet boot={boot} stockMap={stockMap} toast={toast} fromReception={isReception}
+        <RoomChargeSheet boot={boot} stockMap={stockMap} toast={toast} fromReception={isReception} deptId={locationId}
           onClose={() => setRoomCharging(false)} />
       )}
 
