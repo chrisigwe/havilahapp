@@ -1378,6 +1378,16 @@ export async function searchRecentCheckouts(branchId, query) {
     s.guests?.full_name?.toLowerCase().includes(needle))
 }
 
+// A reserved guest has arrived: the stay becomes Occupied now. The database
+// trigger (set_checked_in_at) stamps the real check-in time. Reads the row
+// back so a blocked update (no rights) is reported instead of looking done.
+export async function checkInReservation(stayId) {
+  const { data, error } = await supabase.from('stays')
+    .update({ status: 'occupied' }).eq('id', stayId).eq('status', 'reserved').select('id')
+  if (error) throw error
+  if (!data?.length) throw new Error('Could not check this guest in. It may already be checked in, or you may not have the right to do it.')
+}
+
 // Deliberately minimal, same reasoning as reopenStay — the trigger
 // (stamp_rate_adjustment) stamps who and when on its own if daily_rate
 // changed; sending it here would just be overwritten.

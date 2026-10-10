@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { naira, lagosToday, lagosTime, seesStayTimes, addDays } from '../lib/format'
 import {
-  loadCheckoutsStillOwing, loadOccupancy, setRoomServiceStatus, loadUpcomingReservations,
+  checkInReservation, loadCheckoutsStillOwing, loadOccupancy, setRoomServiceStatus, loadUpcomingReservations,
 } from '../lib/data'
 import CheckIn from './CheckIn'
 import Folio from '../components/Folio'
@@ -101,6 +101,16 @@ export default function RoomBoard({ boot }) {
     try {
       await setRoomServiceStatus(room.room_id, false)
       toast(`Room ${room.room_number} back in service`, 'success')
+      refresh()
+    } catch (e) { toast(e.message, 'error') }
+    setOosBusy(false)
+  }
+
+  async function checkInNow(room) {
+    setOosBusy(true)
+    try {
+      await checkInReservation(room.stay_id)
+      toast(`Room ${room.room_number} · ${room.guest_name} checked in`, 'success')
       refresh()
     } catch (e) { toast(e.message, 'error') }
     setOosBusy(false)
@@ -252,6 +262,12 @@ export default function RoomBoard({ boot }) {
                           new Date(room.check_in_date + 'T12:00:00').toLocaleDateString('en-NG', { day: 'numeric', month: 'short' })}
                         — keep it free
                       </p>
+                    )}
+                    {stateKey === 'reserved_due' && canBook && (
+                      <button onClick={(e) => { e.stopPropagation(); checkInNow(room) }} disabled={oosBusy}
+                        className="mt-2 h-9 px-3 rounded-lg bg-amber text-bg text-sm font-bold disabled:opacity-40">
+                        Guest arrived — check in now
+                      </button>
                     )}
                     {stateKey === 'reserved' && (
                       <p className="text-dim text-xs mt-0.5">
