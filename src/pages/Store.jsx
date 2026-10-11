@@ -90,6 +90,9 @@ export default function Store({ boot }) {
     setBusy(true)
     try {
       const dept = departments.find(d => d.id === toDept)
+      if (mode === 'disburse' && ['housekeeping', 'laundry', 'others'].includes(dept?.slug) && !receiver.trim()) {
+        toast('Say who is receiving it', 'error'); setBusy(false); return
+      }
       const issues = mode === 'disburse' && dept?.consumes_on_issue
       const movementType = mode === 'receive' ? 'restock'
         : mode === 'move' ? 'transfer'

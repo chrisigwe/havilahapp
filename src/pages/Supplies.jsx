@@ -7,6 +7,8 @@ import { useToast } from '../components/Toast'
 // auditor can see every entry, by person, with the reason.
 const QUICK = ['Cooking', 'Cleaning', 'Laundry', 'Packing orders', 'Office', 'Room supplies']
 const KEEPERS = ['storekeeper', 'manager', 'gm', 'admin']
+// Recorded by the store on behalf of the people who use them (no logins for them).
+const BACK_OFFICE = ['housekeeping', 'laundry', 'others']
 
 export default function Supplies({ boot }) {
   const { staff, locations, items } = boot
@@ -17,8 +19,7 @@ export default function Supplies({ boot }) {
   // database refuses anything else — so nobody is offered a place it would refuse.
   const places = useMemo(() => locations.filter(l => {
     if (l.is_store) return false
-    if (staff.role === 'housekeeper') return l.slug === 'housekeeping'
-    if (l.slug === 'others') return KEEPERS.includes(staff.role) || staff.role === 'auditor'
+    if (BACK_OFFICE.includes(l.slug)) return KEEPERS.includes(staff.role) || staff.role === 'auditor'
     return true
   }), [locations, staff.role])
 
@@ -35,6 +36,7 @@ export default function Supplies({ boot }) {
   const [q, setQ] = useState('')
   const [lines, setLines] = useState([])     // { item, qty }
   const [note, setNote] = useState('')
+  const [usedBy, setUsedBy] = useState('')
   const [busy, setBusy] = useState(false)
 
   const refresh = () => {
@@ -42,7 +44,9 @@ export default function Supplies({ boot }) {
     loadSuppliesUse(staff.branch_id, 30).then(setLog).catch(() => setLog([]))
   }
   useEffect(refresh, [staff.branch_id])
-  useEffect(() => { setLines([]); setNote('') }, [locId])
+  useEffect(() => { setLines([]); setNote(''); setUsedBy('') }, [locId])
+  const loc = places.find(l => l.id === locId)
+  const backOffice = !!loc && BACK_OFFICE.includes(loc.slug)
 
   const supplies = useMemo(() => {
     const n = q.trim().toLowerCase()
@@ -62,18 +66,18 @@ export default function Supplies({ boot }) {
   async function save() {
     if (!lines.length) { toast('Pick what was used', 'error'); return }
     if (note.trim().length < 3) { toast('Say what it was used for', 'error'); return }
+    if (backOffice && usedBy.trim().length < 2) { toast('Say who took it', 'error'); return }
     setBusy(true)
     try {
-      await recordSuppliesUse(locId, lines, note.trim())
+      await recordSuppliesUse(locId, lines, note.trim(), backOffice ? usedBy.trim() : null)
       toast('Recorded', 'success')
-      setLines([]); setNote(''); refresh()
+      setLines([]); setNote(''); setUsedBy(''); refresh()
     } catch (e) { toast('Not saved: ' + e.message, 'error') }
     setBusy(false)
   }
 
   const shownLog = useMemo(() => (log || []).filter(r => !locId || r.from_location === locId), [log, locId])
-  const mine = staff.role === 'bar' || staff.role === 'front_desk' || staff.role === 'housekeeper'
-
+  
   return (
     <div className="px-5 pb-10">
       <div className="flex gap-2 overflow-x-auto py-3 -mx-1 px-1">
@@ -121,6 +125,11 @@ export default function Supplies({ boot }) {
           </ul>
 
           <div className="mt-3">
+            {backOffice && (
+              <input value={usedBy} onChange={e => setUsedBy(e.target.value)}
+                placeholder="Who took it? (required — e.g. the housekeeper's name)"
+                className="w-full h-12 px-4 mb-2 rounded-xl bg-surface border border-line placeholder:text-dim" />
+            )}
             <div className="flex gap-2 overflow-x-auto pb-2">
               {QUICK.map(t => (
                 <button key={t} onClick={() => setNote(n => n ? n : t)}
@@ -138,14 +147,14 @@ export default function Supplies({ boot }) {
         </section>
       )}
 
-      <Report rows={shownLog} mine={mine} me={staff.full_name} canRecord={canRecord} />
+      <Report rows={shownLog} canRecord={canRecord} />
     </div>
   )
 }
 
 // Last 30 days at this department: totals per item and per person, then every
 // entry with its note. This is what the auditor questions.
-function Report({ rows, mine, me, canRecord }) {
+function Report({ rows, canRecord }) {
   const [open, setOpen] = useState(!canRecord)
   if (!rows) return null
   const byItem = {}, byWho = {}
@@ -175,7 +184,7 @@ function Report({ rows, mine, me, canRecord }) {
             {rows.map(r => (
               <li key={r.id} className="py-2 text-sm">
                 <span className="font-semibold">{Number(r.qty)} × {r.stock_items?.name}</span>
-                <span className="text-dim"> · {r.loc?.name} · {r.business_date} · {r.staff?.full_name || '?'}</span>
+                <span className="text-dim"> · {r.loc?.name} · {r.business_date} · {r.received_by ? `taken by ${r.received_by} · ` : ''}recorded by {r.staff?.full_name || '?'}</span>
                 <p className={r.note && r.note.trim().length >= 6 ? 'text-dim' : 'text-clay'}>
                   “{r.note || 'no note'}”
                 </p>

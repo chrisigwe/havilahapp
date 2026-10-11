@@ -2577,11 +2577,12 @@ export async function setBranchGeofence(branchId, lat, lng, radius = 150) {
 // ---------- supplies used (salt, detergent, Knorr ...) — migration 382 ----------
 // Takes the quantity off the department's stock and records who, when and
 // WHY (the note is required, so the auditor always has something to ask about).
-export async function recordSuppliesUse(locationId, lines, note) {
+export async function recordSuppliesUse(locationId, lines, note, usedBy = null) {
   const { error } = await supabase.rpc('record_supplies_use', {
     p_location: locationId,
     p_lines: lines.map(l => ({ item: l.item.id, qty: Number(l.qty) })),
     p_note: note,
+    p_used_by: usedBy,
   })
   if (error) throw error
 }
@@ -2589,7 +2590,7 @@ export async function recordSuppliesUse(locationId, lines, note) {
 export async function loadSuppliesUse(branchId, days = 30, locationId = null) {
   const since = new Date(Date.now() - days * 864e5).toISOString().slice(0, 10)
   let q = supabase.from('stock_movements')
-    .select(`id, business_date, qty, note, created_at, from_location, stock_item_id,
+    .select(`id, business_date, qty, note, received_by, created_at, from_location, stock_item_id,
              stock_items(name), staff:recorded_by(full_name), loc:from_location(name)`)
     .eq('branch_id', branchId).eq('movement_type', 'used').gte('business_date', since)
   if (locationId) q = q.eq('from_location', locationId)
