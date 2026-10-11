@@ -8,7 +8,10 @@ import { enqueue, flush, isConnectionError } from '../lib/outbox'
 import ItemPicker from '../components/ItemPicker'
 
 export default function Store({ boot }) {
-  const { staff, allLocations, items } = boot
+  const { staff, allLocations } = boot
+  const [kind, setKind] = useState('stock')       // stock | supplies
+  const items = kind === 'supplies' ? (boot.supplyItems || []) : boot.items
+  const [purpose, setPurpose] = useState('')
   const locations = allLocations
   const store = locations.find(l => l.is_store)
   const departments = locations.filter(l => !l.is_store)
@@ -90,10 +93,15 @@ export default function Store({ boot }) {
     setBusy(true)
     try {
       const dept = departments.find(d => d.id === toDept)
-      if (mode === 'disburse' && ['housekeeping', 'laundry', 'others'].includes(dept?.slug) && !receiver.trim()) {
+      const sup = kind === 'supplies'
+      if (sup && mode === 'disburse') {
+        if (!receiver.trim()) { toast('Say who is receiving it', 'error'); setBusy(false); return }
+        if (purpose.trim().length < 3) { toast('Say what it is for', 'error'); setBusy(false); return }
+      }
+      if (!sup && mode === 'disburse' && ['housekeeping', 'laundry', 'others'].includes(dept?.slug) && !receiver.trim()) {
         toast('Say who is receiving it', 'error'); setBusy(false); return
       }
-      const issues = mode === 'disburse' && dept?.consumes_on_issue
+      const issues = mode === 'disburse' && (sup || dept?.consumes_on_issue)
       const movementType = mode === 'receive' ? 'restock'
         : mode === 'move' ? 'transfer'
         : (issues ? 'issue' : 'transfer')
@@ -101,7 +109,8 @@ export default function Store({ boot }) {
         : mode === 'move' ? fromDept
         : store.id
       const toLoc = mode === 'receive' ? store.id : toDept
-      const noteWhat = mode === 'receive' ? 'received into store'
+      const noteWhat = sup && mode === 'disburse' ? `Supplies used: ${purpose.trim()}`
+        : mode === 'receive' ? (sup ? 'supplies received into store' : 'received into store')
         : mode === 'move' ? `moved from ${departments.find(d => d.id === fromDept)?.name} to ${dept?.name}`
         : `${issues ? 'issued to' : 'to'} ${dept?.name}`
       const rows = lines.map(l => ({
@@ -127,7 +136,7 @@ export default function Store({ boot }) {
         enqueue({ kind: 'movements', payload: { rows } })
         toast('No connection — saved and will send when you are back online')
       }
-      setLines([]); setReceiver(''); refresh(); flush()
+      setLines([]); setReceiver(''); setPurpose(''); refresh(); flush()
       reloadHistory(false)
     } catch (e) { toast('Not saved: ' + e.message, 'error') }
     setBusy(false)
@@ -170,15 +179,23 @@ export default function Store({ boot }) {
   const convertShort = convertFrom?.item
     && convertFrom.qty > qtyAt(convertFrom.item.id, convertLoc)
 
-  const MODES = [
-    ['receive', 'Receive (IN)'],
-    ['disburse', 'Issue (OUT)'],
-    ['move', 'Move Between Depts'],
-    ['convert', 'Convert'],
-  ]
+  const MODES = kind === 'supplies'
+    ? [['receive', 'Receive (IN)'], ['disburse', 'Issue (used)']]
+    : [['receive', 'Receive (IN)'], ['disburse', 'Issue (OUT)'],
+       ['move', 'Move Between Depts'], ['convert', 'Convert']]
+  const supplyNames = new Set((boot.supplyItems || []).map(i => i.name))
+  const shownHistory = history && history.filter(h =>
+    (kind === 'supplies') === supplyNames.has(h.stock_items?.name))
 
   return (
     <div className="px-5">
+      <div className="flex gap-2 pt-2">
+        {[['stock', 'Stock'], ['supplies', 'Supplies']].map(([k, label]) => (
+          <button key={k} onClick={() => { setKind(k); setMode('receive'); setLines([]) }}
+            className={`flex-1 h-11 rounded-xl border font-bold ${kind === k
+              ? 'bg-amber/20 text-amber border-amber' : 'border-line text-dim'}`}>{label}</button>
+        ))}
+      </div>
       <div className="flex gap-2 py-2 overflow-x-auto -mx-1 px-1">
         {MODES.map(([k, label]) => (
           <button key={k} onClick={() => { setMode(k); setLines([]) }}
@@ -191,11 +208,13 @@ export default function Store({ boot }) {
 
       <p className="text-dim text-sm">
         {mode === 'receive' && 'Stock arriving from suppliers, into the store.'}
-        {mode === 'disburse' && 'Stock leaving the store for a department.'}
+        {mode === 'disburse' && (kind === 'supplies'
+          ? 'Supplies handed to a department. They count as used the moment they leave the Store.'
+          : 'Stock leaving the store for a department.')}
         {mode === 'move' && 'Stock moving directly between two departments — never touches the store.'}
         {mode === 'convert' && 'One item becomes a different item — e.g. bottles of groundnut repacked into plates.'}
       </p>
-      {mode === 'disburse' && departments.find(d => d.id === toDept)?.consumes_on_issue && (
+      {mode === 'disburse' && kind === 'stock' && departments.find(d => d.id === toDept)?.consumes_on_issue && (
         <p className="text-dim text-sm mt-2">
           {departments.find(d => d.id === toDept)?.name} is a consuming department —
           this stock is used up on issue, not held as a balance there.
@@ -270,11 +289,20 @@ export default function Store({ boot }) {
         </div>
       )}
 
+      {kind === 'supplies' && mode === 'disburse' && (
+        <div className="mt-3">
+          <div className="text-dim text-sm mb-1">What is it for? (required)</div>
+          <input value={purpose} onChange={e => setPurpose(e.target.value)}
+            placeholder="e.g. Cooking, cleaning rooms, laundry"
+            className="h-12 w-full px-3 rounded-xl bg-surface border border-line placeholder:text-dim" />
+        </div>
+      )}
+
       {mode !== 'convert' && (
         <button onClick={() => setPicking(true)}
           disabled={mode === 'move' && fromDept === toDept}
           className="mt-4 w-full h-14 rounded-2xl border-2 border-amber text-amber text-lg font-bold disabled:opacity-40">
-          {mode === 'receive' ? '+ Receive Stock' : mode === 'move' ? '+ Add Item to Move' : '+ Issue To'}
+          {mode === 'receive' ? (kind === 'supplies' ? '+ Receive Supplies' : '+ Receive Stock') : mode === 'move' ? '+ Add Item to Move' : '+ Issue To'}
         </button>
       )}
 
@@ -304,7 +332,7 @@ export default function Store({ boot }) {
             </button>
             {showHistory && (
               <ul className="divide-y divide-line/60 rounded-2xl border border-line bg-surface px-4 mb-2">
-                {(history || []).map((h, i) => (
+                {(shownHistory || []).map((h, i) => (
                   <li key={i} className="py-3">
                     <div className="flex items-center gap-3">
                       <span className="flex-1 min-w-0 truncate font-semibold">
@@ -325,7 +353,7 @@ export default function Store({ boot }) {
                   </li>
                 ))}
                 {history === null && <li className="py-6 text-dim text-center">Loading…</li>}
-                {history && !history.length && (
+                {shownHistory && !shownHistory.length && (
                   <li className="py-6 text-dim text-center">{active.empty}</li>
                 )}
               </ul>
@@ -368,10 +396,13 @@ export default function Store({ boot }) {
       {mode !== 'convert' && !!lines.length && (
         <div className="sticky bottom-20 mt-4 pb-2">
           {overdrawn && <p className="text-clay mb-2">More than is here — check the count first.</p>}
+          {kind === 'supplies' && mode === 'disburse' && purpose.trim().length < 3 && (
+            <p className="text-dim text-sm mb-2">Say what it is for so the auditor can see why.</p>
+          )}
           {mode !== 'receive' && !receiver.trim() && (
             <p className="text-dim text-sm mb-2">Add a receiver so the handover is on record.</p>
           )}
-          <button onClick={save} disabled={busy || (mode === 'move' && fromDept === toDept)}
+          <button onClick={save} disabled={busy || (mode === 'move' && fromDept === toDept) || (kind === 'supplies' && mode === 'disburse' && (!receiver.trim() || purpose.trim().length < 3))}
             className="w-full h-16 rounded-2xl bg-amber text-bg text-xl font-bold disabled:opacity-40">
             {busy ? 'Saving…' : mode === 'receive' ? 'Save delivery' : mode === 'move' ? 'Save move' : 'Issue stock'}
           </button>

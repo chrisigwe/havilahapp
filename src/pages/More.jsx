@@ -27,7 +27,7 @@ const ITEMS = [
     // the auditor (it left for History) and now bar/front_desk (it left
     // for Credit). Without this they would lose the stock view entirely.
     roles: [...OVERSIGHT_ROLES, 'auditor', 'bar', 'front_desk', 'housekeeper'] },
-  { key: 'supplies', label: 'Supplies used', hint: 'Log salt, detergent, oil and other supplies used, with a note',
+  { key: 'supplies', label: 'Supplies used', hint: 'What the Store issued to each department, who collected it and why',
     roles: ['housekeeper', 'bar', 'front_desk', 'storekeeper', 'manager', 'gm', 'admin', 'auditor'] },
   { key: 'count',   label: 'Stock count', hint: 'Count your stock at end of shift',
     roles: ['bar', 'front_desk', 'storekeeper', 'manager', 'gm', 'admin', 'auditor'] },

@@ -96,7 +96,10 @@ export async function loadBranchData(staff, viewBranchId) {
     locations: visible,
     tiers: tiers.data.map(t => t.tier),
     methods: methods.data.map(m => m.method),
-    items: items.data,
+    // supplies (used up, not sold) are kept apart from sale stock: they are
+    // received into the Store and issued out as "supplies used"
+    items: items.data.filter(i => !i.is_consumable),
+    supplyItems: items.data.filter(i => i.is_consumable),
   }
 }
 
@@ -2608,12 +2611,20 @@ export async function recordSuppliesUse(locationId, lines, note, usedBy = null) 
 
 export async function loadSuppliesUse(branchId, days = 30, locationId = null) {
   const since = new Date(Date.now() - days * 864e5).toISOString().slice(0, 10)
+  // 'issue' = handed out of the Store to a department; 'used' = older entries
+  // logged by a department. Only items marked as supplies.
   let q = supabase.from('stock_movements')
-    .select(`id, business_date, qty, note, received_by, created_at, from_location, stock_item_id,
-             stock_items(name), staff:recorded_by(full_name), loc:from_location(name)`)
-    .eq('branch_id', branchId).eq('movement_type', 'used').gte('business_date', since)
-  if (locationId) q = q.eq('from_location', locationId)
-  const { data, error } = await q.order('created_at', { ascending: false }).limit(1000)
+    .select(`id, movement_type, business_date, qty, note, received_by, created_at, from_location, to_location, stock_item_id,
+             stock_items!inner(name, is_consumable), staff:recorded_by(full_name),
+             from_loc:from_location(name), to_loc:to_location(name)`)
+    .eq('branch_id', branchId).in('movement_type', ['issue', 'used'])
+    .eq('stock_items.is_consumable', true).gte('business_date', since)
+  const { data, error } = await q.order('created_at', { ascending: false }).limit(1500)
   if (error) throw error
-  return data
+  const rows = data.map(r => {
+    const dept = r.movement_type === 'issue' ? r.to_location : r.from_location
+    const deptName = r.movement_type === 'issue' ? r.to_loc?.name : r.from_loc?.name
+    return { ...r, dept_id: dept, dept_name: deptName }
+  })
+  return locationId ? rows.filter(r => r.dept_id === locationId) : rows
 }
