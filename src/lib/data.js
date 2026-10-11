@@ -350,6 +350,25 @@ export async function loadAudit(branchId, limit = 100) {
 // requests total, all genuinely concurrent already, so combining
 // them in JS alone would have changed nothing. This calls one
 // database function that computes everything server-side instead.
+// Money a guest paid AT a department (e.g. "charge to a room" settled at
+// MainBar) is that department's money: it collects a debt the department
+// raised when it charged the room. Reception's own payments are excluded;
+// they have their own dashboard. One department when locationId is given,
+// every non-Reception department otherwise.
+export async function loadGuestCollections(branchId, date, locationId = null) {
+  let q = supabase.from('payments')
+    .select(`id, method, amount, location_id, created_at,
+             collected:stock_locations!location_id(name),
+             staff:received_by(full_name),
+             stays(rooms(room_number), guests!guest_id(full_name))`)
+    .eq('branch_id', branchId).eq('business_date', date)
+    .not('location_id', 'is', null)
+  if (locationId) q = q.eq('location_id', locationId)
+  const { data, error } = await q.order('created_at', { ascending: false })
+  if (error) throw error
+  return (data || []).filter(p => !/reception|front/i.test(p.collected?.name || ''))
+}
+
 export async function loadDailyFinancials(branchId, date, locationId) {
   const { data, error } = await supabase.rpc('get_daily_financials', {
     p_branch: branchId, p_date: date, p_location: locationId || null,

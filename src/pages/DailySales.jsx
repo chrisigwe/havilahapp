@@ -2,7 +2,7 @@ import RoomChargeTracker from '../components/RoomChargeTracker'
 import StockUsedReport from '../components/StockUsedReport'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { naira, lagosToday, lagosDaysAgo, tierLabel, methodLabel, whoRecorded, paymentSummary } from '../lib/format'
-import { findDuplicateCustomers, findDuplicateGuests, loadDailyFinancials, loadReceptionActivity, loadReceptionDashboard, loadRoomCharges, loadRoomsSoldInMonth, loadToday, loadWriteoffsOnDate } from '../lib/data'
+import { findDuplicateCustomers, findDuplicateGuests, loadDailyFinancials, loadGuestCollections, loadReceptionActivity, loadReceptionDashboard, loadRoomCharges, loadRoomsSoldInMonth, loadToday, loadWriteoffsOnDate } from '../lib/data'
 import { useToast } from '../components/Toast'
 import ReceptionDashboard from '../components/ReceptionDashboard'
 import WriteoffBreakdown from '../components/WriteoffBreakdown'
@@ -13,6 +13,17 @@ import { is, SUPERVISOR } from '../lib/roles'
 // records), and shared with storekeeper/manager/gm/admin as a way to
 // look at a day other than today without switching into the live
 // recording screen.
+// Folds guest room-charge payments collected at a department into its
+// recovered debt and total income, keeping the payment method.
+function withGuestCollections(f, guest) {
+  if (!guest?.length) return f
+  const total = guest.reduce((t, p) => t + Number(p.amount), 0)
+  const recoveredBy = { ...(f.recoveredBy || {}) }
+  for (const p of guest) recoveredBy[p.method] = Number(recoveredBy[p.method] || 0) + Number(p.amount)
+  return { ...f, guestCollections: guest, debtRecovered: f.debtRecovered + total,
+           recoveredBy, totalMoneyIn: f.totalMoneyIn + total }
+}
+
 export default function DailySales({ boot }) {
   const { staff, allLocations, items } = boot
   // Every role that can reach this page (auditor, storekeeper,
@@ -113,7 +124,13 @@ export default function DailySales({ boot }) {
       }
       return
     }
-    loadDailyFinancials(staff.branch_id, date, loc).then(setSummary).catch(e => toast(e.message, 'error'))
+    // Debt recovered also includes what guests paid at this department
+    // against their room charges (e.g. "charge to a room" settled at MainBar).
+    Promise.all([
+      loadDailyFinancials(staff.branch_id, date, loc),
+      loadGuestCollections(staff.branch_id, date, loc).catch(() => []),
+    ]).then(([f, guest]) => setSummary(withGuestCollections(f, guest)))
+      .catch(e => toast(e.message, 'error'))
     loadToday(staff.branch_id, date, loc).then(setRows).catch(e => toast(e.message, 'error'))
     if (roomChargeCategory) {
       loadRoomCharges(staff.branch_id, date, roomChargeCategory).then(setRoomCharges).catch(e => toast(e.message, 'error'))
@@ -293,6 +310,20 @@ export default function DailySales({ boot }) {
                 <span className="tnum text-dim">{naira(amt)}</span>
               </div>
             ))}
+            {(summary.guestCollections || []).length > 0 && (
+              <div className="pl-4 pt-1 text-sm">
+                <p className="text-dim">Of which collected from guests' room charges:</p>
+                {summary.guestCollections.map(p => (
+                  <div key={p.id} className="flex justify-between">
+                    <span className="text-dim truncate">
+                      · {p.stays?.guests?.full_name || 'Guest'}{p.stays?.rooms?.room_number ? ` (Room ${p.stays.rooms.room_number})` : ''}
+                      {locId === 'all' && p.collected?.name ? ` · ${p.collected.name}` : ''} · {methodLabel[p.method] || p.method}
+                    </span>
+                    <span className="tnum text-dim">{naira(p.amount)}</span>
+                  </div>
+                ))}
+              </div>
+            )}
             <div className="pt-2 mt-2 border-t border-line flex justify-between font-bold">
               <span>Total income for the day</span>
               <span className="tnum">{naira(summary.totalMoneyIn)}</span>
