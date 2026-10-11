@@ -2641,3 +2641,27 @@ export async function voidSuppliesUse(movementId, reason) {
   const { error } = await supabase.rpc('void_supplies_use', { p_movement: movementId, p_reason: reason })
   if (error) throw error
 }
+
+// Which supplies each department may hold and use: { locationId: Set(itemId) }.
+// A department with no entries is unrestricted.
+export async function loadDepartmentSupplies(branchId) {
+  const { data, error } = await supabase.from('supply_department_items')
+    .select('location_id, stock_item_id, stock_locations!inner(branch_id)')
+    .eq('stock_locations.branch_id', branchId)
+  if (error) throw error
+  const map = {}
+  for (const r of data) (map[r.location_id] ||= new Set()).add(r.stock_item_id)
+  return map
+}
+
+export async function setDepartmentSupply(locationId, itemId, on) {
+  const { error } = await supabase.rpc('set_department_supply',
+    { p_location: locationId, p_item: itemId, p_on: on })
+  if (error) throw error
+}
+
+export async function returnSuppliesToStore(locationId, itemId, qty, reason) {
+  const { error } = await supabase.rpc('return_supplies_to_store',
+    { p_location: locationId, p_item: itemId, p_qty: qty, p_reason: reason })
+  if (error) throw error
+}

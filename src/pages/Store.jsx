@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useToast } from '../components/Toast'
 import { lagosToday } from '../lib/format'
-import { loadStockMap, loadPopular, loadDepartmentHistory,
+import { loadDepartmentSupplies, loadStockMap, loadPopular, loadDepartmentHistory,
          loadReceiveHistory, loadMoveHistory, loadConvertHistory } from '../lib/data'
 import { supabase } from '../lib/supabase'
 import { enqueue, flush, isConnectionError } from '../lib/outbox'
@@ -10,7 +10,10 @@ import ItemPicker from '../components/ItemPicker'
 export default function Store({ boot }) {
   const { staff, allLocations } = boot
   const [kind, setKind] = useState('stock')       // stock | supplies
-  const items = kind === 'supplies' ? (boot.supplyItems || []) : boot.items
+  const [deptSupplies, setDeptSupplies] = useState({})
+  useEffect(() => {
+    loadDepartmentSupplies(boot.staff.branch_id).then(setDeptSupplies).catch(() => {})
+  }, [boot.staff.branch_id])
   const locations = allLocations
   const store = locations.find(l => l.is_store)
   const departments = locations.filter(l => !l.is_store)
@@ -24,6 +27,11 @@ export default function Store({ boot }) {
   const [picking, setPicking] = useState(false)
   const [lines, setLines] = useState([])            // staged, saved together — receive/disburse/move
   const [toDept, setToDept] = useState(departments[0]?.id)
+  // supplies issued to a department are limited to that department's list
+  const allowed = deptSupplies[toDept]
+  const items = kind === 'supplies'
+    ? (boot.supplyItems || []).filter(i => mode === 'disburse' && allowed ? allowed.has(i.id) : true)
+    : boot.items
   const [fromDept, setFromDept] = useState(departments[1]?.id || departments[0]?.id)
   const [busy, setBusy] = useState(false)
   const [history, setHistory] = useState(null)
@@ -216,6 +224,12 @@ export default function Store({ boot }) {
         <p className="text-dim text-sm mt-2">
           {departments.find(d => d.id === toDept)?.name} is a consuming department —
           this stock is used up on issue, not held as a balance there.
+        </p>
+      )}
+
+      {mode === 'disburse' && kind === 'supplies' && allowed && (
+        <p className="text-dim text-sm mt-2">
+          Only the supplies on {departments.find(d => d.id === toDept)?.name}'s list are offered.
         </p>
       )}
 

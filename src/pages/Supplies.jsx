@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
-import { loadStockMap, loadSuppliesUse, recordSuppliesUse, voidSuppliesUse } from '../lib/data'
+import { loadStockMap, loadSuppliesUse, recordSuppliesUse, voidSuppliesUse,
+         loadDepartmentSupplies, setDepartmentSupply, returnSuppliesToStore } from '../lib/data'
 import { lagosDaysAgo } from '../lib/format'
 import { useToast } from '../components/Toast'
 
@@ -32,6 +33,8 @@ export default function Supplies({ boot }) {
   }, [places, locId, canRecord, isKeeper, staff.default_location_id])
 
   const [stockMap, setStockMap] = useState({})
+  const [deptLists, setDeptLists] = useState({})
+  const isAdmin = ['gm', 'admin'].includes(staff.role)
   const [feed, setFeed] = useState(null)
   const [days, setDays] = useState(30)
   const [view, setView] = useState(canRecord ? 'record' : 'entries')  // record | entries | balances
@@ -45,6 +48,7 @@ export default function Supplies({ boot }) {
   const refresh = () => {
     loadStockMap(staff.branch_id).then(setStockMap).catch(console.error)
     loadSuppliesUse(staff.branch_id, days).then(setFeed).catch(() => setFeed([]))
+    loadDepartmentSupplies(staff.branch_id).then(setDeptLists).catch(() => {})
   }
   useEffect(refresh, [staff.branch_id, days])
   useEffect(() => { setLines([]); setNote(''); setUsedBy('') }, [locId])
@@ -55,9 +59,10 @@ export default function Supplies({ boot }) {
 
   const list = useMemo(() => {
     const n = q.trim().toLowerCase()
-    return supplyItems.filter(i => !n || i.name.toLowerCase().includes(n))
+    const allowed = deptLists[locId]
+    return supplyItems.filter(i => (!allowed || allowed.has(i.id)) && (!n || i.name.toLowerCase().includes(n)))
       .sort((a, b) => a.name.localeCompare(b.name))
-  }, [supplyItems, q])
+  }, [supplyItems, q, deptLists, locId])
 
   const setQty = (item, qty) => setLines(ls => {
     const v = Math.max(0, Number(qty) || 0)
@@ -95,7 +100,8 @@ export default function Supplies({ boot }) {
     (isKeeper ? r.business_date >= lagosDaysAgo(30)
               : r.recorded_by === staff.id && r.business_date >= lagosDaysAgo(6))
 
-  const tabs = [...(canRecord ? [['record', 'Record use']] : []), ['entries', 'Entries'], ['balances', 'Balances']]
+  const tabs = [...(canRecord ? [['record', 'Record use']] : []), ['entries', 'Entries'], ['balances', 'Balances'],
+    ...(isAdmin ? [['lists', 'Lists']] : [])]
 
   return (
     <div className="px-5 pb-10">
@@ -227,7 +233,12 @@ export default function Supplies({ boot }) {
       )}
 
       {view === 'balances' && (
-        <Balances feed={feed} stockMap={stockMap} locId={locId} places={places} items={supplyItems} days={days} setDays={setDays} />
+        <Balances feed={feed} stockMap={stockMap} locId={locId} places={places} items={supplyItems} days={days}
+          setDays={setDays} canReturn={isKeeper} onChanged={refresh} />
+      )}
+
+      {view === 'lists' && isAdmin && (
+        <Lists places={places} locId={locId} items={supplyItems} deptLists={deptLists} onChanged={refresh} />
       )}
     </div>
   )
@@ -235,7 +246,20 @@ export default function Supplies({ boot }) {
 
 // Per department and item: handed over by the Store, used (net of undone), and
 // what the system says is still held. Negative = used more than was handed over.
-function Balances({ feed, stockMap, locId, places, items, days, setDays }) {
+function Balances({ feed, stockMap, locId, places, items, days, setDays, canReturn, onChanged }) {
+  const toast = useToast()
+  const [ret, setRet] = useState(null)   // { dept, item, qty, reason }
+  const [busy, setBusy] = useState(false)
+  async function doReturn() {
+    if (!(ret.qty > 0)) { toast('Enter how many', 'error'); return }
+    if ((ret.reason || '').trim().length < 3) { toast('Say why it is going back', 'error'); return }
+    setBusy(true)
+    try {
+      await returnSuppliesToStore(ret.dept, ret.item, Number(ret.qty), ret.reason.trim())
+      toast('Returned to the Store', 'success'); setRet(null); onChanged()
+    } catch (e) { toast(e.message, 'error') }
+    setBusy(false)
+  }
   const depts = locId ? places.filter(p => p.id === locId) : places
   if (feed === null) return <p className="py-8 text-center text-dim">Loading…</p>
   const byKey = {}
@@ -264,15 +288,78 @@ function Balances({ feed, stockMap, locId, places, items, days, setDays }) {
             <p className="font-bold">{d.name}</p>
             {!rows.length && <p className="text-dim text-sm mt-1">No supplies held or used.</p>}
             {rows.map(({ i, e, have }) => (
-              <div key={i.id} className="flex items-baseline gap-2 py-1 text-sm">
+              <div key={i.id}>
+              <div className="flex items-baseline gap-2 py-1 text-sm">
                 <span className="flex-1 min-w-0 truncate">{i.name}</span>
                 <span className="text-dim tnum">+{e.got} / −{e.used}</span>
                 <span className={`tnum w-14 text-right font-semibold ${have < 0 ? 'text-clay' : ''}`}>{have}</span>
+                {canReturn && have > 0 && (
+                  <button onClick={() => setRet({ dept: d.id, item: i.id, qty: '', reason: '' })}
+                    className="text-amber text-xs font-semibold">Return</button>
+                )}
+              </div>
+              {ret && ret.dept === d.id && ret.item === i.id && (
+                <div className="flex flex-wrap gap-2 pb-2">
+                  <input inputMode="decimal" value={ret.qty} placeholder="How many"
+                    onChange={e => setRet({ ...ret, qty: e.target.value })}
+                    className="w-24 h-10 px-3 rounded-lg bg-raise border border-line tnum" />
+                  <input value={ret.reason} placeholder="Why? (e.g. issued to wrong department)"
+                    onChange={e => setRet({ ...ret, reason: e.target.value })}
+                    className="flex-1 min-w-40 h-10 px-3 rounded-lg bg-raise border border-line placeholder:text-dim" />
+                  <button onClick={doReturn} disabled={busy}
+                    className="h-10 px-3 rounded-lg bg-amber text-bg font-bold disabled:opacity-40">Send back</button>
+                  <button onClick={() => setRet(null)} className="h-10 px-2 text-dim">Cancel</button>
+                </div>
+              )}
               </div>
             ))}
             {rows.length > 0 && (
               <p className="text-dim text-xs mt-1">+received from Store / −used in the period · right-hand number is held now (red = used more than received).</p>
             )}
+          </div>
+        )
+      })}
+    </section>
+  )
+}
+
+// GM / admin: which supplies each department may hold and use.
+function Lists({ places, locId, items, deptLists, onChanged }) {
+  const toast = useToast()
+  const [busyKey, setBusyKey] = useState(null)
+  const depts = locId ? places.filter(p => p.id === locId) : places
+  async function toggle(d, i, on) {
+    setBusyKey(d.id + i.id)
+    try { await setDepartmentSupply(d.id, i.id, on); onChanged() }
+    catch (e) { toast(e.message, 'error') }
+    setBusyKey(null)
+  }
+  return (
+    <section>
+      <p className="text-dim text-sm mb-3">
+        Tick the supplies each department may hold and use. The Store can only issue these to it, and its staff
+        only see these. A department with nothing ticked is unrestricted.
+      </p>
+      {depts.map(d => {
+        const set = deptLists[d.id]
+        return (
+          <div key={d.id} className="mb-4 rounded-2xl border border-line bg-surface px-4 py-3">
+            <p className="font-bold">{d.name} <span className="text-dim text-xs font-normal">
+              {set ? `${set.size} allowed` : 'unrestricted'}</span></p>
+            <ul className="mt-1">
+              {items.map(i => {
+                const on = !!set?.has(i.id)
+                return (
+                  <li key={i.id}>
+                    <label className="flex items-center gap-3 py-1.5 text-sm">
+                      <input type="checkbox" checked={on} disabled={busyKey === d.id + i.id}
+                        onChange={e => toggle(d, i, e.target.checked)} className="w-5 h-5" />
+                      <span className={on ? '' : 'text-dim'}>{i.name}</span>
+                    </label>
+                  </li>
+                )
+              })}
+            </ul>
           </div>
         )
       })}
