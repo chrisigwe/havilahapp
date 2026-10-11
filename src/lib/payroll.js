@@ -190,14 +190,16 @@ export async function finalisePeriod(periodId, staffId) {
   // outright rather than quietly capping: the pay figures are already
   // set, and shaving the repayment would leave pay and the credit book
   // disagreeing about how much was settled.
+  let balRows = []   // ledger rows (customer x department x staff) for the allocation below
   const custIds = [...new Set((lines || []).flatMap(l =>
     (l.payroll_deduction || []).filter(d => d.source === 'credit' && d.customer_id)
       .map(d => d.customer_id)))]
   if (custIds.length) {
     const { data: bal, error: bErr } = await supabase.from('v_customer_balances_by_staff')
-      .select('customer_id, location_id, balance')
+      .select('customer_id, location_id, staff_id, balance, first_credit_date')
       .eq('branch_id', period.branch_id).in('customer_id', custIds)
     if (bErr) throw bErr
+    balRows = (bal || []).map(b => ({ ...b, left: Number(b.balance || 0) }))
     const owed = {}   // `${customer}|${location}` -> still owed
     const owedTotal = {}
     for (const b of (bal || [])) {
@@ -227,20 +229,42 @@ export async function finalisePeriod(periodId, staffId) {
     }
   }
 
-  // 1. Credit deductions settle department debt (unchanged from before).
+  // 1. Credit deductions settle department debt. Each repayment is booked
+  // against the staff member who GAVE the credit, in the department it was
+  // given in — the Credit page works per department and per staff row, so a
+  // repayment booked under whoever pressed Finalise would leave the debt
+  // showing as owed on the original row. A deduction bigger than one row is
+  // split across the rows that owe, oldest first.
   const repayments = []
   for (const l of (lines || [])) {
     for (const d of (l.payroll_deduction || [])) {
       if (d.source !== 'credit' || !d.customer_id) continue
-      repayments.push({
-        branch_id: period.branch_id, customer_id: d.customer_id,
-        location_id: d.location_id, amount: d.amount, method: 'payroll',
-        paid_on: lastDay,
-        note: String(d.note || '').startsWith('Linked account')
-          ? `Recovered from ${l.full_name}'s salary (responsible for this account)`
-          : `Deducted from ${l.full_name}'s salary`,
-        recorded_by: staffId, credit_staff_id: staffId,
-      })
+      const note = String(d.note || '').startsWith('Linked account')
+        ? `Recovered from ${l.full_name}'s salary (responsible for this account)`
+        : `Deducted from ${l.full_name}'s salary`
+      let remaining = Number(d.amount)
+      const rows = balRows
+        .filter(r => r.customer_id === d.customer_id && r.left > 0.009
+          && (!d.location_id || r.location_id === d.location_id))
+        .sort((a, b) => String(a.first_credit_date || '').localeCompare(String(b.first_credit_date || '')))
+      for (const r of rows) {
+        if (remaining <= 0.009) break
+        const take = Math.min(remaining, r.left)
+        repayments.push({
+          branch_id: period.branch_id, customer_id: d.customer_id,
+          location_id: r.location_id, amount: Math.round(take * 100) / 100, method: 'payroll',
+          paid_on: lastDay, note, recorded_by: staffId, credit_staff_id: r.staff_id || staffId,
+        })
+        r.left -= take; remaining -= take
+      }
+      if (remaining > 0.009) {
+        // Nothing left to attribute it to (should not happen after the check above).
+        repayments.push({
+          branch_id: period.branch_id, customer_id: d.customer_id,
+          location_id: d.location_id, amount: Math.round(remaining * 100) / 100, method: 'payroll',
+          paid_on: lastDay, note, recorded_by: staffId, credit_staff_id: staffId,
+        })
+      }
     }
   }
   if (repayments.length) {
