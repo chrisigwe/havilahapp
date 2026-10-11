@@ -51,6 +51,7 @@ export default function Catalog({ boot, onChanged }) {
         staff_price: edit.staff_price === '' ? null : Number(edit.staff_price),
         cost_price: edit.cost_price === '' ? null : Number(edit.cost_price),
         is_active: edit.is_active,
+        is_consumable: !!edit.is_consumable,
       }
       await saveItemPrices(edit.id, patch)
       toast('Saved', 'success'); setEdit(null); refreshAll(); onChanged?.()
@@ -178,6 +179,11 @@ export default function Catalog({ boot, onChanged }) {
                   <input type="checkbox" checked={edit.is_active} className="w-5 h-5"
                     onChange={e => setEdit(x => ({ ...x, is_active: e.target.checked }))} />
                   <span>Active — appears when recording sales</span>
+                </label>
+                <label className="mt-4 flex items-center gap-3">
+                  <input type="checkbox" checked={!!edit.is_consumable} className="w-5 h-5"
+                    onChange={e => setEdit(x => ({ ...x, is_consumable: e.target.checked }))} />
+                  <span>Supply — used up, not sold (staff must log each use with a note)</span>
                 </label>
                 <button onClick={() => setConfirmDel(edit)}
                   className="mt-6 w-full h-12 rounded-xl border border-clay text-clay font-semibold">

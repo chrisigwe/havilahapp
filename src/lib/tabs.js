@@ -16,6 +16,10 @@ const STOCK_ROLES = ['storekeeper', 'manager', 'gm', 'admin']
 // and a role lands on its FIRST tab. Change a role's tabs here and all
 // three follow.
 export function tabsFor(role, { recordsSales = false, canRecordSales = false } = {}) {
+  if (role === 'housekeeper') {
+    // Housekeepers only log the supplies they use (and see Housekeeping's stock).
+    return [['supplies', 'Supplies'], ['stock', 'Stock'], ['more', 'More']]
+  }
   if (role === 'manager') {
     // The manager runs the day. Daily sales first for the whole-branch
     // picture on arrival. Sales second: it opens on their default,

@@ -33,6 +33,7 @@ import { signOutCleanly } from './lib/push'
 import { landingTabFor } from './lib/tabs'
 import { logActivity, PAGE_NAMES } from './lib/activity'
 import Activity from './pages/Activity'
+import Supplies from './pages/Supplies'
 import Attendance from './pages/Attendance'
 import { startPresence } from './lib/presence'
 
@@ -318,6 +319,7 @@ export default function App() {
         : tab === 'credit' ? <Credit boot={boot} />
         : tab === 'count' ? <Counts boot={boot} />
         : tab === 'fix' ? <Corrections boot={boot} />
+        : tab === 'supplies' ? <Supplies boot={boot} />
         : <Stock boot={boot} />}
     </Shell>
     <InstallHint />

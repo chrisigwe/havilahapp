@@ -24,5 +24,5 @@ export const PAGE_NAMES = {
   catalog: 'Catalog', payroll: 'Payroll', staffaccounts: 'Staff accounts',
   mypay: 'My pay', tillchecks: 'Total Sales checks', variance: 'Variances',
   recovery: 'Recovered debt', credit: 'Credit', count: 'Stock count',
-  fix: 'Corrections', activity: 'Staff activity', attendance: 'Attendance',
+  fix: 'Corrections', supplies: 'Supplies used', activity: 'Staff activity', attendance: 'Attendance',
 }
