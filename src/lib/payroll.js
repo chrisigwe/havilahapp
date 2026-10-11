@@ -254,6 +254,7 @@ export async function finalisePeriod(periodId, staffId) {
           branch_id: period.branch_id, customer_id: d.customer_id,
           location_id: r.location_id, amount: Math.round(take * 100) / 100, method: 'payroll',
           paid_on: lastDay, note, recorded_by: staffId, credit_staff_id: r.staff_id || staffId,
+          payroll_period_id: periodId,
         })
         r.left -= take; remaining -= take
       }
@@ -263,6 +264,7 @@ export async function finalisePeriod(periodId, staffId) {
           branch_id: period.branch_id, customer_id: d.customer_id,
           location_id: d.location_id, amount: Math.round(remaining * 100) / 100, method: 'payroll',
           paid_on: lastDay, note, recorded_by: staffId, credit_staff_id: staffId,
+          payroll_period_id: periodId,
         })
       }
     }
@@ -305,8 +307,9 @@ export async function finalisePeriod(periodId, staffId) {
 }
 
 export async function reopenPeriod(periodId) {
-  const { error } = await supabase.from('payroll_period')
-    .update({ status: 'draft', finalised_by: null, finalised_at: null }).eq('id', periodId)
+  // Undoes what finalising wrote (repayments, savings deposits, pot turns)
+  // so the next finalise cannot double them (migration 372).
+  const { error } = await supabase.rpc('reopen_payroll_period', { p_period: periodId })
   if (error) throw error
 }
 
