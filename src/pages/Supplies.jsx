@@ -18,8 +18,7 @@ export default function Supplies({ boot }) {
   // Where this person may record. Mirrors record_supplies_use() — the
   // database refuses anything else — so nobody is offered a place it would refuse.
   const places = useMemo(() => locations.filter(l => {
-    if (l.is_store) return false
-    if (BACK_OFFICE.includes(l.slug)) return KEEPERS.includes(staff.role) || staff.role === 'auditor'
+    if (BACK_OFFICE.includes(l.slug) || l.is_store) return KEEPERS.includes(staff.role) || staff.role === 'auditor'
     return true
   }), [locations, staff.role])
 
@@ -46,7 +45,7 @@ export default function Supplies({ boot }) {
   useEffect(refresh, [staff.branch_id])
   useEffect(() => { setLines([]); setNote(''); setUsedBy('') }, [locId])
   const loc = places.find(l => l.id === locId)
-  const backOffice = !!loc && BACK_OFFICE.includes(loc.slug)
+  const backOffice = !!loc && (BACK_OFFICE.includes(loc.slug) || loc.is_store)
 
   const supplies = useMemo(() => {
     const n = q.trim().toLowerCase()
