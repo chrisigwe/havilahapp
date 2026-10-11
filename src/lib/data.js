@@ -263,9 +263,9 @@ async function _saveWriteoff({ staff, item, locationId, kind, qty, unitValue, no
 
 // Recent activity across sales and stock movements, newest first.
 export async function loadActivity(branchId, days = 14, ownOnlyStaffId = null, locationId = null) {
-  // own-only matches app_owns_recent() in the database exactly: today
-  // and yesterday, by Lagos calendar date, not a raw 24-hour window
-  const since = ownOnlyStaffId ? lagosDaysAgo(1) : lagosDaysAgo(days)
+  // own-only matches app_owns_recent7() in the database exactly: today
+  // and the six days before, by Lagos calendar date (migration 389)
+  const since = ownOnlyStaffId ? lagosDaysAgo(6) : lagosDaysAgo(days)
   const own = (q) => ownOnlyStaffId ? q.eq('recorded_by', ownOnlyStaffId) : q
   // a movement's "location" is from_location OR to_location, same
   // convention rowLocationId already uses for display — filtering by

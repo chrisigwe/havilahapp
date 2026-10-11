@@ -509,7 +509,7 @@ export default function Corrections({ boot }) {
       <>
       <p className="text-dim text-sm pb-2">
         {ownOnly
-          ? 'Your own entries from today and yesterday. You can correct them here; ask a manager if something needs removing.'
+          ? 'Your own entries from the last 7 days. You can correct them here; ask a manager if something needs removing.'
           : 'Last 14 days. Deleting a sale also reverses its stock deduction.'}
       </p>
       <ul className="divide-y divide-line/60">
@@ -528,11 +528,11 @@ export default function Corrections({ boot }) {
               </div>
               <div className="flex gap-2 mt-2">
                 {(isEditor || (canCorrectSales && r.kind === 'sale')
-                  || (r.recorded_by === staff.id && r.business_date >= lagosDaysAgo(1))) && (
+                  || (r.recorded_by === staff.id && r.business_date >= lagosDaysAgo(6))) && (
                   <button onClick={() => openEdit(r)}
                     className="h-10 px-4 rounded-lg border border-line text-sm font-semibold">Edit</button>
                 )}
-                {!isEditor && r.recorded_by === staff.id && r.business_date < lagosDaysAgo(1) && (
+                {!isEditor && r.recorded_by === staff.id && r.business_date < lagosDaysAgo(6) && (
                   <span className="text-dim text-sm self-center">
                     Too old to edit yourself — ask a manager
                   </span>
