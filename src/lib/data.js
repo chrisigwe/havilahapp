@@ -2609,22 +2609,35 @@ export async function recordSuppliesUse(locationId, lines, note, usedBy = null) 
   if (error) throw error
 }
 
-export async function loadSuppliesUse(branchId, days = 30, locationId = null) {
+// Supplies feed: what the Store handed to a department, what the department
+// used, and what was undone. kind = 'received' | 'used' | 'undo'.
+export async function loadSuppliesUse(branchId, days = 30) {
   const since = new Date(Date.now() - days * 864e5).toISOString().slice(0, 10)
-  // 'issue' = handed out of the Store to a department; 'used' = older entries
-  // logged by a department. Only items marked as supplies.
-  let q = supabase.from('stock_movements')
-    .select(`id, movement_type, business_date, qty, note, received_by, created_at, from_location, to_location, stock_item_id,
+  const { data, error } = await supabase.from('stock_movements')
+    .select(`id, movement_type, business_date, qty, note, received_by, created_at, recorded_by,
+             from_location, to_location, stock_item_id, reverses_id,
              stock_items!inner(name, is_consumable), staff:recorded_by(full_name),
-             from_loc:from_location(name), to_loc:to_location(name)`)
-    .eq('branch_id', branchId).in('movement_type', ['issue', 'used'])
+             from_loc:from_location(name, is_store), to_loc:to_location(name, is_store)`)
+    .eq('branch_id', branchId)
+    .in('movement_type', ['used', 'transfer', 'issue', 'adjustment'])
     .eq('stock_items.is_consumable', true).gte('business_date', since)
-  const { data, error } = await q.order('created_at', { ascending: false }).limit(1500)
+    .order('created_at', { ascending: false }).limit(2000)
   if (error) throw error
-  const rows = data.map(r => {
-    const dept = r.movement_type === 'issue' ? r.to_location : r.from_location
-    const deptName = r.movement_type === 'issue' ? r.to_loc?.name : r.from_loc?.name
-    return { ...r, dept_id: dept, dept_name: deptName }
-  })
-  return locationId ? rows.filter(r => r.dept_id === locationId) : rows
+  const undone = new Set(data.filter(r => r.reverses_id).map(r => r.reverses_id))
+  const rows = []
+  for (const r of data) {
+    if (r.movement_type === 'used') {
+      rows.push({ ...r, kind: 'used', dept_id: r.from_location, dept_name: r.from_loc?.name, undone: undone.has(r.id) })
+    } else if (r.movement_type === 'adjustment' && r.reverses_id) {
+      rows.push({ ...r, kind: 'undo', dept_id: r.to_location, dept_name: r.to_loc?.name })
+    } else if (['transfer', 'issue'].includes(r.movement_type) && r.from_loc?.is_store && r.to_loc && !r.to_loc.is_store) {
+      rows.push({ ...r, kind: 'received', dept_id: r.to_location, dept_name: r.to_loc?.name })
+    }
+  }
+  return rows
+}
+
+export async function voidSuppliesUse(movementId, reason) {
+  const { error } = await supabase.rpc('void_supplies_use', { p_movement: movementId, p_reason: reason })
+  if (error) throw error
 }

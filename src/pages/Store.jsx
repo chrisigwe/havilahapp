@@ -11,7 +11,6 @@ export default function Store({ boot }) {
   const { staff, allLocations } = boot
   const [kind, setKind] = useState('stock')       // stock | supplies
   const items = kind === 'supplies' ? (boot.supplyItems || []) : boot.items
-  const [purpose, setPurpose] = useState('')
   const locations = allLocations
   const store = locations.find(l => l.is_store)
   const departments = locations.filter(l => !l.is_store)
@@ -96,12 +95,11 @@ export default function Store({ boot }) {
       const sup = kind === 'supplies'
       if (sup && mode === 'disburse') {
         if (!receiver.trim()) { toast('Say who is receiving it', 'error'); setBusy(false); return }
-        if (purpose.trim().length < 3) { toast('Say what it is for', 'error'); setBusy(false); return }
       }
       if (!sup && mode === 'disburse' && ['housekeeping', 'laundry', 'others'].includes(dept?.slug) && !receiver.trim()) {
         toast('Say who is receiving it', 'error'); setBusy(false); return
       }
-      const issues = mode === 'disburse' && (sup || dept?.consumes_on_issue)
+      const issues = mode === 'disburse' && !sup && dept?.consumes_on_issue
       const movementType = mode === 'receive' ? 'restock'
         : mode === 'move' ? 'transfer'
         : (issues ? 'issue' : 'transfer')
@@ -109,7 +107,7 @@ export default function Store({ boot }) {
         : mode === 'move' ? fromDept
         : store.id
       const toLoc = mode === 'receive' ? store.id : toDept
-      const noteWhat = sup && mode === 'disburse' ? `Supplies used: ${purpose.trim()}`
+      const noteWhat = sup && mode === 'disburse' ? `supplies to ${dept?.name}`
         : mode === 'receive' ? (sup ? 'supplies received into store' : 'received into store')
         : mode === 'move' ? `moved from ${departments.find(d => d.id === fromDept)?.name} to ${dept?.name}`
         : `${issues ? 'issued to' : 'to'} ${dept?.name}`
@@ -136,7 +134,7 @@ export default function Store({ boot }) {
         enqueue({ kind: 'movements', payload: { rows } })
         toast('No connection — saved and will send when you are back online')
       }
-      setLines([]); setReceiver(''); setPurpose(''); refresh(); flush()
+      setLines([]); setReceiver(''); refresh(); flush()
       reloadHistory(false)
     } catch (e) { toast('Not saved: ' + e.message, 'error') }
     setBusy(false)
@@ -180,7 +178,7 @@ export default function Store({ boot }) {
     && convertFrom.qty > qtyAt(convertFrom.item.id, convertLoc)
 
   const MODES = kind === 'supplies'
-    ? [['receive', 'Receive (IN)'], ['disburse', 'Issue (used)']]
+    ? [['receive', 'Receive (IN)'], ['disburse', 'Issue (OUT)']]
     : [['receive', 'Receive (IN)'], ['disburse', 'Issue (OUT)'],
        ['move', 'Move Between Depts'], ['convert', 'Convert']]
   const supplyNames = new Set((boot.supplyItems || []).map(i => i.name))
@@ -209,7 +207,7 @@ export default function Store({ boot }) {
       <p className="text-dim text-sm">
         {mode === 'receive' && 'Stock arriving from suppliers, into the store.'}
         {mode === 'disburse' && (kind === 'supplies'
-          ? 'Supplies handed to a department. They count as used the moment they leave the Store.'
+          ? 'Supplies handed to a department. The department holds them and records each use.'
           : 'Stock leaving the store for a department.')}
         {mode === 'move' && 'Stock moving directly between two departments — never touches the store.'}
         {mode === 'convert' && 'One item becomes a different item — e.g. bottles of groundnut repacked into plates.'}
@@ -286,15 +284,6 @@ export default function Store({ boot }) {
                 className="h-12 w-full px-3 rounded-xl bg-surface border border-line placeholder:text-dim" />
             </div>
           )}
-        </div>
-      )}
-
-      {kind === 'supplies' && mode === 'disburse' && (
-        <div className="mt-3">
-          <div className="text-dim text-sm mb-1">What is it for? (required)</div>
-          <input value={purpose} onChange={e => setPurpose(e.target.value)}
-            placeholder="e.g. Cooking, cleaning rooms, laundry"
-            className="h-12 w-full px-3 rounded-xl bg-surface border border-line placeholder:text-dim" />
         </div>
       )}
 
@@ -396,13 +385,10 @@ export default function Store({ boot }) {
       {mode !== 'convert' && !!lines.length && (
         <div className="sticky bottom-20 mt-4 pb-2">
           {overdrawn && <p className="text-clay mb-2">More than is here — check the count first.</p>}
-          {kind === 'supplies' && mode === 'disburse' && purpose.trim().length < 3 && (
-            <p className="text-dim text-sm mb-2">Say what it is for so the auditor can see why.</p>
-          )}
           {mode !== 'receive' && !receiver.trim() && (
             <p className="text-dim text-sm mb-2">Add a receiver so the handover is on record.</p>
           )}
-          <button onClick={save} disabled={busy || (mode === 'move' && fromDept === toDept) || (kind === 'supplies' && mode === 'disburse' && (!receiver.trim() || purpose.trim().length < 3))}
+          <button onClick={save} disabled={busy || (mode === 'move' && fromDept === toDept) || (kind === 'supplies' && mode === 'disburse' && !receiver.trim())}
             className="w-full h-16 rounded-2xl bg-amber text-bg text-xl font-bold disabled:opacity-40">
             {busy ? 'Saving…' : mode === 'receive' ? 'Save delivery' : mode === 'move' ? 'Save move' : 'Issue stock'}
           </button>
