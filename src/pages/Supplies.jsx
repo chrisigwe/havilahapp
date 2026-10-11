@@ -104,16 +104,16 @@ export default function Supplies({ boot }) {
     ...(isAdmin ? [['lists', 'Lists']] : [])]
 
   return (
-    <div className="px-5 pb-10">
-      <div className="flex gap-2 overflow-x-auto py-3 -mx-1 px-1">
+    <div className="px-4 pb-10 w-full max-w-full overflow-x-hidden">
+      <div className="flex gap-2 overflow-x-auto py-2 items-center [scrollbar-width:none]">
         {(!canRecord || isKeeper) && <Chip on={!locId} onClick={() => setLocId(null)}>All</Chip>}
         {places.map(l => <Chip key={l.id} on={l.id === locId} onClick={() => setLocId(l.id)}>{l.name}</Chip>)}
       </div>
 
-      <div className="flex gap-2 mb-3">
+      <div className="grid gap-1.5 mb-3" style={{ gridTemplateColumns: `repeat(${tabs.length}, minmax(0, 1fr))` }}>
         {tabs.map(([k, label]) => (
           <button key={k} onClick={() => setView(k)}
-            className={`flex-1 h-10 rounded-xl border text-sm font-bold ${view === k
+            className={`h-9 px-1 rounded-lg border text-[13px] leading-none whitespace-nowrap truncate font-bold ${view === k
               ? 'bg-amber/20 text-amber border-amber' : 'border-line text-dim'}`}>{label}</button>
         ))}
       </div>
@@ -370,7 +370,7 @@ function Lists({ places, locId, items, deptLists, onChanged }) {
 function Chip({ on, onClick, children }) {
   return (
     <button onClick={onClick}
-      className={`shrink-0 h-11 px-4 rounded-full border ${on
+      className={`shrink-0 h-9 px-3.5 rounded-full border text-sm whitespace-nowrap ${on
         ? 'bg-amber text-bg border-amber font-bold' : 'border-line text-dim'}`}>{children}</button>
   )
 }
