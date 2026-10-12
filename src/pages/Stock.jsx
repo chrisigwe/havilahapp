@@ -47,7 +47,8 @@ export default function Stock({ boot }) {
         <LocChip active={locId === 'all'} onClick={() => setLocId('all')}>
           {seesAll ? 'Everywhere' : 'My areas'}
         </LocChip>
-        {locations.map(l => (
+        {/* Everywhere, then the Store, then the departments in their usual order */}
+        {[...locations.filter(l => l.is_store), ...locations.filter(l => !l.is_store)].map(l => (
           <LocChip key={l.id} active={locId === l.id} onClick={() => setLocId(l.id)}>{l.name}</LocChip>
         ))}
       </div>
