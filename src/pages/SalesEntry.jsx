@@ -6,7 +6,7 @@ import { loadStockMap, loadPopular, loadToday, saveBasket, saveWriteoff,
          loadStaffForLocation, loadReceptionActivity, loadReceptionDashboard, deleteEntry,
          loadRoomCharges, deleteOrderItem, saveRestaurantWriteoff, loadRoomsSoldInMonth,
          loadWriteoffsOnDate, loadLiveStays, chargeBasketToRoom,
-         getOrCreateGuestTab, updateSaleWithPayments, undoRecentReceipt, recordTillCheck, loadFolioCollectedAt } from '../lib/data'
+         getOrCreateGuestTab, updateSaleWithPayments, undoRecentReceipt, recordTillCheck, loadFolioCollectedAt, loadGuestCollections } from '../lib/data'
 import { enqueue, flush, isConnectionError } from '../lib/outbox'
 import { useToast } from '../components/Toast'
 import ReceptionDashboard from '../components/ReceptionDashboard'
@@ -119,6 +119,11 @@ export default function SalesEntry({ boot }) {
   const [receptionDashboard, setReceptionDashboard] = useState(null)
   // Room payments taken through THIS department's POS/cash (migration 336).
   const [folioIn, setFolioIn] = useState({ pos: 0, cash: 0 })
+  // Money this department collected from guests against their room bills.
+  // It is real money in the drawer here, so it belongs in the day's income —
+  // the Match-your-Total-Sales box has always counted it; the summary below
+  // it did not, which is why a department's figures looked short.
+  const [guestIn, setGuestIn] = useState([])
   const [lastReceiptAt, setLastReceiptAt] = useState(0)
   const [switchingId, setSwitchingId] = useState(null)
   const [roomsSold, setRoomsSold] = useState(null)
@@ -160,6 +165,11 @@ export default function SalesEntry({ boot }) {
   }
   const [summary, setSummary] = useState(null)
   const [recon, setRecon] = useState(null)
+  // Totals for the guest collections shown with the day's income.
+  const guestTotal = guestIn.reduce((t, p) => t + Number(p.amount), 0)
+  const guestByMethod = guestIn.reduce((m, p) => {
+    m[p.method] = (m[p.method] || 0) + Number(p.amount); return m
+  }, {})
   const [customers, setCustomers] = useState([])
 
   const [basket, setBasket] = useState([])          // [{ key, item, tier, qty, unitPrice }]
@@ -236,6 +246,8 @@ export default function SalesEntry({ boot }) {
     }).catch(() => {})
     loadFolioCollectedAt(staff.branch_id, date, locationId)
       .then(setFolioIn).catch(() => setFolioIn({ pos: 0, cash: 0 }))
+    loadGuestCollections(staff.branch_id, date, locationId)
+      .then(setGuestIn).catch(() => setGuestIn([]))
     loadOpeningDate(staff.branch_id).then(setOpeningDate).catch(() => {})
 
     if (canOverrideVariance) {
@@ -874,9 +886,24 @@ export default function SalesEntry({ boot }) {
                   <span className="tnum text-dim">{naira(amt)}</span>
                 </div>
               ))}
+              {guestTotal > 0 && (
+                <>
+                  <Line label="Collected from guests' room charges" value={guestTotal} tone="text-leaf" />
+                  {Object.entries(guestByMethod).map(([m, amt]) => (
+                    <div key={m} className="flex justify-between pl-4">
+                      <span className="text-dim">· collected by {methodLabel[m] || m}</span>
+                      <span className="tnum text-dim">{naira(amt)}</span>
+                    </div>
+                  ))}
+                  <p className="text-dim text-xs pl-4">
+                    Drinks and food charged to rooms are paid here but belong to the room bill, so
+                    they are not part of gross sales above.
+                  </p>
+                </>
+              )}
               <div className="pt-2 mt-2 border-t border-line flex justify-between font-bold">
                 <span>Total income for the day</span>
-                <span className="tnum">{naira(recon.totalMoneyIn)}</span>
+                <span className="tnum">{naira(recon.totalMoneyIn + guestTotal)}</span>
               </div>
             </div>
 
