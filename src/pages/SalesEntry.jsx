@@ -198,6 +198,7 @@ export default function SalesEntry({ boot }) {
     const charges = roomCharges.map(r => ({
       ...r, entryKind: 'roomCharge', sortAt: r.orders?.created_at,
       roomNumber: r.orders?.stays?.rooms?.room_number, guestName: r.orders?.stays?.guests?.full_name,
+      chargedBy: r.orders?.served?.full_name,
     }))
     return [...sales, ...charges].sort((a, b) => (b.sortAt || '').localeCompare(a.sortAt || ''))
   }, [today, roomCharges, roomChargeCategory])
@@ -966,6 +967,19 @@ export default function SalesEntry({ boot }) {
                     {r.order_type === 'pr_damage' && ' · not paid for'}
                     {(r.damage_reason || r.pr_meal) && ` · ${r.damage_reason || r.pr_meal}`}
                     {r.writeoff_note && ` · ${r.writeoff_note}`}
+                    <br />Charged by {r.chargedBy || 'unknown'}
+                    {r.sortAt ? ` · ${new Date(r.sortAt).toLocaleTimeString('en-NG', { hour: '2-digit', minute: '2-digit' })}` : ''}
+                    {r.lineStatus && (
+                      <>
+                        {' · '}
+                        {{ paid: <span className="text-leaf">guest has paid</span>,
+                           part: <span className="text-amber">part paid</span>,
+                           unpaid: <span className={r.stayStatus === 'checked_out' ? 'text-clay font-bold' : 'text-clay'}>
+                             {r.stayStatus === 'checked_out' ? 'unpaid — guest has checked out' : 'not yet paid'}</span>,
+                           settled_reception: <span className="text-amber">paid at Reception</span>,
+                        }[r.lineStatus]}
+                      </>
+                    )}
                   </div>
                 ) : r.order_type === 'pr_damage' ? (
                   <div className="text-dim text-sm">

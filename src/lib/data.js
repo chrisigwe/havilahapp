@@ -1783,7 +1783,8 @@ async function _deleteOrderItem(orderItemId, orderId) {
 export async function loadRoomCharges(branchId, date, category) {
   const { data, error } = await supabase.from('order_items')
     .select(`id, description, qty, unit_price, amount, order_id, order_type, damage_reason, writeoff_note, pr_meal,
-             orders!inner(id, business_date, branch_id, served_by, created_at,
+             orders!inner(id, business_date, branch_id, served_by, created_at, occurred_at,
+                          served:served_by(full_name),
                           stays(id, status, actual_out, rooms(room_number), guests!guest_id(full_name)))`)
     .eq('category', category).eq('orders.branch_id', branchId).eq('orders.business_date', date)
   if (error) throw error

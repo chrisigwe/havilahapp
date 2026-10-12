@@ -151,6 +151,7 @@ export default function DailySales({ boot }) {
     const charges = roomCharges.map(r => ({
       ...r, entryKind: 'roomCharge', sortAt: r.orders?.created_at,
       roomNumber: r.orders?.stays?.rooms?.room_number, guestName: r.orders?.stays?.guests?.full_name,
+      chargedBy: r.orders?.served?.full_name,
       folioOutstanding: r.folioOutstanding, stayStatus: r.stayStatus, lineStatus: r.lineStatus,
     }))
     return [...sales, ...charges].sort((a, b) => (b.sortAt || '').localeCompare(a.sortAt || ''))
@@ -372,6 +373,8 @@ export default function DailySales({ boot }) {
                 <div className="text-dim text-sm">
                   {r.qty} × {naira(r.unit_price)}
                   <br />Charged to Room {r.roomNumber || '—'}{r.guestName ? ` · ${r.guestName}` : ''}
+                  <br />Charged by {r.chargedBy || 'unknown'}
+                  {r.sortAt ? ` · ${new Date(r.sortAt).toLocaleTimeString('en-NG', { hour: '2-digit', minute: '2-digit' })}` : ''}
                   {/* A meal on this list means the food left the kitchen,
                       not that anyone paid. Payment sits against the whole
                       stay, so this is the GUEST'S BILL, not this line. */}
