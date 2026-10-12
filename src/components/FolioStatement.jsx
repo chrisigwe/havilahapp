@@ -1,5 +1,6 @@
 import { createPortal } from 'react-dom'
 import { naira, lagosTime } from '../lib/format'
+import { printSheet } from '../lib/printSheet'
 
 // A guest's printable stay statement — same invoice-print/.invoice-table
 // infrastructure Receipt.jsx already uses, not the reference app's
@@ -196,7 +197,8 @@ export default function FolioStatement({ room, folio, orderLines, freeLines, pay
         <button onClick={onClose} className="flex-1 h-14 rounded-2xl border border-line font-bold">
           Close
         </button>
-        <button onClick={() => window.print()}
+        <button onClick={() => printSheet('folio-statement-area',
+            `Statement — ${room?.guest_name || 'Guest'}`)}
           className="flex-1 h-14 rounded-2xl bg-amber text-bg font-bold">Print / PDF</button>
       </div>
     </div>,

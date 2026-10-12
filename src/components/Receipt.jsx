@@ -1,10 +1,13 @@
 import { naira, tierLabel, methodLabel } from '../lib/format'
+import { printSheet } from '../lib/printSheet'
 
+// On a laptop, hide every other sheet on the page and print this one. On a
+// phone, printSheet() opens the sheet in the browser instead — see lib/printSheet.js.
 function printOnly(id) {
   document.querySelectorAll('.invoice-print').forEach(el => {
     el.style.display = el.id === id ? '' : 'none'
   })
-  window.print()
+  printSheet(id, 'Receipt — Havilah Suite')
   document.querySelectorAll('.invoice-print').forEach(el => { el.style.display = '' })
 }
 

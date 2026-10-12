@@ -7,12 +7,13 @@ import { enqueue, flush, isConnectionError } from '../lib/outbox'
 import PaymentMethodPicker, { paymentParts, paymentAllocated } from '../components/PaymentMethodPicker'
 import FolioStatement from '../components/FolioStatement'
 import { EDITOR, OPENS_ON_ALL, OVERSIGHT, SUPERVISOR, is } from '../lib/roles'
+import { printSheet } from '../lib/printSheet'
 
-function printStatement() {
+function printStatement(name) {
   document.querySelectorAll('.invoice-print').forEach(el => {
     el.style.display = el.id === 'statement-area' ? '' : 'none'
   })
-  window.print()
+  printSheet('statement-area', `Statement — ${name || 'Account'}`)
   document.querySelectorAll('.invoice-print').forEach(el => { el.style.display = '' })
 }
 
@@ -773,7 +774,7 @@ export default function Credit({ boot }) {
           </div>
 
           <div className="p-5 border-t border-line flex gap-3 print:hidden">
-            <button onClick={() => printStatement()}
+            <button onClick={() => printStatement(open?.customer?.name)}
               className="flex-1 h-14 rounded-2xl border border-line font-bold">Print / PDF</button>
             {(() => {
               const hiddenForRole = staff.role === 'auditor'
