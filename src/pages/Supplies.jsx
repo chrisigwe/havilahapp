@@ -3,6 +3,7 @@ import { loadStockMap, loadSuppliesUse, recordSuppliesUse, voidSuppliesUse,
          loadDepartmentSupplies, setDepartmentSupply, returnSuppliesToStore } from '../lib/data'
 import { lagosDaysAgo } from '../lib/format'
 import { useToast } from '../components/Toast'
+import { VersionLine } from './More'
 
 // Supplies used. The Store hands supplies to a department (Store > Supplies >
 // Issue); the department holds them and records each use here, with a note.
@@ -241,6 +242,10 @@ export default function Supplies({ boot }) {
       {view === 'lists' && isAdmin && (
         <Lists places={places} locId={locId} items={supplyItems} deptLists={deptLists} onChanged={refresh} />
       )}
+
+      {/* Housekeeping and Laundry have no More tab, so the build/update
+          check lives at the foot of their one page. */}
+      {staff.role === 'housekeeper' && <VersionLine />}
     </div>
   )
 }

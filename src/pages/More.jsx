@@ -26,7 +26,7 @@ const ITEMS = [
     // Roles whose BAR no longer carries Stock reach it here instead:
     // the auditor (it left for History) and now bar/front_desk (it left
     // for Credit). Without this they would lose the stock view entirely.
-    roles: [...OVERSIGHT_ROLES, 'auditor', 'bar', 'front_desk', 'housekeeper'] },
+    roles: [...OVERSIGHT_ROLES, 'auditor', 'bar', 'front_desk'] },
   { key: 'supplies', label: 'Supplies used', hint: 'What the Store issued to each department, who collected it and why',
     roles: ['housekeeper', 'bar', 'front_desk', 'storekeeper', 'manager', 'gm', 'admin', 'auditor'] },
   { key: 'count',   label: 'Stock count', hint: 'Count your stock at end of shift',
@@ -42,7 +42,7 @@ const ITEMS = [
   { key: 'attendance', label: 'Attendance', hint: 'Who is at the branch, first in and last seen',
     roles: ['gm', 'admin'] },
   { key: 'mypay', label: 'My pay', hint: 'Your pay slip for each finished month',
-    roles: ['bar', 'front_desk', 'storekeeper', 'manager', 'gm', 'admin', 'auditor'] },
+    roles: ['bar', 'front_desk', 'storekeeper', 'manager', 'gm', 'admin', 'auditor', 'housekeeper'] },
   { key: 'tillchecks', label: 'Total Sales checks', hint: 'Who matched their Total Sales at close, and who did not',
     roles: ['storekeeper', 'manager', 'gm', 'admin', 'auditor'] },
   { key: 'variance', label: 'Variances', hint: 'Sales where collection did not match the goods sold',
@@ -56,7 +56,7 @@ const ITEMS = [
 // What a role sees under More (nothing already on its bottom bar). Shared
 // with the laptop sidebar so the two can never disagree.
 export function moreItemsFor(role, recordsSales = false, hasPay = false, readOnly = false, canRecordSales = false) {
-  const onBar = new Set(tabsFor(role, { recordsSales, canRecordSales }).map(([k]) => k))
+  const onBar = new Set(tabsFor(role, { recordsSales, canRecordSales, hasPay }).map(([k]) => k))
   // "My pay" appears only for people whose login is linked to a payroll employee.
   // View-only accounts (the Demo login) never see pay: the database refuses
   // them too (migration 330), this just keeps the menu honest.
@@ -64,6 +64,8 @@ export function moreItemsFor(role, recordsSales = false, hasPay = false, readOnl
   return ITEMS.filter(i => i.roles.includes(role) && !onBar.has(i.key)
     && (i.key !== 'mypay' || hasPay) && !(readOnly && payKeys.includes(i.key)))
 }
+
+export { VersionLine }
 
 export default function More({ boot, onGo, pendingCount = 0, hasPay = false }) {
   // dailysales/roomboard/credit are dedicated top-level tabs for

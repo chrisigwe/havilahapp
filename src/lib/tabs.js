@@ -15,10 +15,16 @@ const STOCK_ROLES = ['storekeeper', 'manager', 'gm', 'admin']
 // Now: the bar comes from here; More hides anything that is on the bar;
 // and a role lands on its FIRST tab. Change a role's tabs here and all
 // three follow.
-export function tabsFor(role, { recordsSales = false, canRecordSales = false } = {}) {
+export function tabsFor(role, { recordsSales = false, canRecordSales = false, hasPay = false } = {}) {
   if (role === 'housekeeper') {
-    // Housekeepers only log the supplies they use (and see Housekeeping's stock).
-    return [['supplies', 'Supplies'], ['stock', 'Stock'], ['more', 'More']]
+    // Housekeepers and laundry attendants hold supplies and record what they
+    // use — that is the whole job, so Supplies is first and they land on it.
+    // Stock is gone: supplies are kept apart from sale stock, so the Stock
+    // page only held drinks and minimart goods they never touch. My pay comes
+    // second, and only when their login is linked to a payroll employee.
+    // No More tab: with two pages there is nothing to hide behind one, and
+    // the version line sits at the foot of Supplies instead.
+    return [['supplies', 'Supplies'], ...(hasPay ? [['mypay', 'My pay']] : [])]
   }
   if (role === 'manager') {
     // The manager runs the day. Daily sales first for the whole-branch

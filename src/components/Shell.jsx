@@ -30,8 +30,8 @@ export default function Shell({ staff, tab, onTab, children,
   const [confirmingSignOut, setConfirmingSignOut] = useState(false)
   // The bar comes from tabsFor() — the single definition shared with
   // the More menu and the landing screen. See lib/tabs.js.
-  const tabs = tabsFor(staff.role, { recordsSales, canRecordSales: !!staff.can_record_sales })
-  const countBadgeTab = countBadgeTabFor(staff.role, { recordsSales, canRecordSales: !!staff.can_record_sales })
+  const tabs = tabsFor(staff.role, { recordsSales, canRecordSales: !!staff.can_record_sales, hasPay })
+  const countBadgeTab = countBadgeTabFor(staff.role, { recordsSales, canRecordSales: !!staff.can_record_sales, hasPay })
   const directTabKeys = new Set(tabs.map(([k]) => k))
   const moreItems = moreItemsFor(staff.role, recordsSales, hasPay, !!staff.is_read_only, !!staff.can_record_sales)
 

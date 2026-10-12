@@ -94,6 +94,14 @@ export default function App() {
     setTab(landingTabFor(identity.role))
   }, [identity])
 
+  // Housekeeping / Laundry have only Supplies and My pay — no More, no
+  // Stock. If an old session was left on a page they no longer have, send
+  // them back to Supplies rather than showing an empty screen.
+  useEffect(() => {
+    if (boot?.staff?.role !== 'housekeeper') return
+    if (!['supplies', 'mypay'].includes(tab)) setTab('supplies')
+  }, [boot?.staff?.role, tab])
+
   // Page visits for the GM's Staff activity screen. One entry per page opened;
   // staying on a page is not re-logged, but coming back to the app after a
   // long absence (30+ minutes in the background) logs the page again, so each
