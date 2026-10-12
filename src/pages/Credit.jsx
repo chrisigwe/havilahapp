@@ -7,15 +7,9 @@ import { enqueue, flush, isConnectionError } from '../lib/outbox'
 import PaymentMethodPicker, { paymentParts, paymentAllocated } from '../components/PaymentMethodPicker'
 import FolioStatement from '../components/FolioStatement'
 import { EDITOR, OPENS_ON_ALL, OVERSIGHT, SUPERVISOR, is } from '../lib/roles'
-import { printSheet } from '../lib/printSheet'
+import { accountStatementPdf, savePdf } from '../lib/pdfSheet'
 
-function printStatement(name) {
-  document.querySelectorAll('.invoice-print').forEach(el => {
-    el.style.display = el.id === 'statement-area' ? '' : 'none'
-  })
-  printSheet('statement-area', `Statement — ${name || 'Account'}`)
-  document.querySelectorAll('.invoice-print').forEach(el => { el.style.display = '' })
-}
+
 
 export default function Credit({ boot }) {
   const { staff, items, methods, allLocations, locations } = boot
@@ -774,8 +768,25 @@ export default function Credit({ boot }) {
           </div>
 
           <div className="p-5 border-t border-line flex gap-3 print:hidden">
-            <button onClick={() => printStatement(open?.customer?.name)}
-              className="flex-1 h-14 rounded-2xl border border-line font-bold">Print / PDF</button>
+            <button onClick={() => savePdf(accountStatementPdf({
+              branchName: boot.branchName,
+              where: locById[locId]?.name,
+              customerName: open.customer.name,
+              creditRows: open.ledger.credit.map(s2 => ({
+                date: s2.business_date?.slice(5) || '',
+                department: locById[s2.location_id]?.name || '—',
+                item: `${itemById[s2.stock_item_id]?.name || s2.description || '—'}${s2.tier && s2.tier !== 'general' ? ` (${tierLabel[s2.tier] || s2.tier})` : ''}`,
+                qty: s2.qty, unit: s2.unit_price, amount: s2.credit,
+              })),
+              creditTotal: open.customer.credit_taken,
+              payments: open.ledger.repayments.map(r => ({
+                date: r.paid_on?.slice(5) || '', method: methodLabel[r.method] || r.method,
+                note: r.note || '', amount: r.amount,
+              })),
+              paidTotal: open.customer.repaid,
+              balance: open.customer.balance,
+            }), `Statement ${open.customer.name}`)}
+              className="flex-1 h-14 rounded-2xl border border-line font-bold">Save / share PDF</button>
             {(() => {
               const hiddenForRole = staff.role === 'auditor'
               // Awka storekeeper (or anyone in NO_ON_BEHALF) can't

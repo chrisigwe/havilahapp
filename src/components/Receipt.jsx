@@ -1,15 +1,5 @@
 import { naira, tierLabel, methodLabel } from '../lib/format'
-import { printSheet } from '../lib/printSheet'
-
-// On a laptop, hide every other sheet on the page and print this one. On a
-// phone, printSheet() opens the sheet in the browser instead — see lib/printSheet.js.
-function printOnly(id) {
-  document.querySelectorAll('.invoice-print').forEach(el => {
-    el.style.display = el.id === id ? '' : 'none'
-  })
-  printSheet(id, 'Receipt — Havilah Suite')
-  document.querySelectorAll('.invoice-print').forEach(el => { el.style.display = '' })
-}
+import { receiptPdf, savePdf } from '../lib/pdfSheet'
 
 export default function Receipt({ lines, branchName, locById, onClose, onPrint }) {
   if (!lines?.length) return null
@@ -148,7 +138,16 @@ export default function Receipt({ lines, branchName, locById, onClose, onPrint }
         <button onClick={onClose} className="flex-1 h-14 rounded-2xl border border-line font-bold">
           Close
         </button>
-        <button onClick={onPrint || (() => printOnly('receipt-area'))}
+        <button onClick={onPrint || (() => savePdf(receiptPdf({
+          branchName,
+          where: locById?.[lines[0]?.location_id]?.name,
+          customerName: customer?.name,
+          served,
+          when: when ? new Date(when).toLocaleString('en-NG', { timeZone: 'Africa/Lagos', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : '',
+          lines: lines.map(l => ({ description: l.description || '—', qty: l.qty, amount: Number(l.amount ?? (l.qty * l.unit_price)) })),
+          total,
+          payments: Object.entries(payments).map(([m, a]) => ({ method: methodLabel[m] || m.toUpperCase(), amount: a })),
+        }), 'Receipt Havilah Suite'))}
           className="flex-1 h-14 rounded-2xl bg-amber text-bg font-bold">Print / PDF</button>
       </div>
     </div>

@@ -1,6 +1,6 @@
 import { createPortal } from 'react-dom'
 import { naira, lagosTime } from '../lib/format'
-import { printSheet } from '../lib/printSheet'
+import { guestStatementPdf, savePdf } from '../lib/pdfSheet'
 
 // A guest's printable stay statement — same invoice-print/.invoice-table
 // infrastructure Receipt.jsx already uses, not the reference app's
@@ -25,6 +25,29 @@ export default function FolioStatement({ room, folio, orderLines, freeLines, pay
   // guests' bills billed to this guest both belong in the headline
   // balance, not just shown separately below it.
   const balance = Number(folio?.outstanding ?? 0) + departmentCreditTotal + billedToYouTotal
+
+  // The PDF is drawn from these same figures rather than from the screen,
+  // so it comes out identical on a phone, where the browser cannot print.
+  const savePdfFile = () => savePdf(guestStatementPdf({
+    branchName,
+    ref: String(room.stay_id || '').replace(/-/g, '').slice(0, 8).toUpperCase(),
+    guestName: room.guest_name || 'Guest',
+    roomNumber: room.room_number,
+    stayDates: `${room.check_in_date} to ${folio?.scheduled_out || room.scheduled_out}`,
+    nightsText: folio?.nights ? `${folio.nights} night${folio.nights > 1 ? 's' : ''}` : '',
+    checkInLabel: `${room.check_in_date}${checkedInAt ? ` ${lagosTime(checkedInAt)}` : ''}`,
+    accommodationLabel: `Accommodation — Room ${room.room_number}, ${folio?.nights} night${folio?.nights > 1 ? 's' : ''} at ${naira(folio?.daily_rate)} per night`,
+    roomCharge, overstay, orderTotal, totalDue, paid, balance,
+    orderLines: (orderLines || []).map(li => ({
+      date: li.date, description: li.description, qty: li.qty,
+      where: li.category === 'food' ? 'Restaurant' : li.category === 'minimart' ? 'Minimart' : 'Bar',
+      amount: li.amount,
+    })),
+    freeLines: (freeLines || []).map(li => ({ date: li.date, description: li.description, qty: li.qty, amount: li.amount })),
+    payments: (payments || []).map(p => ({ date: p.business_date, method: `${p.method.toUpperCase()}${p.is_overstay ? ' (over-stay)' : ''}`, amount: p.amount })),
+    departmentCredit: (departmentCredit || []).map(d => ({ name: d.location_name, balance: d.balance })),
+    billedToYou: (billedToYou || []).map(b => ({ name: `${b.guest_name} (Room ${b.room_number || '—'})`, amount: b.outstanding })),
+  }), `Statement ${room.guest_name || 'Guest'} room ${room.room_number || ''}`)
 
   // Rendered into a portal on document.body, not in place. Print CSS
   // can then display:none every OTHER child of body. The previous
@@ -197,9 +220,8 @@ export default function FolioStatement({ room, folio, orderLines, freeLines, pay
         <button onClick={onClose} className="flex-1 h-14 rounded-2xl border border-line font-bold">
           Close
         </button>
-        <button onClick={() => printSheet('folio-statement-area',
-            `Statement — ${room?.guest_name || 'Guest'}`)}
-          className="flex-1 h-14 rounded-2xl bg-amber text-bg font-bold">Print / PDF</button>
+        <button onClick={savePdfFile}
+          className="flex-1 h-14 rounded-2xl bg-amber text-bg font-bold">Save / share PDF</button>
       </div>
     </div>,
     document.body,
