@@ -234,7 +234,8 @@ export default function Supplies({ boot }) {
 
       {view === 'balances' && (
         <Balances feed={feed} stockMap={stockMap} locId={locId} places={places} items={supplyItems} days={days}
-          setDays={setDays} canReturn={isKeeper} onChanged={refresh} />
+          setDays={setDays} canReturn={isKeeper} onChanged={refresh}
+          store={(allLocations || locations).find(l => l.is_store)} />
       )}
 
       {view === 'lists' && isAdmin && (
@@ -246,7 +247,7 @@ export default function Supplies({ boot }) {
 
 // Per department and item: handed over by the Store, used (net of undone), and
 // what the system says is still held. Negative = used more than was handed over.
-function Balances({ feed, stockMap, locId, places, items, days, setDays, canReturn, onChanged }) {
+function Balances({ feed, stockMap, locId, places, items, days, setDays, canReturn, onChanged, store }) {
   const toast = useToast()
   const [ret, setRet] = useState(null)   // { dept, item, qty, reason }
   const [busy, setBusy] = useState(false)
@@ -279,6 +280,26 @@ function Balances({ feed, stockMap, locId, places, items, days, setDays, canRetu
               ? 'border-amber text-amber font-bold' : 'border-line text-dim'}`}>{d} days</button>
         ))}
       </div>
+      {store && !locId && (
+        <div className="mb-4 rounded-2xl border border-amber/60 bg-surface px-4 py-3">
+          <p className="font-bold">In the Store</p>
+          <p className="text-dim text-xs mb-1">What is still in the Store, waiting to be issued.</p>
+          {items.map(i => {
+            const have = stockMap[`${i.id}:${store.id}`] ?? 0
+            const out = Object.entries(byKey).reduce((s2, [k, e]) =>
+              k.endsWith(':' + i.id) ? s2 + e.got : s2, 0)
+            if (!have && !out) return null
+            return (
+              <div key={i.id} className="flex items-baseline gap-2 py-1 text-sm">
+                <span className="flex-1 min-w-0 truncate">{i.name}</span>
+                <span className="text-dim tnum">−{out} issued</span>
+                <span className={`tnum w-14 text-right font-semibold ${have < 0 ? 'text-clay' : ''}`}>{have}</span>
+              </div>
+            )
+          })}
+        </div>
+      )}
+
       {depts.map(d => {
         const rows = items.map(i => ({ i, e: byKey[`${d.id}:${i.id}`] || { got: 0, used: 0 }, have: stockMap[`${i.id}:${d.id}`] ?? 0 }))
           .filter(r => r.e.got || r.e.used || r.have)
