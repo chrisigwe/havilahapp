@@ -3,7 +3,7 @@ import { naira, tierLabel, methodLabel, lagosDaysAgo, lagosToday, friendlyStayEr
 import { loadActivity, deleteEntry, updateEntry, loadAudit,
          loadSalePayments, updateSaleWithPayments,
          loadLiveStays, updateGuestIdentity, correctStayDates,
-         findDuplicateGuests, mergeGuests,
+         findDuplicateGuests, mergeGuests, dismissDuplicatePair,
          findDuplicateCustomers, mergeCustomers } from '../lib/data'
 import { useToast } from '../components/Toast'
 import MergeGuestsSheet from '../components/MergeGuestsSheet'
@@ -382,6 +382,8 @@ export default function Corrections({ boot }) {
                 Same person entered twice. Check each one — a shared phone can
                 also just mean two people in one family. Merging moves every
                 stay, room charge and department balance onto the record you keep.
+                If they are two different people, say so and the pair stops being
+                flagged.
               </p>
               {dupes.map((d, i) => (
                 <div key={i} className="py-2 border-t border-line/60 first:border-0">
@@ -415,6 +417,17 @@ export default function Corrections({ boot }) {
                       Keep "{d.name_b}"
                     </button>
                   </div>
+                  <button
+                    onClick={async () => {
+                      try {
+                        await dismissDuplicatePair('guest', d.guest_a, d.guest_b)
+                        setDupes(list => list.filter(x => x !== d))
+                        toast('Noted — two different people', 'success')
+                      } catch (e) { toast(e.message, 'error') }
+                    }}
+                    className="mt-2 w-full h-9 rounded-lg border border-line/60 text-dim text-xs">
+                    Not the same person
+                  </button>
                 </div>
               ))}
             </div>
@@ -466,6 +479,17 @@ export default function Corrections({ boot }) {
                       Keep "{d.name_b}"
                     </button>
                   </div>
+                  <button
+                    onClick={async () => {
+                      try {
+                        await dismissDuplicatePair('customer', d.cust_a, d.cust_b)
+                        setCustDupes(list => list.filter(x => x !== d))
+                        toast('Noted — two different accounts', 'success')
+                      } catch (e) { toast(e.message, 'error') }
+                    }}
+                    className="mt-2 w-full h-9 rounded-lg border border-line/60 text-dim text-xs">
+                    Not the same account
+                  </button>
                 </div>
               ))}
             </div>

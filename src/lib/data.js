@@ -2021,6 +2021,14 @@ export async function correctStayDates({ stayId, checkIn, scheduledOut }) {
 // reason ('same phone' / 'initials match' / 'similar name'); nothing
 // is merged automatically, because a shared phone can legitimately
 // mean two people in one family.
+// "Not the same person" — two records that merely look alike (PSN [GROUP 1]
+// and PSN [GROUP 10], two brothers sharing a phone). The pair is remembered as
+// checked and the finder stops offering it; nothing about either record changes.
+export async function dismissDuplicatePair(kind, a, b) {
+  const { error } = await supabase.rpc('dismiss_duplicate_pair', { p_kind: kind, p_a: a, p_b: b })
+  if (error) throw error
+}
+
 export async function findDuplicateGuests(branchId) {
   const { data, error } = await supabase.rpc('find_duplicate_guests', { p_branch: branchId })
   if (error) throw error
