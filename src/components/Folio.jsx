@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { naira, lagosToday, lagosTime, seesStayTimes, cyclesFor, friendlyStayError } from '../lib/format'
-import { checkOutStay, deleteOrderItem, deleteStay, loadBranchStaySettings, loadFolio, moveRoomChargeDate, recordStayPayment, setPaymentDepartment, splitPaymentToDepartment, reopenStay, searchSimilarGuests, updateOrderItem, updateOverstayFee, updateStayBillTo, updateStayDetails } from '../lib/data'
+import { billedToLabel, checkOutStay, deleteOrderItem, deleteStay, loadBranchStaySettings, loadFolio, moveRoomChargeDate, recordStayPayment, setPaymentDepartment, splitPaymentToDepartment, reopenStay, searchSimilarGuests, updateOrderItem, updateOverstayFee, updateStayBillTo, updateStayDetails } from '../lib/data'
 import { useToast } from '../components/Toast'
 import PaymentMethodPicker, { paymentParts, paymentAllocated } from './PaymentMethodPicker'
 import FolioStatement from './FolioStatement'
@@ -309,15 +309,19 @@ export default function Folio({ boot, room, onClose, onChanged }) {
         )}
         {!!billedToYou?.length && (
           <div className="mt-2 px-3 py-2 rounded-xl bg-clay/10 border border-clay">
-            <p className="text-clay text-sm font-semibold">Included above — other bills:</p>
+            <p className="text-clay text-sm font-semibold">Rooms billed to this guest:</p>
             {billedToYou.map(b => (
               <p key={b.stay_id} className="text-clay text-sm">
-                {b.guest_name} (Room {b.room_number || '—'}): {naira(b.outstanding)}
+                {b.guest_name} (Room {b.room_number || '—'}){b.check_in_date ? ` · ${b.check_in_date}` : ''}:{' '}
+                {billedToLabel(b) || naira(b.outstanding)}
               </p>
             ))}
-            <p className="text-dim text-xs mt-1">
-              Settle these on that guest's own folio — this room's payment doesn't clear them.
-            </p>
+            {billedToYouTotal > 0 && (
+              <p className="text-dim text-xs mt-1">
+                Amounts owing are included above. Settle them on that guest's own folio — this
+                room's payment doesn't clear them.
+              </p>
+            )}
           </div>
         )}
         <button onClick={openEdit} className="text-dim text-sm underline mt-1">

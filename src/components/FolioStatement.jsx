@@ -1,5 +1,6 @@
 import { createPortal } from 'react-dom'
 import { naira, lagosTime } from '../lib/format'
+import { billedToLabel } from '../lib/data'
 import { guestStatementPdf, savePdf } from '../lib/pdfSheet'
 
 // A guest's printable stay statement — same invoice-print/.invoice-table
@@ -36,7 +37,7 @@ export default function FolioStatement({ room, folio, orderLines, freeLines, pay
     stayDates: `${room.check_in_date} to ${folio?.scheduled_out || room.scheduled_out}`,
     nightsText: folio?.nights ? `${folio.nights} night${folio.nights > 1 ? 's' : ''}` : '',
     checkInLabel: `${room.check_in_date}${checkedInAt ? ` ${lagosTime(checkedInAt)}` : ''}`,
-    accommodationLabel: `Accommodation — Room ${room.room_number}, ${folio?.nights} night${folio?.nights > 1 ? 's' : ''} at ${naira(folio?.daily_rate)} per night`,
+    accommodationLabel: `Accommodation — ${room.room_number} · ${folio?.nights} night${folio?.nights > 1 ? 's' : ''} @ ${naira(folio?.daily_rate)}`,
     roomCharge, overstay, orderTotal, totalDue, paid, balance,
     orderLines: (orderLines || []).map(li => ({
       date: li.date, description: li.description, qty: li.qty,
@@ -46,7 +47,10 @@ export default function FolioStatement({ room, folio, orderLines, freeLines, pay
     freeLines: (freeLines || []).map(li => ({ date: li.date, description: li.description, qty: li.qty, amount: li.amount })),
     payments: (payments || []).map(p => ({ date: p.business_date, method: `${p.method.toUpperCase()}${p.is_overstay ? ' (over-stay)' : ''}`, amount: p.amount })),
     departmentCredit: (departmentCredit || []).map(d => ({ name: d.location_name, balance: d.balance })),
-    billedToYou: (billedToYou || []).map(b => ({ name: `${b.guest_name} (Room ${b.room_number || '—'})`, amount: b.outstanding })),
+    billedToYou: (billedToYou || []).map(b => ({
+      name: `${b.guest_name} (Room ${b.room_number || '-'})${b.check_in_date ? ` · ${b.check_in_date}` : ''}`,
+      amount: b.outstanding, label: billedToLabel(b),
+    })),
   }), `Statement ${room.guest_name || 'Guest'} room ${room.room_number || ''}`)
 
   // Rendered into a portal on document.body, not in place. Print CSS
@@ -200,13 +204,19 @@ export default function FolioStatement({ room, folio, orderLines, freeLines, pay
           )}
           {!!billedToYou?.length && (
             <div className="mt-4 pt-4" style={{ borderTop: '1px solid #ccc' }}>
-              <p className="font-semibold text-sm">Included above — other bills:</p>
+              <p className="font-semibold text-sm">Rooms billed to this guest:</p>
               {billedToYou.map(b => (
                 <div key={b.stay_id} className="flex justify-between text-sm mt-1">
-                  <span>{b.guest_name} (Room {b.room_number || '—'})</span>
-                  <span className="tnum">{naira(b.outstanding)}</span>
+                  <span>
+                    {b.guest_name} (Room {b.room_number || '—'})
+                    {b.check_in_date ? ` · ${b.check_in_date}` : ''}
+                  </span>
+                  <span className="tnum">{billedToLabel(b) || naira(b.outstanding)}</span>
                 </div>
               ))}
+              {billedToYouTotal > 0 && (
+                <p className="text-dim text-xs mt-1">Amounts owing are included in the balance above.</p>
+              )}
             </div>
           )}
 

@@ -219,10 +219,12 @@ const stamp = () => new Date().toLocaleString('en-NG', {
   hour: '2-digit', minute: '2-digit',
 })
 
+// Date wide enough for "2026-10-01 14:20", amount for the largest figure,
+// and the rest to the description so an ordinary line does not wrap.
 const COLS = [
-  { label: 'Date', align: 'left', w: 18 },
-  { label: 'Description', align: 'left', w: 56 },
-  { label: 'Amount (NGN)', align: 'right', w: 26 },
+  { label: 'Date', align: 'left', w: 17 },
+  { label: 'Description', align: 'left', w: 62 },
+  { label: 'Amount (NGN)', align: 'right', w: 21 },
 ]
 
 // ---------- the guest's stay statement ----------
@@ -254,7 +256,7 @@ export async function guestStatementPdf(d) {
   if (d.freeLines?.length) {
     s.heading('Complimentary / not charged')
     s.table(
-      [COLS[0], { label: 'Item', align: 'left', w: 56 }, { label: 'Value (NGN)', align: 'right', w: 26 }],
+      [COLS[0], { label: 'Item', align: 'left', w: 62 }, { label: 'Value (NGN)', align: 'right', w: 21 }],
       d.freeLines.map(li => ({ soft: true, cells: [li.date || '', `${li.description} x ${li.qty}`, `${num(li.amount)} — no charge`] })),
     )
   }
@@ -262,7 +264,7 @@ export async function guestStatementPdf(d) {
   if (d.payments?.length) {
     s.heading('Payments received')
     s.table(
-      [COLS[0], { label: 'Method', align: 'left', w: 56 }, { label: 'Amount (NGN)', align: 'right', w: 26 }],
+      [COLS[0], { label: 'Method', align: 'left', w: 62 }, { label: 'Amount (NGN)', align: 'right', w: 21 }],
       d.payments.map(p => ({ cells: [p.date || '', p.method, num(p.amount)] })),
       [{ label: 'Total paid', value: num(d.paid), bold: true }],
     )
@@ -270,7 +272,7 @@ export async function guestStatementPdf(d) {
 
   s.balance(Number(d.balance) > 0 ? 'Balance due' : 'Balance', money(Math.abs(Number(d.balance) || 0)))
   s.lines('Included above — other departments:', (d.departmentCredit || []).map(x => [x.name, money(x.balance)]))
-  s.lines('Included above — other bills:', (d.billedToYou || []).map(x => [x.name, money(x.amount)]))
+  s.lines('Rooms billed to this guest:', (d.billedToYou || []).map(x => [x.name, x.label || money(x.amount)]))
   s.gap(10)
   s.note('Thank you for staying with us.')
   s.gap(14)

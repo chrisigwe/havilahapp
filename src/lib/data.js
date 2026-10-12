@@ -1147,21 +1147,39 @@ export async function loadGuestDepartmentCredit(guestId) {
 export async function loadBilledToYou(guestId) {
   if (!guestId) return []
   const { data: stays, error: e1 } = await supabase.from('stays')
-    .select('id, guests!guest_id(full_name), rooms(room_number)')
+    .select('id, status, check_in_date, guests!guest_id(full_name), rooms(room_number)')
     .eq('bill_to_guest_id', guestId)
   if (e1 || !stays?.length) return []
 
+  // Every stay billed to this guest, whatever it comes to. A complimentary
+  // or PR room adds up to nothing, and filtering those out by their balance
+  // hid the arrangement entirely: the statement never showed that the room
+  // had been put in this guest's name. The amount still drives the balance,
+  // so a zero one changes no figure — it is simply on the record now.
   const { data: folios, error: e2 } = await supabase.from('v_stay_folio')
-    .select('stay_id, outstanding').in('stay_id', stays.map(s => s.id)).gt('outstanding', 0.009)
+    .select('stay_id, total_due, total_paid, outstanding').in('stay_id', stays.map(s => s.id))
   if (e2) return []
   const folioByStay = Object.fromEntries((folios || []).map(f => [f.stay_id, f]))
 
   return stays
-    .filter(s => folioByStay[s.id])
     .map(s => ({
-      stay_id: s.id, guest_name: s.guests?.full_name, room_number: s.rooms?.room_number,
-      outstanding: Number(folioByStay[s.id].outstanding),
+      stay_id: s.id,
+      guest_name: s.guests?.full_name,
+      room_number: s.rooms?.room_number,
+      check_in_date: s.check_in_date,
+      checked_out: s.status === 'checked_out',
+      total_due: Number(folioByStay[s.id]?.total_due || 0),
+      total_paid: Number(folioByStay[s.id]?.total_paid || 0),
+      outstanding: Number(folioByStay[s.id]?.outstanding || 0),
     }))
+    .sort((a, b) => String(b.check_in_date).localeCompare(String(a.check_in_date)))
+}
+
+// How a billed-to stay reads when it is not money owing: a complimentary or
+// PR room costs nothing, and a settled one has already been paid.
+export function billedToLabel(b) {
+  if (Number(b.outstanding) > 0.009) return null
+  return Number(b.total_due) > 0.009 ? 'settled' : 'no charge'
 }
 
 // What a guest owes from a PAST stay, if anything — looked up while
