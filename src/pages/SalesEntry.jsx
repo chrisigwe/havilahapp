@@ -429,9 +429,29 @@ export default function SalesEntry({ boot }) {
     } catch (e) { toast(e.message, 'error') }
   }
 
+  // A basket saved twice in quick succession is the commonest way a sale is
+  // double counted: the person taps Save, the phone is slow, they tap again.
+  // The same items at the same price within two minutes, by the same person at
+  // the same department, is therefore confirmed before it saves. A genuine
+  // repeat (two customers, same beer) just says yes.
+  function looksLikeRepeat() {
+    const cutoff = Date.now() - 2 * 60 * 1000
+    return basket.every(b => today.some(r =>
+      r.recorded_by === staff.id
+      && new Date(r.created_at).getTime() >= cutoff
+      && (r.stock_item_id || null) === (b.item?.id || null)
+      && Number(r.qty) === Number(b.qty)
+      && Number(r.unit_price) === Number(b.unitPrice)))
+  }
+
   async function commit() {
     if (!canRecordHere) {
       toast('View only — you can record only at your own departments', 'error')
+      return
+    }
+    if (basket.length && looksLikeRepeat() &&
+        !window.confirm('You recorded the same thing less than two minutes ago. '
+          + 'Save it again?\n\nTap Cancel if your first save already went through.')) {
       return
     }
     // Room bill: the whole basket goes onto the guest's folio as a room

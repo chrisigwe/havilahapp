@@ -140,6 +140,22 @@ export default function Folio({ boot, room, onClose, onChanged }) {
 
   async function submitPayment() {
     if (payAllocated <= 0) return
+    // Taking more than the bill is how money ends up on the wrong folio: the
+    // guest's note covers two rooms, or a figure is typed with an extra zero.
+    // It is allowed — a deposit against nights still to come is normal — but
+    // it is confirmed first, with the numbers in front of the person.
+    const owing = Math.round(totalOutstanding * 100) / 100
+    if (owing > 0.009 && payAllocated - owing > 0.009 &&
+        !window.confirm(`This is ${naira(payAllocated)} against ${naira(owing)} still owing — `
+          + `${naira(payAllocated - owing)} more than the bill.\n\n`
+          + 'Save it anyway? Tap Cancel if it belongs on another room or another stay.')) {
+      return
+    }
+    if (owing <= 0.009 &&
+        !window.confirm(`This bill is already settled. Save ${naira(payAllocated)} on top?\n\n`
+          + 'Tap Cancel if the money belongs on another room or another stay.')) {
+      return
+    }
     setBusy(true)
     try {
       await recordStayPayment({
