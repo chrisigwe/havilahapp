@@ -1825,13 +1825,17 @@ export async function loadRoomCharges(branchId, date, category) {
 
 async function _saveRestaurantWriteoff({ staff, locationId, businessDate,
                                                 description, qty, unitPrice,
-                                                orderType, damageReason, writeoffNote, prMeal, stockUsed }) {
+                                                orderType, damageReason, writeoffNote, prMeal, stockUsed,
+                                                noStockDeclared }) {
   const { data: row, error } = await supabase.from('sales').insert({
     branch_id: staff.branch_id, business_date: businessDate, occurred_at: new Date().toISOString(),
     stock_item_id: null, description, location_id: locationId, tier: 'general',
     qty, unit_price: unitPrice, recorded_by: staff.id,
     order_type: orderType, damage_reason: damageReason || null, writeoff_note: writeoffNote || null,
     pr_meal: prMeal || null,
+    // Only meaningful with no stock lines, and only for PR/damage
+    // (migration 434) — everything else is blocked without stock.
+    no_stock_declared: !stockUsed?.length && !!noStockDeclared,
   }).select('id').single()
   if (error) throw error
   if (stockUsed?.length) {
@@ -1844,7 +1848,8 @@ async function _saveRestaurantWriteoff({ staff, locationId, businessDate,
 
 async function _chargeWriteoffToRoom({ staff, stayId, businessDate,
                                               description, qty, unitPrice,
-                                              orderType, damageReason, writeoffNote, prMeal, stockUsed }) {
+                                              orderType, damageReason, writeoffNote, prMeal, stockUsed,
+                                              noStockDeclared }) {
   const { data: order, error: oErr } = await supabase.from('orders').insert({
     branch_id: staff.branch_id, stay_id: stayId, business_date: businessDate,
     settlement: 'charged_to_room', served_by: staff.id,
@@ -1855,6 +1860,7 @@ async function _chargeWriteoffToRoom({ staff, stayId, businessDate,
     description, qty, unit_price: unitPrice,
     order_type: orderType, damage_reason: damageReason || null, writeoff_note: writeoffNote || null,
     pr_meal: prMeal || null,
+    no_stock_declared: !stockUsed?.length && !!noStockDeclared,
   }).select('id').single()
   if (iErr) {
     await supabase.from('orders').delete().eq('id', order.id)
@@ -2205,7 +2211,7 @@ export async function loadWriteoffsOnDate(branchId, date, locationId) {
   if (loc) mq = mq.eq('from_location', loc)
 
   let sq = supabase.from('sales')
-    .select(`qty, location_id, description, damage_reason, writeoff_note,
+    .select(`qty, location_id, description, damage_reason, writeoff_note, no_stock_declared,
              stock_items(name, cost_price), staff:recorded_by(full_name)`)
     .eq('branch_id', branchId).eq('business_date', date)
     .eq('order_type', 'pr_damage')
@@ -2214,7 +2220,8 @@ export async function loadWriteoffsOnDate(branchId, date, locationId) {
   const [{ data: moves }, { data: prSales }, { data: orders }] = await Promise.all([
     mq, sq,
     supabase.from('orders')
-      .select('id, order_items(description, qty, amount, order_type, pr_meal, damage_reason, writeoff_note)')
+      .select(`id, order_items(description, qty, amount, order_type, pr_meal,
+               damage_reason, writeoff_note, no_stock_declared)`)
       .eq('branch_id', branchId).eq('business_date', date),
   ])
 
@@ -2242,6 +2249,7 @@ export async function loadWriteoffsOnDate(branchId, date, locationId) {
       cost: Number(s.qty) * Number(s.stock_items?.cost_price || 0),
       reason: s.damage_reason || null, note: s.writeoff_note || null,
       who: s.staff?.full_name || '', locationId: s.location_id,
+      noStock: !!s.no_stock_declared,
     }
     // The till's own question: a reason set means damage, none means PR.
     ;(s.damage_reason ? damage : pr).push(line)
@@ -2256,6 +2264,7 @@ export async function loadWriteoffsOnDate(branchId, date, locationId) {
         name: li.description || 'Meal', qty: Number(li.qty),
         value: Number(li.amount || 0), meal: li.pr_meal,
         reason: li.damage_reason || null, note: li.writeoff_note || null,
+        noStock: !!li.no_stock_declared,
       })
     }
   }

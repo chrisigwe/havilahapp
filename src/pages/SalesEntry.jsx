@@ -659,7 +659,7 @@ export default function SalesEntry({ boot }) {
           orders for a guest, but it does that inside Charge to a room. */}
       {isRestaurant && canRecordHere && (
         <button onClick={() => setRestaurantOrder({ description: '', qty: 1, unitPrice: '',
-          orderType: 'standard', damageReason: null, writeoffNote: '', prMeal: null, date: null, used: [] })}
+          orderType: 'standard', damageReason: null, writeoffNote: '', prMeal: null, date: null, used: [], noStock: false })}
           className="mt-3 w-full h-12 rounded-xl border border-line text-ink font-semibold">
           Add a restaurant order
         </button>
@@ -1491,6 +1491,26 @@ export default function SalesEntry({ boot }) {
             </p>
           )}
 
+          {/* PR/Damage is not blocked — a complimentary plate of food has no
+              stock behind it — but it was the one way to save an order with
+              no stock line at all. So it asks: list the stock, or say plainly
+              that none came off. The tick is stored (migration 434) so the
+              daily close can tell a declaration from a line never entered. */}
+          {restaurantOrder.orderType === 'pr_damage' && !(restaurantOrder.used || []).length && (
+            <label className="mt-4 flex items-start gap-3 rounded-xl border border-clay p-3">
+              <input type="checkbox" checked={!!restaurantOrder.noStock}
+                onChange={e => setRestaurantOrder(r => ({ ...r, noStock: e.target.checked }))}
+                className="mt-1 h-5 w-5 accent-amber" />
+              <span className="text-sm">
+                <span className="font-semibold">Nothing came off Restaurant stock</span>
+                <span className="block text-dim">
+                  No drink, water or anything else that is counted. Tick this, or
+                  list it with + Stock Used above.
+                </span>
+              </span>
+            </label>
+          )}
+
           <button
             onClick={async () => {
               const desc = restaurantOrder.description.trim()
@@ -1503,10 +1523,15 @@ export default function SalesEntry({ boot }) {
               const restLoc = (boot.allLocations || []).find(l => /restaurant/i.test(l.name))
               // A standard order or a staff meal must say what came out of the
               // kitchen store; the button is disabled until it does, and this is
-              // the backstop. PR and damage are asked rather than blocked: the
-              // write-off itself is already the record of the loss.
+              // the backstop. PR and damage are asked rather than blocked — but
+              // they must answer one way or the other.
               if (!usedNow.length && restaurantOrder.orderType !== 'pr_damage') {
                 toast('Add what came off Restaurant stock with + Stock Used', 'error')
+                return
+              }
+              if (!usedNow.length && restaurantOrder.orderType === 'pr_damage'
+                  && !restaurantOrder.noStock) {
+                toast('List the stock, or tick that nothing came off Restaurant stock', 'error')
                 return
               }
               const overUsed = usedNow.filter(u => u.qty > (stockMap[`${u.item.id}:${restLoc?.id}`] ?? 0))
@@ -1532,6 +1557,7 @@ export default function SalesEntry({ boot }) {
                   orderType: restaurantOrder.orderType, damageReason: restaurantOrder.damageReason,
                   writeoffNote: restaurantOrder.writeoffNote, prMeal: restaurantOrder.prMeal,
                   stockUsed: usedNow,
+                  noStockDeclared: !usedNow.length && !!restaurantOrder.noStock,
                 })
                 toast(restaurantOrder.orderType === 'staff'
                   ? 'Staff meal recorded' : 'Recorded — not paid for', 'success')
@@ -1543,7 +1569,8 @@ export default function SalesEntry({ boot }) {
               setWriteoffBusy(false)
             }}
             disabled={writeoffBusy || !restaurantOrder.description.trim() || !Number(restaurantOrder.unitPrice)
-              || (restaurantOrder.orderType !== 'pr_damage' && !(restaurantOrder.used || []).length)}
+              || (!(restaurantOrder.used || []).length
+                  && (restaurantOrder.orderType !== 'pr_damage' || !restaurantOrder.noStock))}
             className="mt-8 w-full h-16 rounded-2xl bg-amber text-bg text-xl font-bold disabled:opacity-40">
             {writeoffBusy ? 'Saving…'
               : restaurantOrder.orderType === 'standard' ? 'Add to basket'

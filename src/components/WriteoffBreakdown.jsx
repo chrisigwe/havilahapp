@@ -93,6 +93,10 @@ export default function WriteoffBreakdown({ data, settled }) {
                       <span className="text-dim truncate pr-2">
                         · {l.name} × {l.qty}{l.meal && ` · ${l.meal}`}
                         {l.reason && ` · ${l.reason}`}
+                        {/* Whoever entered it said plainly that nothing came
+                            off Restaurant stock (migration 434). Shown so the
+                            declaration can be checked against the shelf. */}
+                        {l.noStock && ' · no stock declared'}
                       </span>
                       <span className="tnum text-dim shrink-0">{naira(l.value)}</span>
                     </div>

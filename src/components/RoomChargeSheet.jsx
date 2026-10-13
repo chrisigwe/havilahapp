@@ -89,6 +89,12 @@ export default function RoomChargeSheet({ boot, stockMap, onClose, toast, fromRe
       toast('Add what came off Restaurant stock with + Stock Used')
       return
     }
+    // PR/Damage is asked rather than blocked, but it must answer: either
+    // list the stock, or tick that none came off (migration 434).
+    if (!(typing.used || []).length && typing.orderType === 'pr_damage' && !typing.noStock) {
+      toast('List the stock, or tick that nothing came off Restaurant stock')
+      return
+    }
     setBusy(true)
     try {
       const desc = typing.description.trim()
@@ -108,6 +114,7 @@ export default function RoomChargeSheet({ boot, stockMap, onClose, toast, fromRe
           staff, stayId: stay.id, description: desc, qty, unitPrice, businessDate: chargeDate,
           orderType: typing.orderType, damageReason: typing.damageReason, writeoffNote: typing.writeoffNote,
           prMeal: typing.prMeal, stockUsed: typing.used || [],
+          noStockDeclared: !(typing.used || []).length && !!typing.noStock,
         })
       }
       setCharged(c => [{ description: desc, qty, unitPrice, typed: true,
@@ -184,7 +191,7 @@ export default function RoomChargeSheet({ boot, stockMap, onClose, toast, fromRe
             )}
             {(fromReception || isRestaurantDept) && (
               <button onClick={() => setTyping({ description: '', qty: 1, unitPrice: '',
-                orderType: 'standard', damageReason: null, writeoffNote: '', prMeal: null, date: null, used: [] })}
+                orderType: 'standard', damageReason: null, writeoffNote: '', prMeal: null, date: null, used: [], noStock: false })}
                 className={`${isRestaurantDept ? 'mt-6' : 'mt-3'} w-full h-14 rounded-2xl border-2 border-line text-ink text-lg font-bold`}>
                 + Add a restaurant order
               </button>
@@ -303,9 +310,25 @@ export default function RoomChargeSheet({ boot, stockMap, onClose, toast, fromRe
                   </p>
                 )}
 
+                {typing.orderType === 'pr_damage' && !(typing.used || []).length && (
+                  <label className="mb-3 flex items-start gap-3 rounded-xl border border-clay p-3">
+                    <input type="checkbox" checked={!!typing.noStock}
+                      onChange={e => setTyping(t => ({ ...t, noStock: e.target.checked }))}
+                      className="mt-1 h-5 w-5 accent-amber" />
+                    <span className="text-sm">
+                      <span className="font-semibold">Nothing came off Restaurant stock</span>
+                      <span className="block text-dim">
+                        No drink, water or anything else that is counted. Tick this, or
+                        list it with + Stock Used above.
+                      </span>
+                    </span>
+                  </label>
+                )}
+
                 <button onClick={confirmTypedCharge}
                   disabled={busy || !typing.description.trim() || !Number(typing.unitPrice)
-                    || (typing.orderType !== 'pr_damage' && !(typing.used || []).length)}
+                    || (!(typing.used || []).length
+                        && (typing.orderType !== 'pr_damage' || !typing.noStock))}
                   className="w-full h-14 rounded-2xl bg-amber text-bg text-lg font-bold disabled:opacity-40">
                   {busy ? 'Saving…' : typing.orderType !== 'pr_damage'
                     ? `Charge ${naira((typing.qty || 0) * (Number(typing.unitPrice) || 0))} to room`
