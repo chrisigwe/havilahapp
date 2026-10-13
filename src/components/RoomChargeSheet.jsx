@@ -83,6 +83,11 @@ export default function RoomChargeSheet({ boot, stockMap, onClose, toast, fromRe
 
   async function confirmTypedCharge() {
     if (!typing || !typing.description.trim() || !Number(typing.unitPrice)) return
+    // Same question the Sales screen asks: a typed order with nothing listed
+    // under + Stock Used leaves no record of what came out of the kitchen store.
+    if (!(typing.used || []).length && typing.orderType !== 'pr_damage' && !window.confirm(
+          'No stock recorded for this order.\n\n'
+          + 'Nothing will show as having left Restaurant stock for it. Save it anyway?')) return
     setBusy(true)
     try {
       const desc = typing.description.trim()

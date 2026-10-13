@@ -1488,6 +1488,13 @@ export default function SalesEntry({ boot }) {
               // so they save straight away like PR, with no payment step.
               const usedNow = restaurantOrder.used || []
               const restLoc = (boot.allLocations || []).find(l => /restaurant/i.test(l.name))
+              // Nothing listed under + Stock Used means no record of what left the
+              // kitchen store for this plate. It is still allowed — not every dish
+              // has a countable item behind it — but it is asked about once.
+              if (!usedNow.length && restaurantOrder.orderType !== 'pr_damage' && !window.confirm(
+                    'No stock recorded for this order.\n\n'
+                    + 'Nothing will show as having left Restaurant stock for it. '
+                    + 'Save it anyway?')) return
               const overUsed = usedNow.filter(u => u.qty > (stockMap[`${u.item.id}:${restLoc?.id}`] ?? 0))
               if (overUsed.length && !window.confirm(
                     `More than Restaurant stock shows:\n\n${overUsed.map(u => `${u.item.name} (${stockMap[`${u.item.id}:${restLoc?.id}`] ?? 0} left, using ${u.qty})`).join('\n')}\n\nRecord anyway?`)) return
