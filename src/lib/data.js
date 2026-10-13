@@ -2286,7 +2286,7 @@ async function _chargeBasketToRoom({ staff, stayId, lines, locationId, date, loc
   }
   const { data: order, error: oErr } = await supabase.from('orders').insert({
     branch_id: staff.branch_id, stay_id: stayId, business_date: date,
-    settlement: 'charged_to_room', served_by: staff.id,
+    settlement: 'charged_to_room', served_by: staff.id, occurred_at: new Date().toISOString(),
   }).select('id').single()
   if (oErr) throw oErr
 
@@ -2303,18 +2303,35 @@ async function _chargeBasketToRoom({ staff, stayId, lines, locationId, date, loc
       writeoff_note: l.writeoffNote || null,
     }
   })
-  const { error: iErr } = await supabase.from('order_items').insert(rows)
+  // Insert with the ids back, so the stock used with a typed order can be
+  // attached to its own line below.
+  const { data: saved, error: iErr } = await supabase.from('order_items').insert(rows).select('id')
   if (iErr) {
     // Never leave an empty order on the folio.
     await supabase.from('orders').delete().eq('id', order.id)
     throw iErr
   }
+
+  // Stock used with a typed restaurant order (water, extra chicken ...).
+  // A basket paid at the counter has always recorded this; charged to a room
+  // it was dropped silently, so the plate reached the guest's bill while the
+  // ingredients stayed on Restaurant's stock. Done after the charge is safely
+  // saved, and a failure here says so rather than losing the charge.
+  const withStock = lines
+    .map((l, i) => ({ used: l.stockUsed, id: saved?.[i]?.id }))
+    .filter(x => x.used?.length && x.id)
+  for (const x of withStock) {
+    try { await recordOrderItemStockUsed(x.id, x.used) }
+    catch (e) { throw partialStockError(e) }
+  }
+
   // The approval trigger (249) runs after the items land, so this read
   // reflects whether the charge went straight on or is waiting.
   const { data: after } = await supabase.from('orders')
     .select('approval_status').eq('id', order.id).single()
   return { orderId: order.id, status: after?.approval_status || 'approved' }
 }
+
 
 // The guest's own bar tab: a customer account LINKED to them, so it
 // shows on their folio at checkout while being billed separately (e.g.

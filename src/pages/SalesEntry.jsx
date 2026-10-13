@@ -1471,10 +1471,7 @@ export default function SalesEntry({ boot }) {
 
           {restaurantOrder.orderType === 'staff' && (
             <>
-              <p className="text-dim text-sm mt-3">
-                Staff meal — still paid for like a normal order, just tracked separately for reporting.
-              </p>
-              <label className="block mt-2 text-dim">Note (optional)</label>
+              <label className="block mt-4 text-dim">Note (optional)</label>
               <input value={restaurantOrder.writeoffNote}
                 onChange={e => setRestaurantOrder(r => ({ ...r, writeoffNote: e.target.value }))}
                 className="mt-2 h-12 w-full px-3 rounded-xl bg-surface border border-line" />
