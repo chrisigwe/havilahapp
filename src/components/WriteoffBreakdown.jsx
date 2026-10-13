@@ -47,6 +47,7 @@ export default function WriteoffBreakdown({ data, settled }) {
                       <span className="text-dim truncate pr-2">
                         · {l.name} × {l.qty}
                         {l.note && ` — ${l.note}`}
+                        {l.noStock && ' · no stock declared'}
                         {l.who && ` · ${l.who}`}
                       </span>
                       <span className="tnum text-dim shrink-0">{naira(l.cost)}</span>
@@ -67,6 +68,7 @@ export default function WriteoffBreakdown({ data, settled }) {
                         · {l.name} × {l.qty}
                         {l.reason && ` · ${l.reason}`}
                         {l.note && ` — ${l.note}`}
+                        {l.noStock && ' · no stock declared'}
                         {l.who && ` · ${l.who}`}
                       </span>
                       <span className="tnum text-dim shrink-0">{naira(l.cost)}</span>

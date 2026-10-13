@@ -993,6 +993,7 @@ export default function SalesEntry({ boot }) {
                     {r.order_type === 'pr_damage' && ' · not paid for'}
                     {(r.damage_reason || r.pr_meal) && ` · ${r.damage_reason || r.pr_meal}`}
                     {r.writeoff_note && ` · ${r.writeoff_note}`}
+                    {r.no_stock_declared && <span className="text-clay"> · no stock declared</span>}
                     <br />Charged by {r.chargedBy || 'unknown'}
                     {r.sortAt ? ` · ${new Date(r.sortAt).toLocaleTimeString('en-NG', { hour: '2-digit', minute: '2-digit' })}` : ''}
                     {r.lineStatus && (
@@ -1012,6 +1013,10 @@ export default function SalesEntry({ boot }) {
                     {r.qty} × {naira(r.unit_price)} · not paid for
                     {(r.damage_reason || r.pr_meal) && ` · ${r.damage_reason || r.pr_meal}`}
                     {r.writeoff_note && ` · ${r.writeoff_note}`}
+                    {/* The tick that let it save without stock (migration 434),
+                        shown on the line itself so it is seen without opening
+                        the day's close. */}
+                    {r.no_stock_declared && <span className="text-clay"> · no stock declared</span>}
                     <br />{whoRecorded(r)}
                   </div>
                 ) : r.order_type === 'staff' ? (

@@ -137,6 +137,7 @@ export async function loadPopular(branchId) {
 export async function loadToday(branchId, date, locationId) {
   const cols = `id, stock_item_id, description, location_id, tier, qty, unit_price, amount, created_at,
              receipt_id, business_date, recorded_by, on_behalf_of, order_type, damage_reason, writeoff_note, pr_meal,
+             no_stock_declared,
              recorder:recorded_by(full_name), stood_in_for:on_behalf_of(full_name),
              sale_payments(method, amount)`
   const run = (extra) => {
@@ -1783,6 +1784,7 @@ async function _deleteOrderItem(orderItemId, orderId) {
 export async function loadRoomCharges(branchId, date, category) {
   const { data, error } = await supabase.from('order_items')
     .select(`id, description, qty, unit_price, amount, order_id, order_type, damage_reason, writeoff_note, pr_meal,
+             no_stock_declared,
              orders!inner(id, business_date, branch_id, served_by, created_at, occurred_at,
                           served:served_by(full_name),
                           stays(id, status, actual_out, rooms(room_number), guests!guest_id(full_name)))`)
