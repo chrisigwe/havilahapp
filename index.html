@@ -19,6 +19,70 @@
   </head>
   <body>
     <div id="root"></div>
+    <!-- Crash screen of last resort.
+         This has to live here, as a plain inline script, rather than in
+         main.jsx: ES modules all evaluate before the entry file's own
+         body runs, so a module that throws while loading (a bad import,
+         a half-updated file from the cache) crashes the page before any
+         handler registered in JavaScript exists. The result was a black
+         screen with nothing to read and nothing to tap. Registered here
+         it runs first, so there is always a message and a way out. -->
+    <script>
+      (function () {
+        var shown = false
+        window.__havilahFatal = function (err) {
+          if (shown) return
+          var root = document.getElementById('root')
+          if (!root) return
+          shown = true
+          var detail = [(err && err.message) || String(err), (err && err.stack) || ''].filter(Boolean).join('\n\n')
+          root.innerHTML =
+            '<div style="min-height:100dvh;display:flex;flex-direction:column;align-items:center;'
+            + 'justify-content:center;gap:14px;padding:24px;text-align:center;background:#101613;'
+            + 'color:#ede9dc;font-family:system-ui,sans-serif">'
+            + '<p style="font-size:18px;font-weight:700;margin:0">The app could not start.</p>'
+            + '<p style="color:#96a49b;max-width:20rem;margin:0">Tap Clear and reload — that fixes a '
+            + 'half-updated app. If it keeps happening, copy the details and send them.</p>'
+            + '<button id="hv-hard" style="height:56px;padding:0 24px;border-radius:16px;border:0;'
+            + 'background:#e8a13d;color:#101613;font-weight:700;font-size:16px">Clear and reload</button>'
+            + '<button id="hv-reload" style="height:46px;padding:0 20px;border-radius:14px;background:none;'
+            + 'border:1px solid #2c3a32;color:#96a49b;font-size:14px">Just reload</button>'
+            + '<pre id="hv-detail" style="width:100%;max-width:24rem;text-align:left;font-size:11px;'
+            + 'color:#96a49b;background:#1b241f;border:1px solid #2c3a32;border-radius:12px;padding:12px;'
+            + 'max-height:40vh;overflow:auto;white-space:pre-wrap;word-break:break-word"></pre>'
+            + '<button id="hv-copy" style="height:44px;padding:0 20px;border-radius:14px;background:none;'
+            + 'border:1px solid #2c3a32;color:#ede9dc;font-size:14px">Copy details to send</button>'
+            + '</div>'
+          document.getElementById('hv-detail').textContent = detail
+          document.getElementById('hv-reload').onclick = function () { window.location.reload() }
+          document.getElementById('hv-copy').onclick = function (e) {
+            if (navigator.clipboard) navigator.clipboard.writeText(detail)
+            e.target.textContent = 'Copied'
+          }
+          // Throws away the service worker and every cached file, which is
+          // what an update that only half arrived actually needs.
+          document.getElementById('hv-hard').onclick = function () {
+            var done = function () { window.location.reload() }
+            try {
+              var jobs = []
+              if (navigator.serviceWorker && navigator.serviceWorker.getRegistrations) {
+                jobs.push(navigator.serviceWorker.getRegistrations().then(function (rs) {
+                  return Promise.all(rs.map(function (r) { return r.unregister() }))
+                }))
+              }
+              if (window.caches) {
+                jobs.push(caches.keys().then(function (ks) {
+                  return Promise.all(ks.map(function (k) { return caches.delete(k) }))
+                }))
+              }
+              Promise.all(jobs).then(done, done)
+            } catch (x) { done() }
+          }
+        }
+        window.addEventListener('error', function (e) { if (e.error) window.__havilahFatal(e.error) })
+        window.addEventListener('unhandledrejection', function (e) { window.__havilahFatal(e.reason) })
+      })()
+    </script>
     <script type="module" src="/src/main.jsx"></script>
   </body>
 </html>
