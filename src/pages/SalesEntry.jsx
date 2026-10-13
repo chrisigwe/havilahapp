@@ -651,7 +651,13 @@ export default function SalesEntry({ boot }) {
         </button>
       )}
 
-      {!isReception && canRecordHere && (
+      {/* Typed orders belong to the Restaurant alone: its food is cooked
+          to order and has no catalog price to tap. MainBar, Minimart and
+          OpenBar sell from the catalog, so a free-text order there is a
+          way to sell something off-book at any price — the button was
+          showing in all three and is now gone. Reception types restaurant
+          orders for a guest, but it does that inside Charge to a room. */}
+      {isRestaurant && canRecordHere && (
         <button onClick={() => setRestaurantOrder({ description: '', qty: 1, unitPrice: '',
           orderType: 'standard', damageReason: null, writeoffNote: '', prMeal: null, date: null, used: [] })}
           className="mt-3 w-full h-12 rounded-xl border border-line text-ink font-semibold">
