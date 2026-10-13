@@ -381,11 +381,9 @@ export default function DailySales({ boot }) {
                   {r.lineStatus ? (
                     <>
                       <br />
-                      {{ paid: <span className="text-leaf">Paid</span>,
-                         part: <span className="text-amber">Part paid</span>,
-                         unpaid: <span className={r.stayStatus === 'checked_out' ? 'text-clay font-bold' : 'text-clay'}>
-                           {r.stayStatus === 'checked_out' ? 'Unpaid — guest has checked out' : 'Not yet paid'}</span>,
-                         settled_reception: <span className="text-amber">Paid, but taken at Reception — see the list above</span>,
+                      {{ settled: <span className="text-leaf">Guest's bill is settled</span>,
+                         running: <span className="text-amber">On the running bill</span>,
+                         debt: <span className="text-clay font-bold">Unpaid — guest has checked out</span>,
                       }[r.lineStatus]}
                     </>
                   ) : r.folioOutstanding != null && (

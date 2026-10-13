@@ -999,11 +999,12 @@ export default function SalesEntry({ boot }) {
                     {r.lineStatus && (
                       <>
                         {' · '}
-                        {{ paid: <span className="text-leaf">guest has paid</span>,
-                           part: <span className="text-amber">part paid</span>,
-                           unpaid: <span className={r.stayStatus === 'checked_out' ? 'text-clay font-bold' : 'text-clay'}>
-                             {r.stayStatus === 'checked_out' ? 'unpaid — guest has checked out' : 'not yet paid'}</span>,
-                           settled_reception: <span className="text-amber">paid at Reception</span>,
+                        {/* The stay's position, not a claim about this line.
+                            Payments attach to the stay, so which line any
+                            payment settled is not recorded (migration 440). */}
+                        {{ settled: <span className="text-leaf">guest has paid</span>,
+                           running: <span className="text-amber">on the running bill</span>,
+                           debt: <span className="text-clay font-bold">unpaid — guest has checked out</span>,
                         }[r.lineStatus]}
                       </>
                     )}
