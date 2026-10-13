@@ -83,11 +83,12 @@ export default function RoomChargeSheet({ boot, stockMap, onClose, toast, fromRe
 
   async function confirmTypedCharge() {
     if (!typing || !typing.description.trim() || !Number(typing.unitPrice)) return
-    // Same question the Sales screen asks: a typed order with nothing listed
-    // under + Stock Used leaves no record of what came out of the kitchen store.
-    if (!(typing.used || []).length && typing.orderType !== 'pr_damage' && !window.confirm(
-          'No stock recorded for this order.\n\n'
-          + 'Nothing will show as having left Restaurant stock for it. Save it anyway?')) return
+    // Same rule as the Sales screen: a typed order must say what came out of the
+    // kitchen store. The button is disabled until it does; this is the backstop.
+    if (!(typing.used || []).length && typing.orderType !== 'pr_damage') {
+      toast('Add what came off Restaurant stock with + Stock Used')
+      return
+    }
     setBusy(true)
     try {
       const desc = typing.description.trim()
@@ -296,8 +297,15 @@ export default function RoomChargeSheet({ boot, stockMap, onClose, toast, fromRe
                     className="h-11 w-full px-3 mb-3 rounded-xl bg-raise border border-line placeholder:text-dim" />
                 )}
 
+                {typing.orderType !== 'pr_damage' && !(typing.used || []).length && (
+                  <p className="text-clay text-sm mb-3">
+                    Say what came off Restaurant stock with + Stock Used above before saving.
+                  </p>
+                )}
+
                 <button onClick={confirmTypedCharge}
-                  disabled={busy || !typing.description.trim() || !Number(typing.unitPrice)}
+                  disabled={busy || !typing.description.trim() || !Number(typing.unitPrice)
+                    || (typing.orderType !== 'pr_damage' && !(typing.used || []).length)}
                   className="w-full h-14 rounded-2xl bg-amber text-bg text-lg font-bold disabled:opacity-40">
                   {busy ? 'Saving…' : typing.orderType !== 'pr_damage'
                     ? `Charge ${naira((typing.qty || 0) * (Number(typing.unitPrice) || 0))} to room`

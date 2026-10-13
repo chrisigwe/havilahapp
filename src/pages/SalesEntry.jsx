@@ -1478,6 +1478,13 @@ export default function SalesEntry({ boot }) {
             </>
           )}
 
+          {restaurantOrder.orderType !== 'pr_damage' && !(restaurantOrder.used || []).length && (
+            <p className="text-clay text-sm mt-4">
+              Say what came off Restaurant stock with + Stock Used above. Every order
+              has to show what left the kitchen store before it can be saved.
+            </p>
+          )}
+
           <button
             onClick={async () => {
               const desc = restaurantOrder.description.trim()
@@ -1488,13 +1495,14 @@ export default function SalesEntry({ boot }) {
               // so they save straight away like PR, with no payment step.
               const usedNow = restaurantOrder.used || []
               const restLoc = (boot.allLocations || []).find(l => /restaurant/i.test(l.name))
-              // Nothing listed under + Stock Used means no record of what left the
-              // kitchen store for this plate. It is still allowed — not every dish
-              // has a countable item behind it — but it is asked about once.
-              if (!usedNow.length && restaurantOrder.orderType !== 'pr_damage' && !window.confirm(
-                    'No stock recorded for this order.\n\n'
-                    + 'Nothing will show as having left Restaurant stock for it. '
-                    + 'Save it anyway?')) return
+              // A standard order or a staff meal must say what came out of the
+              // kitchen store; the button is disabled until it does, and this is
+              // the backstop. PR and damage are asked rather than blocked: the
+              // write-off itself is already the record of the loss.
+              if (!usedNow.length && restaurantOrder.orderType !== 'pr_damage') {
+                toast('Add what came off Restaurant stock with + Stock Used', 'error')
+                return
+              }
               const overUsed = usedNow.filter(u => u.qty > (stockMap[`${u.item.id}:${restLoc?.id}`] ?? 0))
               if (overUsed.length && !window.confirm(
                     `More than Restaurant stock shows:\n\n${overUsed.map(u => `${u.item.name} (${stockMap[`${u.item.id}:${restLoc?.id}`] ?? 0} left, using ${u.qty})`).join('\n')}\n\nRecord anyway?`)) return
@@ -1528,7 +1536,8 @@ export default function SalesEntry({ boot }) {
               }
               setWriteoffBusy(false)
             }}
-            disabled={writeoffBusy || !restaurantOrder.description.trim() || !Number(restaurantOrder.unitPrice)}
+            disabled={writeoffBusy || !restaurantOrder.description.trim() || !Number(restaurantOrder.unitPrice)
+              || (restaurantOrder.orderType !== 'pr_damage' && !(restaurantOrder.used || []).length)}
             className="mt-8 w-full h-16 rounded-2xl bg-amber text-bg text-xl font-bold disabled:opacity-40">
             {writeoffBusy ? 'Saving…'
               : restaurantOrder.orderType === 'standard' ? 'Add to basket'
