@@ -197,7 +197,7 @@ export default function Folio({ boot, room, onClose, onChanged }) {
   const generalPaid = Number(folio?.total_paid || 0) - earmarked
   // Only worth showing the split when the bill genuinely has more than one
   // part. A room with no orders on it does not need a breakdown.
-  const showParts = billParts.length > 1
+  const showParts = billParts.length > 1 || departmentCreditTotal > 0 || billedToYouTotal > 0
   const payAgainstPart = billParts.find(p => p.key === payAgainst) || null
   const cycles = cyclesFor(branchSettings?.allowedCycles)
   const overstayDefault = branchSettings?.overstayDefault ?? null
@@ -481,8 +481,12 @@ export default function Folio({ boot, room, onClose, onChanged }) {
           </div>
         </div>
 
-        {/* Where the debt sits. Built from the same figures as the total
-            above, so the two can never disagree. */}
+        {/* Where the debt sits. The Outstanding figure above counts THREE
+            things: this folio, department credit on a linked customer
+            account, and other rooms billed to this guest. A breakdown that
+            showed only the first would contradict the total sitting right
+            above it, so all three are here and the panel ends on the same
+            figure. */}
         {showParts && (
           <div className="mt-4 rounded-2xl border border-line bg-surface p-4">
             <span className="font-semibold">What this bill is made of</span>
@@ -507,10 +511,45 @@ export default function Folio({ boot, room, onClose, onChanged }) {
             {generalPaid > 0.009 && (
               <p className="text-dim text-sm pt-3 mt-1 border-t border-line">
                 {naira(generalPaid)} was paid against the bill as a whole, not
-                against any one part. The Outstanding figure above already
-                includes it.
+                against any one part.
               </p>
             )}
+
+            {/* A different ledger. These were charged to a customer account
+                linked to this guest, not to the room, and they clear through
+                Credit — which is why they cannot be picked in Against below. */}
+            {departmentCreditTotal > 0 && (
+              <div className="pt-3 mt-3 border-t border-line">
+                <span className="text-dim text-sm">Settled on Credit, not by paying this bill</span>
+                {(departmentCredit || []).map(d => (
+                  <div key={d.location_id} className="flex items-baseline justify-between py-1.5">
+                    <span className="text-clay">{d.location_name}</span>
+                    <span className="tnum font-semibold text-clay">{naira(Number(d.balance))}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {billedToYouTotal > 0 && (
+              <div className="pt-3 mt-3 border-t border-line">
+                <span className="text-dim text-sm">Other rooms billed to this guest</span>
+                {(billedToYou || []).filter(b => Number(b.outstanding) > 0.009).map(b => (
+                  <div key={b.stay_id} className="flex items-baseline justify-between py-1.5">
+                    <span className="text-clay">
+                      {b.guest_name}{b.room_number ? ` · Room ${b.room_number}` : ''}
+                    </span>
+                    <span className="tnum font-semibold text-clay">{naira(Number(b.outstanding))}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            <div className="flex items-baseline justify-between pt-3 mt-3 border-t border-line">
+              <span className="font-semibold">Everything outstanding</span>
+              <span className={`tnum font-bold ${totalOutstanding > 0 ? 'text-clay' : 'text-leaf'}`}>
+                {naira(Math.abs(totalOutstanding))}
+              </span>
+            </div>
           </div>
         )}
 
