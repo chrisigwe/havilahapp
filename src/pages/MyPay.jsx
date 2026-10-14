@@ -1,8 +1,120 @@
+import { useEffect, useState } from 'react'
 import { naira } from '../lib/format'
 import { lineTotals } from '../lib/payroll'
+import { loadMyCredit } from '../lib/data'
 
 const MONTHS = ['January','February','March','April','May','June','July','August',
                 'September','October','November','December']
+
+// This month's staff credit, live.
+//
+// Payroll deducts staff credit at the end of the month from the customer
+// account on payroll_employee.customer_id. Until now a person only saw
+// that figure after it had been taken, which is how a large deduction
+// arrives as a shock. This shows the same account as it fills.
+//
+// It deliberately shows NO projected take-home. Contributions, the pot
+// and savings are decided when the month is finalised; a number shown
+// now would move later, and the first figure someone sees is the one
+// they remember and argue from.
+function ThisMonth() {
+  const [c, setC] = useState(null)
+  useEffect(() => { loadMyCredit().then(setC).catch(() => setC(null)) }, [])
+  if (!c || !c.linked) return null
+
+  if (!c.has_account) {
+    // Silence would read as "I owe nothing", which is a different claim.
+    return (
+      <section className="mt-4 rounded-2xl border border-line bg-surface p-4">
+        <p className="font-bold">This month</p>
+        <p className="text-dim text-sm mt-1">
+          No credit account is linked to you yet, so nothing can be shown here.
+          If you take items on credit, ask the GM to link your account.
+        </p>
+      </section>
+    )
+  }
+
+  const owing = Number(c.outstanding || 0)
+  const items = c.items || []
+  const repayments = c.repayments || []
+
+  return (
+    <section className="mt-4 rounded-2xl border border-amber bg-surface p-4">
+      <div className="flex items-baseline justify-between">
+        <p className="font-bold text-lg">This month so far</p>
+        <span className="text-dim text-sm tnum">
+          from {new Date(c.month_from + 'T12:00:00').toLocaleDateString('en-NG',
+            { day: 'numeric', month: 'short' })}
+        </span>
+      </div>
+
+      <div className="mt-3 space-y-1 text-sm">
+        <Row label="Taken on credit this month" v={Number(c.taken_this_month || 0)} minus />
+        {Number(c.repaid_this_month) > 0 && (
+          <Row label="Already paid back this month" v={Number(c.repaid_this_month)} plus />
+        )}
+      </div>
+
+      <div className="mt-3 pt-3 border-t border-line">
+        <div className="text-dim text-sm">Still to come off your pay</div>
+        <div className={`tnum text-3xl font-bold ${owing > 0.009 ? 'text-clay' : 'text-leaf'}`}>
+          {naira(owing)}
+        </div>
+        {owing <= 0.009 && (
+          <p className="text-leaf text-sm mt-1">Nothing owing. All of your pay is yours.</p>
+        )}
+      </div>
+
+      {items.length > 0 && (
+        <>
+          <p className="text-dim text-sm mt-4 mb-1">What you took</p>
+          <ul className="divide-y divide-line/60">
+            {items.map((it, i) => (
+              <li key={i} className="py-1.5 flex items-baseline gap-3 text-sm">
+                <span className="text-dim tnum shrink-0 w-14">
+                  {new Date(it.date + 'T12:00:00').toLocaleDateString('en-NG',
+                    { day: 'numeric', month: 'short' })}
+                </span>
+                <span className="flex-1 min-w-0 truncate">
+                  {Number(it.qty) > 1 ? `${Number(it.qty)} × ` : ''}{it.item}
+                  {it.department && <span className="text-dim"> · {it.department}</span>}
+                </span>
+                <span className="tnum shrink-0">{naira(Number(it.amount))}</span>
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
+
+      {repayments.length > 0 && (
+        <>
+          <p className="text-dim text-sm mt-4 mb-1">What you paid back</p>
+          <ul className="divide-y divide-line/60">
+            {repayments.map((r, i) => (
+              <li key={i} className="py-1.5 flex items-baseline gap-3 text-sm">
+                <span className="text-dim tnum shrink-0 w-14">
+                  {new Date(r.date + 'T12:00:00').toLocaleDateString('en-NG',
+                    { day: 'numeric', month: 'short' })}
+                </span>
+                <span className="flex-1 min-w-0 truncate text-dim">
+                  {r.note || (r.method === 'payroll' ? 'Taken from your pay' : r.method?.toUpperCase())}
+                </span>
+                <span className="tnum text-leaf shrink-0">{naira(Number(r.amount))}</span>
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
+
+      <p className="text-dim text-xs mt-4">
+        Your salary, and any pot or savings, are worked out when the month is
+        finished. This shows your credit only. If an item here is not yours,
+        say so now rather than at the end of the month.
+      </p>
+    </section>
+  )
+}
 
 export default function MyPay({ data }) {
   if (!data) return <p className="px-5 text-dim">Loading…</p>
@@ -11,14 +123,22 @@ export default function MyPay({ data }) {
       Your login is not linked to a pay record yet. Ask the GM.</p>
   }
   if (!data.months.length) {
-    return <p className="px-5 py-8 text-center text-dim">
-      No finished month yet. Your pay slip shows here once the month is finalised.</p>
+    return (
+      <div className="px-5 pb-8">
+        <ThisMonth />
+        <p className="py-8 text-center text-dim">
+          No finished month yet. Your pay slip shows here once the month is finalised.
+        </p>
+      </div>
+    )
   }
 
   const manyBranches = new Set(data.months.map(m => m.branch)).size > 1
   return (
     <div className="px-5 pb-8">
-      <p className="text-dim text-sm py-2">Only you can see this. Shows each finished month.</p>
+      <p className="text-dim text-sm py-2">Only you can see this.</p>
+      <ThisMonth />
+      <p className="text-dim text-sm pt-5">Finished months</p>
       {data.months.map(m => {
         const t = lineTotals(m, m.pot, m.working_days)
         const extra = [...(m.payroll_addition || [])]

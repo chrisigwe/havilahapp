@@ -2678,6 +2678,17 @@ export async function loadTillChecks(branchId, days = 14) {
 
 // The signed-in person's OWN finalised pay months (empty unless GM/admin has
 // linked their login to a payroll employee). The database decides what is returned.
+// The signed-in person's OWN staff credit — what they have taken this
+// month and what is still to come off their pay (migration 477). Reads
+// the same customer account payroll deducts from, so the page and the
+// deduction can never disagree. Returns no pay projection on purpose:
+// contributions, pot and savings are only settled at month end.
+export async function loadMyCredit() {
+  const { data, error } = await supabase.rpc('my_credit')
+  if (error) throw error
+  return data || { linked: false }
+}
+
 export async function loadMyPay() {
   const { data, error } = await supabase.rpc('my_pay')
   if (error) throw error
