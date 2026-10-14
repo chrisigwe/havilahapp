@@ -26,6 +26,10 @@ export default function Folio({ boot, room, onClose, onChanged }) {
   // stock movements, not room charges, so every mistake needed SQL.
   const [movingCharge, setMovingCharge] = useState(null)
   const [isOverstay, setIsOverstay] = useState(false)
+  // Set when a reopened stay is being checked out again and we have the
+  // date it originally left on, so the person can confirm rather than
+  // today's date being stamped on silently (migration 459).
+  const [checkoutDate, setCheckoutDate] = useState(null)
   // Money that went through ANOTHER department's POS/cash (e.g. a MainBar bill
   // charged to the room, then paid on the bar's terminal). Empty = Reception.
   const [payLoc, setPayLoc] = useState('')
@@ -191,11 +195,22 @@ export default function Folio({ boot, room, onClose, onChanged }) {
     setBusy(false)
   }
 
-  async function doCheckOut() {
+  // Checking out used to stamp today, full stop. On a stay that had been
+  // reopened to fix a charge, that quietly moved the departure date and
+  // charged the nights in between — it caught four stays in two days. If
+  // the stay remembers when it really left, ask instead of assuming.
+  function doCheckOut() {
+    const was = stay?.pre_reopen_actual_out
+    if (was && was !== lagosToday()) { setCheckoutDate(was); return }
+    finishCheckOut(lagosToday())
+  }
+
+  async function finishCheckOut(onDate) {
     setBusy(true)
     try {
-      await checkOutStay(room.stay_id, lagosToday())
+      await checkOutStay(room.stay_id, onDate)
       toast('Checked out', 'success')
+      setCheckoutDate(null)
       onChanged?.(); onClose()
     } catch (e) { toast(friendlyStayError(e), 'error') }
     setBusy(false)
@@ -793,6 +808,39 @@ export default function Folio({ boot, room, onClose, onChanged }) {
           freeLines={freeLines} payments={payments} checkedInAt={showTimes ? stay?.checked_in_at : null}
           departmentCredit={departmentCredit} billedToYou={billedToYou}
           branchName={boot.branchName} onClose={() => setPrinting(false)} />
+      )}
+
+      {checkoutDate && (
+        <div className="fixed inset-0 z-[60] bg-bg flex flex-col justify-center px-6">
+          <h2 className="text-2xl font-bold">Which day did they leave?</h2>
+          <p className="text-dim mt-2">
+            {room.guest_name || 'Guest'} · Room {room.room_number}
+          </p>
+          <p className="text-amber text-sm mt-3">
+            This stay was reopened. Before that it was checked out on{' '}
+            <b>{stay.pre_reopen_actual_out}</b>. Keep that date unless the
+            guest really stayed on — a later date charges the nights in
+            between.
+          </p>
+
+          <label className="block mt-6 text-dim">Departure date</label>
+          <input type="date" value={checkoutDate} max={lagosToday()}
+            onChange={e => setCheckoutDate(e.target.value)}
+            className="mt-2 h-14 w-full px-4 rounded-xl bg-surface border border-line tnum" />
+
+          {checkoutDate !== stay.pre_reopen_actual_out && (
+            <p className="text-clay text-sm mt-3">
+              Not the date it had before — this will change what the room
+              charge comes to.
+            </p>
+          )}
+
+          <button onClick={() => finishCheckOut(checkoutDate)} disabled={busy || !checkoutDate}
+            className="mt-8 w-full h-16 rounded-2xl bg-amber text-bg text-xl font-bold disabled:opacity-40">
+            {busy ? 'Checking out…' : `Check out on ${checkoutDate}`}
+          </button>
+          <button onClick={() => setCheckoutDate(null)} className="mt-3 w-full h-12 text-dim">Cancel</button>
+        </div>
       )}
 
       {confirmingDelete && (

@@ -37,6 +37,8 @@ const ITEMS = [
     roles: ['gm', 'admin'] },
   { key: 'staffaccounts', label: 'Staff accounts', hint: 'Hand over a login, or switch one off',
     roles: ['gm', 'admin'] },
+  { key: 'review', label: 'Needs a look', hint: 'Corrections, deletions and gaps worth asking about',
+    roles: ['gm', 'admin', 'auditor'] },
   { key: 'activity', label: 'Staff activity', hint: 'Who uses the app, which pages and what they do',
     roles: ['gm', 'admin'] },
   { key: 'attendance', label: 'Attendance', hint: 'Who is at the branch, first in and last seen',

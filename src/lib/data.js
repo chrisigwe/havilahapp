@@ -1289,7 +1289,7 @@ export async function loadFolio(stayId) {
     // v_stay_folio has daily_rate/billing_cycle but not the raw
     // overstay_fee or rate_applied (the rate type) — both needed to
     // pre-fill the editing form correctly.
-    supabase.from('stays').select('overstay_fee, rate_applied, bill_to, bill_to_guest_id, guest_id, checked_in_at').eq('id', stayId).maybeSingle(),
+    supabase.from('stays').select('overstay_fee, rate_applied, bill_to, bill_to_guest_id, guest_id, checked_in_at, pre_reopen_actual_out, reopen_count').eq('id', stayId).maybeSingle(),
   ])
   if (e1) throw e1
   if (e2) throw e2
@@ -1922,6 +1922,18 @@ export async function setRoomServiceStatus(roomId, outOfService, reason) {
     target: roomId, out_of_svc: outOfService, reason: reason || null,
   })
   if (error) throw error
+}
+
+// Things worth asking about — deletions after a day has closed, money
+// edits, blank counts, self-verified counts, reopened stays never
+// re-dated, and so on (migration 460). The RPC decides nothing about
+// intent; it only surfaces what would otherwise sit unseen.
+export async function loadReviewFlags(branchId, days = 14) {
+  const { data, error } = await supabase.rpc('review_flags', {
+    p_branch: branchId, p_days: days,
+  })
+  if (error) throw error
+  return data || []
 }
 
 // ---------- Staff of the Month ----------
