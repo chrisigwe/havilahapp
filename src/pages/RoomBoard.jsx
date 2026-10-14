@@ -121,8 +121,16 @@ export default function RoomBoard({ boot }) {
   const tally = rooms.reduce((acc, r) => {
     const s = stateOf(r); acc[s] = (acc[s] || 0) + 1; return acc
   }, {})
-  const owed = rooms.reduce((s, r) => s + Math.max(Number(r.outstanding || 0), 0), 0)
-  const onDeposit = rooms.reduce((s, r) => s + Math.max(-Number(r.outstanding || 0), 0), 0)
+  // A reservation is not a debt. Its whole booking shows as due with
+  // nothing paid because the guest has not arrived — eleven PSN rooms
+  // held for November were adding ₦1,650,000 here, five times every real
+  // balance together, so the outstanding figure meant nothing. Counted
+  // separately below as what is booked, not as what is owed.
+  const arrived = rooms.filter(r => r.status !== 'reserved')
+  const owed = arrived.reduce((s, r) => s + Math.max(Number(r.outstanding || 0), 0), 0)
+  const onDeposit = arrived.reduce((s, r) => s + Math.max(-Number(r.outstanding || 0), 0), 0)
+  const booked = rooms.filter(r => r.status === 'reserved')
+    .reduce((s, r) => s + Math.max(Number(r.outstanding || 0), 0), 0)
 
   return (
     <div className="px-5">
@@ -141,6 +149,11 @@ export default function RoomBoard({ boot }) {
           {onDeposit > 0 && (
             <span className="text-dim text-sm">
               <b className="text-lg font-bold tnum text-leaf">{naira(onDeposit)}</b> on deposit
+            </span>
+          )}
+          {booked > 0 && (
+            <span className="text-dim text-sm">
+              <b className="text-lg font-bold tnum text-amber">{naira(booked)}</b> booked, not arrived
             </span>
           )}
         </div>
@@ -281,7 +294,13 @@ export default function RoomBoard({ boot }) {
                         && ` · ${room.remaining_nights}n left`}
                     </p>
                     {Number(room.outstanding) > 0 && (
-                      <p className="text-clay text-xs font-semibold mt-0.5">{naira(room.outstanding)} due</p>
+                      room.status === 'reserved'
+                        ? <p className="text-amber text-xs font-semibold mt-0.5">
+                            {naira(room.outstanding)} booking
+                          </p>
+                        : <p className="text-clay text-xs font-semibold mt-0.5">
+                            {naira(room.outstanding)} due
+                          </p>
                     )}
                     {Number(room.outstanding) < 0 && (
                       <p className="text-leaf text-xs font-semibold mt-0.5">{naira(-room.outstanding)} left</p>
