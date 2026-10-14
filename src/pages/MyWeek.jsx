@@ -73,6 +73,16 @@ export default function MyWeek({ boot }) {
 
       {err && <p className="text-clay py-3">{err}</p>}
 
+      {/* Said plainly, because a count of days someone "missed" is only
+          fair if it starts when the check first existed. */}
+      {data.since && (
+        <p className="text-dim text-xs mb-3">
+          Counting from {new Date(data.since + 'T12:00:00').toLocaleDateString('en-NG',
+            { day: 'numeric', month: 'long' })}, when the Total Sales check was
+          first used here. Days before that are nobody's miss.
+        </p>
+      )}
+
       {!me.length && !oversight && (
         <p className="text-dim py-8 text-center">
           Nothing yet. Your days appear here once you record sales and save your
@@ -119,7 +129,7 @@ export default function MyWeek({ boot }) {
                     <Badge badge={r.badge} />
                   </p>
                   <p className="text-dim text-sm">
-                    {r.checked_days} of {r.sold_days} this week · {r.checked_90} of {r.sold_90} over 90 days
+                    {r.checked_days} of {r.sold_days} this week · {r.checked_90} of {r.sold_90} since checks began
                   </p>
                 </div>
                 <span className={`tnum font-bold shrink-0 ${
