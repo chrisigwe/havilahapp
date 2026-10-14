@@ -1280,10 +1280,10 @@ export async function loadFolio(stayId) {
   const [{ data: orders, error: e1 }, { data: payments, error: e2 }, { data: folio, error: e3 },
          { data: stay, error: e4 }] = await Promise.all([
     supabase.from('orders')
-      .select('id, business_date, served_by, settlement, approval_status, decision_note, order_items(id, category, description, qty, unit_price, amount, order_type, damage_reason, writeoff_note, pr_meal)')
+      .select('id, business_date, served_by, settlement, approval_status, decision_note, order_items(id, category, location_id, description, qty, unit_price, amount, order_type, damage_reason, writeoff_note, pr_meal)')
       .eq('stay_id', stayId).order('business_date', { ascending: false }),
     supabase.from('payments')
-      .select('id, business_date, method, amount, is_overstay, remark, location_id, received_by, collected:stock_locations!location_id(name)')
+      .select('id, business_date, method, amount, is_overstay, remark, location_id, applied_to, applied_location_id, received_by, collected:stock_locations!location_id(name)')
       .eq('stay_id', stayId).order('business_date', { ascending: false }),
     supabase.from('v_stay_folio').select('*').eq('stay_id', stayId).maybeSingle(),
     // v_stay_folio has daily_rate/billing_cycle but not the raw
@@ -1359,13 +1359,23 @@ export async function checkRepeatPayment(stayId, amount) {
 // settlement but several tenders in the ledger — same split-row
 // pattern as Credit's split repayments. parts is [{method, amount}],
 // already filtered to non-zero entries by the caller.
-async function _recordStayPayment({ staff, stayId, businessDate, cycle, parts, isOverstay, locationId = null }) {
+async function _recordStayPayment({ staff, stayId, businessDate, cycle, parts, isOverstay,
+                                    locationId = null, appliedTo = null, appliedLocationId = null }) {
+  // Two different questions, deliberately kept apart (migration 496):
+  //   location_id  — whose POS or cash drawer TOOK the money
+  //   applied_to   — which part of the bill it CLEARS
+  // A guest can settle the restaurant bill in cash at Reception, so the
+  // answers are often different and neither implies the other.
+  const applied = appliedTo === 'department' && appliedLocationId ? 'department'
+    : appliedTo === 'room' ? 'room' : null
   const rows = parts.filter(p => Number(p.amount) > 0).map(p => ({
     branch_id: staff.branch_id, stay_id: stayId, business_date: businessDate,
     method: p.method, amount: Number(p.amount), is_overstay: !!isOverstay, cycle,
     received_by: staff.id,
     // Department whose POS/cash took the money; empty = Reception (migration 336).
     location_id: locationId || null,
+    applied_to: applied,
+    applied_location_id: applied === 'department' ? appliedLocationId : null,
   }))
   if (!rows.length) return
   const { error } = await supabase.from('payments').insert(rows)

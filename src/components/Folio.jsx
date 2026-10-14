@@ -34,6 +34,10 @@ export default function Folio({ boot, room, onClose, onChanged }) {
   // charged to the room, then paid on the bar's terminal). Empty = Reception.
   const [payLoc, setPayLoc] = useState('')
   const [payLocOpen, setPayLocOpen] = useState(false)
+  // Which PART of the bill a payment clears — the room, one department, or
+  // (empty, the default) the bill as a whole. Not the same as payLoc above,
+  // which is whose till took the money (migration 496).
+  const [payAgainst, setPayAgainst] = useState('')
   const [movingPay, setMovingPay] = useState(null)   // { id, loc } while changing an existing payment's department
   const [editing, setEditing] = useState(null)   // { dailyRate, billingCycle, scheduledOut, rateReason } while open
   const [billToSuggestions, setBillToSuggestions] = useState([])
@@ -128,6 +132,68 @@ export default function Folio({ boot, room, onClose, onChanged }) {
     li => li.settlement === 'charged_to_room' && li.approval === 'pending')
   const payParts = paymentParts(pay, pay.amount)
   const payAllocated = paymentAllocated(pay, pay.amount)
+
+  // ── What the bill is made of, department by department ──────────────
+  //
+  // One room bill is really several: the room itself, plus whatever each
+  // department charged to it. A guest settling the restaurant and leaving
+  // the bar for later needs those kept apart (migration 496).
+  //
+  // The parts are built from the SAME billableLines and folio figures the
+  // total already uses, so they cannot drift from it — the "lines don't
+  // add up" bug is only ever caused by a second, parallel calculation.
+  // Money with no department named is shown on its own rather than being
+  // spread across the parts on the guest's behalf.
+  //
+  // A typed charge carries no location_id (the stock trigger must not
+  // fire on a line with no stock item), so those are grouped together and
+  // labelled for what they are rather than silently assigned a department.
+  // Computed plainly, NOT with useMemo. Everything from here down runs
+  // after the `if (!data) return` guard above, so a hook placed here would
+  // be called on the loaded render and skipped on the loading one — React
+  // throws "rendered more hooks than during the previous render" the moment
+  // the folio arrives, which is a blank screen. A few lines and payments
+  // cost nothing to add up on every render.
+  const locName = (id) => (allLocations || locations || []).find(l => l.id === id)?.name
+  const billParts = (() => {
+    const roomCharged = Number(folio?.room_charge || 0) + Number(folio?.overstay_charge || 0)
+    const byDept = new Map()
+    for (const li of billableLines) {
+      const key = li.location_id || 'typed'
+      const prev = byDept.get(key) || 0
+      byDept.set(key, prev + Number(li.amount || 0))
+    }
+    const paidTo = (match) => payments
+      .filter(match).reduce((t, p) => t + Number(p.amount || 0), 0)
+
+    const parts = []
+    if (roomCharged > 0) {
+      const paid = paidTo(p => p.applied_to === 'room')
+      parts.push({ key: 'room', applied: 'room', locationId: null, name: 'Room charge',
+                   charged: roomCharged, paid, left: roomCharged - paid })
+    }
+    for (const [key, charged] of byDept) {
+      const paid = key === 'typed'
+        ? 0   // nothing can be earmarked at a part of the bill that has no department
+        : paidTo(p => p.applied_to === 'department' && p.applied_location_id === key)
+      parts.push({
+        key,
+        applied: key === 'typed' ? null : 'department',
+        locationId: key === 'typed' ? null : key,
+        name: key === 'typed' ? 'Restaurant and other typed charges' : (locName(key) || 'A department'),
+        charged, paid, left: charged - paid,
+      })
+    }
+    return parts
+  })()
+
+  const earmarked = payments
+    .filter(p => p.applied_to).reduce((t, p) => t + Number(p.amount || 0), 0)
+  const generalPaid = Number(folio?.total_paid || 0) - earmarked
+  // Only worth showing the split when the bill genuinely has more than one
+  // part. A room with no orders on it does not need a breakdown.
+  const showParts = billParts.length > 1
+  const payAgainstPart = billParts.find(p => p.key === payAgainst) || null
   const cycles = cyclesFor(branchSettings?.allowedCycles)
   const overstayDefault = branchSettings?.overstayDefault ?? null
   const currentOverstay = stay?.overstay_fee != null ? Number(stay.overstay_fee) : null
@@ -176,10 +242,12 @@ export default function Folio({ boot, room, onClose, onChanged }) {
       await recordStayPayment({
         staff, stayId: room.stay_id, businessDate: pay.date || lagosToday(),
         cycle: folio?.billing_cycle, parts: payParts, isOverstay, locationId: payLoc || null,
+        appliedTo: payAgainstPart?.applied || null,
+        appliedLocationId: payAgainstPart?.locationId || null,
       })
-      toast('Payment recorded', 'success')
+      toast(payAgainstPart ? `Payment recorded against ${payAgainstPart.name}` : 'Payment recorded', 'success')
       setPay({ amount: '', method: 'pos', split: null, date: lagosToday() }); setIsOverstay(false)
-      setPayLoc(''); setPayLocOpen(false)
+      setPayLoc(''); setPayLocOpen(false); setPayAgainst('')
       refresh(); onChanged?.()
     } catch (e) { toast(friendlyStayError(e), 'error') }
     setBusy(false)
@@ -408,6 +476,39 @@ export default function Folio({ boot, room, onClose, onChanged }) {
           </div>
         </div>
 
+        {/* Where the debt sits. Built from the same figures as the total
+            above, so the two can never disagree. */}
+        {showParts && (
+          <div className="mt-4 rounded-2xl border border-line bg-surface p-4">
+            <span className="font-semibold">What this bill is made of</span>
+            <div className="mt-2">
+              {billParts.map(part => (
+                <div key={part.key} className="flex items-baseline justify-between py-1.5">
+                  <span className="text-dim">
+                    {part.name}
+                    {part.paid > 0 && (
+                      <span className="block text-xs">{naira(part.paid)} paid against it</span>
+                    )}
+                  </span>
+                  <span className={`tnum font-semibold ${part.left > 0.009 ? 'text-ink'
+                    : part.left < -0.009 ? 'text-amber' : 'text-leaf'}`}>
+                    {part.left < -0.009
+                      ? `${naira(-part.left)} over`
+                      : part.left < 0.009 ? 'Settled' : naira(part.left)}
+                  </span>
+                </div>
+              ))}
+            </div>
+            {generalPaid > 0.009 && (
+              <p className="text-dim text-sm pt-3 mt-1 border-t border-line">
+                {naira(generalPaid)} was paid against the bill as a whole, not
+                against any one part. The Outstanding figure above already
+                includes it.
+              </p>
+            )}
+          </div>
+        )}
+
         {showCountdown && (
           <div className="mt-4 rounded-2xl border border-line bg-surface p-4">
             <div className="flex items-baseline justify-between mb-2">
@@ -523,6 +624,32 @@ export default function Folio({ boot, room, onClose, onChanged }) {
               <PaymentMethodPicker methods={payMethods} amount={pay.amount}
                 value={pay} onChange={v => setPay(p => ({ ...p, ...v }))} />
             </div>
+
+            {/* WHICH DEBT this money clears — a different question from which
+                till took it, below. Left on "the whole bill" unless the guest
+                asks for something specific, which is how every payment has
+                always behaved. */}
+            {showParts && (
+              <div className="mt-3">
+                <label className="block text-dim text-sm">Against</label>
+                <select value={payAgainst} onChange={e => setPayAgainst(e.target.value)}
+                  className="mt-1 h-12 w-full px-3 rounded-xl bg-raise border border-line">
+                  <option value="">The whole bill</option>
+                  {billParts.filter(p => p.applied).map(p => (
+                    <option key={p.key} value={p.key}>
+                      {p.name} — {p.left > 0.009 ? `${naira(p.left)} left` : 'settled'}
+                    </option>
+                  ))}
+                </select>
+                {!!payAgainstPart && payAllocated - payAgainstPart.left > 0.009 && (
+                  <p className="text-amber text-sm mt-2">
+                    {naira(payAllocated)} is more than the {naira(payAgainstPart.left)} left
+                    on {payAgainstPart.name}. The extra will sit against that part as
+                    credit rather than clearing the rest of the bill.
+                  </p>
+                )}
+              </div>
+            )}
 
             {deptOptions.length > 0 && (
               payLocOpen ? (
@@ -681,6 +808,15 @@ export default function Folio({ boot, room, onClose, onChanged }) {
                     <div className="text-dim text-sm">{p.business_date}{p.remark ? ` · ${p.remark}` : ''}</div>
                     {p.collected?.name && (
                       <div className="text-amber text-sm">Collected at {p.collected.name}</div>
+                    )}
+                    {/* What the guest asked this money to clear. Absent on
+                        every payment taken before migration 496, and on any
+                        the desk left against the bill as a whole. */}
+                    {p.applied_to && (
+                      <div className="text-leaf text-sm">
+                        Clears {p.applied_to === 'room' ? 'the room charge'
+                          : locName(p.applied_location_id) || 'a department'}
+                      </div>
                     )}
                     {movingPay?.id === p.id ? (
                       <div className="mt-2">
