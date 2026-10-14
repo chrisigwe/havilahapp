@@ -36,6 +36,8 @@ function ThisMonth() {
   }
 
   const owing = Number(c.outstanding || 0)
+  const salary = Number(c.monthly_salary || 0)
+  const hasDays = c.days_worked != null && Number(c.working_days) > 0
   const items = c.items || []
   const repayments = c.repayments || []
 
@@ -65,6 +67,38 @@ function ThisMonth() {
           <p className="text-leaf text-sm mt-1">Nothing owing. All of your pay is yours.</p>
         )}
       </div>
+
+      {/* What a full month would leave. Shown because seeing credit against
+          the salary it will come out of is what makes a person stop and
+          think — a bare figure does not. Labelled as a full month on
+          purpose: days not worked reduce it, and the person must not read
+          this as a promise. Pot, contributions and savings are still not
+          projected; those are settled at month end and a number shown now
+          would move. */}
+      {salary > 0 && (
+        <div className="mt-3 pt-3 border-t border-line">
+          <div className="space-y-1 text-sm">
+            <Row label="Your salary for a full month" v={salary} />
+            {owing > 0.009 && <Row label="Less what you owe" v={owing} minus />}
+          </div>
+          <div className="text-dim text-sm mt-2">
+            If you work the full month, you would receive about
+          </div>
+          <div className="tnum text-2xl font-bold text-amber">{naira(Math.max(0, salary - owing))}</div>
+
+          {hasDays ? (
+            <p className="text-dim text-sm mt-1">
+              {c.days_worked} of {c.working_days} days recorded so far this month.
+              Fewer days worked means less than this.
+            </p>
+          ) : (
+            <p className="text-dim text-sm mt-1">
+              Your days for this month are not counted yet. Days not worked
+              reduce this figure.
+            </p>
+          )}
+        </div>
+      )}
 
       {items.length > 0 && (
         <>
@@ -108,9 +142,10 @@ function ThisMonth() {
       )}
 
       <p className="text-dim text-xs mt-4">
-        Your salary, and any pot or savings, are worked out when the month is
-        finished. This shows your credit only. If an item here is not yours,
-        say so now rather than at the end of the month.
+        This is an estimate, not your pay slip. Any pot, contribution or
+        savings is worked out when the month is finished, and days not worked
+        reduce what you receive. If an item here is not yours, say so now
+        rather than at the end of the month.
       </p>
     </section>
   )
