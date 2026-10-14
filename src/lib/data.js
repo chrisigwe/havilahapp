@@ -2283,7 +2283,8 @@ export async function loadCreditOnDate(branchId, date, locationId) {
 //   2. till entries  -> sales with order_type 'pr_damage'. damage_reason
 //                       tells them apart: set = damage, empty = PR only
 //                       (that is exactly what the till asks). Costed from
-//                       the item's cost_price
+//                       the unit_cost stamped on the row when it was
+//                       recorded, the same as path 1
 //   3. restaurant    -> order_items with order_type 'pr_damage'. Food is
 //                       not stock-tracked and the ingredients were
 //                       expensed when bought, so there is NO cost for
@@ -2305,7 +2306,7 @@ export async function loadWriteoffsOnDate(branchId, date, locationId) {
 
   let sq = supabase.from('sales')
     .select(`qty, location_id, description, damage_reason, writeoff_note, no_stock_declared,
-             stock_items(name, cost_price), staff:recorded_by(full_name)`)
+             unit_cost, stock_items(name, cost_price), staff:recorded_by(full_name)`)
     .eq('branch_id', branchId).eq('business_date', date)
     .eq('order_type', 'pr_damage')
   if (loc) sq = sq.eq('location_id', loc)
@@ -2339,7 +2340,10 @@ export async function loadWriteoffsOnDate(branchId, date, locationId) {
   for (const s of (prSales || [])) {
     const line = {
       name: s.stock_items?.name || s.description || 'Item', qty: Number(s.qty),
-      cost: Number(s.qty) * Number(s.stock_items?.cost_price || 0),
+      // The cost stamped on the row when it happened. Only an older row
+      // with nothing stamped falls back to today's cost price — a cost
+      // price changed next month must not rewrite this month's loss.
+      cost: Number(s.qty) * Number(s.unit_cost ?? s.stock_items?.cost_price ?? 0),
       reason: s.damage_reason || null, note: s.writeoff_note || null,
       who: s.staff?.full_name || '', locationId: s.location_id,
       noStock: !!s.no_stock_declared,
