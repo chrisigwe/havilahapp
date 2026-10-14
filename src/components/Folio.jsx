@@ -614,8 +614,13 @@ export default function Folio({ boot, room, onClose, onChanged }) {
               </div>
             )}
 
+            {/* Mirrors the box above word for word. It said "Everything
+                outstanding ₦49,500" on a guest who was ₦49,500 AHEAD, which
+                reads as a debt he does not have. */}
             <div className="flex items-baseline justify-between pt-3 mt-3 border-t border-line">
-              <span className="font-semibold">Everything outstanding</span>
+              <span className="font-semibold">
+                {totalOutstanding < -0.009 ? 'Everything paid ahead' : 'Everything outstanding'}
+              </span>
               <span className={`tnum font-bold ${totalOutstanding > 0 ? 'text-clay' : 'text-leaf'}`}>
                 {naira(Math.abs(totalOutstanding))}
               </span>
@@ -963,7 +968,7 @@ export default function Folio({ boot, room, onClose, onChanged }) {
                             setAllocDraft(p.applied_to === 'room' ? 'room'
                               : p.applied_to === 'department' ? p.applied_location_id || '' : '')
                           }}
-                          className="text-dim text-sm underline mt-1">
+                          className="block text-dim text-xs underline mt-1">
                           {p.applied_to ? 'Change what this clears' : 'Say what this payment was for'}
                         </button>
                       )
@@ -1001,7 +1006,7 @@ export default function Folio({ boot, room, onClose, onChanged }) {
                       </div>
                     ) : (deptOptions.length > 0 && (
                       <button onClick={() => setMovingPay({ id: p.id, loc: p.location_id || '', part: String(p.amount), total: p.amount })}
-                        className="text-dim text-xs underline mt-1">Change department</button>
+                        className="block text-dim text-xs underline mt-1">Change department</button>
                     ))}
                   </div>
                   <span className="tnum font-semibold">{naira(p.amount)}</span>
