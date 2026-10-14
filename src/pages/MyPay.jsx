@@ -17,16 +17,20 @@ const MONTHS = ['January','February','March','April','May','June','July','August
 // and savings are decided when the month is finalised; a number shown
 // now would move later, and the first figure someone sees is the one
 // they remember and argue from.
-function ThisMonth() {
+function ThisMonth({ branchId, branchName }) {
   const [c, setC] = useState(null)
   const [err, setErr] = useState(null)
   // Never swallow this. A silent blank on a pay page reads as "you owe
   // nothing", which is a claim rather than an absence — the first
   // version hid a broken query behind an empty space.
+  // Scoped to the branch being viewed. The GM holds records at both, and
+  // one card adding them together showed a single salary and a mixed
+  // list with no way to tell which branch either belonged to.
   useEffect(() => {
-    loadMyCredit().then(c2 => { setC(c2); setErr(null) })
+    setC(null); setErr(null)
+    loadMyCredit(branchId).then(c2 => { setC(c2); setErr(null) })
       .catch(e => setErr(e.message || 'could not load'))
-  }, [])
+  }, [branchId])
 
   if (err) {
     return (
@@ -46,9 +50,12 @@ function ThisMonth() {
     // Silence would read as "I owe nothing", which is a different claim.
     return (
       <section className="mt-4 rounded-2xl border border-line bg-surface p-4">
-        <p className="font-bold">This month</p>
+        <p className="font-bold">
+          This month
+          {branchName && <span className="text-dim text-sm font-normal"> · {branchName}</span>}
+        </p>
         <p className="text-dim text-sm mt-1">
-          No credit account is linked to you yet, so nothing can be shown here.
+          No credit account is linked to you at this branch, so nothing can be shown here.
           If you take items on credit, ask the GM to link your account.
         </p>
       </section>
@@ -64,7 +71,10 @@ function ThisMonth() {
   return (
     <section className="mt-4 rounded-2xl border border-amber bg-surface p-4">
       <div className="flex items-baseline justify-between">
-        <p className="font-bold text-lg">This month so far</p>
+        <p className="font-bold text-lg">
+          This month so far
+          {branchName && <span className="text-dim text-sm font-normal"> · {branchName}</span>}
+        </p>
         <span className="text-dim text-sm tnum">
           from {new Date(c.month_from + 'T12:00:00').toLocaleDateString('en-NG',
             { day: 'numeric', month: 'short' })}
@@ -171,7 +181,9 @@ function ThisMonth() {
   )
 }
 
-export default function MyPay({ data }) {
+export default function MyPay({ data, boot }) {
+  const branchId = boot?.staff?.branch_id || null
+  const branchName = boot?.branchName || null
   if (!data) return <p className="px-5 text-dim">Loading…</p>
   if (!data.linked) {
     return <p className="px-5 py-8 text-center text-dim">
@@ -180,7 +192,7 @@ export default function MyPay({ data }) {
   if (!data.months.length) {
     return (
       <div className="px-5 pb-8">
-        <ThisMonth />
+        <ThisMonth branchId={branchId} branchName={branchName} />
         <p className="py-8 text-center text-dim">
           No finished month yet. Your pay slip shows here once the month is finalised.
         </p>
@@ -188,13 +200,28 @@ export default function MyPay({ data }) {
     )
   }
 
-  const manyBranches = new Set(data.months.map(m => m.branch)).size > 1
+  // The finished months follow the branch switch too, matched on id —
+  // the switcher shows "AWKA" while the branch is "Havilah Suite Awka",
+  // so names cannot be compared. Before any month carries a branch_id
+  // (an older my_pay), nothing is filtered rather than everything hidden.
+  const hasIds = data.months.some(m => m.branch_id)
+  const months = (hasIds && branchId)
+    ? data.months.filter(m => m.branch_id === branchId)
+    : data.months
+  const manyBranches = new Set(months.map(m => m.branch)).size > 1
   return (
     <div className="px-5 pb-8">
       <p className="text-dim text-sm py-2">Only you can see this.</p>
-      <ThisMonth />
-      <p className="text-dim text-sm pt-5">Finished months</p>
-      {data.months.map(m => {
+      <ThisMonth branchId={branchId} branchName={branchName} />
+      <p className="text-dim text-sm pt-5">
+        Finished months{branchName ? ` · ${branchName}` : ''}
+      </p>
+      {!months.length && (
+        <p className="text-dim text-sm py-6 text-center">
+          No finished month at this branch.
+        </p>
+      )}
+      {months.map(m => {
         const t = lineTotals(m, m.pot, m.working_days)
         const extra = [...(m.payroll_addition || [])]
         return (

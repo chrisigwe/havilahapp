@@ -2683,8 +2683,8 @@ export async function loadTillChecks(branchId, days = 14) {
 // the same customer account payroll deducts from, so the page and the
 // deduction can never disagree. Returns no pay projection on purpose:
 // contributions, pot and savings are only settled at month end.
-export async function loadMyCredit() {
-  const { data, error } = await supabase.rpc('my_credit')
+export async function loadMyCredit(branchId = null) {
+  const { data, error } = await supabase.rpc('my_credit', { p_branch: branchId })
   if (error) throw error
   return data || { linked: false }
 }

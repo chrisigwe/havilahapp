@@ -322,7 +322,7 @@ export default function App() {
         : tab === 'staffaccounts' ? <StaffAccounts boot={boot} />
         : tab === 'activity' ? <Activity boot={boot} />
         : tab === 'attendance' ? <Attendance boot={boot} />
-        : tab === 'mypay' && !boot.staff.is_read_only ? <MyPay data={myPay} />
+        : tab === 'mypay' && !boot.staff.is_read_only ? <MyPay data={myPay} boot={boot} />
         : tab === 'tillchecks' ? <TillChecks boot={boot} />
         : tab === 'variance' ? <Variances boot={boot} />
         : tab === 'review' ? <Review boot={boot} />
