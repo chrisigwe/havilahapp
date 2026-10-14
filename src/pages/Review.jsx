@@ -73,7 +73,7 @@ const dt = v => {
 }
 
 export default function Review({ boot }) {
-  const [days, setDays] = useState(14)
+  const [days, setDays] = useState(7)
   const [flags, setFlags] = useState(null)
   const [err, setErr] = useState(null)
   const [open, setOpen] = useState({})
@@ -96,6 +96,9 @@ export default function Review({ boot }) {
     return [...by.entries()].sort((a, b) => rank(a[1]) - rank(b[1]) || b[1].length - a[1].length)
   }, [flags])
 
+  // Counted from the rows actually returned. Each kind is capped at 25
+  // by the RPC, so a category with more says so on its own row rather
+  // than inflating a headline nobody can act on.
   const counts = useMemo(() => {
     const c = { high: 0, watch: 0, note: 0 }
     for (const f of flags || []) c[f.severity] = (c[f.severity] || 0) + 1
@@ -151,7 +154,8 @@ export default function Review({ boot }) {
               <div className="flex-1 min-w-0">
                 <p className="font-bold">{meta.title}</p>
                 <p className={`text-sm ${sev.text}`}>
-                  {rows.length} {rows.length === 1 ? 'entry' : 'entries'} · {sev.label}
+                  {rows[0]?.kind_total ?? rows.length}{' '}
+                  {(rows[0]?.kind_total ?? rows.length) === 1 ? 'entry' : 'entries'} · {sev.label}
                 </p>
               </div>
               <span className="text-dim">{isOpen ? '−' : '+'}</span>
@@ -179,6 +183,12 @@ export default function Review({ boot }) {
                     </li>
                   ))}
                 </ul>
+                {rows[0]?.kind_total > rows.length && (
+                  <p className="text-dim text-sm mt-3">
+                    Showing the {rows.length} most recent of {rows[0].kind_total}.
+                    Narrow the days above to see fewer.
+                  </p>
+                )}
               </div>
             )}
           </section>
