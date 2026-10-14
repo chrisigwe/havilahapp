@@ -15,6 +15,7 @@ import Payroll from './pages/Payroll'
 import StaffAccounts from './pages/StaffAccounts'
 import Variances from './pages/Variances'
 import Review from './pages/Review'
+import MyWeek from './pages/MyWeek'
 import TillChecks from './pages/TillChecks'
 import MyPay from './pages/MyPay'
 import Recovery from './pages/Recovery'
@@ -325,6 +326,7 @@ export default function App() {
         : tab === 'tillchecks' ? <TillChecks boot={boot} />
         : tab === 'variance' ? <Variances boot={boot} />
         : tab === 'review' ? <Review boot={boot} />
+        : tab === 'myweek' ? <MyWeek boot={boot} />
         : tab === 'recovery' ? <Recovery boot={boot} />
         : tab === 'credit' ? <Credit boot={boot} />
         : tab === 'count' ? <Counts boot={boot} />

@@ -2632,6 +2632,15 @@ async function _recordTillCheck({ branchId, locationId, date, appPos, appCash, p
   if (error) throw error
 }
 
+// How steadily each person is doing the Total Sales check (migration
+// 470). Counts the check being DONE, never the figures agreeing — see
+// MyWeek.jsx for why that distinction must not be reversed.
+export async function loadMyWeek(branchId, days = 7) {
+  const { data, error } = await supabase.rpc('my_week', { p_branch: branchId, p_days: days })
+  if (error) throw error
+  return data || { me: [], team: [] }
+}
+
 export async function loadTillChecks(branchId, days = 14) {
   const { data, error } = await supabase.rpc('till_checks_report', { p_branch: branchId, p_days: days })
   if (error) throw error

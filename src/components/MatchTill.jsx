@@ -23,18 +23,25 @@ const sumMethod = (rows, m) => rows.reduce((s, r) =>
 // One amount field. Module-level on purpose: a component defined inside another
 // is a NEW component on every render, so the input remounted on each keystroke
 // and the cursor jumped out after every digit.
-function AmountRow({ label, hint, app, value, onChange, gap, ok, higher, lower }) {
+function AmountRow({ label, hint, app, value, onChange, gap, ok, higher, lower, blind }) {
   return (
     <div className="mt-3">
       <div className="flex items-baseline justify-between gap-2">
         <label className="font-semibold">{label}</label>
-        <span className="text-dim text-sm shrink-0">App has <span className="tnum">{naira(app)}</span></span>
+        {/* The app's own figure stays hidden until the count is saved.
+            Shown while typing, it was simply copied: every till check ever
+            recorded, at both branches, came out equal to the penny on
+            both POS and cash. A check that cannot disagree measures
+            nothing, so the question no longer shows its answer. */}
+        {!blind && (
+          <span className="text-dim text-sm shrink-0">App has <span className="tnum">{naira(app)}</span></span>
+        )}
       </div>
       {hint && <p className="text-dim text-xs">{hint}</p>}
       <input type="number" inputMode="decimal" value={value}
         onChange={e => onChange(e.target.value)} placeholder="0"
         className="mt-1 w-full h-12 px-3 rounded-xl bg-raise border border-line tnum text-lg" />
-      {value !== '' && (
+      {!blind && value !== '' && (
         <p className={`mt-1 text-sm font-semibold ${ok ? 'text-leaf' : 'text-clay'}`}>
           {ok ? 'Matches ✓' : `${naira(Math.abs(gap))} ${gap > 0 ? higher : lower}`}
         </p>
@@ -55,6 +62,11 @@ export default function MatchTill({ rows = [], posTotal = null, cashTotal = null
   const [showAll, setShowAll] = useState(false)
   const [filter, setFilter] = useState('all')
   const [fixing, setFixing] = useState(null)   // { id, qty, method }
+
+  // Count first, compare after. Blind only where a result is actually
+  // being recorded (onRecord) and has not been saved yet — a manager
+  // reviewing the same component still sees everything at once.
+  const blind = !!onRecord && !saved
 
   // Only paid sales: PR, damage and staff meals take no money.
   const sales = rows.filter(r => r.order_type !== 'pr_damage' && r.order_type !== 'staff')
@@ -172,29 +184,30 @@ export default function MatchTill({ rows = [], posTotal = null, cashTotal = null
         <button onClick={() => setOpen(false)} className="text-dim text-sm">Close</button>
       </div>
       <p className="text-dim text-sm mt-1">
-        Total Sales is your POS, Cash and Credit (plus any old debt paid today).
-        Type what you have in hand and the app shows where it does not agree.
+        {blind
+          ? 'Count your drawer and read your POS slip, then type what you actually found. The app shows whether it agrees once you save.'
+          : 'Total Sales is your POS, Cash and Credit (plus any old debt paid today). Type what you have in hand and the app shows where it does not agree.'}
       </p>
 
       <AmountRow label="POS slip total" app={appPos} value={pos} onChange={edit(setPos)} gap={posGap} ok={posOk}
         hint={[Number(recovered.pos) > 0 && `Includes ${naira(recovered.pos)} of old debt paid by POS`, Number(folio.pos) > 0 && `Includes ${naira(folio.pos)} paid on room folios through your POS`].filter(Boolean).join('. ') || null}
-        higher="more on the app than on the POS slip" lower="less on the app than on the POS slip" />
+        higher="more on the app than on the POS slip" lower="less on the app than on the POS slip" blind={blind} />
       <AmountRow label="Cash in your drawer" app={appCash} value={cash} onChange={edit(setCash)} gap={cashGap} ok={cashOk}
         hint={[Number(recovered.cash) > 0 && `Includes ${naira(recovered.cash)} of old debt paid in cash`, Number(folio.cash) > 0 && `Includes ${naira(folio.cash)} paid on room folios in cash`].filter(Boolean).join('. ') || null}
-        higher="more cash than the app expects" lower="less cash than the app expects" />
+        higher="more cash than the app expects" lower="less cash than the app expects" blind={blind} />
       {showCredit && (
         <AmountRow label="Credit you gave today" app={appCredit} value={credit} onChange={edit(setCredit)} gap={creditGap} ok={creditOk}
           hint="From your own record of who took on credit (leave empty if you keep none)"
-          higher="more credit on the app than you recorded" lower="less credit on the app than you recorded" />
+          higher="more credit on the app than you recorded" lower="less credit on the app than you recorded" blind={blind} />
       )}
 
-      {allOk && (
+      {!blind && allOk && (
         <p className="mt-4 rounded-xl bg-leaf/15 text-leaf font-bold p-3 text-center">
           Total Sales matched. You can close ✓
         </p>
       )}
 
-      {anyGap && (
+      {!blind && anyGap && (
         <div className="mt-4 rounded-xl border border-clay/60 p-3">
           <p className="font-semibold text-clay">Something does not agree. Find it below.</p>
           <ul className="text-dim text-sm mt-1 list-disc pl-5 space-y-1">
@@ -265,7 +278,9 @@ export default function MatchTill({ rows = [], posTotal = null, cashTotal = null
 
       {onRecord && hasPos && hasCash && (
         saved ? (
-          <p className="mt-4 text-center text-leaf font-semibold">Result saved for your manager ✓</p>
+          <p className="mt-4 text-center text-leaf font-semibold">
+            Count saved for your manager ✓ — the comparison is above.
+          </p>
         ) : (
           <button disabled={saving}
             onClick={async () => {
@@ -275,9 +290,16 @@ export default function MatchTill({ rows = [], posTotal = null, cashTotal = null
               setSaving(false)
             }}
             className="mt-4 w-full h-12 rounded-xl bg-amber text-bg font-bold disabled:opacity-40">
-            {saving ? 'Saving…' : 'Save my result'}
+            {saving ? 'Saving…' : 'Save my count'}
           </button>
         )
+      )}
+
+      {blind && hasPos && hasCash && (
+        <p className="mt-2 text-dim text-xs text-center">
+          What you type here is what gets recorded. Count carefully — you will
+          see whether it agrees straight after saving.
+        </p>
       )}
     </div>
   )
