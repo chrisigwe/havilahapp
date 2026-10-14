@@ -1936,6 +1936,34 @@ export async function loadReviewFlags(branchId, days = 14) {
   return data || []
 }
 
+// Entries belonging to one day that were changed or deleted afterwards,
+// for the day's close. The audit table already held this; nothing read
+// it, which is how a deleted charge could quietly return stock to a
+// shelf after it had been counted.
+export async function loadCorrectionsOnDate(branchId, date, locationId = null) {
+  let q = supabase.from('inventory_audit')
+    .select('id, happened_at, action, entity, summary, done_by_name, stock_item_id')
+    .eq('branch_id', branchId)
+    .eq('business_date', date)
+    .in('action', ['deleted', 'edited'])
+    .order('happened_at', { ascending: false })
+  const { data, error } = await q
+  if (error) return []
+  const rows = data || []
+  // inventory_audit has no location of its own, so a department view
+  // narrows by the items that department actually sells rather than
+  // pretending to know more than the row carries.
+  if (!locationId) return rows
+  const ids = [...new Set(rows.map(r => r.stock_item_id).filter(Boolean))]
+  if (!ids.length) return rows
+  const { data: moved } = await supabase.from('stock_movements')
+    .select('stock_item_id')
+    .in('stock_item_id', ids)
+    .or(`from_location.eq.${locationId},to_location.eq.${locationId}`)
+  const here = new Set((moved || []).map(m => m.stock_item_id))
+  return rows.filter(r => !r.stock_item_id || here.has(r.stock_item_id))
+}
+
 // Mark one "Needs a look" entry as dealt with, or put it back
 // (migration 463). Hides nothing — the sale, payment or count it points
 // at is untouched; it only stops the same item being counted every day.

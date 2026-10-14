@@ -6,6 +6,7 @@ import { findDuplicateCustomers, findDuplicateGuests, loadDailyFinancials, loadG
 import { useToast } from '../components/Toast'
 import ReceptionDashboard from '../components/ReceptionDashboard'
 import WriteoffBreakdown from '../components/WriteoffBreakdown'
+import CorrectionsOnDay from '../components/CorrectionsOnDay'
 import { is, SUPERVISOR } from '../lib/roles'
 
 // Read-only — browse any past day's sales by department. Built for
@@ -334,6 +335,12 @@ export default function DailySales({ boot }) {
               breakdown is shared with Sales so the two pages
               cannot drift apart again. */}
           <WriteoffBreakdown data={writeoffs} settled={summary} />
+
+          {/* What was undone to this day afterwards. Sits with the day's
+              figures on purpose: a total and the corrections made to it
+              only mean something read together. */}
+          <CorrectionsOnDay branchId={staff.branch_id} date={date}
+            locationId={locId === 'all' ? null : locId} />
 
           {isGmOrAdmin && dupeCount > 0 && (
             <div className="mt-3 rounded-2xl border border-clay bg-surface p-4">
