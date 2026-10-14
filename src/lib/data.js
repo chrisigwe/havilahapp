@@ -1146,7 +1146,22 @@ export async function loadGuestDepartmentCredit(guestId) {
     .select('location_id, location_name, balance')
     .eq('guest_id', guestId)
   if (error) return []
-  return data || []
+  const rows = data || []
+  if (!rows.length) return rows
+
+  // Which customer account holds it. The view reports a balance per
+  // guest and department, but a repayment has to name a CUSTOMER, so the
+  // folio cannot offer to settle this without one.
+  //
+  // Checked across the whole book (498): every guest with a linked
+  // account has exactly one, carrying all their departments. Where that
+  // is not true the account is deliberately left off — splitting a
+  // payment between two accounts on a guess is how money lands on the
+  // wrong one, and Credit can still settle it by hand.
+  const { data: accounts } = await supabase.from('customers')
+    .select('id, name').eq('linked_guest_id', guestId).eq('is_active', true)
+  const only = (accounts || []).length === 1 ? accounts[0] : null
+  return rows.map(r => ({ ...r, customerId: only?.id || null, customerName: only?.name || null }))
 }
 
 // Other stays whose bill_to_guest_id points at this guest — the

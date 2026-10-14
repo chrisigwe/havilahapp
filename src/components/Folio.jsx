@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { naira, lagosToday, lagosTime, seesStayTimes, cyclesFor, friendlyStayError } from '../lib/format'
-import { billedToLabel, checkOutStay, checkRepeatPayment, deleteOrderItem, deleteStay, loadBranchStaySettings, loadFolio, moveRoomChargeDate, recordStayPayment, setPaymentDepartment, splitPaymentToDepartment, reopenStay, searchSimilarGuests, updateOrderItem, updateOverstayFee, updateStayBillTo, updateStayDetails } from '../lib/data'
+import { billedToLabel, checkOutStay, checkRepeatPayment, deleteOrderItem, deleteStay, loadBranchStaySettings, loadFolio, moveRoomChargeDate, recordStayPayment, setPaymentDepartment, splitPaymentToDepartment, reopenStay, saveRepayment, searchSimilarGuests, updateOrderItem, updateOverstayFee, updateStayBillTo, updateStayDetails } from '../lib/data'
 import { useToast } from '../components/Toast'
 import PaymentMethodPicker, { paymentParts, paymentAllocated } from './PaymentMethodPicker'
 import FolioStatement from './FolioStatement'
@@ -189,6 +189,27 @@ export default function Folio({ boot, room, onClose, onChanged }) {
         charged, paid, left: charged - paid,
       })
     }
+    // Department credit — a different ledger, offered here all the same.
+    // A guest standing at the desk wanting to clear the restaurant does
+    // not care which table it lives in, and leaving the desk no way to
+    // take that money is how Mr Alphonso's ₦4,500 ended up on his room
+    // while his restaurant bill stayed exactly ₦4,500 unpaid.
+    //
+    // Only offered when we know which account holds it. Without that the
+    // line still SHOWS below, it just cannot be paid from here.
+    for (const d of (departmentCredit || [])) {
+      const bal = Number(d.balance || 0)
+      if (bal <= 0.009) continue
+      parts.push({
+        key: `credit:${d.location_id}`,
+        applied: d.customerId ? 'credit' : null,
+        locationId: d.location_id,
+        customerId: d.customerId || null,
+        name: `${d.location_name} — on Credit`,
+        charged: bal, paid: 0, left: bal,
+        onCredit: true,
+      })
+    }
     return parts
   })()
 
@@ -233,7 +254,11 @@ export default function Folio({ boot, room, onClose, onChanged }) {
     }
     // Asked of the database, not the screen — the screen is exactly what
     // is stale when somebody re-enters a payment they could not see land.
-    const repeat = await checkRepeatPayment(room.stay_id, payAllocated)
+    // Skipped for a credit repayment: that money goes to another table
+    // entirely, so this would be reading the wrong ledger and could warn
+    // about a room payment that has nothing to do with it.
+    const repeat = payAgainstPart?.applied === 'credit'
+      ? null : await checkRepeatPayment(room.stay_id, payAllocated)
     if (repeat && !window.confirm(
           `${naira(repeat.amount)} was already recorded on this bill `
           + `${repeat.minutesAgo} minute${repeat.minutesAgo > 1 ? 's' : ''} ago`
@@ -244,12 +269,29 @@ export default function Folio({ boot, room, onClose, onChanged }) {
     }
     setBusy(true)
     try {
-      await recordStayPayment({
-        staff, stayId: room.stay_id, businessDate: pay.date || lagosToday(),
-        cycle: folio?.billing_cycle, parts: payParts, isOverstay, locationId: payLoc || null,
-        appliedTo: payAgainstPart?.applied || null,
-        appliedLocationId: payAgainstPart?.locationId || null,
-      })
+      if (payAgainstPart?.applied === 'credit') {
+        // A department's credit lives in credit_repayments against a
+        // customer account, not in payments against the stay. Writing it
+        // to the stay would clear the wrong debt and leave the real one
+        // standing — so this goes to the other ledger, one row per
+        // method exactly as the Credit page does it.
+        for (const part of payParts.filter(p => Number(p.amount) > 0)) {
+          await saveRepayment({
+            staff, customerId: payAgainstPart.customerId,
+            amount: Number(part.amount), method: part.method,
+            paidOn: pay.date || lagosToday(),
+            locationId: payAgainstPart.locationId,
+            note: `Taken at Reception, Room ${room.room_number}`,
+          })
+        }
+      } else {
+        await recordStayPayment({
+          staff, stayId: room.stay_id, businessDate: pay.date || lagosToday(),
+          cycle: folio?.billing_cycle, parts: payParts, isOverstay, locationId: payLoc || null,
+          appliedTo: payAgainstPart?.applied || null,
+          appliedLocationId: payAgainstPart?.locationId || null,
+        })
+      }
       toast(payAgainstPart ? `Payment recorded against ${payAgainstPart.name}` : 'Payment recorded', 'success')
       setPay({ amount: '', method: 'pos', split: null, date: lagosToday() }); setIsOverstay(false)
       setPayLoc(''); setPayLocOpen(false); setPayAgainst('')
@@ -491,7 +533,7 @@ export default function Folio({ boot, room, onClose, onChanged }) {
           <div className="mt-4 rounded-2xl border border-line bg-surface p-4">
             <span className="font-semibold">What this bill is made of</span>
             <div className="mt-2">
-              {billParts.map(part => (
+              {billParts.filter(p => !p.onCredit).map(part => (
                 <div key={part.key} className="flex items-baseline justify-between py-1.5">
                   <span className="text-dim">
                     {part.name}
@@ -520,11 +562,18 @@ export default function Folio({ boot, room, onClose, onChanged }) {
                 Credit — which is why they cannot be picked in Against below. */}
             {departmentCreditTotal > 0 && (
               <div className="pt-3 mt-3 border-t border-line">
-                <span className="text-dim text-sm">Settled on Credit, not by paying this bill</span>
-                {(departmentCredit || []).map(d => (
-                  <div key={d.location_id} className="flex items-baseline justify-between py-1.5">
-                    <span className="text-clay">{d.location_name}</span>
-                    <span className="tnum font-semibold text-clay">{naira(Number(d.balance))}</span>
+                <span className="text-dim text-sm">On Credit — a separate account, payable here</span>
+                {billParts.filter(p => p.onCredit).map(part => (
+                  <div key={part.key} className="flex items-baseline justify-between py-1.5">
+                    <span className="text-clay">
+                      {part.name.replace(' — on Credit', '')}
+                      {!part.applied && (
+                        <span className="block text-xs text-dim">
+                          More than one account — settle this on Credit
+                        </span>
+                      )}
+                    </span>
+                    <span className="tnum font-semibold text-clay">{naira(part.left)}</span>
                   </div>
                 ))}
               </div>
@@ -688,8 +737,8 @@ export default function Folio({ boot, room, onClose, onChanged }) {
                 {!!payAgainstPart && payAllocated - payAgainstPart.left > 0.009 && (
                   <p className="text-amber text-sm mt-2">
                     {naira(payAllocated)} is more than the {naira(payAgainstPart.left)} left
-                    on {payAgainstPart.name}. The extra will sit against that part as
-                    credit rather than clearing the rest of the bill.
+                    on {payAgainstPart.name}. The extra will leave that part in credit
+                    rather than clearing the rest of the bill.
                   </p>
                 )}
               </div>
