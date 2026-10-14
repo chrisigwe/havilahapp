@@ -19,7 +19,27 @@ const MONTHS = ['January','February','March','April','May','June','July','August
 // they remember and argue from.
 function ThisMonth() {
   const [c, setC] = useState(null)
-  useEffect(() => { loadMyCredit().then(setC).catch(() => setC(null)) }, [])
+  const [err, setErr] = useState(null)
+  // Never swallow this. A silent blank on a pay page reads as "you owe
+  // nothing", which is a claim rather than an absence — the first
+  // version hid a broken query behind an empty space.
+  useEffect(() => {
+    loadMyCredit().then(c2 => { setC(c2); setErr(null) })
+      .catch(e => setErr(e.message || 'could not load'))
+  }, [])
+
+  if (err) {
+    return (
+      <section className="mt-4 rounded-2xl border border-clay bg-surface p-4">
+        <p className="font-bold text-clay">This month could not be loaded</p>
+        <p className="text-dim text-sm mt-1">
+          Your credit for this month is not showing. It does not mean you owe
+          nothing — ask the GM to check.
+        </p>
+        <p className="text-dim text-xs mt-2 break-words">{err}</p>
+      </section>
+    )
+  }
   if (!c || !c.linked) return null
 
   if (!c.has_account) {
