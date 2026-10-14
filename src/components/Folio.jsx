@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { naira, lagosToday, lagosTime, seesStayTimes, cyclesFor, friendlyStayError } from '../lib/format'
-import { billedToLabel, checkOutStay, checkRepeatPayment, deleteOrderItem, deleteStay, loadBranchStaySettings, loadFolio, moveRoomChargeDate, recordStayPayment, setPaymentDepartment, splitPaymentToDepartment, reopenStay, saveRepayment, searchSimilarGuests, updateOrderItem, updateOverstayFee, updateStayBillTo, updateStayDetails } from '../lib/data'
+import { billedToLabel, checkOutStay, checkRepeatPayment, deleteOrderItem, deleteStay, loadBranchStaySettings, loadFolio, moveRoomChargeDate, recordStayPayment, setPaymentDepartment, splitPaymentToDepartment, reopenStay, saveRepayment, searchSimilarGuests, setPaymentAllocation, updateOrderItem, updateOverstayFee, updateStayBillTo, updateStayDetails } from '../lib/data'
 import { useToast } from '../components/Toast'
 import PaymentMethodPicker, { paymentParts, paymentAllocated } from './PaymentMethodPicker'
 import FolioStatement from './FolioStatement'
@@ -38,6 +38,8 @@ export default function Folio({ boot, room, onClose, onChanged }) {
   // (empty, the default) the bill as a whole. Not the same as payLoc above,
   // which is whose till took the money (migration 496).
   const [payAgainst, setPayAgainst] = useState('')
+  const [allocating, setAllocating] = useState(null)   // payment id whose allocation is being changed
+  const [allocDraft, setAllocDraft] = useState('')
   const [movingPay, setMovingPay] = useState(null)   // { id, loc } while changing an existing payment's department
   const [editing, setEditing] = useState(null)   // { dailyRate, billingCycle, scheduledOut, rateReason } while open
   const [billToSuggestions, setBillToSuggestions] = useState([])
@@ -220,6 +222,21 @@ export default function Folio({ boot, room, onClose, onChanged }) {
   // part. A room with no orders on it does not need a breakdown.
   const showParts = billParts.length > 1 || departmentCreditTotal > 0 || billedToYouTotal > 0
   const payAgainstPart = billParts.find(p => p.key === payAgainst) || null
+
+  // Changing what an existing payment clears is a correction to the
+  // record, so it sits with the other corrections: GM and admin.
+  const canSetAllocation = is(staff.role, SUPERVISOR) && showParts
+
+  async function saveAllocation(p) {
+    const part = billParts.find(x => x.key === allocDraft) || null
+    setBusy(true)
+    try {
+      await setPaymentAllocation(p.id, part?.applied || null, part?.locationId || null)
+      toast(part ? `Payment now clears ${part.name}` : 'Payment now clears the whole bill', 'success')
+      setAllocating(null); refresh(); onChanged?.()
+    } catch (e) { toast(friendlyStayError(e), 'error') }
+    setBusy(false)
+  }
   const cycles = cyclesFor(branchSettings?.allowedCycles)
   const overstayDefault = branchSettings?.overstayDefault ?? null
   const currentOverstay = stay?.overstay_fee != null ? Number(stay.overstay_fee) : null
@@ -542,9 +559,13 @@ export default function Folio({ boot, room, onClose, onChanged }) {
                     )}
                   </span>
                   <span className={`tnum font-semibold ${part.left > 0.009 ? 'text-ink'
-                    : part.left < -0.009 ? 'text-amber' : 'text-leaf'}`}>
+                    : part.left < -0.009 ? (part.key === 'room' ? 'text-leaf' : 'text-amber') : 'text-leaf'}`}>
+                    {/* On the room, money beyond what is owed is nights paid
+                        ahead, which is normal for a long stay and should not
+                        be dressed up as a fault. On a department it is an
+                        overpayment and worth a second look. */}
                     {part.left < -0.009
-                      ? `${naira(-part.left)} over`
+                      ? (part.key === 'room' ? `${naira(-part.left)} paid ahead` : `${naira(-part.left)} over`)
                       : part.left < 0.009 ? 'Settled' : naira(part.left)}
                   </span>
                 </div>
@@ -910,6 +931,42 @@ export default function Folio({ boot, room, onClose, onChanged }) {
                         Clears {p.applied_to === 'room' ? 'the room charge'
                           : locName(p.applied_location_id) || 'a department'}
                       </div>
+                    )}
+                    {/* Correcting what an older payment was for. Money paid
+                        forward for the room should stay against the room
+                        instead of being absorbed by a bar tab that turns up
+                        later — and before 496 a payment could not say so. */}
+                    {canSetAllocation && (
+                      allocating === p.id ? (
+                        <div className="mt-2">
+                          <select value={allocDraft}
+                            onChange={e => setAllocDraft(e.target.value)}
+                            className="h-11 w-full px-3 rounded-xl bg-raise border border-line">
+                            <option value="">The whole bill</option>
+                            {billParts.filter(x => x.applied && !x.onCredit).map(x => (
+                              <option key={x.key} value={x.key}>{x.name}</option>
+                            ))}
+                          </select>
+                          <div className="flex gap-2 mt-2">
+                            <button onClick={() => saveAllocation(p)} disabled={busy}
+                              className="h-11 px-4 rounded-xl bg-amber text-bg font-semibold disabled:opacity-40">
+                              Save
+                            </button>
+                            <button onClick={() => setAllocating(null)}
+                              className="h-11 px-4 text-dim">Cancel</button>
+                          </div>
+                        </div>
+                      ) : (
+                        <button
+                          onClick={() => {
+                            setAllocating(p.id)
+                            setAllocDraft(p.applied_to === 'room' ? 'room'
+                              : p.applied_to === 'department' ? p.applied_location_id || '' : '')
+                          }}
+                          className="text-dim text-sm underline mt-1">
+                          {p.applied_to ? 'Change what this clears' : 'Say what this payment was for'}
+                        </button>
+                      )
                     )}
                     {movingPay?.id === p.id ? (
                       <div className="mt-2">

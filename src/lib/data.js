@@ -1827,6 +1827,29 @@ export async function loadRoomPayments(branchId, days = 60) {
   return data || []
 }
 
+// Change what an EXISTING payment clears (migration 496).
+//
+// Money paid forward for the room should stay against the room, not be
+// quietly absorbed by a bar tab that arrives afterwards. New payments
+// say so when they are taken; this is for the ones already on the book
+// — Mr Michael Ike's ₦60,000 of 14 October among them, which was a
+// fortnight paid in advance and read as an overpayment because nothing
+// recorded what it was for.
+//
+// Only the allocation moves. The amount, the date, the method and whose
+// till took it are all left exactly as they are.
+export async function setPaymentAllocation(paymentId, appliedTo, appliedLocationId = null) {
+  const applied = appliedTo === 'department' && appliedLocationId ? 'department'
+    : appliedTo === 'room' ? 'room' : null
+  const { error } = await supabase.from('payments')
+    .update({
+      applied_to: applied,
+      applied_location_id: applied === 'department' ? appliedLocationId : null,
+    })
+    .eq('id', paymentId)
+  if (error) throw error
+}
+
 // Move a room payment to the department whose till took the money, or back to
 // Reception (locationId = null). Server decides who may (migration 336).
 export async function setPaymentDepartment(paymentId, locationId) {
