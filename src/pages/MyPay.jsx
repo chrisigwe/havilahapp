@@ -67,6 +67,8 @@ function ThisMonth({ branchId, branchName }) {
   const hasDays = c.days_worked != null && Number(c.working_days) > 0
   const items = c.items || []
   const repayments = c.repayments || []
+  const given = c.given || []
+  const givenTotal = Number(c.given_total || 0)
 
   return (
     <section className="mt-4 rounded-2xl border border-amber bg-surface p-4">
@@ -82,14 +84,16 @@ function ThisMonth({ branchId, branchName }) {
       </div>
 
       <div className="mt-3 space-y-1 text-sm">
-        <Row label="Taken on credit this month" v={Number(c.taken_this_month || 0)} minus />
+        <Row label="You took on credit this month" v={Number(c.taken_this_month || 0)} minus />
         {Number(c.repaid_this_month) > 0 && (
           <Row label="Already paid back this month" v={Number(c.repaid_this_month)} plus />
         )}
       </div>
 
       <div className="mt-3 pt-3 border-t border-line">
-        <div className="text-dim text-sm">Still to come off your pay</div>
+        <div className="text-dim text-sm">
+          Your own credit — still to come off your pay
+        </div>
         <div className={`tnum text-3xl font-bold ${owing > 0.009 ? 'text-clay' : 'text-leaf'}`}>
           {naira(owing)}
         </div>
@@ -169,6 +173,38 @@ function ThisMonth({ branchId, branchName }) {
             ))}
           </ul>
         </>
+      )}
+
+      {/* Credit this person GAVE at the till. Deliberately its own block
+          with its own heading and a different colour: it is the
+          business's money to recover, not theirs to repay, and one
+          combined figure would read as personal debt. */}
+      {given.length > 0 && (
+        <div className="mt-4 pt-4 border-t border-line">
+          <div className="flex items-baseline justify-between">
+            <p className="font-bold">Credit you gave to customers</p>
+            <span className="tnum font-bold text-amber">{naira(givenTotal)}</span>
+          </div>
+          <p className="text-dim text-sm mt-1">
+            Money customers owe the business, recorded by you. This is{' '}
+            <span className="text-leaf font-semibold">not</span> taken off your
+            pay — it is yours to collect.
+          </p>
+          <ul className="mt-2 divide-y divide-line/60">
+            {given.map((g, i) => (
+              <li key={i} className="py-1.5 flex items-baseline gap-3 text-sm">
+                <span className="flex-1 min-w-0 truncate">{g.customer}</span>
+                {g.last_credit && (
+                  <span className="text-dim text-xs tnum shrink-0">
+                    {new Date(g.last_credit + 'T12:00:00').toLocaleDateString('en-NG',
+                      { day: 'numeric', month: 'short' })}
+                  </span>
+                )}
+                <span className="tnum text-amber shrink-0">{naira(Number(g.balance))}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
       )}
 
       <p className="text-dim text-xs mt-4">
