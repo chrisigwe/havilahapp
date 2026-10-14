@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { naira, lagosToday, lagosTime, seesStayTimes, cyclesFor, friendlyStayError } from '../lib/format'
-import { billedToLabel, checkOutStay, deleteOrderItem, deleteStay, loadBranchStaySettings, loadFolio, moveRoomChargeDate, recordStayPayment, setPaymentDepartment, splitPaymentToDepartment, reopenStay, searchSimilarGuests, updateOrderItem, updateOverstayFee, updateStayBillTo, updateStayDetails } from '../lib/data'
+import { billedToLabel, checkOutStay, checkRepeatPayment, deleteOrderItem, deleteStay, loadBranchStaySettings, loadFolio, moveRoomChargeDate, recordStayPayment, setPaymentDepartment, splitPaymentToDepartment, reopenStay, searchSimilarGuests, updateOrderItem, updateOverstayFee, updateStayBillTo, updateStayDetails } from '../lib/data'
 import { useToast } from '../components/Toast'
 import PaymentMethodPicker, { paymentParts, paymentAllocated } from './PaymentMethodPicker'
 import FolioStatement from './FolioStatement'
@@ -158,6 +158,17 @@ export default function Folio({ boot, room, onClose, onChanged }) {
     if (owing <= 0.009 &&
         !window.confirm(`This bill is already settled. Save ${naira(payAllocated)} on top?\n\n`
           + 'Tap Cancel if the money belongs on another room or another stay.')) {
+      return
+    }
+    // Asked of the database, not the screen — the screen is exactly what
+    // is stale when somebody re-enters a payment they could not see land.
+    const repeat = await checkRepeatPayment(room.stay_id, payAllocated)
+    if (repeat && !window.confirm(
+          `${naira(repeat.amount)} was already recorded on this bill `
+          + `${repeat.minutesAgo} minute${repeat.minutesAgo > 1 ? 's' : ''} ago`
+          + `${repeat.who ? ` by ${repeat.who}` : ''}.\n\n`
+          + `Is this a second ${naira(payAllocated)} the guest has just paid?\n\n`
+          + 'Tap Cancel if it is the same money — it is already saved.')) {
       return
     }
     setBusy(true)

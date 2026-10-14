@@ -1310,6 +1310,51 @@ export async function loadFolio(stayId) {
            departmentCredit, billedToYou }
 }
 
+// Was this same money already put on this same bill a moment ago?
+//
+// Ifeanyi Emmanuel's room 403 on 15 September took ₦20,000 at 13:41:28
+// and ₦20,000 again at 13:47:17 — one night at ₦20,000, from the same
+// person at the same desk. The existing guards could not catch it. The
+// "more than the bill" one needs the new payment to EXCEED what is
+// owing, and ₦20,000 against ₦20,000 does not; the "already settled"
+// one reads the screen's own figure, which still showed ₦20,000 owing
+// because the first payment had not come back yet. That is the whole
+// problem: on a slow connection the attendant cannot see that it
+// landed, so they do the sensible thing and enter it again.
+//
+// So this asks the database rather than the screen. Any payment on
+// this stay in the last quarter of an hour that adds up to exactly
+// what is about to be saved is treated as a probable repeat. Exactly,
+// not approximately — two genuine payments of the same round figure
+// within fifteen minutes are rare, and the person is asked rather than
+// stopped, so a real second payment costs one tap.
+export async function checkRepeatPayment(stayId, amount) {
+  const want = Math.round(Number(amount) * 100) / 100
+  if (!stayId || !(want > 0)) return null
+  const since = new Date(Date.now() - 15 * 60 * 1000).toISOString()
+  const { data, error } = await supabase.from('payments')
+    .select('id, amount, created_at, received_by')
+    .eq('stay_id', stayId).gte('created_at', since)
+    .order('created_at', { ascending: false })
+  if (error) return null                   // never block a payment over this
+  const rows = data || []
+  if (!rows.length) return null
+
+  const sum = rows.reduce((s, p) => s + Number(p.amount || 0), 0)
+  const single = rows.find(p => Math.abs(Number(p.amount) - want) < 0.009)
+  const hit = single || (Math.abs(sum - want) < 0.009 ? rows[0] : null)
+  if (!hit) return null
+
+  let who = ''
+  if (hit.received_by) {
+    const { data: st } = await supabase.from('staff')
+      .select('full_name').eq('id', hit.received_by).maybeSingle()
+    who = st?.full_name || ''
+  }
+  const mins = Math.max(1, Math.round((Date.now() - new Date(hit.created_at).getTime()) / 60000))
+  return { amount: Number(single ? hit.amount : sum), minutesAgo: mins, who }
+}
+
 // A guest paying part POS and part cash (or transfer) is one
 // settlement but several tenders in the ledger — same split-row
 // pattern as Credit's split repayments. parts is [{method, amount}],

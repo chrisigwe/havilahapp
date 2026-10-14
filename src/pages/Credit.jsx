@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useToast } from '../components/Toast'
 import { lagosToday, methodLabel, naira, startingDept, tierLabel } from '../lib/format'
 import RoomChargeTracker from '../components/RoomChargeTracker'
-import { deactivateCustomer, deleteCustomer, linkCustomerToGuest, loadBalances, loadCreditForMonth, loadCreditOnDate, loadCustomerLedger, loadFolio, loadGuestBalances, loadReservedValue, loadStaffForLocation, loadUnlinkedCustomerBalances, moveWorkaroundToRoom, recordStayPayment, saveRepayment, searchSimilarGuests } from '../lib/data'
+import { checkRepeatPayment, deactivateCustomer, deleteCustomer, linkCustomerToGuest, loadBalances, loadCreditForMonth, loadCreditOnDate, loadCustomerLedger, loadFolio, loadGuestBalances, loadReservedValue, loadStaffForLocation, loadUnlinkedCustomerBalances, moveWorkaroundToRoom, recordStayPayment, saveRepayment, searchSimilarGuests } from '../lib/data'
 import { enqueue, flush, isConnectionError } from '../lib/outbox'
 import PaymentMethodPicker, { paymentParts, paymentAllocated } from '../components/PaymentMethodPicker'
 import FolioStatement from '../components/FolioStatement'
@@ -224,6 +224,20 @@ export default function Credit({ boot }) {
   }
 
   async function submitGuestPayment() {
+    // Same guard as the folio: a payment the attendant could not see land
+    // gets entered a second time, and the screen is the one thing that
+    // cannot tell them so.
+    const parts = paymentParts(guestPay, guestPay.amount)
+    const total = parts.reduce((s, p) => s + Number(p.amount || 0), 0)
+    const repeat = await checkRepeatPayment(guestPay.stayId, total)
+    if (repeat && !window.confirm(
+          `${naira(repeat.amount)} was already recorded on this bill `
+          + `${repeat.minutesAgo} minute${repeat.minutesAgo > 1 ? 's' : ''} ago`
+          + `${repeat.who ? ` by ${repeat.who}` : ''}.\n\n`
+          + `Is this a second ${naira(total)} the guest has just paid?\n\n`
+          + 'Tap Cancel if it is the same money — it is already saved.')) {
+      return
+    }
     setBusy(true)
     try {
       await recordStayPayment({
