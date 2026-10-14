@@ -1603,10 +1603,49 @@ export async function loadReceptionDashboard(branchId, date) {
   return { pos, cash, deferred, deferredTotal, roomRateProgress, roomRateRemainingTotal, inHouse }
 }
 
+// Rooms booked but not yet arrived, with what the booking COMES TO.
+// loadUpcomingReservations (above) answers "who is coming"; this answers
+// "what is it worth and has any of it been paid". Kept out of the owing
+// figures, and shown on its own so an unpaid group booking is still
+// visible while a deposit can still be asked for.
+export async function loadReservedValue(branchId) {
+  const { data, error } = await supabase.from('v_stay_folio')
+    .select('stay_id, check_in_date, scheduled_out, total_due, total_paid, outstanding, room_id, guest_id')
+    .eq('branch_id', branchId).eq('status', 'reserved')
+    .order('check_in_date', { ascending: true })
+  if (error) return []
+  const rows = data || []
+  if (!rows.length) return []
+  const [rooms, guests] = await Promise.all([
+    supabase.from('rooms').select('id, room_number').in('id', rows.map(r => r.room_id).filter(Boolean)),
+    supabase.from('guests').select('id, full_name').in('id', rows.map(r => r.guest_id).filter(Boolean)),
+  ])
+  const roomById = Object.fromEntries((rooms.data || []).map(r => [r.id, r.room_number]))
+  const guestById = Object.fromEntries((guests.data || []).map(g => [g.id, g.full_name]))
+  return rows.map(r => ({
+    stayId: r.stay_id,
+    room: roomById[r.room_id] || '—',
+    guest: guestById[r.guest_id] || 'Guest',
+    arrives: r.check_in_date,
+    leaves: r.scheduled_out,
+    total: Number(r.total_due || 0),
+    paid: Number(r.total_paid || 0),
+    unpaid: Number(r.outstanding || 0),
+  }))
+}
+
 export async function loadGuestBalances(branchId, staffId) {
+  // Reserved rooms are NOT debt. A booking's whole stay shows as due with
+  // nothing paid, because the guest has not arrived — eleven PSN rooms
+  // held for November were reading as ₦1,650,000 owed, five times every
+  // real balance put together, which made the figure useless. A
+  // reservation becomes owed when the guest checks in; until then it is
+  // expected business and is reported separately
+  // (loadReservedValue).
   const { data: folios, error: e1 } = await supabase.from('v_stay_folio')
     .select('stay_id, billing_cycle, outstanding')
     .eq('branch_id', branchId).gt('outstanding', 0.009)
+    .neq('status', 'reserved')
   if (e1) throw e1
 
   const stayIds = (folios || []).map(f => f.stay_id)
@@ -1638,6 +1677,7 @@ export async function loadGuestBalances(branchId, staffId) {
   // has to think to open.
   const { data: billToStays } = await supabase.from('stays')
     .select('id, bill_to_guest_id').eq('branch_id', branchId).not('bill_to_guest_id', 'is', null)
+    .neq('status', 'reserved')   // same reasoning as above: not owed yet
   const billToTotalByGuest = {}
   if (billToStays?.length) {
     const { data: billToFolios } = await supabase.from('v_stay_folio')

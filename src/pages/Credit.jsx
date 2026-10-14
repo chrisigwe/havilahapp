@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useToast } from '../components/Toast'
 import { lagosToday, methodLabel, naira, startingDept, tierLabel } from '../lib/format'
 import RoomChargeTracker from '../components/RoomChargeTracker'
-import { deactivateCustomer, deleteCustomer, linkCustomerToGuest, loadBalances, loadCreditForMonth, loadCreditOnDate, loadCustomerLedger, loadFolio, loadGuestBalances, loadStaffForLocation, loadUnlinkedCustomerBalances, moveWorkaroundToRoom, recordStayPayment, saveRepayment, searchSimilarGuests } from '../lib/data'
+import { deactivateCustomer, deleteCustomer, linkCustomerToGuest, loadBalances, loadCreditForMonth, loadCreditOnDate, loadCustomerLedger, loadFolio, loadGuestBalances, loadReservedValue, loadStaffForLocation, loadUnlinkedCustomerBalances, moveWorkaroundToRoom, recordStayPayment, saveRepayment, searchSimilarGuests } from '../lib/data'
 import { enqueue, flush, isConnectionError } from '../lib/outbox'
 import PaymentMethodPicker, { paymentParts, paymentAllocated } from '../components/PaymentMethodPicker'
 import FolioStatement from '../components/FolioStatement'
@@ -70,6 +70,7 @@ export default function Credit({ boot }) {
   requestKeyRef.current = requestKey
   const [rows, setRows] = useState(null)
   const [guestBalances, setGuestBalances] = useState(null)
+  const [upcoming, setUpcoming] = useState([])
   const [guestPay, setGuestPay] = useState(null)   // { stayId, guestName, roomNumber, outstanding, billingCycle, amount, method, split, isOverstay }
   const [guestStatement, setGuestStatement] = useState(null)   // { room, folio, orderLines, payments } once loaded
   const [statementBusy, setStatementBusy] = useState(false)
@@ -117,6 +118,7 @@ export default function Credit({ boot }) {
     if (!hasReceptionAccess) return
     loadGuestBalances(staff.branch_id, isEditor ? staffFilter : null)
       .then(setGuestBalances).catch(() => setGuestBalances([]))
+    loadReservedValue(staff.branch_id).then(setUpcoming).catch(() => setUpcoming([]))
   }, [staff.branch_id, hasReceptionAccess, isEditor, staffFilter])
   useEffect(refreshGuestBalances, [refreshGuestBalances])
 
@@ -608,6 +610,43 @@ export default function Credit({ boot }) {
               )}
               {guestBalances === null && <li className="py-8 text-center text-dim">Loading…</li>}
             </ul>
+
+            {/* Rooms booked but not yet arrived. Deliberately NOT counted
+                above: a reservation is not a debt until the guest checks
+                in, and eleven PSN rooms held for November were reading as
+                ₦1,650,000 owed — five times every real balance together.
+                Still shown, because an unpaid group booking is worth
+                seeing while a deposit can still be asked for. */}
+            {upcoming.length > 0 && (() => {
+              const unpaid = upcoming.filter(u => u.unpaid > 0.009)
+              if (!unpaid.length) return null
+              return (
+                <details className="mt-4 rounded-2xl border border-line bg-surface p-4">
+                  <summary className="flex items-baseline justify-between cursor-pointer">
+                    <span>
+                      <span className="font-semibold">Booked, not yet arrived</span>
+                      <span className="text-dim text-sm block">
+                        {unpaid.length} room{unpaid.length === 1 ? '' : 's'} · not counted as owing
+                      </span>
+                    </span>
+                    <span className="tnum font-bold text-amber">
+                      {naira(unpaid.reduce((s2, u) => s2 + u.unpaid, 0))}
+                    </span>
+                  </summary>
+                  <ul className="mt-3 divide-y divide-line/60">
+                    {unpaid.map(u => (
+                      <li key={u.stayId} className="py-2 flex items-baseline gap-3 text-sm">
+                        <span className="flex-1 min-w-0 truncate">
+                          {u.guest}
+                          <span className="text-dim"> · Room {u.room} · arrives {u.arrives}</span>
+                        </span>
+                        <span className="tnum text-dim shrink-0">{naira(u.unpaid)}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </details>
+              )
+            })()}
 
             {/* Department accounts owing money but attached to no
                 guest. This is the money that goes missing at checkout:
