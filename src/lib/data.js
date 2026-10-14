@@ -854,7 +854,15 @@ async function _chargeItemToRoom({ staff, stayId, item, locationId, locationName
   if (oErr) throw oErr
   const { data: oi, error: iErr } = await supabase.from('order_items').insert({
     order_id: order.id, category,
-    stock_item_id: item?.id || null, location_id: item ? locationId : null,
+    stock_item_id: item?.id || null,
+    // The department this charge came from, recorded on a TYPED line too.
+    // It used to be left null on those to keep the stock trigger quiet,
+    // but sync_order_item_stock_movement returns early when
+    // `stock_item_id is null OR location_id is null` — the stock_item_id
+    // half already stops it, confirmed against the live trigger body.
+    // So a typed line can say where it came from and still move no stock,
+    // which is what lets the restaurant's bill be settled on its own.
+    location_id: locationId || null,
     description: item ? item.name : description, qty, unit_price: unitPrice,
     order_type: orderType === 'staff' ? 'staff' : 'standard', writeoff_note: writeoffNote || null,
   }).select('id').single()
@@ -1946,14 +1954,17 @@ async function _saveRestaurantWriteoff({ staff, locationId, businessDate,
 async function _chargeWriteoffToRoom({ staff, stayId, businessDate,
                                               description, qty, unitPrice,
                                               orderType, damageReason, writeoffNote, prMeal, stockUsed,
-                                              noStockDeclared }) {
+                                              noStockDeclared, locationId = null }) {
   const { data: order, error: oErr } = await supabase.from('orders').insert({
     branch_id: staff.branch_id, stay_id: stayId, business_date: businessDate,
     settlement: 'charged_to_room', served_by: staff.id,
   }).select('id').single()
   if (oErr) throw oErr
   const { data: oi, error: iErr } = await supabase.from('order_items').insert({
-    order_id: order.id, category: 'food', stock_item_id: null, location_id: null,
+    // Department recorded, no stock item, so no stock moves — same
+    // reasoning as _chargeItemToRoom above.
+    order_id: order.id, category: 'food', stock_item_id: null,
+    location_id: locationId || null,
     description, qty, unit_price: unitPrice,
     order_type: orderType, damage_reason: damageReason || null, writeoff_note: writeoffNote || null,
     pr_meal: prMeal || null,
@@ -2457,7 +2468,9 @@ async function _chargeBasketToRoom({ staff, stayId, lines, locationId, date, loc
       order_id: order.id,
       category: l.item ? categoryFor(loc) : 'food',
       stock_item_id: l.item?.id || null,
-      location_id: l.item ? loc : null,
+      // Typed lines carry their department too now; no stock item means
+      // the stock trigger still returns early. See _chargeItemToRoom.
+      location_id: loc || null,
       description: l.item ? l.item.name : (l.description || 'Item'),
       qty: l.qty, unit_price: l.unitPrice,
       order_type: l.orderType === 'staff' ? 'staff' : 'standard',

@@ -180,7 +180,12 @@ export default function Folio({ boot, room, onClose, onChanged }) {
         key,
         applied: key === 'typed' ? null : 'department',
         locationId: key === 'typed' ? null : key,
-        name: key === 'typed' ? 'Restaurant and other typed charges' : (locName(key) || 'A department'),
+        // Charges that carry no department: everything typed before this
+        // change, plus anything typed at Reception itself, which genuinely
+        // belongs to no department. Can't be settled on its own — there is
+        // nothing to settle it against — so it is left off the picker and
+        // cleared by paying the bill as a whole.
+        name: key === 'typed' ? 'Other charges — no department' : (locName(key) || 'A department'),
         charged, paid, left: charged - paid,
       })
     }

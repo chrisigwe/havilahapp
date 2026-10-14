@@ -108,6 +108,10 @@ export default function RoomChargeSheet({ boot, stockMap, onClose, toast, fromRe
           qty, unitPrice, businessDate: chargeDate,
           orderType: typing.orderType, writeoffNote: typing.writeoffNote,
           stockUsed: typing.used || [],
+          // Which department typed this charge, so the guest can settle
+          // that department's bill on its own. Null from Reception, which
+          // honestly means no department rather than a guessed one.
+          locationId: deptId || null,
         })
       } else {
         await chargeWriteoffToRoom({
@@ -115,6 +119,7 @@ export default function RoomChargeSheet({ boot, stockMap, onClose, toast, fromRe
           orderType: typing.orderType, damageReason: typing.damageReason, writeoffNote: typing.writeoffNote,
           prMeal: typing.prMeal, stockUsed: typing.used || [],
           noStockDeclared: !(typing.used || []).length && !!typing.noStock,
+          locationId: deptId || null,
         })
       }
       setCharged(c => [{ description: desc, qty, unitPrice, typed: true,
