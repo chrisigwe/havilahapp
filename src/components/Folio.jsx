@@ -325,6 +325,21 @@ export default function Folio({ boot, room, onClose, onChanged }) {
             Billed to: {stay.bill_to}
           </p>
         )}
+        {/* Pre-app history. Every line is still here and nothing has been
+            edited, but the figures came across from the Excel workbook and
+            are not reliable — so this stay is left out of the live owing
+            and overpaid totals rather than being presented as fact. */}
+        {stay?.is_migrated && (
+          <div className="mt-2 px-3 py-2 rounded-xl bg-raise border border-line">
+            <p className="text-ink text-sm font-semibold">From before the app</p>
+            <p className="text-dim text-sm mt-1">
+              This stay came across from the Excel sheet. Every line is kept
+              on the record, but the figures were not entered here and are
+              not treated as accurate, so this bill is left out of the
+              branch's owing and overpaid totals.
+            </p>
+          </div>
+        )}
         {!!departmentCredit?.length && (
           <div className="mt-2 px-3 py-2 rounded-xl bg-clay/10 border border-clay">
             <p className="text-clay text-sm font-semibold">Included above — other departments:</p>

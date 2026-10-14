@@ -1289,7 +1289,7 @@ export async function loadFolio(stayId) {
     // v_stay_folio has daily_rate/billing_cycle but not the raw
     // overstay_fee or rate_applied (the rate type) — both needed to
     // pre-fill the editing form correctly.
-    supabase.from('stays').select('overstay_fee, rate_applied, bill_to, bill_to_guest_id, guest_id, checked_in_at, pre_reopen_actual_out, reopen_count').eq('id', stayId).maybeSingle(),
+    supabase.from('stays').select('overstay_fee, rate_applied, bill_to, bill_to_guest_id, guest_id, checked_in_at, pre_reopen_actual_out, reopen_count, is_migrated').eq('id', stayId).maybeSingle(),
   ])
   if (e1) throw e1
   if (e2) throw e2
