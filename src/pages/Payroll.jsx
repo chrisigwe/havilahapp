@@ -415,7 +415,7 @@ export default function Payroll({ boot }) {
 
       {editEmp && (
         <EmployeeSheet value={editEmp} employees={employees} final={final}
-          branchId={staff.branch_id}
+          branchId={staff.branch_id} workingDays={period?.working_days}
           onClose={() => setEditEmp(null)}
           onSaved={async () => { setEditEmp(null); await refresh() }}
           toast={toast} />
@@ -465,7 +465,7 @@ function People({ employees, savings, onEdit, onAdd }) {
   )
 }
 
-function EmployeeSheet({ value, employees, final, onClose, onSaved, toast, branchId }) {
+function EmployeeSheet({ value, employees, final, onClose, onSaved, toast, branchId, workingDays }) {
   // The form saved customer_id but never offered a way to CHOOSE one, so
   // no employee could ever be linked and the credit pull had nothing to
   // work with. This is that missing picker.
@@ -483,6 +483,29 @@ function EmployeeSheet({ value, employees, final, onClose, onSaved, toast, branc
   const set = (k, v) => setF(p => ({ ...p, [k]: v }))
 
   async function save() {
+    // A line pays salary × days worked ÷ working days, so a day more than
+    // the month holds pays MORE than the salary. That is often correct:
+    // Chioma Maureen's 35 of 28 days in September was her working her
+    // days off, and the extra ₦25,000 was owed to her. So this confirms
+    // rather than blocks, and does not call it a mistake — it states the
+    // figure and lets the person recording it say which case it is.
+    if (isLine) {
+      const d = Number(f.days_worked) || 0
+      const wd = Number(workingDays) || 0
+      if (wd > 0 && d > wd) {
+        const salary = Number(f.monthly_salary ?? value.line?.monthly_salary ?? 0)
+        const extra = salary > 0 ? Math.round((salary * d / wd - salary) * 100) / 100 : 0
+        if (!window.confirm(
+              `${d} days worked in a month set to ${wd} working days.\n\n`
+              + (extra > 0
+                  ? `This pays ${naira(extra)} ABOVE the ${naira(salary)} monthly salary.\n\n`
+                  : 'This pays above the monthly salary.\n\n')
+              + 'Save it if the extra days were worked.\n'
+              + 'Tap Cancel if the number was mistyped.')) {
+          return
+        }
+      }
+    }
     setBusy(true)
     try {
       if (isLine) {
