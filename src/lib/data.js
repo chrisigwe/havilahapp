@@ -1936,6 +1936,17 @@ export async function loadReviewFlags(branchId, days = 14) {
   return data || []
 }
 
+// Mark one "Needs a look" entry as dealt with, or put it back
+// (migration 463). Hides nothing — the sale, payment or count it points
+// at is untouched; it only stops the same item being counted every day.
+export async function setReviewHandled(branchId, key, handled) {
+  const { data, error } = await supabase.rpc('set_review_handled', {
+    p_branch: branchId, p_key: key, p_handled: !!handled,
+  })
+  if (error) throw error
+  return data
+}
+
 // ---------- Staff of the Month ----------
 // Per branch — each branch recognizes its own winner independently,
 // not one shared across both. The banner only shows for 7 days after

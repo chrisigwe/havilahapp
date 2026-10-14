@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
-import { loadReviewFlags } from '../lib/data'
+import { useToast } from '../components/Toast'
+import { loadReviewFlags, setReviewHandled } from '../lib/data'
 import { naira, lagosTime } from '../lib/format'
 
 // "Needs a look" — the things worth asking about, in one place.
@@ -77,6 +78,28 @@ export default function Review({ boot }) {
   const [flags, setFlags] = useState(null)
   const [err, setErr] = useState(null)
   const [open, setOpen] = useState({})
+  const [showHandled, setShowHandled] = useState(false)
+  const [saving, setSaving] = useState(null)
+  const toast = useToast()
+
+  // Marking something handled stops it being counted tomorrow. It hides
+  // no record: the entry it points at is untouched, and Put back undoes
+  // it. Updated in place rather than reloading, so working down a list
+  // does not reshuffle it under the reader's hands.
+  async function mark(f, handled) {
+    setSaving(f.key)
+    try {
+      await setReviewHandled(boot.staff.branch_id, f.key, handled)
+      setFlags(list => list.map(x => x.key === f.key
+        ? { ...x, handled, handled_by: handled ? boot.staff.full_name : null,
+            handled_at: handled ? new Date().toISOString() : null,
+            kind_open: (x.kind_open ?? 0) + (handled ? -1 : 1) }
+        : x.kind === f.kind
+          ? { ...x, kind_open: (x.kind_open ?? 0) + (handled ? -1 : 1) }
+          : x))
+    } catch (e) { toast(e.message || 'Could not save', 'error') }
+    setSaving(null)
+  }
 
   useEffect(() => {
     setFlags(null); setErr(null)
@@ -101,7 +124,7 @@ export default function Review({ boot }) {
   // than inflating a headline nobody can act on.
   const counts = useMemo(() => {
     const c = { high: 0, watch: 0, note: 0 }
-    for (const f of flags || []) c[f.severity] = (c[f.severity] || 0) + 1
+    for (const f of flags || []) if (!f.handled) c[f.severity] = (c[f.severity] || 0) + 1
     return c
   }, [flags])
 
@@ -114,6 +137,11 @@ export default function Review({ boot }) {
           did wrong — most of it is ordinary correction. It is here so it is seen.
         </p>
         <div className="flex gap-2 mt-3">
+          <button onClick={() => setShowHandled(v => !v)}
+            className={`h-10 px-4 rounded-xl border font-semibold ${showHandled
+              ? 'border-leaf text-leaf' : 'border-line text-dim'}`}>
+            {showHandled ? 'Hiding nothing' : 'Show handled'}
+          </button>
           {[7, 14, 30].map(d => (
             <button key={d} onClick={() => setDays(d)}
               className={`h-10 px-4 rounded-xl border font-semibold ${days === d
@@ -143,8 +171,12 @@ export default function Review({ boot }) {
 
       {groups.map(([kind, rows]) => {
         const meta = KIND[kind] || { title: kind, why: '' }
-        const worst = rows.some(r => r.severity === 'high') ? 'high'
-          : rows.some(r => r.severity === 'watch') ? 'watch' : 'note'
+        const live = rows.filter(r => !r.handled)
+        const openCount = rows[0]?.kind_open ?? live.length
+        const doneCount = (rows[0]?.kind_total ?? rows.length) - openCount
+        const shown = showHandled ? rows : live
+        const worst = live.some(r => r.severity === 'high') ? 'high'
+          : live.some(r => r.severity === 'watch') ? 'watch' : 'note'
         const sev = SEV[worst]
         const isOpen = open[kind] ?? (worst === 'high')
         return (
@@ -154,8 +186,8 @@ export default function Review({ boot }) {
               <div className="flex-1 min-w-0">
                 <p className="font-bold">{meta.title}</p>
                 <p className={`text-sm ${sev.text}`}>
-                  {rows[0]?.kind_total ?? rows.length}{' '}
-                  {(rows[0]?.kind_total ?? rows.length) === 1 ? 'entry' : 'entries'} · {sev.label}
+                  {openCount} {openCount === 1 ? 'entry' : 'entries'} · {sev.label}
+                  {doneCount > 0 && <span className="text-dim"> · {doneCount} handled</span>}
                 </p>
               </div>
               <span className="text-dim">{isOpen ? '−' : '+'}</span>
@@ -165,23 +197,40 @@ export default function Review({ boot }) {
               <div className="px-4 pb-4">
                 <p className="text-dim text-sm mb-3">{meta.why}</p>
                 <ul className="divide-y divide-line/60">
-                  {rows.map((f, i) => (
-                    <li key={`${f.ref}-${i}`} className="py-2">
+                  {shown.map((f, i) => (
+                    <li key={`${f.key}-${i}`} className={`py-2 ${f.handled ? 'opacity-45' : ''}`}>
                       <div className="flex items-baseline gap-3">
                         <span className="flex-1 min-w-0">
                           <span className="font-semibold">{f.who}</span>
                           {f.where && <span className="text-dim"> · {f.where}</span>}
                         </span>
                         {f.amount != null && (
-                          <span className={`tnum font-semibold shrink-0 ${SEV[f.severity].text}`}>
+                          <span className={`tnum font-semibold shrink-0 ${
+                            f.handled ? 'text-dim' : SEV[f.severity].text}`}>
                             {naira(Number(f.amount))}
                           </span>
                         )}
                       </div>
                       <p className="text-dim text-sm">{f.summary}</p>
-                      {f.happened && <p className="text-dim text-xs tnum">{dt(f.happened)}</p>}
+                      <div className="flex items-baseline gap-3 mt-0.5">
+                        <span className="flex-1 min-w-0 text-dim text-xs tnum truncate">
+                          {f.happened ? dt(f.happened) : ''}
+                          {f.handled && f.handled_by ? ` · handled by ${f.handled_by}` : ''}
+                        </span>
+                        <button onClick={() => mark(f, !f.handled)} disabled={saving === f.key}
+                          className={`shrink-0 h-8 px-3 rounded-lg border text-xs font-semibold
+                            disabled:opacity-40 ${f.handled
+                              ? 'border-line text-dim' : 'border-leaf text-leaf'}`}>
+                          {saving === f.key ? '…' : f.handled ? 'Put back' : 'Mark handled'}
+                        </button>
+                      </div>
                     </li>
                   ))}
+                  {!shown.length && (
+                    <li className="py-6 text-center text-leaf text-sm">
+                      All handled.
+                    </li>
+                  )}
                 </ul>
                 {rows[0]?.kind_total > rows.length && (
                   <p className="text-dim text-sm mt-3">

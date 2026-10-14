@@ -36,6 +36,11 @@ const PATHS = {
   activity: <path d="M3 12h4l2.5-6 4 12 2.5-6H21" />,
   // Attendance: a calendar with a tick.
   attendance: <path d="M5 5h14a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1ZM4 10h16M8 3v4M16 3v4M9 15l2 2 4-4" />,
+  // Needs a look: a magnifying glass with an exclamation inside — "look
+  // at this", not "caught you". Deliberately not an eye: the page names
+  // real people, and a watching eye sets the wrong tone for a list whose
+  // entries are usually innocent.
+  review: <path d="M10.5 3.5a7 7 0 1 0 0 14 7 7 0 0 0 0-14ZM15.5 15.5 21 21M10.5 7v4M10.5 13.6h.01" />,
   more: <path d="M5 12h.01M12 12h.01M19 12h.01" strokeWidth="3" />,
 }
 
@@ -61,6 +66,7 @@ const FILLED = {
   fix: <path d="M12 3a9 9 0 1 0 8.5 12 1 1 0 1 0-1.9-.6A7 7 0 1 1 12 5a7 7 0 0 1 5 2.1H14.5a1 1 0 0 0 0 2h4.6a1 1 0 0 0 1-1V3.5a1 1 0 1 0-2 0v1.4A9 9 0 0 0 12 3Zm0 4a1 1 0 0 1 1 1v3.6l2.2 2.2a1 1 0 0 1-1.4 1.4l-2.5-2.5a1 1 0 0 1-.3-.7V8a1 1 0 0 1 1-1Z" />,
   recovery: <path d="M2 8a1 1 0 0 1 1-1h14a1 1 0 0 1 1 1v7a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V8Zm8 1.5a2.5 2.5 0 1 0 0 5 2.5 2.5 0 0 0 0-5ZM18.3 3.3a1 1 0 0 0-1.4 1.4L17.6 5H15a1 1 0 1 0 0 2h2.6l-.7.7a1 1 0 0 0 1.4 1.4l2.4-2.4a1 1 0 0 0 0-1.4l-2.4-2.4Z" />,
   supplies: <path d="M9.5 2.5h5a1 1 0 0 1 1 1V6h-7V3.5a1 1 0 0 1 1-1ZM8.4 7.5h7.2a1 1 0 0 1 .8.4l1 1.4a1 1 0 0 1 .2.6V19a2.5 2.5 0 0 1-2.5 2.5h-6.2A2.5 2.5 0 0 1 6.4 19V9.9a1 1 0 0 1 .2-.6l1-1.4a1 1 0 0 1 .8-.4Zm-.9 5a1 1 0 0 0 0 2h9a1 1 0 1 0 0-2h-9Zm0 4a1 1 0 1 0 0 2h9a1 1 0 1 0 0-2h-9Z" />,
+  review: <path d="M10.5 2a8.5 8.5 0 1 0 5.1 15.3l4.7 4.7a1 1 0 0 0 1.4-1.4l-4.7-4.7A8.5 8.5 0 0 0 10.5 2Zm0 4a1 1 0 0 1 1 1v3.5a1 1 0 1 1-2 0V7a1 1 0 0 1 1-1Zm0 7.2a1.1 1.1 0 1 1 0 2.2 1.1 1.1 0 0 1 0-2.2Z" />,
   more: <path d="M6.5 12a2 2 0 1 1-4 0 2 2 0 0 1 4 0Zm7.5 0a2 2 0 1 1-4 0 2 2 0 0 1 4 0Zm7.5 0a2 2 0 1 1-4 0 2 2 0 0 1 4 0Z" />,
 }
 
