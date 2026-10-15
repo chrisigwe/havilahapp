@@ -1,5 +1,5 @@
 import { supabase } from './supabase'
-import { lagosDaysAgo, lagosToday, addDays, nameKey } from './format'
+import { lagosDaysAgo, lagosToday, addDays, chargeCategoryFor, nameKey } from './format'
 import { normalizeCustomerName } from './customerName'
 import { SUPERVISOR } from './roles'
 import { tracked } from './activity'
@@ -840,13 +840,36 @@ export async function searchLiveStays(branchId, query) {
 // OR description (no item, no locationId) for a typed restaurant
 // order — always category 'food', no stock link, matching how
 // walk-in restaurant orders work in the normal Sales flow.
+// Every room charge must name a department that actually sells something.
+//
+// Reception sells nothing of its own — it charges on another department's
+// behalf — so a line attributed to Reception belongs to nobody: it shows
+// on no department's list and the department that provided the goods never
+// sees it. Before migration 503 such a line saved with no department at
+// all and fell back to Restaurant by category, which was right by luck for
+// food and wrong for anything else.
+//
+// Refusing here rather than at one screen means every path is covered: the
+// room-charge sheet, a single charge, and a basket.
+const assertSellingDept = (locationName) => {
+  if (!locationName) {
+    throw new Error('This charge has no department. Pick the department whose goods these are.')
+  }
+  if (/reception/i.test(locationName)) {
+    throw new Error('Reception cannot be the department on a room charge — '
+      + 'it sells nothing of its own. Choose the department the goods came from '
+      + '(Restaurant, MainBar, Minimart and so on).')
+  }
+}
+
 async function _chargeItemToRoom({ staff, stayId, item, locationId, locationName,
                                           description, qty, unitPrice, businessDate,
                                           orderType, writeoffNote, stockUsed }) {
-  const category = item
-    ? (/restaurant/i.test(locationName || '') ? 'food'
-       : /minimart/i.test(locationName || '') ? 'minimart' : 'drink')
-    : 'food'
+  assertSellingDept(locationName)
+  // Category follows the DEPARTMENT, for a typed line as much as a
+  // catalogue one. It used to be hardcoded 'food' on anything typed,
+  // which filed a typed bar charge as Restaurant food.
+  const category = chargeCategoryFor(locationName)
   const { data: order, error: oErr } = await supabase.from('orders').insert({
     branch_id: staff.branch_id, stay_id: stayId, business_date: businessDate,
     settlement: 'charged_to_room', served_by: staff.id,
@@ -1998,7 +2021,8 @@ async function _saveRestaurantWriteoff({ staff, locationId, businessDate,
 async function _chargeWriteoffToRoom({ staff, stayId, businessDate,
                                               description, qty, unitPrice,
                                               orderType, damageReason, writeoffNote, prMeal, stockUsed,
-                                              noStockDeclared, locationId = null }) {
+                                              noStockDeclared, locationId = null, locationName = null }) {
+  assertSellingDept(locationName)
   const { data: order, error: oErr } = await supabase.from('orders').insert({
     branch_id: staff.branch_id, stay_id: stayId, business_date: businessDate,
     settlement: 'charged_to_room', served_by: staff.id,
@@ -2006,8 +2030,9 @@ async function _chargeWriteoffToRoom({ staff, stayId, businessDate,
   if (oErr) throw oErr
   const { data: oi, error: iErr } = await supabase.from('order_items').insert({
     // Department recorded, no stock item, so no stock moves — same
-    // reasoning as _chargeItemToRoom above.
-    order_id: order.id, category: 'food', stock_item_id: null,
+    // reasoning as _chargeItemToRoom above. Category follows the
+    // department rather than being hardcoded food.
+    order_id: order.id, category: chargeCategoryFor(locationName), stock_item_id: null,
     location_id: locationId || null,
     description, qty, unit_price: unitPrice,
     order_type: orderType, damage_reason: damageReason || null, writeoff_note: writeoffNote || null,
@@ -2496,10 +2521,10 @@ export async function loadWriteoffsOnDate(branchId, date, locationId) {
 // fire trg_order_item_stock_movement (migration 108b). Typed lines with
 // no catalogue item deduct nothing — the same rule as everywhere else.
 async function _chargeBasketToRoom({ staff, stayId, lines, locationId, date, locById }) {
-  const categoryFor = (locId) => {
-    const n = locById?.[locId]?.name || ''
-    return /restaurant/i.test(n) ? 'food' : /minimart/i.test(n) ? 'minimart' : 'drink'
-  }
+  const nameOf = (locId) => locById?.[locId]?.name || ''
+  // Guarded before anything is written, so a bad department cannot leave
+  // half a basket behind.
+  for (const l of lines) assertSellingDept(nameOf(l.locationId || locationId))
   const { data: order, error: oErr } = await supabase.from('orders').insert({
     branch_id: staff.branch_id, stay_id: stayId, business_date: date,
     settlement: 'charged_to_room', served_by: staff.id, occurred_at: new Date().toISOString(),
@@ -2510,7 +2535,7 @@ async function _chargeBasketToRoom({ staff, stayId, lines, locationId, date, loc
     const loc = l.locationId || locationId
     return {
       order_id: order.id,
-      category: l.item ? categoryFor(loc) : 'food',
+      category: chargeCategoryFor(nameOf(loc)),
       stock_item_id: l.item?.id || null,
       // Typed lines carry their department too now; no stock item means
       // the stock trigger still returns early. See _chargeItemToRoom.

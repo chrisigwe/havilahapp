@@ -1136,6 +1136,7 @@ export default function Folio({ boot, room, onClose, onChanged }) {
         <FolioStatement room={room} folio={folio} orderLines={billableLines}
           freeLines={freeLines} payments={payments} checkedInAt={showTimes ? stay?.checked_in_at : null}
           departmentCredit={departmentCredit} billedToYou={billedToYou}
+          allLocations={allLocations || locations}
           branchName={boot.branchName} onClose={() => setPrinting(false)} />
       )}
 

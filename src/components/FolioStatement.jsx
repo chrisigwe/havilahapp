@@ -7,7 +7,18 @@ import { guestStatementPdf, savePdf } from '../lib/pdfSheet'
 // infrastructure Receipt.jsx already uses, not the reference app's
 // separate portal-based printing (which it needed only because of its
 // own drawer nesting; this app doesn't have that problem).
-export default function FolioStatement({ room, folio, orderLines, freeLines, payments, branchName, departmentCredit, billedToYou, checkedInAt, onClose }) {
+export default function FolioStatement({ room, folio, orderLines, freeLines, payments, branchName, departmentCredit, billedToYou, checkedInAt, allLocations, onClose }) {
+  // Which department a line came from, by name. It used to be read off
+  // category alone, so every bar printed as "Bar" — a guest querying a
+  // drink could not tell MainBar from OpenBar. The line's own department
+  // is on the row now; category is only the fallback for older lines.
+  const whereFrom = (li) => {
+    const id = li?.location_id
+    const named = id && (allLocations || []).find(l => l.id === id)?.name
+    if (named) return named
+    return li?.category === 'food' ? 'Restaurant'
+      : li?.category === 'minimart' ? 'Minimart' : 'Bar'
+  }
   const roomCharge = Number(folio?.room_charge ?? 0)
   const overstay = Number(folio?.overstay_charge ?? 0)
   // Money comes from v_stay_folio, never from re-summing the line
@@ -41,7 +52,7 @@ export default function FolioStatement({ room, folio, orderLines, freeLines, pay
     roomCharge, overstay, orderTotal, totalDue, paid, balance,
     orderLines: (orderLines || []).map(li => ({
       date: li.date, description: li.description, qty: li.qty,
-      where: li.category === 'food' ? 'Restaurant' : li.category === 'minimart' ? 'Minimart' : 'Bar',
+      where: whereFrom(li),
       amount: li.amount,
     })),
     freeLines: (freeLines || []).map(li => ({ date: li.date, description: li.description, qty: li.qty, amount: li.amount })),
@@ -118,7 +129,7 @@ export default function FolioStatement({ room, folio, orderLines, freeLines, pay
                   <td>
                     {li.description} <span className="text-dim">× {li.qty}</span>
                     <span className="text-dim">
-                      {' · '}{li.category === 'food' ? 'Restaurant' : li.category === 'minimart' ? 'Minimart' : 'Bar'}
+                      {' · '}{whereFrom(li)}
                     </span>
                   </td>
                   <td className="num tnum">{naira(li.amount)}</td>

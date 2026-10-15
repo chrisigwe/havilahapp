@@ -28,6 +28,15 @@ export default function RoomChargeSheet({ boot, stockMap, onClose, toast, fromRe
   const isRestaurantDept = !fromReception &&
     /restaurant/i.test((allLocations || []).find(l => l.id === deptId)?.name || '')
   const restaurantId = (allLocations || []).find(l => /restaurant/i.test(l.name))?.id
+  // The department a TYPED charge belongs to.
+  //
+  // Not Reception. Reception sells nothing of its own — this sheet exists
+  // so it can type the kitchen's orders on the guest's behalf — so a line
+  // saved as Reception's shows on no department's list at all and the
+  // kitchen never sees it. That is what deptId would give here, since the
+  // sheet is handed whichever department is open.
+  const typedDeptId = fromReception ? restaurantId : deptId
+  const typedDeptName = (allLocations || []).find(l => l.id === typedDeptId)?.name || ''
   const [q, setQ] = useState('')
   const [stays, setStays] = useState(null)
   const [stay, setStay] = useState(null)
@@ -108,10 +117,9 @@ export default function RoomChargeSheet({ boot, stockMap, onClose, toast, fromRe
           qty, unitPrice, businessDate: chargeDate,
           orderType: typing.orderType, writeoffNote: typing.writeoffNote,
           stockUsed: typing.used || [],
-          // Which department typed this charge, so the guest can settle
-          // that department's bill on its own. Null from Reception, which
-          // honestly means no department rather than a guessed one.
-          locationId: deptId || null,
+          // Which department's goods these are, so the guest can settle
+          // that department's bill on its own.
+          locationId: typedDeptId || null, locationName: typedDeptName,
         })
       } else {
         await chargeWriteoffToRoom({
@@ -119,7 +127,7 @@ export default function RoomChargeSheet({ boot, stockMap, onClose, toast, fromRe
           orderType: typing.orderType, damageReason: typing.damageReason, writeoffNote: typing.writeoffNote,
           prMeal: typing.prMeal, stockUsed: typing.used || [],
           noStockDeclared: !(typing.used || []).length && !!typing.noStock,
-          locationId: deptId || null,
+          locationId: typedDeptId || null, locationName: typedDeptName,
         })
       }
       setCharged(c => [{ description: desc, qty, unitPrice, typed: true,

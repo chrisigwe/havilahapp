@@ -82,6 +82,15 @@ export const roomChargeDept = (line, allLocations) => {
   return null
 }
 
+// Which category a charge from this department falls under. Used when
+// SAVING; roomChargeDept above is the reverse, used when reading. A typed
+// line used to be hardcoded 'food' whatever department made it, which is
+// why a typed bar charge was filed as Restaurant food.
+export const chargeCategoryFor = (locationName) =>
+  /restaurant/i.test(locationName || '') ? 'food'
+    : /minimart/i.test(locationName || '') ? 'minimart'
+      : 'drink'
+
 // Mirrors the database's own generated column exactly (guests.name_key
 // is GENERATED ALWAYS using this identical pattern) — needed client-side
 // because a generated column can't be searched against directly; this
