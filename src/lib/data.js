@@ -1352,8 +1352,20 @@ export async function loadFolio(stayId) {
     loadGuestDepartmentCredit(stay?.guest_id),
     loadBilledToYou(stay?.guest_id),
   ])
+  // What has already been ticked off, charge by charge (migration 505).
+  // Keyed by order_item_id, with the room charge under 'room' — the one
+  // payable thing on a folio that is not an order line.
+  const paidByItem = { room: 0 }
+  const { data: ticked } = await supabase.from('payment_items')
+    .select('order_item_id, amount, payments!inner(stay_id)')
+    .eq('payments.stay_id', stayId)
+  for (const t of (ticked || [])) {
+    const k = t.order_item_id || 'room'
+    paidByItem[k] = (paidByItem[k] || 0) + Number(t.amount || 0)
+  }
+
   return { orders: orders || [], payments: payments || [], folio: folio || null, stay: stay || null,
-           departmentCredit, billedToYou }
+           departmentCredit, billedToYou, paidByItem }
 }
 
 // Was this same money already put on this same bill a moment ago?
@@ -1406,7 +1418,8 @@ export async function checkRepeatPayment(stayId, amount) {
 // pattern as Credit's split repayments. parts is [{method, amount}],
 // already filtered to non-zero entries by the caller.
 async function _recordStayPayment({ staff, stayId, businessDate, cycle, parts, isOverstay,
-                                    locationId = null, appliedTo = null, appliedLocationId = null }) {
+                                    locationId = null, appliedTo = null, appliedLocationId = null,
+                                    items = null }) {
   // Two different questions, deliberately kept apart (migration 496):
   //   location_id  — whose POS or cash drawer TOOK the money
   //   applied_to   — which part of the bill it CLEARS
@@ -1424,8 +1437,37 @@ async function _recordStayPayment({ staff, stayId, businessDate, cycle, parts, i
     applied_location_id: applied === 'department' ? appliedLocationId : null,
   }))
   if (!rows.length) return
-  const { error } = await supabase.from('payments').insert(rows)
+  const { data: saved, error } = await supabase.from('payments').insert(rows).select('id')
   if (error) throw error
+
+  // What the front desk TICKED (migration 505). items is
+  // [{ orderItemId | null, amount }] — a null id means the room charge.
+  //
+  // Attached to the FIRST payment row: a split across POS and cash is
+  // one settlement recorded as several tenders, and which tender paid
+  // which charge is not a thing anybody knows or needs. Attaching to
+  // one row keeps the total right and avoids inventing a split nobody
+  // made.
+  //
+  // Written after the payment, so a failure here cannot leave money
+  // unrecorded. If it fails the payment still stands — said plainly,
+  // the same way a part-saved stock order is, so nobody enters it twice.
+  const picked = (items || []).filter(i => Number(i.amount) > 0)
+  if (picked.length && saved?.length) {
+    const { error: e2 } = await supabase.from('payment_items').insert(
+      picked.map(i => ({
+        payment_id: saved[0].id,
+        order_item_id: i.orderItemId || null,
+        branch_id: staff.branch_id,
+        amount: Number(i.amount),
+      })))
+    if (e2) {
+      throw Object.assign(new Error(
+        `The payment WAS recorded, but which charges it settles was not (${e2.message}). `
+        + 'Do not enter it again — open the payment and set it there, or tell your manager.'),
+        { partial: true })
+    }
+  }
 }
 
 async function _checkOutStay(stayId, actualOut) {

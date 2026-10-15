@@ -37,9 +37,12 @@ export default function Folio({ boot, room, onClose, onChanged }) {
   // Which PART of the bill a payment clears — the room, one department, or
   // (empty, the default) the bill as a whole. Not the same as payLoc above,
   // which is whose till took the money (migration 496).
-  const [payAgainst, setPayAgainst] = useState('')
   const [allocating, setAllocating] = useState(null)   // payment id whose allocation is being changed
   const [allocDraft, setAllocDraft] = useState('')
+  // Which charges the guest is paying for right now (migration 505).
+  // Empty = against the whole bill, exactly as every payment behaved
+  // before ticking existed.
+  const [picked, setPicked] = useState({})
   const [movingPay, setMovingPay] = useState(null)   // { id, loc } while changing an existing payment's department
   const [editing, setEditing] = useState(null)   // { dailyRate, billingCycle, scheduledOut, rateReason } while open
   const [billToSuggestions, setBillToSuggestions] = useState([])
@@ -72,7 +75,7 @@ export default function Folio({ boot, room, onClose, onChanged }) {
     </div>
   )
 
-  const { orders, payments, folio, stay, departmentCredit, billedToYou } = data
+  const { orders, payments, folio, stay, departmentCredit, billedToYou, paidByItem } = data
   const outstanding = Number(folio?.outstanding ?? 0)
   // The room's own balance — used for the pay-button default and
   // checkout logic below, which are genuinely room-specific
@@ -169,27 +172,33 @@ export default function Folio({ boot, room, onClose, onChanged }) {
   // the folio arrives, which is a blank screen. A few lines and payments
   // cost nothing to add up on every render.
   const locName = (id) => (allLocations || locations || []).find(l => l.id === id)?.name
+  const tickedOn = (k) => Number((paidByItem || {})[k] || 0)
   const billParts = (() => {
     const roomCharged = Number(folio?.room_charge || 0) + Number(folio?.overstay_charge || 0)
     const byDept = new Map()
     for (const li of billableLines) {
       const key = li.location_id || 'typed'
-      const prev = byDept.get(key) || 0
-      byDept.set(key, prev + Number(li.amount || 0))
+      const prev = byDept.get(key) || { charged: 0, ticked: 0 }
+      prev.charged += Number(li.amount || 0)
+      prev.ticked += tickedOn(li.id)
+      byDept.set(key, prev)
     }
     const paidTo = (match) => payments
       .filter(match).reduce((t, p) => t + Number(p.amount || 0), 0)
 
     const parts = []
     if (roomCharged > 0) {
-      const paid = paidTo(p => p.applied_to === 'room')
+      // Money ticked against the room (migration 505), plus money marked
+      // for it under the older department rule (496).
+      const paid = tickedOn('room') + paidTo(p => p.applied_to === 'room')
       parts.push({ key: 'room', applied: 'room', locationId: null, name: 'Room charge',
                    charged: roomCharged, paid, left: roomCharged - paid })
     }
-    for (const [key, charged] of byDept) {
-      const paid = key === 'typed'
-        ? 0   // nothing can be earmarked at a part of the bill that has no department
-        : paidTo(p => p.applied_to === 'department' && p.applied_location_id === key)
+    for (const [key, agg] of byDept) {
+      const charged = agg.charged
+      const paid = agg.ticked + (key === 'typed'
+        ? 0   // nothing could be earmarked at a part of the bill with no department
+        : paidTo(p => p.applied_to === 'department' && p.applied_location_id === key))
       parts.push({
         key,
         applied: key === 'typed' ? null : 'department',
@@ -227,13 +236,135 @@ export default function Folio({ boot, room, onClose, onChanged }) {
     return parts
   })()
 
-  const earmarked = payments
-    .filter(p => p.applied_to).reduce((t, p) => t + Number(p.amount || 0), 0)
+  // Money that named what it was for: ticked against specific charges
+  // (505), or marked for a department (496). New payments only ever do
+  // the first, so the two cannot double-count.
+  const earmarked = Object.values(paidByItem || {}).reduce((t, v) => t + Number(v || 0), 0)
+    + payments.filter(p => p.applied_to).reduce((t, p) => t + Number(p.amount || 0), 0)
   const generalPaid = Number(folio?.total_paid || 0) - earmarked
   // Only worth showing the split when the bill genuinely has more than one
   // part. A room with no orders on it does not need a breakdown.
   const showParts = billParts.length > 1 || departmentCreditTotal > 0 || billedToYouTotal > 0
-  const payAgainstPart = billParts.find(p => p.key === payAgainst) || null
+
+  // ── What the guest can pay for, one tickable thing per line ─────────
+  //
+  // "I'll pay for the two waters" and "just last night's food" are the
+  // questions the desk is actually asked, and neither could be answered
+  // before: a payment was an amount against a stay and nothing else, so
+  // every screen had to guess what it settled. Ticking records it.
+  //
+  // Each entry carries what is LEFT on it, so a charge already ticked
+  // off drops out and a part-paid one shows only the remainder.
+  const paid = paidByItem || {}
+  const left = (key, full) => Math.max(0, Number(full || 0) - Number(paid[key] || 0))
+
+  const payables = []
+  const roomFull = Number(folio?.room_charge || 0) + Number(folio?.overstay_charge || 0)
+  const roomLeft = left('room', roomFull)
+  // The room, night by night. A guest on a long stay settles some nights
+  // and leaves the rest, so each unpaid night is its own tickable line
+  // rather than the room being one all-or-nothing lump.
+  //
+  // Nights already covered drop off the top: whatever has been ticked
+  // against the room buys whole nights at the stay's own rate, and only
+  // what is left is offered. The LAST night carries any remainder — an
+  // over-stay fee, or a rate that changed mid-stay — so the night prices
+  // always add back up to the room charge exactly.
+  const nightRate = Number(folio?.daily_rate || 0)
+  const totalNightsOnBill = Number(folio?.nights || 0)
+  const nightsCovered = nightRate > 0 ? Math.floor(tickedOn('room') / nightRate) : 0
+  const nightsToOffer = Math.max(0, totalNightsOnBill - nightsCovered)
+  if (roomLeft > 0.009 && nightsToOffer > 1 && nightRate > 0) {
+    const inDate = folio?.check_in_date || room.check_in_date
+    for (let i = 0; i < nightsToOffer; i++) {
+      const n = nightsCovered + i
+      const isLast = i === nightsToOffer - 1
+      const amt = isLast ? Math.max(0, roomLeft - nightRate * (nightsToOffer - 1)) : nightRate
+      if (amt <= 0.009) continue
+      const d = inDate ? new Date(new Date(inDate).getTime() + n * 864e5) : null
+      payables.push({
+        key: `room:${n}`, kind: 'room', orderItemId: null,
+        day: 'The room',
+        what: `Night ${n + 1}`,
+        where: d ? d.toISOString().slice(0, 10) : 'Accommodation',
+        amount: Math.round(amt * 100) / 100,
+      })
+    }
+  } else if (roomLeft > 0.009) {
+    payables.push({
+      key: 'room', kind: 'room', orderItemId: null,
+      day: 'The room',
+      what: 'Room charge',
+      where: totalNightsOnBill
+        ? `${totalNightsOnBill} night${totalNightsOnBill > 1 ? 's' : ''} at ${naira(nightRate)}`
+        : 'Accommodation',
+      amount: roomLeft,
+    })
+  }
+  for (const li of billableLines) {
+    const l = left(li.id, li.amount)
+    if (l <= 0.009) continue
+    payables.push({
+      key: li.id, kind: li.category === 'food' ? 'food' : li.category === 'minimart' ? 'shop' : 'drink',
+      orderItemId: li.id,
+      day: li.date,
+      what: `${li.description}${Number(li.qty) > 1 ? ` × ${li.qty}` : ''}`,
+      where: locName(li.location_id) || (li.category === 'food' ? 'Restaurant'
+        : li.category === 'minimart' ? 'Minimart' : 'Bar'),
+      amount: l,
+    })
+  }
+  // The other ledger. Ticked here, settled there — the desk should not
+  // have to know which table a bill lives in.
+  for (const d of (departmentCredit || [])) {
+    const bal = Number(d.balance || 0)
+    if (bal <= 0.009 || !d.customerId) continue
+    payables.push({
+      key: `credit:${d.location_id}`, kind: 'credit',
+      orderItemId: null, customerId: d.customerId, locationId: d.location_id,
+      day: 'On credit',
+      what: `${d.location_name} account`,
+      where: 'Settles on Credit, not on this bill',
+      amount: bal,
+    })
+  }
+
+  // Newest day first, the room always at the top.
+  const payDays = []
+  for (const p of payables) {
+    let g = payDays.find(x => x.day === p.day)
+    if (!g) { g = { day: p.day, lines: [] }; payDays.push(g) }
+    g.lines.push(p)
+  }
+  payDays.sort((a, b) => {
+    if (a.day === 'The room') return -1
+    if (b.day === 'The room') return 1
+    if (a.day === 'On credit') return 1
+    if (b.day === 'On credit') return -1
+    return String(b.day).localeCompare(String(a.day))
+  })
+
+  const pickedList = payables.filter(p => picked[p.key])
+  const pickedTotal = pickedList.reduce((s, p) => s + p.amount, 0)
+  // Ticking fills the amount in. That is the whole point of the screen:
+  // the desk is told "the two waters", taps them, and the figure is
+  // already right. It stays editable — a guest handing over less than
+  // the ticked total is normal, and the money then covers the ticked
+  // lines in order.
+  const sumOf = (sel) => payables.filter(p => sel[p.key])
+    .reduce((s, p) => s + p.amount, 0)
+  const applyPick = (next) => {
+    setPicked(next)
+    const t = sumOf(next)
+    setPay(p => ({ ...p, amount: t > 0.009 ? String(Math.round(t * 100) / 100) : '', split: null }))
+  }
+  const togglePick = (key) => {
+    const next = { ...picked }
+    if (next[key]) delete next[key]; else next[key] = true
+    applyPick(next)
+  }
+  const pickOnly = (test) => applyPick(
+    Object.fromEntries(payables.filter(test).map(p => [p.key, true])))
 
   // Changing what an existing payment clears is a correction to the
   // record, so it sits with the other corrections: GM and admin.
@@ -283,11 +414,13 @@ export default function Folio({ boot, room, onClose, onChanged }) {
     }
     // Asked of the database, not the screen — the screen is exactly what
     // is stale when somebody re-enters a payment they could not see land.
-    // Skipped for a credit repayment: that money goes to another table
-    // entirely, so this would be reading the wrong ledger and could warn
-    // about a room payment that has nothing to do with it.
-    const repeat = payAgainstPart?.applied === 'credit'
-      ? null : await checkRepeatPayment(room.stay_id, payAllocated)
+    // Skipped when only credit accounts were ticked: that money goes to
+    // another table entirely, so this would read the wrong ledger.
+    const creditPicks = pickedList.filter(p => p.kind === 'credit')
+    const folioPicks = pickedList.filter(p => p.kind !== 'credit')
+    const onlyCredit = creditPicks.length > 0 && folioPicks.length === 0
+
+    const repeat = onlyCredit ? null : await checkRepeatPayment(room.stay_id, payAllocated)
     if (repeat && !window.confirm(
           `${naira(repeat.amount)} was already recorded on this bill `
           + `${repeat.minutesAgo} minute${repeat.minutesAgo > 1 ? 's' : ''} ago`
@@ -298,32 +431,63 @@ export default function Folio({ boot, room, onClose, onChanged }) {
     }
     setBusy(true)
     try {
-      if (payAgainstPart?.applied === 'credit') {
-        // A department's credit lives in credit_repayments against a
-        // customer account, not in payments against the stay. Writing it
-        // to the stay would clear the wrong debt and leave the real one
-        // standing — so this goes to the other ledger, one row per
-        // method exactly as the Credit page does it.
-        for (const part of payParts.filter(p => Number(p.amount) > 0)) {
-          await saveRepayment({
-            staff, customerId: payAgainstPart.customerId,
-            amount: Number(part.amount), method: part.method,
-            paidOn: pay.date || lagosToday(),
-            locationId: payAgainstPart.locationId,
-            note: `Taken at Reception, Room ${room.room_number}`,
-          })
-        }
-      } else {
-        await recordStayPayment({
-          staff, stayId: room.stay_id, businessDate: pay.date || lagosToday(),
-          cycle: folio?.billing_cycle, parts: payParts, isOverstay, locationId: payLoc || null,
-          appliedTo: payAgainstPart?.applied || null,
-          appliedLocationId: payAgainstPart?.locationId || null,
+      // The money covers the ticked lines in the order they are shown,
+      // so a part payment lands on the earliest charges rather than
+      // being smeared across everything. Whole-line in the ordinary
+      // case; the remainder only ever falls on the last line reached.
+      let pot = payAllocated
+      const creditShare = []
+      const itemShare = []
+      for (const p of pickedList) {
+        if (pot <= 0.009) break
+        const take = Math.min(pot, p.amount)
+        pot -= take
+        if (p.kind === 'credit') creditShare.push({ pick: p, amount: take })
+        else itemShare.push({ orderItemId: p.orderItemId, amount: take })
+      }
+      // Nights are shown separately but settle one pot — the room charge
+      // — so they are recorded as one row rather than several identical
+      // ones with no order line behind them.
+      const roomTotal = itemShare.filter(i => !i.orderItemId)
+        .reduce((t, i) => t + i.amount, 0)
+      const merged = itemShare.filter(i => i.orderItemId)
+      if (roomTotal > 0.009) merged.unshift({ orderItemId: null, amount: Math.round(roomTotal * 100) / 100 })
+
+      // A department's credit lives in credit_repayments against a
+      // customer account, not in payments against the stay. Writing it to
+      // the stay would clear the wrong debt and leave the real one
+      // standing — so it goes to the other ledger, the same way the
+      // Credit page does it.
+      for (const c of creditShare) {
+        await saveRepayment({
+          staff, customerId: c.pick.customerId,
+          amount: c.amount, method: payParts[0]?.method || 'pos',
+          paidOn: pay.date || lagosToday(),
+          locationId: c.pick.locationId,
+          note: `Taken at Reception, Room ${room.room_number}`,
         })
       }
-      toast(payAgainstPart ? `Payment recorded against ${payAgainstPart.name}` : 'Payment recorded', 'success')
+
+      // Everything else is a payment on the stay. Ticked lines ride with
+      // it so what it settled is recorded rather than inferred later.
+      const onFolio = payAllocated - creditShare.reduce((t, c) => t + c.amount, 0)
+      if (onFolio > 0.009) {
+        const scale = onFolio / payAllocated
+        await recordStayPayment({
+          staff, stayId: room.stay_id, businessDate: pay.date || lagosToday(),
+          cycle: folio?.billing_cycle,
+          parts: payParts.map(p => ({ ...p, amount: Number((Number(p.amount) * scale).toFixed(2)) }))
+            .filter(p => p.amount > 0),
+          isOverstay, locationId: payLoc || null,
+          items: merged,
+        })
+      }
+
+      toast(pickedList.length
+        ? `Payment recorded against ${pickedList.length} line${pickedList.length === 1 ? '' : 's'}`
+        : 'Payment recorded', 'success')
       setPay({ amount: '', method: 'pos', split: null, date: lagosToday() }); setIsOverstay(false)
-      setPayLoc(''); setPayLocOpen(false); setPayAgainst('')
+      setPayLoc(''); setPayLocOpen(false); setPicked({})
       refresh(); onChanged?.()
     } catch (e) { toast(friendlyStayError(e), 'error') }
     setBusy(false)
@@ -756,27 +920,80 @@ export default function Folio({ boot, room, onClose, onChanged }) {
                 value={pay} onChange={v => setPay(p => ({ ...p, ...v }))} />
             </div>
 
-            {/* WHICH DEBT this money clears — a different question from which
-                till took it, below. Left on "the whole bill" unless the guest
-                asks for something specific, which is how every payment has
-                always behaved. */}
-            {showParts && (
-              <div className="mt-3">
-                <label className="block text-dim text-sm">Against</label>
-                <select value={payAgainst} onChange={e => setPayAgainst(e.target.value)}
-                  className="mt-1 h-12 w-full px-3 rounded-xl bg-raise border border-line">
-                  <option value="">The whole bill</option>
-                  {billParts.filter(p => p.applied).map(p => (
-                    <option key={p.key} value={p.key}>
-                      {p.name} — {p.left > 0.009 ? `${naira(p.left)} left` : 'settled'}
-                    </option>
+            {/* WHAT the guest is paying for. The desk is asked "I'll pay
+                for the two waters" or "just last night's food", so this
+                asks the same question back rather than making anyone
+                translate it into a department. Tick nothing and the money
+                goes against the whole bill, exactly as before. */}
+            {payables.length > 0 && (
+              <div className="mt-4">
+                <label className="block font-semibold">What are they paying for?</label>
+                <p className="text-dim text-sm mt-0.5">
+                  Tap the lines. Leave them all untapped to put the money against
+                  the whole bill.
+                </p>
+
+                <div className="mt-2 flex gap-2 flex-wrap">
+                  {[
+                    ['Just the room', p => p.kind === 'room'],
+                    ['All the food', p => p.kind === 'food'],
+                    ['All the drinks', p => p.kind === 'drink'],
+                    ['Everything', () => true],
+                  ].map(([label, test]) => (
+                    payables.some(test) && (
+                      <button key={label} onClick={() => pickOnly(test)}
+                        className="h-9 px-3.5 rounded-full bg-raise border border-line text-dim text-sm font-semibold">
+                        {label}
+                      </button>
+                    )
                   ))}
-                </select>
-                {!!payAgainstPart && payAllocated - payAgainstPart.left > 0.009 && (
-                  <p className="text-amber text-sm mt-2">
-                    {naira(payAllocated)} is more than the {naira(payAgainstPart.left)} left
-                    on {payAgainstPart.name}. The extra will leave that part in credit
-                    rather than clearing the rest of the bill.
+                  {!!pickedList.length && (
+                    <button onClick={() => applyPick({})}
+                      className="h-9 px-3.5 rounded-full border border-line text-dim text-sm font-semibold">
+                      Clear
+                    </button>
+                  )}
+                </div>
+
+                <div className="mt-2 rounded-2xl border border-line bg-surface px-4">
+                  {payDays.map(g => (
+                    <div key={g.day}>
+                      <p className="pt-3 pb-0.5 text-dim text-xs font-bold uppercase tracking-wide">
+                        {g.day}
+                      </p>
+                      {g.lines.map(l => (
+                        <label key={l.key}
+                          className="py-2.5 flex items-center gap-3 cursor-pointer">
+                          <input type="checkbox" checked={!!picked[l.key]}
+                            onChange={() => togglePick(l.key)}
+                            className="w-6 h-6 shrink-0 accent-amber" />
+                          <span className="flex-1 min-w-0">
+                            <span className="block font-semibold leading-tight">{l.what}</span>
+                            <span className="block text-dim text-xs mt-0.5">{l.where}</span>
+                          </span>
+                          <span className="tnum font-bold shrink-0">{naira(l.amount)}</span>
+                        </label>
+                      ))}
+                    </div>
+                  ))}
+                </div>
+
+                {!!pickedList.length && (
+                  <p className="mt-2 text-leaf text-sm font-semibold">
+                    {pickedList.length} line{pickedList.length === 1 ? '' : 's'} picked
+                    {' · '}{naira(pickedTotal)}
+                    {payAllocated > 0.009 && pickedTotal - payAllocated > 0.009 && (
+                      <span className="block text-amber font-normal mt-0.5">
+                        {naira(payAllocated)} received covers {naira(payAllocated)} of it,
+                        oldest charge first. The rest stays owing.
+                      </span>
+                    )}
+                    {payAllocated - pickedTotal > 0.009 && (
+                      <span className="block text-amber font-normal mt-0.5">
+                        {naira(payAllocated)} is more than the {naira(pickedTotal)} picked.
+                        The extra goes against the rest of the bill.
+                      </span>
+                    )}
                   </p>
                 )}
               </div>
