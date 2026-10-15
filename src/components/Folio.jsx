@@ -123,11 +123,23 @@ export default function Folio({ boot, room, onClose, onChanged }) {
   // requires approval_status = 'approved'. Without this third condition
   // a pending charge would print on the invoice while being absent from
   // its total — the "lines don't add up" bug fixed once already.
-  const billableLines = orderLines.filter(
-    li => li.settlement === 'charged_to_room' && li.order_type !== 'pr_damage'
-       && li.approval === 'approved')
+  //
+  // And STAFF orders. The view excludes both pr_damage AND staff:
+  //   oi.order_type <> all (array['pr_damage', 'staff'])
+  // This filter only ever excluded pr_damage, so a staff meal charged to
+  // a room was listed as a charge on the guest's invoice and counted in
+  // the folio's own breakdown, while being absent from the total the
+  // app bills. The same bug the comment above was written to prevent,
+  // surviving in the line list instead of the total. A staff order is
+  // consumed and never billed to the guest, so it belongs with the
+  // complimentary lines.
+  const isBillable = li => li.settlement === 'charged_to_room'
+    && li.order_type !== 'pr_damage' && li.order_type !== 'staff'
+    && li.approval === 'approved'
+  const billableLines = orderLines.filter(isBillable)
   const freeLines = orderLines.filter(
-    li => li.settlement === 'charged_to_room' && li.order_type === 'pr_damage'
+    li => li.settlement === 'charged_to_room'
+       && (li.order_type === 'pr_damage' || li.order_type === 'staff')
        && li.approval === 'approved')
   // Awaiting front desk: shown on screen, never billed until approved.
   const pendingLines = orderLines.filter(
