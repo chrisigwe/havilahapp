@@ -168,14 +168,6 @@ export default function SalesEntry({ boot }) {
   const [recon, setRecon] = useState(null)
   // Totals for the guest collections shown with the day's income.
   const guestTotal = guestIn.reduce((t, p) => t + Number(p.amount), 0)
-  // What this department charged to rooms today. It is in the day's
-  // total at the top of the page but NOT in gross sales — a room charge
-  // is not money at this till — so without it on the card the two
-  // figures sit on one screen with nothing explaining the difference,
-  // and the day cannot be matched.
-  const roomChargedToday = combinedToday
-    .filter(r => r.entryKind === 'roomCharge' && r.order_type !== 'pr_damage')
-    .reduce((t, r) => t + Number(r.amount ?? r.qty * r.unit_price ?? 0), 0)
   const guestByMethod = guestIn.reduce((m, p) => {
     m[p.method] = (m[p.method] || 0) + Number(p.amount); return m
   }, {})
@@ -216,6 +208,19 @@ export default function SalesEntry({ boot }) {
     }))
     return [...sales, ...charges].sort((a, b) => (b.sortAt || '').localeCompare(a.sortAt || ''))
   }, [today, roomCharges, isReception, locationId, boot, locations])
+
+  // What this department charged to rooms today. In the day's total at
+  // the top of the page but NOT in gross sales — a room charge is not
+  // money at this till — so without it on the card the two figures sit
+  // on one screen with nothing explaining the difference.
+  //
+  // MUST stay below combinedToday: it reads it, and a const cannot be
+  // read above its own declaration. Placed above it, the whole page
+  // threw "Cannot access before initialization" on render.
+  const roomChargedToday = combinedToday
+    .filter(r => r.entryKind === 'roomCharge' && r.order_type !== 'pr_damage')
+    .reduce((t, r) => t + Number(r.amount ?? r.qty * r.unit_price ?? 0), 0)
+
   const locById = useMemo(() =>
     Object.fromEntries((boot.allLocations || locations).map(l => [l.id, l])), [boot, locations])
 
