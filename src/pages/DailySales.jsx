@@ -159,6 +159,14 @@ export default function DailySales({ boot }) {
     return [...sales, ...charges].sort((a, b) => (b.sortAt || '').localeCompare(a.sortAt || ''))
   }, [rows, roomCharges, showsRoomCharges, locId, allLocations])
 
+  // What this department charged to rooms today. In the day's total at
+  // the top of the page but NOT in gross sales — a room charge is not
+  // money at this till — so it is named here rather than left as an
+  // unexplained gap between two figures on one screen.
+  const roomChargedToday = combinedRows
+    .filter(r => r.entryKind === 'roomCharge' && r.order_type !== 'pr_damage')
+    .reduce((t, r) => t + Number(r.amount ?? r.qty * r.unit_price ?? 0), 0)
+
   const total = combinedRows.reduce((s, r) => s + Number(r.amount ?? r.qty * r.unit_price), 0)
 
   return (
@@ -326,6 +334,19 @@ export default function DailySales({ boot }) {
                   </div>
                 ))}
               </div>
+            )}
+            {roomChargedToday > 0 && (
+              <>
+                <div className="flex justify-between">
+                  <span className="text-dim">Charged to guests&#39; rooms today</span>
+                  <span className="tnum text-dim">{naira(roomChargedToday)}</span>
+                </div>
+                <p className="text-dim text-xs pl-4">
+                  Goods that left on a guest&#39;s room bill. Counted in the
+                  {' '}{naira(Number(summary.grossSales || 0) + roomChargedToday)} at the top of
+                  this page, but not in gross sales — the guest pays it at Reception, not here.
+                </p>
+              </>
             )}
             <div className="pt-2 mt-2 border-t border-line flex justify-between font-bold">
               <span>Total income for the day</span>

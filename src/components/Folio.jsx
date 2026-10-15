@@ -32,11 +32,8 @@ export default function Folio({ boot, room, onClose, onChanged }) {
   const [checkoutDate, setCheckoutDate] = useState(null)
   // Money that went through ANOTHER department's POS/cash (e.g. a MainBar bill
   // charged to the room, then paid on the bar's terminal). Empty = Reception.
-  const [payLoc, setPayLoc] = useState('')
-  const [payLocOpen, setPayLocOpen] = useState(false)
   // Which PART of the bill a payment clears — the room, one department, or
-  // (empty, the default) the bill as a whole. Not the same as payLoc above,
-  // which is whose till took the money (migration 496).
+  // (empty, the default) the bill as a whole (migration 496).
   const [allocating, setAllocating] = useState(null)   // payment id whose allocation is being changed
   const [allocDraft, setAllocDraft] = useState('')
   // Which charges the guest is paying for right now (migration 505).
@@ -511,7 +508,9 @@ export default function Folio({ boot, room, onClose, onChanged }) {
           cycle: folio?.billing_cycle,
           parts: payParts.map(p => ({ ...p, amount: Number((Number(p.amount) * scale).toFixed(2)) }))
             .filter(p => p.amount > 0),
-          isOverstay, locationId: payLoc || null,
+          // Always Reception: a room bill is settled at the front desk.
+          // See the note where the department picker used to be.
+          isOverstay, locationId: null,
           items: merged,
         })
       }
@@ -520,7 +519,7 @@ export default function Folio({ boot, room, onClose, onChanged }) {
         ? `Payment recorded against ${pickedList.length} line${pickedList.length === 1 ? '' : 's'}`
         : 'Payment recorded', 'success')
       setPay({ amount: '', method: 'pos', split: null, date: lagosToday() }); setIsOverstay(false)
-      setPayLoc(''); setPayLocOpen(false); setPicked({})
+      setPicked({})
       refresh(); onChanged?.()
     } catch (e) { toast(friendlyStayError(e), 'error') }
     setBusy(false)
@@ -1034,29 +1033,18 @@ export default function Folio({ boot, room, onClose, onChanged }) {
               </div>
             )}
 
-            {deptOptions.length > 0 && (
-              payLocOpen ? (
-                <div className="mt-3 rounded-xl border border-line bg-raise p-3">
-                  <label className="block text-dim text-sm">Money went through</label>
-                  <select value={payLoc} onChange={e => setPayLoc(e.target.value)}
-                    className="mt-1 h-12 w-full px-3 rounded-xl bg-surface border border-line">
-                    <option value="">Reception (this desk)</option>
-                    {deptOptions.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
-                  </select>
-                  {payLoc && (
-                    <p className="text-amber text-sm mt-2">
-                      This payment will count in {deptOptions.find(l => l.id === payLoc)?.name}'s
-                      Total Sales, not Reception's.
-                    </p>
-                  )}
-                </div>
-              ) : (
-                <button onClick={() => setPayLocOpen(true)}
-                  className="mt-3 text-dim text-sm underline">
-                  Paid on a department's POS, e.g. MainBar? Choose it
-                </button>
-              )
-            )}
+            {/* "Paid on a department's POS" used to sit here. Removed: a
+                room bill is settled at the front desk, and OpenBar — the
+                only department with a terminal of its own — does not serve
+                rooms, so there is no department whose drawer the money
+                could be in. It was being used to answer "whose charge was
+                this?" instead, which tagged front-desk money to MainBar and
+                left MainBar's Total Sales expecting POS that was never in
+                it. Ticking the charges answers that question properly now.
+
+                The control remains on each recorded payment below, as
+                "Change department", so the ones already tagged wrongly can
+                be put back to Reception. */}
 
             <label className="flex items-center gap-2 text-dim mt-3">
               <input type="checkbox" checked={isOverstay} onChange={e => setIsOverstay(e.target.checked)} />

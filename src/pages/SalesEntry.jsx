@@ -168,6 +168,14 @@ export default function SalesEntry({ boot }) {
   const [recon, setRecon] = useState(null)
   // Totals for the guest collections shown with the day's income.
   const guestTotal = guestIn.reduce((t, p) => t + Number(p.amount), 0)
+  // What this department charged to rooms today. It is in the day's
+  // total at the top of the page but NOT in gross sales — a room charge
+  // is not money at this till — so without it on the card the two
+  // figures sit on one screen with nothing explaining the difference,
+  // and the day cannot be matched.
+  const roomChargedToday = combinedToday
+    .filter(r => r.entryKind === 'roomCharge' && r.order_type !== 'pr_damage')
+    .reduce((t, r) => t + Number(r.amount ?? r.qty * r.unit_price ?? 0), 0)
   const guestByMethod = guestIn.reduce((m, p) => {
     m[p.method] = (m[p.method] || 0) + Number(p.amount); return m
   }, {})
@@ -931,6 +939,17 @@ export default function SalesEntry({ boot }) {
                   <p className="text-dim text-xs pl-4">
                     Drinks and food charged to rooms are paid here but belong to the room bill, so
                     they are not part of gross sales above.
+                  </p>
+                </>
+              )}
+              {roomChargedToday > 0 && (
+                <>
+                  <Line label="Charged to guests' rooms today" value={roomChargedToday} tone="text-dim" />
+                  <p className="text-dim text-xs pl-4">
+                    Goods that left this department on a guest's room bill. Counted in the
+                    {' '}{naira(recon.grossSales + roomChargedToday)} at the top of this page,
+                    but not in gross sales — the guest pays it at Reception, not here, so it
+                    is never part of what you hand over.
                   </p>
                 </>
               )}
