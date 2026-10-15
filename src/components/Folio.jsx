@@ -173,32 +173,67 @@ export default function Folio({ boot, room, onClose, onChanged }) {
   // cost nothing to add up on every render.
   const locName = (id) => (allLocations || locations || []).find(l => l.id === id)?.name
   const tickedOn = (k) => Number((paidByItem || {})[k] || 0)
+
+  // ── What is actually still unpaid, charge by charge ─────────────────
+  //
+  // Two kinds of money land on a folio. Money TICKED against a charge
+  // settles that charge exactly. Money paid against the bill as a whole
+  // — which is most of it, and every payment taken before ticking
+  // existed — settles no particular charge, so without a rule it
+  // settles none of them: Mr Ngoka had paid ₦184,400 of ₦187,900 and
+  // every single line still showed as owing, with the picker offering
+  // him the whole bill again.
+  //
+  // So untagged money covers the bill in the order the guest incurred
+  // it: the room first, then charges oldest first. It is stated here
+  // once and used by BOTH the breakdown and the picker, so the two can
+  // never say different things about the same line.
+  const covered = (() => {
+    const out = {}
+    const roomFull0 = Number(folio?.room_charge || 0) + Number(folio?.overstay_charge || 0)
+    // Everything payable on this folio, in the order money should reach it.
+    const inOrder = [{ key: 'room', full: roomFull0 }]
+      .concat([...billableLines]
+        .sort((a, b) => String(a.date || '').localeCompare(String(b.date || ''))
+                     || String(a.id).localeCompare(String(b.id)))
+        .map(li => ({ key: li.id, full: Number(li.amount || 0) })))
+
+    // Money with no charge named: everything paid, less what was ticked.
+    let pot = Number(folio?.total_paid || 0)
+      - Object.values(paidByItem || {}).reduce((t, v) => t + Number(v || 0), 0)
+
+    for (const x of inOrder) {
+      const owed = Math.max(0, x.full - tickedOn(x.key))
+      const take = Math.max(0, Math.min(pot, owed))
+      pot -= take
+      out[x.key] = take
+    }
+    return out
+  })()
+  // What is left on one charge: its value, less money ticked against it,
+  // less its share of the untagged money.
+  const stillOwed = (key, full) =>
+    Math.max(0, Number(full || 0) - tickedOn(key) - Number(covered[key] || 0))
   const billParts = (() => {
     const roomCharged = Number(folio?.room_charge || 0) + Number(folio?.overstay_charge || 0)
     const byDept = new Map()
     for (const li of billableLines) {
       const key = li.location_id || 'typed'
-      const prev = byDept.get(key) || { charged: 0, ticked: 0 }
+      const prev = byDept.get(key) || { charged: 0, left: 0 }
       prev.charged += Number(li.amount || 0)
-      prev.ticked += tickedOn(li.id)
+      prev.left += stillOwed(li.id, li.amount)
       byDept.set(key, prev)
     }
-    const paidTo = (match) => payments
-      .filter(match).reduce((t, p) => t + Number(p.amount || 0), 0)
 
     const parts = []
     if (roomCharged > 0) {
-      // Money ticked against the room (migration 505), plus money marked
-      // for it under the older department rule (496).
-      const paid = tickedOn('room') + paidTo(p => p.applied_to === 'room')
+      const l = stillOwed('room', roomCharged)
       parts.push({ key: 'room', applied: 'room', locationId: null, name: 'Room charge',
-                   charged: roomCharged, paid, left: roomCharged - paid })
+                   charged: roomCharged, paid: roomCharged - l, left: l })
     }
     for (const [key, agg] of byDept) {
       const charged = agg.charged
-      const paid = agg.ticked + (key === 'typed'
-        ? 0   // nothing could be earmarked at a part of the bill with no department
-        : paidTo(p => p.applied_to === 'department' && p.applied_location_id === key))
+      const paid = charged - agg.left
       parts.push({
         key,
         applied: key === 'typed' ? null : 'department',
@@ -209,7 +244,7 @@ export default function Folio({ boot, room, onClose, onChanged }) {
         // nothing to settle it against — so it is left off the picker and
         // cleared by paying the bill as a whole.
         name: key === 'typed' ? 'Other charges — no department' : (locName(key) || 'A department'),
-        charged, paid, left: charged - paid,
+        charged, paid, left: agg.left,
       })
     }
     // Department credit — a different ledger, offered here all the same.
@@ -255,12 +290,9 @@ export default function Folio({ boot, room, onClose, onChanged }) {
   //
   // Each entry carries what is LEFT on it, so a charge already ticked
   // off drops out and a part-paid one shows only the remainder.
-  const paid = paidByItem || {}
-  const left = (key, full) => Math.max(0, Number(full || 0) - Number(paid[key] || 0))
-
   const payables = []
   const roomFull = Number(folio?.room_charge || 0) + Number(folio?.overstay_charge || 0)
-  const roomLeft = left('room', roomFull)
+  const roomLeft = stillOwed('room', roomFull)
   // The room, night by night. A guest on a long stay settles some nights
   // and leaves the rest, so each unpaid night is its own tickable line
   // rather than the room being one all-or-nothing lump.
@@ -272,7 +304,8 @@ export default function Folio({ boot, room, onClose, onChanged }) {
   // always add back up to the room charge exactly.
   const nightRate = Number(folio?.daily_rate || 0)
   const totalNightsOnBill = Number(folio?.nights || 0)
-  const nightsCovered = nightRate > 0 ? Math.floor(tickedOn('room') / nightRate) : 0
+  const nightsCovered = nightRate > 0
+    ? Math.floor((tickedOn('room') + Number(covered.room || 0)) / nightRate) : 0
   const nightsToOffer = Math.max(0, totalNightsOnBill - nightsCovered)
   if (roomLeft > 0.009 && nightsToOffer > 1 && nightRate > 0) {
     const inDate = folio?.check_in_date || room.check_in_date
@@ -302,7 +335,7 @@ export default function Folio({ boot, room, onClose, onChanged }) {
     })
   }
   for (const li of billableLines) {
-    const l = left(li.id, li.amount)
+    const l = stillOwed(li.id, li.amount)
     if (l <= 0.009) continue
     payables.push({
       key: li.id, kind: li.category === 'food' ? 'food' : li.category === 'minimart' ? 'shop' : 'drink',
@@ -749,8 +782,10 @@ export default function Folio({ boot, room, onClose, onChanged }) {
             </div>
             {generalPaid > 0.009 && (
               <p className="text-dim text-sm pt-3 mt-1 border-t border-line">
-                {naira(generalPaid)} was paid against the bill as a whole, not
-                against any one part.
+                {naira(generalPaid)} was paid against the bill as a whole rather than
+                any one charge, so it has gone to the room first and then the
+                oldest charges. Tick charges when taking money to say exactly
+                what it pays for.
               </p>
             )}
 
