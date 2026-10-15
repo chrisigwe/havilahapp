@@ -1,7 +1,7 @@
 import RoomChargeTracker from '../components/RoomChargeTracker'
 import StockUsedReport from '../components/StockUsedReport'
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { naira, lagosToday, lagosDaysAgo, tierLabel, methodLabel, whoRecorded, paymentSummary } from '../lib/format'
+import { naira, lagosToday, lagosDaysAgo, tierLabel, methodLabel, roomChargeDept, whoRecorded, paymentSummary } from '../lib/format'
 import { findDuplicateCustomers, findDuplicateGuests, loadDailyFinancials, loadGuestCollections, loadReceptionActivity, loadReceptionDashboard, loadRoomCharges, loadRoomsSoldInMonth, loadToday, loadWriteoffsOnDate } from '../lib/data'
 import { useToast } from '../components/Toast'
 import ReceptionDashboard from '../components/ReceptionDashboard'
@@ -57,7 +57,6 @@ export default function DailySales({ boot }) {
   const itemById = useMemo(() => Object.fromEntries(items.map(i => [i.id, i])), [items])
   const locById = useMemo(() => Object.fromEntries(salesPoints.map(l => [l.id, l])), [salesPoints])
   const isReception = /reception/i.test(salesPoints.find(l => l.id === locId)?.name || '')
-  const isRestaurant = /restaurant/i.test(salesPoints.find(l => l.id === locId)?.name || '')
   // Internal rooms (GM Office, via rooms.is_internal) and the
   // monthly rooms-sold count are both
   // GM/admin-only visibility on this dashboard — matches
@@ -84,12 +83,11 @@ export default function DailySales({ boot }) {
     loadReceptionActivity(staff.branch_id, priorDay)
       .then(setYesterdayActivity).catch(() => {})
   }, [isReception, showYesterday, staff.branch_id, priorDay, locId])
-  const currentDept = salesPoints.find(l => l.id === locId)
-  const roomChargeCategory = isReception ? null
-    : isRestaurant ? 'food'
-    : /minimart/i.test(currentDept?.name || '') ? 'minimart'
-    : locId === 'all' ? null // "All" has no single category to filter by
-    : 'drink'
+  // Room charges are resolved per line by department now, not by category
+  // (migration 503). Category could not tell MainBar from OpenBar — both
+  // are 'drink' — and "All" had no single category at all, so it showed
+  // no room charges whatsoever.
+  const showsRoomCharges = !isReception
 
   const refresh = useCallback(() => {
     const loc = locId === 'all' ? null : locId
@@ -133,10 +131,10 @@ export default function DailySales({ boot }) {
     ]).then(([f, guest]) => setSummary(withGuestCollections(f, guest)))
       .catch(e => toast(e.message, 'error'))
     loadToday(staff.branch_id, date, loc).then(setRows).catch(e => toast(e.message, 'error'))
-    if (roomChargeCategory) {
-      loadRoomCharges(staff.branch_id, date, roomChargeCategory).then(setRoomCharges).catch(e => toast(e.message, 'error'))
+    if (showsRoomCharges) {
+      loadRoomCharges(staff.branch_id, date).then(setRoomCharges).catch(e => toast(e.message, 'error'))
     }
-  }, [staff.branch_id, date, locId, isReception, roomChargeCategory])
+  }, [staff.branch_id, date, locId, isReception, showsRoomCharges])
   useEffect(refresh, [refresh])
 
   // A room charge from any department lives in orders/order_items,
@@ -148,15 +146,18 @@ export default function DailySales({ boot }) {
   // own till figures.
   const combinedRows = useMemo(() => {
     const sales = (rows || []).map(r => ({ ...r, entryKind: 'sale', sortAt: r.created_at }))
-    if (!roomChargeCategory) return sales
-    const charges = roomCharges.map(r => ({
+    if (!showsRoomCharges) return sales
+    // Only this department's own charges; "All" keeps every one of them.
+    const mine = locId === 'all' ? roomCharges
+      : roomCharges.filter(r => roomChargeDept(r, allLocations) === locId)
+    const charges = mine.map(r => ({
       ...r, entryKind: 'roomCharge', sortAt: r.orders?.created_at,
       roomNumber: r.orders?.stays?.rooms?.room_number, guestName: r.orders?.stays?.guests?.full_name,
       chargedBy: r.orders?.served?.full_name,
       folioOutstanding: r.folioOutstanding, stayStatus: r.stayStatus, lineStatus: r.lineStatus,
     }))
     return [...sales, ...charges].sort((a, b) => (b.sortAt || '').localeCompare(a.sortAt || ''))
-  }, [rows, roomCharges, roomChargeCategory])
+  }, [rows, roomCharges, showsRoomCharges, locId, allLocations])
 
   const total = combinedRows.reduce((s, r) => s + Number(r.amount ?? r.qty * r.unit_price), 0)
 

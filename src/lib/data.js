@@ -1917,19 +1917,25 @@ async function _deleteOrderItem(orderItemId, orderId) {
 // Today list at all, since that list only ever queried sales. Joins
 // through to the guest/room for display, same context the folio
 // itself shows.
-// Room-charged items belonging to one department's category — food
-// (Restaurant), minimart (Minimart), or drink (bar departments).
-// location_id is only ever set on catalog-item charges, never on
-// typed ones, so category is the one field that reliably identifies
-// which department a room charge belongs to.
-export async function loadRoomCharges(branchId, date, category) {
+// Every room charge on one day, whichever department made it.
+//
+// This used to take a CATEGORY and filter on it. Category is only ever
+// 'food', 'minimart' or 'drink' — so every bar resolved to 'drink' and
+// MainBar and OpenBar were served the same combined list, each reading
+// the other's charges as its own. OpenBar's ₦12,600 had been showing on
+// MainBar since 3 October.
+//
+// So the day's rows come back whole and the DEPARTMENT is resolved per
+// line by roomChargeDept() below, the same way department_room_charges
+// does it in SQL. One rule, two places, stated once.
+export async function loadRoomCharges(branchId, date) {
   const { data, error } = await supabase.from('order_items')
     .select(`id, description, qty, unit_price, amount, order_id, order_type, damage_reason, writeoff_note, pr_meal,
-             no_stock_declared,
+             no_stock_declared, category, location_id,
              orders!inner(id, business_date, branch_id, served_by, created_at, occurred_at,
                           served:served_by(full_name),
                           stays(id, status, actual_out, rooms(room_number), guests!guest_id(full_name)))`)
-    .eq('category', category).eq('orders.branch_id', branchId).eq('orders.business_date', date)
+    .eq('orders.branch_id', branchId).eq('orders.business_date', date)
   if (error) throw error
   const rows = data || []
 

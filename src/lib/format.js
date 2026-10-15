@@ -62,6 +62,26 @@ export const paymentSummary = (r) => {
 export const orderableLocations = (allLocations) =>
   (allLocations || []).filter(l => !l.is_store && (l.is_sales_point || /restaurant/i.test(l.name)))
 
+// Which department a room charge belongs to.
+//
+// MUST stay identical to the coalesce in department_room_charges
+// (migration 503) — the same line has to land in the same department
+// whether the figure comes from SQL or from here, or a department's day
+// list and its Charged to rooms tracker disagree.
+//
+// location_id when the line carries one. Otherwise category, which can
+// only ever name Restaurant or Minimart — 'drink' is shared by every bar
+// and so identifies nothing. A typed bar line from before migration 496
+// has neither, and gets null: shown as "no department" rather than
+// guessed at, which is what put OpenBar's charges on MainBar.
+export const roomChargeDept = (line, allLocations) => {
+  if (line?.location_id) return line.location_id
+  const find = (re) => (allLocations || []).find(l => re.test(l.name || ''))?.id || null
+  if (line?.category === 'food') return find(/restaurant/i)
+  if (line?.category === 'minimart') return find(/minimart/i)
+  return null
+}
+
 // Mirrors the database's own generated column exactly (guests.name_key
 // is GENERATED ALWAYS using this identical pattern) — needed client-side
 // because a generated column can't be searched against directly; this

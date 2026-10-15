@@ -41,7 +41,7 @@ export default function RoomChargeTracker({ branchId, locationId = null, refresh
     if (!collectedLines.length) return null
     return (
       <Section title="Room charges recovered" open={open} setOpen={setOpen}
-        subtitle={`${collectedLines.length} item${collectedLines.length === 1 ? '' : 's'} collected at this till, last 60 days`}
+        subtitle={`${collectedLines.length} item${collectedLines.length === 1 ? '' : 's'} on bills now settled, last 60 days`}
         amount={<span className="tnum font-bold text-leaf">{naira(collectedTotal)}</span>}>
         <ul className="divide-y divide-line/60">
           {collectedLines.map(l => (
@@ -62,8 +62,15 @@ export default function RoomChargeTracker({ branchId, locationId = null, refresh
     )
   }
 
-  // One entry per guest. The amount owed is the folio balance, taken once —
-  // adding up line amounts counted the same money several times over.
+  // One entry per guest, carrying TWO figures that are never mixed:
+  //
+  //   sold      what THIS department charged to that room — its own money
+  //   billLeft  what the guest still owes across everything, as context
+  //
+  // Showing only billLeft is what produced MainBar's ₦1,500: the Front
+  // Desk had cleared Mr Ngoka down to ₦1,500 of room charge and Restaurant
+  // food, and MainBar was shown that figure as though it were its own,
+  // while the ₦3,000 of water it had actually sold appeared nowhere.
   const byStay = new Map()
   for (const l of lines) {
     if (l.status === 'settled') continue
@@ -71,10 +78,12 @@ export default function RoomChargeTracker({ branchId, locationId = null, refresh
     if (!byStay.has(k)) {
       byStay.set(k, {
         stayId: k, guest: l.guest, room: l.room, status: l.status,
-        billLeft: Number(l.bill_left || 0), items: [],
+        billLeft: Number(l.bill_left || 0), sold: 0, items: [],
       })
     }
-    byStay.get(k).items.push(l)
+    const g = byStay.get(k)
+    g.sold += Number(l.amount || 0)
+    g.items.push(l)
   }
   const guests = [...byStay.values()].sort((a, b) =>
     (b.status === 'debt') - (a.status === 'debt') || b.billLeft - a.billLeft)
@@ -82,15 +91,18 @@ export default function RoomChargeTracker({ branchId, locationId = null, refresh
 
   if (!guests.length && !settledLines.length) return null
 
-  const owedTotal = guests.reduce((s, g) => s + g.billLeft, 0)
+  // The heading figure is what this department sold and has not been paid
+  // for — its own money. Summing billLeft put the room charge and every
+  // other department into a bar's total.
+  const soldTotal = guests.reduce((s, g) => s + g.sold, 0)
   const gone = guests.filter(g => g.status === 'debt').length
 
   return (
-    <Section title="Room charges awaiting payment" open={open} setOpen={setOpen}
+    <Section title="What you charged to rooms, not yet paid" open={open} setOpen={setOpen}
       subtitle={guests.length
         ? `${guests.length} guest${guests.length === 1 ? '' : 's'}${gone ? ` · ${gone} checked out` : ''}`
         : 'Every guest with room charges has settled'}
-      amount={guests.length > 0 && <span className="tnum font-bold text-clay">{naira(owedTotal)}</span>}>
+      amount={guests.length > 0 && <span className="tnum font-bold text-clay">{naira(soldTotal)}</span>}>
 
       {!guests.length && !showDone && <p className="text-dim text-sm py-2">Nothing outstanding.</p>}
 
@@ -105,9 +117,14 @@ export default function RoomChargeTracker({ branchId, locationId = null, refresh
                 <p className={`text-sm font-semibold ${g.status === 'debt' ? 'text-clay' : 'text-amber'}`}>
                   {g.status === 'debt' ? 'Checked out still owing' : 'In house — bill still running'}
                 </p>
+                {/* The guest's whole bill, named for what it is so nobody
+                    reads it as this department's figure. */}
+                <p className="text-dim text-xs">
+                  Their whole bill still owes {naira(g.billLeft)}
+                </p>
               </div>
               <span className={`tnum font-bold shrink-0 ${g.status === 'debt' ? 'text-clay' : 'text-amber'}`}>
-                {naira(g.billLeft)}
+                {naira(g.sold)}
               </span>
             </div>
 
@@ -129,17 +146,20 @@ export default function RoomChargeTracker({ branchId, locationId = null, refresh
               })}
             </ul>
 
-            {/* The one payment fact that IS recorded per department. */}
-            {g.items.some(l => Number(l.paid_amt || 0) > 0) && (
+            {/* Money that physically came through this department's till —
+                a till fact, not a settlement. Judging recovery by this is
+                what hid every charge the Front Desk collected. */}
+            {g.items.some(l => Number(l.till_amt || 0) > 0) && (
               <p className="mt-1 pl-3 text-leaf text-sm">
-                {naira(g.items.reduce((s, l) => s + Number(l.paid_amt || 0), 0))} of this was collected at
-                {' '}{locationId ? 'this till' : (g.items.find(l => Number(l.paid_amt || 0) > 0)?.dept || 'a department till')}.
+                {naira(g.items.reduce((s, l) => s + Number(l.till_amt || 0), 0))} of this came through
+                {' '}{locationId ? 'this till' : (g.items.find(l => Number(l.till_amt || 0) > 0)?.dept || 'a department till')}.
               </p>
             )}
 
             <p className="mt-1 pl-3 text-dim text-xs">
-              {naira(g.billLeft)} is what the whole stay owes — room and everything charged to it.
-              {g.status === 'debt' ? ' Collect it on the Credit page.' : ' It settles at checkout.'}
+              {g.status === 'debt'
+                ? 'Collect it on the Credit page.'
+                : 'It clears when the guest settles at Reception.'}
             </p>
           </li>
         ))}

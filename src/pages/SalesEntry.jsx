@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { lagosDaysAgo, lagosToday, methodLabel, naira, paymentSummary, startingDept, tierLabel, whoRecorded } from '../lib/format'
+import { lagosDaysAgo, lagosToday, methodLabel, naira, paymentSummary, roomChargeDept, startingDept, tierLabel, whoRecorded } from '../lib/format'
 import { loadStockMap, loadPopular, loadToday, saveBasket, saveWriteoff,
          loadDailyFinancials, loadCustomers, createCustomer,
          loadOpeningDate, loadBalances, loadReceipt,
@@ -100,10 +100,11 @@ export default function SalesEntry({ boot }) {
   // own. Any department can have items charged to a room, not just
   // Restaurant, so this drives loading and merging generically
   // rather than special-casing one department.
-  const roomChargeCategory = isReception ? null
-    : isRestaurant ? 'food'
-    : /minimart/i.test(currentDept?.name || '') ? 'minimart'
-    : 'drink'
+  //
+  // No longer a CATEGORY. Category could not tell MainBar from OpenBar —
+  // both are 'drink' — so each bar was shown the other's charges as its
+  // own. The department is resolved per line by roomChargeDept instead
+  // (migration 503).
   // Re-sync selected department on branch switch (GM) — otherwise the
   // old branch's location id stays selected, matching no chip here,
   // so nothing highlights until a manual tap.
@@ -194,14 +195,19 @@ export default function SalesEntry({ boot }) {
   // loadToday itself, which every other department still uses as-is.
   const combinedToday = useMemo(() => {
     const sales = today.map(r => ({ ...r, entryKind: 'sale', sortAt: r.created_at }))
-    if (!roomChargeCategory) return sales
-    const charges = roomCharges.map(r => ({
+    if (isReception) return sales
+    // Only THIS department's charges. Previously filtered by category, so
+    // every bar resolved to 'drink' and each one listed the other's
+    // charges as its own (migration 503).
+    const mine = roomCharges.filter(r =>
+      roomChargeDept(r, boot.allLocations || locations) === locationId)
+    const charges = mine.map(r => ({
       ...r, entryKind: 'roomCharge', sortAt: r.orders?.created_at,
       roomNumber: r.orders?.stays?.rooms?.room_number, guestName: r.orders?.stays?.guests?.full_name,
       chargedBy: r.orders?.served?.full_name,
     }))
     return [...sales, ...charges].sort((a, b) => (b.sortAt || '').localeCompare(a.sortAt || ''))
-  }, [today, roomCharges, roomChargeCategory])
+  }, [today, roomCharges, isReception, locationId, boot, locations])
   const locById = useMemo(() =>
     Object.fromEntries((boot.allLocations || locations).map(l => [l.id, l])), [boot, locations])
 
@@ -228,8 +234,8 @@ export default function SalesEntry({ boot }) {
         loadRoomsSoldInMonth(staff.branch_id, date).then(setRoomsSold).catch(() => {})
       }
     }
-    if (roomChargeCategory) {
-      loadRoomCharges(staff.branch_id, date, roomChargeCategory).then(setRoomCharges).catch(() => {})
+    if (!isReception) {
+      loadRoomCharges(staff.branch_id, date).then(setRoomCharges).catch(() => {})
     }
     // On failure, record the error rather than silently showing nothing:
     // a hidden section looks identical to a day with no write-offs, which
