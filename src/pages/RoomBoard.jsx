@@ -117,7 +117,6 @@ export default function RoomBoard({ boot }) {
   // falls back to the old calendar-only reading.
   const [paidThrough, setPaidThrough] = useState({})
   const [showBookings, setShowBookings] = useState(false)
-  const [filter, setFilter] = useState(null)   // a STATE key, or null for all
   // The GM's office is not a room anyone lets. Hidden from everyone but
   // gm/admin, read from rooms.is_internal rather than a room number.
   const seesInternal = is(staff.role, SUPERVISOR)
@@ -182,7 +181,6 @@ export default function RoomBoard({ boot }) {
   // at the top instead, which do not disturb the layout.
   const sorted = [...rooms].sort((a, b) =>
     String(a.room_number).localeCompare(String(b.room_number), undefined, { numeric: true }))
-  const shown = filter ? sorted.filter(r => stateOf(r, paidThrough) === filter) : sorted
   // A reservation is not a debt. Its whole booking shows as due with
   // nothing paid because the guest has not arrived — eleven PSN rooms
   // held for November were adding ₦1,650,000 here, five times every real
@@ -198,23 +196,11 @@ export default function RoomBoard({ boot }) {
     <div className="px-5">
       {!!rooms.length && (
         <div className="flex flex-wrap items-baseline gap-x-5 gap-y-2 py-3 border-b border-line mb-3">
-          {/* Tap a count to see only those rooms. This is the triage the
-              urgency sort used to give, without moving a single card:
-              the rooms that stay are still in building order, the rest
-              are just out of the way for a moment. */}
-          {Object.entries(STATE).map(([key, s]) => {
-            const n = tally[key] || 0
-            const on = filter === key
-            return (
-              <button key={key} disabled={!n}
-                onClick={() => setFilter(on ? null : key)}
-                aria-pressed={on}
-                className={`text-dim text-sm rounded-lg px-2 -mx-1 py-0.5 disabled:opacity-50
-                  ${on ? 'bg-raise ring-1 ring-line' : ''}`}>
-                <b className={`text-lg font-bold tnum ${s.text}`}>{n}</b> {s.label.toLowerCase()}
-              </button>
-            )
-          })}
+          {Object.entries(STATE).map(([key, s]) => (
+            <span key={key} className="text-dim text-sm">
+              <b className={`text-lg font-bold tnum ${s.text}`}>{tally[key] || 0}</b> {s.label.toLowerCase()}
+            </span>
+          ))}
           {owed > 0 && (
             <span className="text-dim text-sm ml-auto">
               <b className="text-lg font-bold tnum text-clay">{naira(owed)}</b> outstanding
@@ -352,15 +338,8 @@ export default function RoomBoard({ boot }) {
         )
       })()}
 
-      {filter && (
-        <button onClick={() => setFilter(null)}
-          className="w-full h-11 rounded-xl border border-line text-dim font-semibold text-sm mb-3">
-          Showing {shown.length} of {rooms.length} rooms — show all
-        </button>
-      )}
-
       <div className="grid grid-cols-2 gap-3">
-        {shown.map(room => {
+        {sorted.map(room => {
           const stateKey = stateOf(room, paidThrough)
           const s = STATE[stateKey]
           return (
