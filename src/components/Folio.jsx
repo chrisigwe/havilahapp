@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
-import { naira, lagosToday, lagosTime, seesStayTimes, cyclesFor, friendlyStayError } from '../lib/format'
-import { billedToLabel, checkOutStay, checkRepeatPayment, deleteOrderItem, deleteStay, loadBranchStaySettings, loadFolio, moveRoomChargeDate, recordStayPayment, setPaymentDepartment, splitPaymentToDepartment, reopenStay, saveRepayment, searchSimilarGuests, setPaymentAllocation, updateOrderItem, updateOverstayFee, updateStayBillTo, updateStayDetails } from '../lib/data'
+import { naira, lagosToday, lagosTime, seesStayTimes, cyclesFor, friendlyStayError, addDays } from '../lib/format'
+import { billedToLabel, checkOutStay, checkRepeatPayment, deleteOrderItem, deleteStay, extendStayTo, loadBranchStaySettings, loadFolio, moveRoomChargeDate, recordStayPayment, setPaymentDepartment, splitPaymentToDepartment, reopenStay, saveRepayment, searchSimilarGuests, setPaymentAllocation, updateOrderItem, updateOverstayFee, updateStayBillTo, updateStayDetails } from '../lib/data'
 import { useToast } from '../components/Toast'
 import PaymentMethodPicker, { paymentParts, paymentAllocated } from './PaymentMethodPicker'
 import FolioStatement from './FolioStatement'
@@ -9,6 +9,13 @@ import { MANAGEMENT, SUPERVISOR, is } from '../lib/roles'
 // Was named SUPERVISOR_ROLES but has always been manager/gm/admin —
 // NOT the gm/admin set that is_supervisor() means.
 const SUPERVISOR_ROLES = MANAGEMENT
+
+// A date as the desk says it out loud: "Fri 16 Oct". Noon so the
+// timezone can never roll it back a day.
+const dShort = d => d
+  ? new Date(String(d).slice(0, 10) + 'T12:00:00')
+      .toLocaleDateString('en-NG', { weekday: 'short', day: 'numeric', month: 'short' })
+  : ''
 
 export default function Folio({ boot, room, onClose, onChanged }) {
   const { staff, allLocations, locations } = boot
@@ -51,6 +58,9 @@ export default function Folio({ boot, room, onClose, onChanged }) {
   const [deletingLine, setDeletingLine] = useState(null)  // the order line pending delete confirmation
   const [printing, setPrinting] = useState(false)
   const [busy, setBusy] = useState(false)
+  // Set once the leaving date has been moved from here, so the panel
+  // goes away immediately instead of waiting for the folio to reload.
+  const [extended, setExtended] = useState(false)
 
   const refresh = () => { loadFolio(room.stay_id).then(setData).catch(() => setData(null)) }
   useEffect(refresh, [room.stay_id])
@@ -304,6 +314,25 @@ export default function Folio({ boot, room, onClose, onChanged }) {
   const nightsCovered = nightRate > 0
     ? Math.floor((tickedOn('room') + Number(covered.room || 0)) / nightRate) : 0
   const nightsToOffer = Math.max(0, totalNightsOnBill - nightsCovered)
+
+  // ── Has he paid past his leaving date? ──────────────────────────────
+  //
+  // Nothing in the app has ever moved scheduled_out. A guest pays for
+  // another night, the money lands correctly, the bill is right — and
+  // the board still shows the date he was originally due to leave, so
+  // the room reads "Past due" and "Settled" at the same time. On 16
+  // October that was three of the four past-due rooms at Awka.
+  //
+  // The room money buys whole nights at this stay's own rate, so where
+  // those nights reach past the leaving date, the date is simply behind
+  // and the desk is asked — here, with the guest still in front of them
+  // — whether to move it. Asked, not done: money can also be an old
+  // bill being settled by someone who is not staying on.
+  const paidThroughDate = (nightRate > 0 && (folio?.check_in_date || room.check_in_date))
+    ? addDays(folio?.check_in_date || room.check_in_date, nightsCovered) : null
+  const dateIsBehind = !!paidThroughDate && !!folio?.scheduled_out
+    && paidThroughDate > folio.scheduled_out
+    && room.status !== 'checked_out' && !extended
   if (roomLeft > 0.009 && nightsToOffer > 1 && nightRate > 0) {
     const inDate = folio?.check_in_date || room.check_in_date
     for (let i = 0; i < nightsToOffer; i++) {
@@ -751,6 +780,43 @@ export default function Folio({ boot, room, onClose, onChanged }) {
           <button onClick={() => setConfirmingDelete(true)} className="block text-clay text-sm underline mt-1">
             Delete this booking — training records only
           </button>
+        )}
+
+        {dateIsBehind && (
+          <div className="mt-4 rounded-2xl border-2 border-amber bg-amber/10 p-4">
+            <p className="font-bold text-amber">
+              {nightsCovered} night{nightsCovered === 1 ? '' : 's'} paid for — the leaving date says {dShort(folio.scheduled_out)}
+            </p>
+            <p className="text-dim text-sm mt-1">
+              {naira(nightsCovered * nightRate)} of room money at {naira(nightRate)} a night runs to{' '}
+              <b className="text-ink">{dShort(paidThroughDate)}</b>. Until the date is moved, the board
+              shows this room as past due.
+            </p>
+            <div className="mt-3 flex gap-2">
+              <button disabled={busy}
+                onClick={async () => {
+                  setBusy(true)
+                  try {
+                    await extendStayTo(room.stay_id, paidThroughDate)
+                    setExtended(true)
+                    toast(`Leaving date moved to ${dShort(paidThroughDate)}`, 'success')
+                    refresh()
+                    onChanged?.()
+                  } catch (e) { toast(e.message, 'error') }
+                  setBusy(false)
+                }}
+                className="flex-1 h-12 rounded-xl bg-amber text-bg font-bold disabled:opacity-40">
+                {busy ? 'Saving…' : `Move it to ${dShort(paidThroughDate)}`}
+              </button>
+              <button onClick={() => setExtended(true)}
+                className="h-12 px-4 rounded-xl border border-line text-dim font-semibold">
+                Leave it
+              </button>
+            </div>
+            <p className="text-dim text-xs mt-2">
+              Leave it if the guest is settling an old bill rather than staying on.
+            </p>
+          </div>
         )}
 
         <div className="mt-4 rounded-2xl border border-line bg-surface p-4">

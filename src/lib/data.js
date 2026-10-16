@@ -1706,6 +1706,53 @@ export async function updateStayDetails({ stayId, dailyRate, billingCycle, sched
   if (error) throw error
 }
 
+// Move a stay's leaving date and NOTHING else.
+//
+// updateStayDetails writes the rate, the cycle, the reason and the
+// bill-to alongside the date, so calling it to change one field means
+// re-sending the other five correctly or quietly wiping them. This is
+// for the one case where only the date is wrong: the guest has paid
+// for nights beyond the date on the board.
+//
+// That case was everywhere. On 16 October three of the four rooms
+// showing "Past due" at Awka were paid up — Mr Ilowu's 203 and 204 and
+// Mr Ngoka's 105 — because paying has never moved the date and nobody
+// had thought to move it by hand. Only Mr Obitex in 207 was really
+// overstaying, and he was indistinguishable from the other three.
+export async function extendStayTo(stayId, scheduledOut) {
+  const { error } = await supabase.from('stays')
+    .update({ scheduled_out: scheduledOut }).eq('id', stayId)
+  if (error) throw error
+}
+
+// How far each occupied room's ROOM money actually reaches, so the board
+// can tell a guest who is paid up from one who is overstaying. Room
+// money is the allocation with no order_item_id — nights, not food.
+export async function loadPaidThrough(branchId) {
+  const { data: folios, error } = await supabase.from('v_stay_folio')
+    .select('stay_id, daily_rate, check_in_date, scheduled_out')
+    .eq('branch_id', branchId).eq('status', 'occupied')
+  if (error) return {}
+  const rows = folios || []
+  if (!rows.length) return {}
+  const { data: ticks } = await supabase.from('payment_items')
+    .select('amount, payments!inner(stay_id, branch_id)')
+    .eq('payments.branch_id', branchId).is('order_item_id', null)
+  const roomMoney = {}
+  for (const t of (ticks || [])) {
+    const k = t.payments?.stay_id
+    if (k) roomMoney[k] = (roomMoney[k] || 0) + Number(t.amount || 0)
+  }
+  const out = {}
+  for (const f of rows) {
+    const rate = Number(f.daily_rate || 0)
+    if (!(rate > 0) || !f.check_in_date) continue
+    const nights = Math.floor((roomMoney[f.stay_id] || 0) / rate)
+    out[f.stay_id] = addDays(f.check_in_date, nights)
+  }
+  return out
+}
+
 // Same reasoning again — enforce_overstay_fee stamps overstay_set_by/
 // at itself, and is the actual enforcement of who can set a
 // non-default amount or remove one; this just sends the value.

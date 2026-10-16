@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react'
-import { naira, lagosToday, lagosTime, seesStayTimes, addDays } from '../lib/format'
+import { naira, lagosToday, lagosTime, seesStayTimes } from '../lib/format'
 import {
-  checkInReservation, loadCheckoutsStillOwing, loadOccupancy, setRoomServiceStatus, loadUpcomingReservations,
+  checkInReservation, loadCheckoutsStillOwing, loadOccupancy, loadPaidThrough,
+  setRoomServiceStatus, loadUpcomingReservations,
 } from '../lib/data'
 import CheckIn from './CheckIn'
 import Folio from '../components/Folio'
@@ -19,19 +20,38 @@ const STATE = {
   reserved: { label: 'Reserved',    bar: 'bg-amber', text: 'text-amber' },
   reserved_due: { label: 'Reserved — due',  bar: 'bg-clay',  text: 'text-clay' },
   overdue:  { label: 'Past due',    bar: 'bg-clay',  text: 'text-clay' },
+  leaving:  { label: 'Leaving today', bar: 'bg-amber', text: 'text-amber' },
   service:  { label: 'Maintenance', bar: 'bg-dim',   text: 'text-dim' },
 }
 
-function stateOf(room) {
+// The order the desk should deal with them in, not the order the rooms
+// are numbered in. Mr Obitex at six nights over used to sit between two
+// settled rooms three screens down.
+const ORDER = ['overdue', 'reserved_due', 'leaving', 'occupied', 'vacant', 'service', 'reserved']
+
+// `paidThrough` is the day this room's money actually runs to. Without
+// it the board called any guest past their original leaving date "Past
+// due", whether they owed ₦156,200 or nothing at all — and three of the
+// four rooms flagged at Awka on 16 October were fully paid. Past due now
+// means the money ran out; a guest paid up to today is leaving today.
+function stateOf(room, paidThrough) {
   if (room.out_of_service) return 'service'
   if (!room.stay_id) return 'vacant'
-  if (room.is_overdue) return 'overdue'
+  if (room.is_overdue) {
+    const through = paidThrough?.[room.stay_id]
+    if (!through) return 'overdue'
+    const today = lagosToday()
+    return through < today ? 'overdue' : through === today ? 'leaving' : 'occupied'
+  }
   if (room.status === 'reserved') {
     // The whole point of letting a future reservation not block the
     // room early is that staff still need a clear, unmissable signal
     // once its actual date arrives — this is that signal.
     return room.check_in_date <= lagosToday() ? 'reserved_due' : 'reserved'
   }
+  // Due out today reads the same whether the date was always today or
+  // the money moved it there, so the desk sees one kind of room.
+  if (room.scheduled_out === lagosToday()) return 'leaving'
   return 'occupied'
 }
 
@@ -80,9 +100,14 @@ export default function RoomBoard({ boot }) {
   // Every reservation not yet arrived, so a room that looks free (or is
   // occupied right now) still shows that someone has booked it later.
   const [reservations, setReservations] = useState([])
+  // How far each occupied room's money reaches. Empty is safe: stateOf
+  // falls back to the old calendar-only reading.
+  const [paidThrough, setPaidThrough] = useState({})
+  const [showBookings, setShowBookings] = useState(false)
   const refresh = () => {
     loadOccupancy(staff.branch_id).then(setRooms).catch(() => setRooms([]))
     loadUpcomingReservations(staff.branch_id).then(setReservations).catch(() => setReservations([]))
+    loadPaidThrough(staff.branch_id).then(setPaidThrough).catch(() => setPaidThrough({}))
   }
   useEffect(refresh, [staff.branch_id])
 
@@ -119,8 +144,21 @@ export default function RoomBoard({ boot }) {
   if (rooms === null) return <p className="px-5 text-dim">Loading…</p>
 
   const tally = rooms.reduce((acc, r) => {
-    const s = stateOf(r); acc[s] = (acc[s] || 0) + 1; return acc
+    const s = stateOf(r, paidThrough); acc[s] = (acc[s] || 0) + 1; return acc
   }, {})
+
+  // A booking three weeks out is not a room anyone can walk into, and as
+  // a full card it doubled the length of the board — eleven PSN rooms
+  // held for November sat beside the eleven live rooms they are booked
+  // for. They live in the strip below now; the live card still names the
+  // booking underneath the guest. A reservation whose day has ARRIVED
+  // stays in the grid, because that one needs doing something about.
+  const onBoard = rooms.filter(r => stateOf(r, paidThrough) !== 'reserved')
+  const sorted = [...onBoard].sort((a, b) => {
+    const d = ORDER.indexOf(stateOf(a, paidThrough)) - ORDER.indexOf(stateOf(b, paidThrough))
+    if (d) return d
+    return String(a.room_number).localeCompare(String(b.room_number), undefined, { numeric: true })
+  })
   // A reservation is not a debt. Its whole booking shows as due with
   // nothing paid because the guest has not arrived — eleven PSN rooms
   // held for November were adding ₦1,650,000 here, five times every real
@@ -205,30 +243,73 @@ export default function RoomBoard({ boot }) {
       {(() => {
         const today = lagosToday()
         const due = reservations.filter(r => r.checkIn <= today)
-        const soon = reservations.filter(r => r.checkIn > today && r.checkIn <= addDays(today, 7))
-        if (!due.length && !soon.length) return null
-        const line = r => (
-          <p key={r.stayId} className="text-sm">
-            <b>Room {r.roomNumber}</b> — {r.guest}
-            <span className="text-dim"> · {r.checkIn <= today ? (r.checkIn === today ? 'today' : 'since ' + shortDate(r.checkIn))
-              : r.checkIn === addDays(today, 1) ? 'tomorrow' : shortDate(r.checkIn)}
-              {' → out '}{shortDate(r.scheduledOut)}</span>
-          </p>
-        )
+        const ahead = reservations.filter(r => r.checkIn > today)
+        if (!due.length && !ahead.length) return null
+
+        // Grouped by the day they arrive, because that is the question
+        // being asked of this list: what is coming, and when.
+        const byDay = []
+        for (const r of ahead) {
+          const last = byDay[byDay.length - 1]
+          if (last && last.day === r.checkIn) last.rows.push(r)
+          else byDay.push({ day: r.checkIn, rows: [r] })
+        }
+        const nights = r => Math.max(1, Math.round(
+          (new Date(r.scheduledOut) - new Date(r.checkIn)) / 864e5))
+
         return (
           <div className="mb-4 space-y-3">
+            {/* Today's arrivals still shout. A room someone is due in
+                today is the one thing on this page that can be sold out
+                from under a guest who has already booked it. */}
             {!!due.length && (
               <div className="rounded-2xl border-2 border-clay bg-clay/10 p-4 text-clay">
                 <p className="font-bold">
                   {due.length} reservation{due.length === 1 ? '' : 's'} due — keep {due.length === 1 ? 'this room' : 'these rooms'} free
                 </p>
-                <div className="mt-2 space-y-1">{due.map(line)}</div>
+                <div className="mt-2 space-y-1">
+                  {due.map(r => (
+                    <p key={r.stayId} className="text-sm">
+                      <b>Room {r.roomNumber}</b> — {r.guest}
+                      <span className="text-dim"> · {r.checkIn === today ? 'today' : 'since ' + shortDate(r.checkIn)}
+                        {' → out '}{shortDate(r.scheduledOut)}</span>
+                    </p>
+                  ))}
+                </div>
               </div>
             )}
-            {!!soon.length && (
-              <div className="rounded-2xl border border-amber bg-amber/10 p-4 text-amber">
-                <p className="font-bold">Upcoming reservations — do not sell these rooms for the dates shown</p>
-                <div className="mt-2 space-y-1">{soon.map(line)}</div>
+
+            {!!ahead.length && (
+              <div className="rounded-2xl border border-amber bg-amber/10 overflow-hidden">
+                <button onClick={() => setShowBookings(b => !b)}
+                  className="w-full flex items-center gap-3 p-4 text-left">
+                  <span className="text-xl font-bold tnum text-amber">{ahead.length}</span>
+                  <span className="min-w-0">
+                    <span className="font-bold text-amber block">rooms booked ahead</span>
+                    <span className="text-dim text-xs tnum">
+                      {booked > 0 && `${naira(booked)} · `}first arrival {shortDate(ahead[0].checkIn)}
+                    </span>
+                  </span>
+                  <span className="ml-auto text-dim text-sm shrink-0">{showBookings ? 'Hide' : 'Show'}</span>
+                </button>
+                {showBookings && (
+                  <div className="px-4 pb-4">
+                    {byDay.map(g => (
+                      <div key={g.day} className="mt-2">
+                        <p className="text-dim text-xs font-bold uppercase tracking-wide">
+                          {shortDate(g.day)} — {g.rows.length} room{g.rows.length === 1 ? '' : 's'}
+                        </p>
+                        {g.rows.map(r => (
+                          <p key={r.stayId} className="text-sm mt-0.5">
+                            <b className="tnum">Room {r.roomNumber}</b> — {r.guest}
+                            <span className="text-dim tnum"> · {nights(r)} night{nights(r) === 1 ? '' : 's'}</span>
+                          </p>
+                        ))}
+                      </div>
+                    ))}
+                    <p className="text-dim text-xs mt-3">Do not sell these rooms for the dates shown.</p>
+                  </div>
+                )}
               </div>
             )}
           </div>
@@ -236,8 +317,8 @@ export default function RoomBoard({ boot }) {
       })()}
 
       <div className="grid grid-cols-2 gap-3">
-        {rooms.map(room => {
-          const stateKey = stateOf(room)
+        {sorted.map(room => {
+          const stateKey = stateOf(room, paidThrough)
           const s = STATE[stateKey]
           return (
             <div key={room.room_id}
@@ -293,17 +374,32 @@ export default function RoomBoard({ boot }) {
                       {room.remaining_nights != null && room.remaining_nights >= 0
                         && ` · ${room.remaining_nights}n left`}
                     </p>
-                    {Number(room.outstanding) > 0 && (
-                      room.status === 'reserved'
-                        ? <p className="text-amber text-xs font-semibold mt-0.5">
-                            {naira(room.outstanding)} booking
-                          </p>
-                        : <p className="text-clay text-xs font-semibold mt-0.5">
-                            {naira(room.outstanding)} due
-                          </p>
+                    {/* Where the date is behind the money, say so on the
+                        card instead of leaving it looking overdue. The
+                        folio offers to move it. */}
+                    {stateKey !== 'overdue' && room.is_overdue && paidThrough[room.stay_id] && (
+                      <p className="text-amber text-xs font-semibold mt-0.5 tnum">
+                        paid to {shortDate(paidThrough[room.stay_id])}
+                      </p>
                     )}
-                    {Number(room.outstanding) < 0 && (
-                      <p className="text-leaf text-xs font-semibold mt-0.5">{naira(-room.outstanding)} left</p>
+                    {stateKey === 'overdue' && paidThrough[room.stay_id] && (
+                      <p className="text-clay text-xs font-semibold mt-0.5 tnum">
+                        money ran out {shortDate(paidThrough[room.stay_id])}
+                      </p>
+                    )}
+                    {/* One money line, always answering the same question.
+                        It used to be three different things in one slot:
+                        a booking's value, a deposit left, a debt. */}
+                    {Number(room.outstanding) > 0.009 ? (
+                      <p className="text-clay text-xs font-semibold mt-0.5">
+                        Owes {naira(room.outstanding)}
+                      </p>
+                    ) : Number(room.outstanding) < -0.009 ? (
+                      <p className="text-leaf text-xs font-semibold mt-0.5">
+                        {naira(-room.outstanding)} paid ahead
+                      </p>
+                    ) : (
+                      <p className="text-dim text-xs font-semibold mt-0.5">Settled</p>
                     )}
                     {room.bill_to && (
                       <p className="text-amber text-xs font-semibold mt-0.5 truncate">→ {room.bill_to}</p>
