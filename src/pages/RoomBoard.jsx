@@ -23,6 +23,12 @@ const STATE = {
   service:  { label: 'Maintenance', bar: 'bg-dim',   text: 'text-dim' },
 }
 
+// Which row wins when a room has more than one stay against it — the
+// nearest to happening. A guest in the bed beats a booking for November.
+const LIVENESS = {
+  service: 0, overdue: 1, reserved_due: 2, leaving: 3, occupied: 4, vacant: 5,
+}
+
 // One serial run, 101 through the Suite, and no section headings.
 //
 // Three orderings were tried on the desk. Grouping without headings read
@@ -172,7 +178,27 @@ export default function RoomBoard({ boot }) {
   if (allRooms === null) return <p className="px-5 text-dim">Loading…</p>
 
   // Everything below works on the rooms this person is allowed to see.
-  const rooms = seesInternal ? allRooms : allRooms.filter(r => !internalIds.includes(r.room_id))
+  const visible = seesInternal ? allRooms : allRooms.filter(r => !internalIds.includes(r.room_id))
+
+  // ONE CARD PER ROOM.
+  //
+  // The occupancy view returns a row per STAY, so a room with a guest in
+  // it and a booking for November came back twice and was drawn twice.
+  // That was merely untidy while a booking rendered as "Reserved"; once
+  // a future booking started reading as "Ready to let" it became a lie —
+  // room 202 would have shown Mr Okoye asleep in it beside a card
+  // offering it to the next walk-in.
+  //
+  // So each room keeps its most live row. The future booking is not
+  // lost: the card names it underneath the guest, which is where the
+  // desk was already reading it.
+  const byRoom = new Map()
+  for (const r of visible) {
+    const rank = LIVENESS[stateOf(r, paidThrough)] ?? 9
+    const held = byRoom.get(r.room_id)
+    if (!held || rank < held.rank) byRoom.set(r.room_id, { row: r, rank })
+  }
+  const rooms = [...byRoom.values()].map(h => h.row)
 
   const tally = rooms.reduce((acc, r) => {
     const s = stateOf(r, paidThrough); acc[s] = (acc[s] || 0) + 1; return acc
@@ -200,7 +226,7 @@ export default function RoomBoard({ boot }) {
   const arrived = rooms.filter(r => r.status !== 'reserved')
   const owed = arrived.reduce((s, r) => s + Math.max(Number(r.outstanding || 0), 0), 0)
   const onDeposit = arrived.reduce((s, r) => s + Math.max(-Number(r.outstanding || 0), 0), 0)
-  const booked = rooms.filter(r => r.status === 'reserved')
+  const booked = visible.filter(r => r.status === 'reserved')
     .reduce((s, r) => s + Math.max(Number(r.outstanding || 0), 0), 0)
 
   return (
