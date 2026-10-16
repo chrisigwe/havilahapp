@@ -23,20 +23,14 @@ const STATE = {
   service:  { label: 'Maintenance', bar: 'bg-dim',   text: 'text-dim' },
 }
 
-// Grouped by what needs doing, and inside each group the rooms run in
-// building order: 101, 102, 103. The first attempt had the grouping
-// without the headings, so a board that opened on 207 looked shuffled
-// rather than sorted — the heading is what makes the order read as a
-// reason instead of a mistake.
-const ORDER = ['overdue', 'reserved_due', 'leaving', 'occupied', 'vacant', 'service']
-const SECTION = {
-  overdue:      { title: 'Past due — ask or check out', tone: 'text-clay' },
-  reserved_due: { title: 'Reserved — due today',        tone: 'text-clay' },
-  leaving:      { title: 'Leaving today',               tone: 'text-amber' },
-  occupied:     { title: 'In house',                    tone: 'text-dim' },
-  vacant:       { title: 'Ready to let',                tone: 'text-dim' },
-  service:      { title: 'Maintenance',                 tone: 'text-dim' },
-}
+// One serial run, 101 through the Suite, and no section headings.
+//
+// Three orderings were tried on the desk. Grouping without headings read
+// as shuffled. Grouping with headings cut the corridor into four pieces.
+// Labelling a serial run put a heading every other pair, because status
+// is not something rooms are sorted into — it changes as you walk down
+// the hall. What stayed is the plain run, with the coloured bar on each
+// card and the counts at the top, which filter without moving anything.
 
 // `paidThrough` is the day this room's money actually runs to. Without
 // it the board called any guest past their original leaving date "Past
@@ -374,18 +368,8 @@ export default function RoomBoard({ boot }) {
         </button>
       )}
 
-      {ORDER.map(groupKey => {
-        const group = shown.filter(r => stateOf(r, paidThrough) === groupKey)
-        if (!group.length) return null
-        const sec = SECTION[groupKey]
-        return (
-      <section key={groupKey} className="mb-5">
-        <h2 className={`text-xs font-bold uppercase tracking-wider mb-2 flex items-center gap-2 ${sec.tone}`}>
-          {sec.title}
-          <span className="text-ink bg-raise rounded-full px-2 py-0.5 tnum font-bold">{group.length}</span>
-        </h2>
-        <div className="grid grid-cols-2 gap-3">
-        {group.map(room => {
+      <div className="grid grid-cols-2 gap-3">
+        {shown.map(room => {
           const stateKey = stateOf(room, paidThrough)
           const s = STATE[stateKey]
           return (
@@ -500,10 +484,7 @@ export default function RoomBoard({ boot }) {
             </div>
           )
         })}
-        </div>
-      </section>
-        )
-      })}
+      </div>
 
       {checkingIn && (
         <div className="fixed inset-0 z-50 bg-bg overflow-y-auto">
