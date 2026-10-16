@@ -236,7 +236,12 @@ export default function SalesEntry({ boot }) {
   //   cash  actually changes hands at close, so it moves drawer to drawer
   //
   // Both sides move together. Crediting a department without debiting
-  // Reception would just move the gap from one till to the other.
+  // Reception would just move the gap from one till to the other. The
+  // ₦35,000 argument of 15 October was NOT this: Reception read ₦190,000
+  // against a ₦155,000 slip because one payment had not been allocated
+  // yet, so it was still being counted as Reception's own. Once it was,
+  // the figure came to ₦155,000 on its own. The subtraction is right.
+  //
   // Room bills are taken on POS or in cash only — the folio offers no other
   // method — so anything not cash is POS. Split because the money keeps its
   // form: a department's share of a POS payment is POS to them too.

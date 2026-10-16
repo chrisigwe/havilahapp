@@ -943,6 +943,11 @@ export async function loadRoomBillHandover(branchId, date) {
     .select('amount, order_items!inner(location_id, category), payments!inner(business_date, branch_id, method)')
     .eq('payments.branch_id', branchId)
     .eq('payments.business_date', date)
+    // Money only. A write-off clears a debt without anyone paying, and a
+    // payroll deduction never reaches a till either — counting those as
+    // handover put ₦54,000 of written-off Restaurant food on the
+    // Restaurant's POS figure on 14 October and took it off Reception's.
+    .in('payments.method', ['pos', 'cash'])
   if (error) return []
   return (data || []).map(r => ({
     amount: Number(r.amount || 0),

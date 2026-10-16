@@ -468,7 +468,26 @@ export default function Folio({ boot, room, onClose, onChanged }) {
       let pot = payAllocated
       const creditShare = []
       const itemShare = []
-      for (const p of pickedList) {
+      // Nothing ticked? Then the app allocates it the same way the folio
+      // already shows untagged money settling the bill: the room first,
+      // then charges oldest first.
+      //
+      // Not a nicety. A department's daily figures are built from what a
+      // payment settled, so a payment that names nothing reaches no
+      // department at all — ₦4,900 of Mr Ngoka's never got to MainBar
+      // because the desk, quite reasonably, just typed the amount. Making
+      // the department's money depend on a new habit was the wrong design;
+      // the app works it out and the desk corrects it by ticking.
+      //
+      // Credit accounts are left out: that is another ledger, and moving
+      // money into it is a decision, never a default.
+      const toSettle = pickedList.length ? pickedList
+        : [...payables].filter(p => p.kind !== 'credit').sort((a, b) => {
+            if (a.kind === 'room' && b.kind !== 'room') return -1
+            if (b.kind === 'room' && a.kind !== 'room') return 1
+            return String(a.day).localeCompare(String(b.day))
+          })
+      for (const p of toSettle) {
         if (pot <= 0.009) break
         const take = Math.min(pot, p.amount)
         pot -= take
@@ -517,7 +536,8 @@ export default function Folio({ boot, room, onClose, onChanged }) {
 
       toast(pickedList.length
         ? `Payment recorded against ${pickedList.length} line${pickedList.length === 1 ? '' : 's'}`
-        : 'Payment recorded', 'success')
+        : `Payment recorded — put against ${merged.length} charge${merged.length === 1 ? '' : 's'}, oldest first`,
+        'success')
       setPay({ amount: '', method: 'pos', split: null, date: lagosToday() }); setIsOverstay(false)
       setPicked({})
       refresh(); onChanged?.()
