@@ -1,14 +1,14 @@
 import { useEffect, useState } from 'react'
 import { naira, lagosToday, lagosTime, seesStayTimes } from '../lib/format'
 import {
-  checkInReservation, loadCheckoutsStillOwing, loadOccupancy, loadPaidThrough,
-  setRoomServiceStatus, loadUpcomingReservations,
+  checkInReservation, loadCheckoutsStillOwing, loadInternalRoomIds, loadOccupancy,
+  loadPaidThrough, setRoomServiceStatus, loadUpcomingReservations,
 } from '../lib/data'
 import CheckIn from './CheckIn'
 import Folio from '../components/Folio'
 import ReopenSearch from '../components/ReopenSearch'
 import { useToast } from '../components/Toast'
-import { is, MANAGEMENT } from '../lib/roles'
+import { is, MANAGEMENT, SUPERVISOR } from '../lib/roles'
 
 // Phase 2 of bringing the front-desk app's functionality into this
 // one: check-in and new bookings, alongside the view-only room status
@@ -17,7 +17,6 @@ import { is, MANAGEMENT } from '../lib/roles'
 const STATE = {
   vacant:   { label: 'Vacant',      bar: 'bg-line',  text: 'text-dim' },
   occupied: { label: 'Occupied',    bar: 'bg-leaf',  text: 'text-leaf' },
-  reserved: { label: 'Reserved',    bar: 'bg-amber', text: 'text-amber' },
   reserved_due: { label: 'Reserved — due',  bar: 'bg-clay',  text: 'text-clay' },
   overdue:  { label: 'Past due',    bar: 'bg-clay',  text: 'text-clay' },
   leaving:  { label: 'Leaving today', bar: 'bg-amber', text: 'text-amber' },
@@ -27,7 +26,7 @@ const STATE = {
 // The order the desk should deal with them in, not the order the rooms
 // are numbered in. Mr Obitex at six nights over used to sit between two
 // settled rooms three screens down.
-const ORDER = ['overdue', 'reserved_due', 'leaving', 'occupied', 'vacant', 'service', 'reserved']
+const ORDER = ['overdue', 'reserved_due', 'leaving', 'occupied', 'vacant', 'service']
 
 // `paidThrough` is the day this room's money actually runs to. Without
 // it the board called any guest past their original leaving date "Past
@@ -47,7 +46,11 @@ function stateOf(room, paidThrough) {
     // The whole point of letting a future reservation not block the
     // room early is that staff still need a clear, unmissable signal
     // once its actual date arrives — this is that signal.
-    return room.check_in_date <= lagosToday() ? 'reserved_due' : 'reserved'
+    //
+    // Before that date the room is simply free, and must read that way.
+    // Giving a November booking its own "Reserved" card hid six rooms
+    // the desk could have let tonight.
+    return room.check_in_date <= lagosToday() ? 'reserved_due' : 'vacant'
   }
   // Due out today reads the same whether the date was always today or
   // the money moved it there, so the desk sees one kind of room.
@@ -57,6 +60,14 @@ function stateOf(room, paidThrough) {
 
 const shortDate = d => new Date(String(d).slice(0, 10) + 'T12:00:00')
   .toLocaleDateString('en-NG', { day: 'numeric', month: 'short' })
+
+// Free to sell right now: nobody in it, or the only stay on it is a
+// booking for a later date. The booking is still named on the card, with
+// how long the room can be let for before it starts.
+const freeNow = room => !room.stay_id
+  || (room.status === 'reserved' && room.check_in_date > lagosToday())
+const nightsFree = room => Math.max(0, Math.round(
+  (new Date(room.check_in_date) - new Date(lagosToday())) / 864e5))
 
 // "Booked: Name from 12 Oct" on a room that has a reservation OTHER than the
 // stay the card is already showing (vacant room with a later booking, or an
@@ -95,7 +106,7 @@ export default function RoomBoard({ boot }) {
   const [markingOOS, setMarkingOOS] = useState(null)   // the room being marked out of service
   const [oosReason, setOosReason] = useState('')
   const [oosBusy, setOosBusy] = useState(false)
-  const [rooms, setRooms] = useState(null)
+  const [allRooms, setAllRooms] = useState(null)
 
   // Every reservation not yet arrived, so a room that looks free (or is
   // occupied right now) still shows that someone has booked it later.
@@ -104,10 +115,15 @@ export default function RoomBoard({ boot }) {
   // falls back to the old calendar-only reading.
   const [paidThrough, setPaidThrough] = useState({})
   const [showBookings, setShowBookings] = useState(false)
+  // The GM's office is not a room anyone lets. Hidden from everyone but
+  // gm/admin, read from rooms.is_internal rather than a room number.
+  const seesInternal = is(staff.role, SUPERVISOR)
+  const [internalIds, setInternalIds] = useState([])
   const refresh = () => {
-    loadOccupancy(staff.branch_id).then(setRooms).catch(() => setRooms([]))
+    loadOccupancy(staff.branch_id).then(setAllRooms).catch(() => setAllRooms([]))
     loadUpcomingReservations(staff.branch_id).then(setReservations).catch(() => setReservations([]))
     loadPaidThrough(staff.branch_id).then(setPaidThrough).catch(() => setPaidThrough({}))
+    loadInternalRoomIds(staff.branch_id).then(setInternalIds).catch(() => setInternalIds([]))
   }
   useEffect(refresh, [staff.branch_id])
 
@@ -141,7 +157,10 @@ export default function RoomBoard({ boot }) {
     setOosBusy(false)
   }
 
-  if (rooms === null) return <p className="px-5 text-dim">Loading…</p>
+  if (allRooms === null) return <p className="px-5 text-dim">Loading…</p>
+
+  // Everything below works on the rooms this person is allowed to see.
+  const rooms = seesInternal ? allRooms : allRooms.filter(r => !internalIds.includes(r.room_id))
 
   const tally = rooms.reduce((acc, r) => {
     const s = stateOf(r, paidThrough); acc[s] = (acc[s] || 0) + 1; return acc
@@ -153,8 +172,7 @@ export default function RoomBoard({ boot }) {
   // for. They live in the strip below now; the live card still names the
   // booking underneath the guest. A reservation whose day has ARRIVED
   // stays in the grid, because that one needs doing something about.
-  const onBoard = rooms.filter(r => stateOf(r, paidThrough) !== 'reserved')
-  const sorted = [...onBoard].sort((a, b) => {
+  const sorted = [...rooms].sort((a, b) => {
     const d = ORDER.indexOf(stateOf(a, paidThrough)) - ORDER.indexOf(stateOf(b, paidThrough))
     if (d) return d
     return String(a.room_number).localeCompare(String(b.room_number), undefined, { numeric: true })
@@ -343,7 +361,7 @@ export default function RoomBoard({ boot }) {
                       </button>
                     )}
                   </>
-                ) : room.guest_name ? (
+                ) : (room.guest_name && !freeNow(room)) ? (
                   <>
                     <p className="text-sm font-semibold mt-2 truncate">{room.guest_name}</p>
                     {showTimes && room.checked_in_at && stateKey !== 'reserved'
@@ -362,11 +380,6 @@ export default function RoomBoard({ boot }) {
                         className="mt-2 h-9 px-3 rounded-lg bg-amber text-bg text-sm font-bold disabled:opacity-40">
                         Guest arrived — check in now
                       </button>
-                    )}
-                    {stateKey === 'reserved' && (
-                      <p className="text-dim text-xs mt-0.5">
-                        from {new Date(room.check_in_date + 'T12:00:00').toLocaleDateString('en-NG', { day: 'numeric', month: 'short' })}
-                      </p>
                     )}
                     <p className="text-dim text-xs tnum mt-0.5">
                       out {new Date(room.scheduled_out + 'T12:00:00').toLocaleDateString('en-NG',
@@ -409,7 +422,21 @@ export default function RoomBoard({ boot }) {
                 ) : (
                   <>
                     <p className="text-dim text-sm mt-2">Ready to let</p>
-                    <NextBooking room={room} reservations={reservations} />
+                    {/* A room booked for a later date is free until then,
+                        and "free for 17 nights" is the question actually
+                        asked when someone walks up to the desk. */}
+                    {room.status === 'reserved' && room.guest_name ? (
+                      <>
+                        <p className="text-leaf text-xs font-semibold mt-0.5 tnum">
+                          Free for {nightsFree(room)} night{nightsFree(room) === 1 ? '' : 's'}
+                        </p>
+                        <p className="text-amber text-xs font-semibold mt-0.5 truncate">
+                          Booked: {room.guest_name} from {shortDate(room.check_in_date)}
+                        </p>
+                      </>
+                    ) : (
+                      <NextBooking room={room} reservations={reservations} />
+                    )}
                     {canManageRooms && (
                       <button onClick={(e) => { e.stopPropagation(); setMarkingOOS(room); setOosReason('') }}
                         className="mt-2 h-8 px-3 rounded-lg border border-clay text-clay text-sm font-semibold">

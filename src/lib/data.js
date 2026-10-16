@@ -1706,6 +1706,16 @@ export async function updateStayDetails({ stayId, dailyRate, billingCycle, sched
   if (error) throw error
 }
 
+// Rooms that are not really rooms — the GM's office and anything else
+// flagged is_internal. Read from the flag rather than a room number, so
+// a genuine room 209 at another branch is never hidden by accident.
+export async function loadInternalRoomIds(branchId) {
+  const { data, error } = await supabase.from('rooms')
+    .select('id').eq('branch_id', branchId).eq('is_internal', true)
+  if (error) return []
+  return (data || []).map(r => r.id)
+}
+
 // Move a stay's leaving date and NOTHING else.
 //
 // updateStayDetails writes the rate, the cycle, the reason and the
