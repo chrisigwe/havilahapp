@@ -922,6 +922,39 @@ export async function loadDepartmentRoomCharges(branchId, locationId = null, day
   return data || []
 }
 
+// Money Reception collected today against a department's room charges.
+//
+// Goods that left MainBar on a guest's room bill are MainBar's goods, and
+// when the front desk collects for them the money is MainBar's. It keeps
+// the form it was paid in: a guest settling ₦30,000 on POS leaves ONE slip
+// at the front desk with each department's share written on it, so that
+// share is POS to the department too. Only cash actually changes hands.
+// Either way it belongs in that department's Total Sales check — and if it
+// is missing, that gap is the point.
+//
+// Only answerable since migration 505: before a payment recorded WHICH
+// charges it settled, there was no way to say whose money it was.
+//
+// Returns one row per ticked charge with its payment method, and the
+// department left for the caller to resolve through roomChargeDept — the
+// same rule the day's list and the tracker use, stated once.
+export async function loadRoomBillHandover(branchId, date) {
+  const { data, error } = await supabase.from('payment_items')
+    .select('amount, order_items!inner(location_id, category), payments!inner(business_date, branch_id, method)')
+    .eq('payments.branch_id', branchId)
+    .eq('payments.business_date', date)
+  if (error) return []
+  return (data || []).map(r => ({
+    amount: Number(r.amount || 0),
+    // How the guest paid decides WHERE the department's share shows up.
+    // POS money is in the bank and the departments' shares are written on
+    // the one physical slip; cash actually changes hands at close.
+    method: r.payments?.method || null,
+    location_id: r.order_items?.location_id || null,
+    category: r.order_items?.category || null,
+  }))
+}
+
 // Stock used with restaurant orders on one day (migration 340b/341), for the
 // daily report: every item taken from stock, and the order it was used with.
 export async function loadStockUsedOnDay(branchId, date, locationId = null) {
@@ -1413,6 +1446,76 @@ export async function checkRepeatPayment(stayId, amount) {
   return { amount: Number(single ? hit.amount : sum), minutesAgo: mins, who }
 }
 
+// Which charges a payment settles, when nobody said.
+//
+// The rule is the folio's own, stated once more here because the save
+// path cannot see the screen: untagged money covers the ROOM first,
+// then charges oldest first. Money already paid and already ticked is
+// accounted for before this payment gets a look, so the same charge is
+// never settled twice.
+//
+// Returns [{ orderItemId | null, amount }] — a null id being the room.
+// On any failure it returns nothing: the payment itself is already
+// saved and correct, and a missing allocation is a smaller wrong than
+// a wrong one.
+async function _autoAllocate(stayId, amount) {
+  try {
+    const pay = Number(amount || 0)
+    if (!stayId || !(pay > 0)) return []
+    const [{ data: folio }, { data: orders }, { data: ticked }] = await Promise.all([
+      supabase.from('v_stay_folio')
+        .select('room_charge, overstay_charge, total_paid').eq('stay_id', stayId).maybeSingle(),
+      supabase.from('orders')
+        .select('id, business_date, created_at, settlement, approval_status, order_items(id, amount, order_type)')
+        .eq('stay_id', stayId),
+      supabase.from('payment_items')
+        .select('order_item_id, amount, payments!inner(stay_id)').eq('payments.stay_id', stayId),
+    ])
+    if (!folio) return []
+
+    const tickedOn = {}
+    for (const t of (ticked || [])) {
+      const k = t.order_item_id || 'room'
+      tickedOn[k] = (tickedOn[k] || 0) + Number(t.amount || 0)
+    }
+
+    // Same filter as v_stay_folio.orders_charge: charged to the room,
+    // approved, and neither a write-off nor a staff order.
+    const lines = (orders || [])
+      .filter(o => o.settlement === 'charged_to_room' && (o.approval_status || 'approved') === 'approved')
+      .flatMap(o => (o.order_items || [])
+        .filter(li => li.order_type !== 'pr_damage' && li.order_type !== 'staff')
+        .map(li => ({ key: li.id, amount: Number(li.amount || 0), at: `${o.business_date} ${o.created_at}` })))
+      .sort((a, b) => a.at.localeCompare(b.at))
+
+    const inOrder = [{
+      key: 'room',
+      amount: Number(folio.room_charge || 0) + Number(folio.overstay_charge || 0),
+    }].concat(lines)
+
+    // Money already on the bill that named no charge — everything paid
+    // BEFORE this payment, less everything ticked.
+    const tickedTotal = Object.values(tickedOn).reduce((t, v) => t + v, 0)
+    let older = Math.max(0, Number(folio.total_paid || 0) - pay - tickedTotal)
+
+    const out = []
+    let pot = pay
+    for (const x of inOrder) {
+      let owed = Math.max(0, x.amount - Number(tickedOn[x.key] || 0))
+      if (owed <= 0.009) continue
+      const byOlder = Math.min(older, owed)
+      older -= byOlder
+      owed -= byOlder
+      if (owed <= 0.009 || pot <= 0.009) continue
+      const take = Math.min(pot, owed)
+      pot -= take
+      out.push({ orderItemId: x.key === 'room' ? null : x.key, amount: Math.round(take * 100) / 100 })
+      if (pot <= 0.009) break
+    }
+    return out
+  } catch { return [] }
+}
+
 // A guest paying part POS and part cash (or transfer) is one
 // settlement but several tenders in the ledger — same split-row
 // pattern as Credit's split repayments. parts is [{method, amount}],
@@ -1452,7 +1555,21 @@ async function _recordStayPayment({ staff, stayId, businessDate, cycle, parts, i
   // Written after the payment, so a failure here cannot leave money
   // unrecorded. If it fails the payment still stands — said plainly,
   // the same way a part-saved stock order is, so nobody enters it twice.
-  const picked = (items || []).filter(i => Number(i.amount) > 0)
+  // Nothing ticked? Work it out rather than leaving it unrecorded.
+  //
+  // A department only gets its money when the charges it sold are known
+  // to be settled, and Reception can only hand over what it can see. If
+  // an untitcked payment settled nothing in particular, every department
+  // figure downstream would quietly understate — and it would depend on
+  // the desk remembering to tick, which is not a system.
+  //
+  // So an untagged payment covers the bill in the same order the folio
+  // already shows on screen: the room first, then charges oldest first.
+  // The record and the screen therefore say the same thing, and nobody
+  // has to do anything they were not already doing.
+  const picked = (items || []).filter(i => Number(i.amount) > 0).length
+    ? items.filter(i => Number(i.amount) > 0)
+    : await _autoAllocate(stayId, Number(rows.reduce((t, r) => t + Number(r.amount), 0)))
   if (picked.length && saved?.length) {
     const { error: e2 } = await supabase.from('payment_items').insert(
       picked.map(i => ({
@@ -1913,6 +2030,48 @@ export async function setPaymentAllocation(paymentId, appliedTo, appliedLocation
     })
     .eq('id', paymentId)
   if (error) throw error
+}
+
+// ---------- Reception handing a department its money (migration 508) ----------
+//
+// A department is responsible for the goods it sold, room charges
+// included. When a guest settles, that department's share is
+// Reception's to hand over — and until it does, Reception is holding
+// the department's money. These two put that on the screen instead of
+// leaving it to be assumed.
+
+// Per department: what their charges have been paid for, what Reception
+// has already handed over, and the difference.
+export async function loadDepartmentMoneyOwed(branchId) {
+  const { data, error } = await supabase.rpc('department_money_owed', { p_branch: branchId })
+  if (error) throw error
+  return data || []
+}
+
+async function _recordHandover({ staff, locationId, amount, method, businessDate, note }) {
+  const { error } = await supabase.from('department_handovers').insert({
+    branch_id: staff.branch_id,
+    location_id: locationId,
+    business_date: businessDate,
+    amount: Number(amount),
+    method: method || 'cash',
+    handed_by: staff.id,
+    note: note || null,
+  })
+  if (error) throw error
+}
+
+// What a department was handed on one day, for its own till check. Read
+// by the department itself, so the figure it is asked to account for is
+// the money it was actually given.
+export async function loadHandoversReceived(branchId, locationId, date) {
+  if (!branchId || !locationId || !date) return []
+  const { data, error } = await supabase.from('department_handovers')
+    .select('id, amount, method, note, created_at, handed:handed_by(full_name)')
+    .eq('branch_id', branchId).eq('location_id', locationId).eq('business_date', date)
+    .order('created_at', { ascending: true })
+  if (error) return []
+  return data || []
 }
 
 // Move a room payment to the department whose till took the money, or back to
@@ -2916,6 +3075,7 @@ export const chargeItemToRoom = tracked('Charged an item to a room', _chargeItem
 export const chargeBasketToRoom = tracked('Charged items to a room', _chargeBasketToRoom)
 export const chargeWriteoffToRoom = tracked('Charged a PR/staff order to a room', _chargeWriteoffToRoom)
 export const recordStayPayment = tracked('Recorded a room payment', _recordStayPayment)
+export const recordHandover = tracked('Handed a department its room-charge money', _recordHandover)
 export const checkOutStay = tracked('Checked a guest out', _checkOutStay)
 export const recordTillCheck = tracked('Entered Total Sales at close', _recordTillCheck)
 export const approveRoomCharge = tracked('Approved a room charge', _approveRoomCharge)

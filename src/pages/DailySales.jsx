@@ -342,9 +342,9 @@ export default function DailySales({ boot }) {
                   <span className="tnum text-dim">{naira(roomChargedToday)}</span>
                 </div>
                 <p className="text-dim text-xs pl-4">
-                  Goods that left on a guest&#39;s room bill. Counted in the
-                  {' '}{naira(Number(summary.grossSales || 0) + roomChargedToday)} at the top of
-                  this page, but not in gross sales — the guest pays it at Reception, not here.
+                  Goods that left on a guest&#39;s room bill. Listed with the entries below, but
+                  in neither figure above: the guest has not paid for it yet, and when they do
+                  they pay at Reception.
                 </p>
               </>
             )}

@@ -4,7 +4,7 @@ import { loadStockMap, loadPopular, loadToday, saveBasket, saveWriteoff,
          loadDailyFinancials, loadCustomers, createCustomer,
          loadOpeningDate, loadBalances, loadReceipt,
          loadStaffForLocation, loadReceptionActivity, loadReceptionDashboard, deleteEntry,
-         loadRoomCharges, deleteOrderItem, saveRestaurantWriteoff, loadRoomsSoldInMonth,
+         loadRoomCharges, loadRoomBillHandover, deleteOrderItem, saveRestaurantWriteoff, loadRoomsSoldInMonth,
          loadWriteoffsOnDate, loadLiveStays, chargeBasketToRoom,
          getOrCreateGuestTab, updateSaleWithPayments, undoRecentReceipt, recordTillCheck, loadFolioCollectedAt, loadGuestCollections } from '../lib/data'
 import { enqueue, flush, isConnectionError } from '../lib/outbox'
@@ -125,6 +125,8 @@ export default function SalesEntry({ boot }) {
   // the Match-your-Total-Sales box has always counted it; the summary below
   // it did not, which is why a department's figures looked short.
   const [guestIn, setGuestIn] = useState([])
+  // Ticked room-bill money, by department (migration 505).
+  const [handover, setHandover] = useState([])
   const [lastReceiptAt, setLastReceiptAt] = useState(0)
   const [switchingId, setSwitchingId] = useState(null)
   const [roomsSold, setRoomsSold] = useState(null)
@@ -224,6 +226,30 @@ export default function SalesEntry({ boot }) {
   const locById = useMemo(() =>
     Object.fromEntries((boot.allLocations || locations).map(l => [l.id, l])), [boot, locations])
 
+  // Room-bill money the front desk collected for THIS department today, and
+  // the whole of it, which is what Reception passes on. Split by how the
+  // guest paid, because the two settle differently:
+  //
+  //   POS   the money is already in the bank on Reception's terminal, and
+  //         the departments' shares are written on the one physical slip —
+  //         so it belongs in each department's POS figure, not its drawer
+  //   cash  actually changes hands at close, so it moves drawer to drawer
+  //
+  // Both sides move together. Crediting a department without debiting
+  // Reception would just move the gap from one till to the other.
+  // Room bills are taken on POS or in cash only — the folio offers no other
+  // method — so anything not cash is POS. Split because the money keeps its
+  // form: a department's share of a POS payment is POS to them too.
+  const splitBy = (rows) => rows.reduce((m, h) => {
+    const k = h.method === 'cash' ? 'cash' : 'pos'
+    m[k] += h.amount
+    return m
+  }, { pos: 0, cash: 0 })
+  const handedToMe = splitBy(handover
+    .filter(h => roomChargeDept(h, boot.allLocations || locations) === locationId))
+  const handedOut = splitBy(handover)
+  const handedToMeTotal = handedToMe.pos + handedToMe.cash
+
   async function openReceipt(receiptId) {
     // PR, damage, staff meals and room charges are not paid sales, so
     // they have no receipt. Say so plainly instead of reporting it as an
@@ -250,6 +276,7 @@ export default function SalesEntry({ boot }) {
     if (!isReception) {
       loadRoomCharges(staff.branch_id, date).then(setRoomCharges).catch(() => {})
     }
+    loadRoomBillHandover(staff.branch_id, date).then(setHandover).catch(() => setHandover([]))
     // On failure, record the error rather than silently showing nothing:
     // a hidden section looks identical to a day with no write-offs, which
     // is how a broken query went unnoticed.
@@ -762,7 +789,8 @@ export default function SalesEntry({ boot }) {
       )}
 
       {isReception && receptionDashboard && (
-        <MatchTill rows={[]} posTotal={receptionDashboard.pos} cashTotal={receptionDashboard.cash} onRecord={saveTillResult} />
+        <MatchTill rows={[]} posTotal={receptionDashboard.pos} cashTotal={receptionDashboard.cash}
+          handover={{ pos: -handedOut.pos, cash: -handedOut.cash }} onRecord={saveTillResult} />
       )}
 
       {isReception && (
@@ -904,7 +932,7 @@ export default function SalesEntry({ boot }) {
 
         <MatchTill rows={today} busyId={switchingId} onFix={fixEntry} onRecord={saveTillResult}
           recovered={{ pos: recon?.recoveredBy?.pos, cash: recon?.recoveredBy?.cash }}
-          folio={folioIn}
+          folio={folioIn} handover={handedToMe}
           // Credit comes from the person's own entries (what they actually gave),
           // NOT the day summary's "credit raised", which leaves out credit not
           // repaid by noon next day and so showed 0 for same-day credit.
@@ -951,10 +979,19 @@ export default function SalesEntry({ boot }) {
                 <>
                   <Line label="Charged to guests' rooms today" value={roomChargedToday} tone="text-dim" />
                   <p className="text-dim text-xs pl-4">
-                    Goods that left this department on a guest's room bill. Counted in the
-                    {' '}{naira(recon.grossSales + roomChargedToday)} at the top of this page,
-                    but not in gross sales — the guest pays it at Reception, not here, so it
-                    is never part of what you hand over.
+                    Goods that left this department on a guest&#39;s room bill. Yours, but not
+                    paid for yet — the guest settles at Reception, and the money comes to you
+                    when they do.
+                  </p>
+                </>
+              )}
+              {handedToMeTotal > 0 && (
+                <>
+                  <Line label="Room bills collected for you today" value={handedToMeTotal} tone="text-leaf" />
+                  <p className="text-dim text-xs pl-4">
+                    The front desk collected this against your charges.
+                    {handedToMe.pos > 0 && ` ${naira(handedToMe.pos)} of it went through their POS — your share is written on that slip.`}
+                    {handedToMe.cash > 0 && ` ${naira(handedToMe.cash)} is cash, handed over at close.`}
                   </p>
                 </>
               )}

@@ -52,6 +52,13 @@ function AmountRow({ label, hint, app, value, onChange, gap, ok, higher, lower, 
 
 export default function MatchTill({ rows = [], posTotal = null, cashTotal = null,
                                     recovered = {}, folio = {}, creditApp = null,
+                                    // Room-bill money the front desk collected on this
+                                    // department's charges (+), or passed to the departments
+                                    // (−, at Reception). { pos, cash }, because the two settle
+                                    // differently: a POS collection stays on Reception's
+                                    // terminal with each department's share written on the
+                                    // slip, while cash actually moves drawer to drawer.
+                                    handover = { pos: 0, cash: 0 },
                                     itemName = () => '', onFix, busyId = null, onRecord = null }) {
   const [open, setOpen] = useState(false)
   const [pos, setPos] = useState('')
@@ -71,8 +78,11 @@ export default function MatchTill({ rows = [], posTotal = null, cashTotal = null
   // Only paid sales: PR, damage and staff meals take no money.
   const sales = rows.filter(r => r.order_type !== 'pr_damage' && r.order_type !== 'staff')
   // The drawer and the terminal also hold money from OLD debts paid today.
-  const appPos = posTotal ?? round2(sumMethod(sales, 'pos') + Number(recovered.pos || 0) + Number(folio.pos || 0))
-  const appCash = cashTotal ?? round2(sumMethod(sales, 'cash') + Number(recovered.cash || 0) + Number(folio.cash || 0))
+  const hand = { pos: Number(handover?.pos || 0), cash: Number(handover?.cash || 0) }
+  const appPos = round2((posTotal ?? (sumMethod(sales, 'pos') + Number(recovered.pos || 0)
+    + Number(folio.pos || 0))) + hand.pos)
+  const appCash = round2((cashTotal ?? (sumMethod(sales, 'cash') + Number(recovered.cash || 0)
+    + Number(folio.cash || 0))) + hand.cash)
   const appCredit = creditApp ?? round2(sumMethod(sales, 'credit'))
   const showCredit = creditApp !== null || rows.length > 0
 
@@ -190,10 +200,20 @@ export default function MatchTill({ rows = [], posTotal = null, cashTotal = null
       </p>
 
       <AmountRow label="POS slip total" app={appPos} value={pos} onChange={edit(setPos)} gap={posGap} ok={posOk}
-        hint={[Number(recovered.pos) > 0 && `Includes ${naira(recovered.pos)} of old debt paid by POS`, Number(folio.pos) > 0 && `Includes ${naira(folio.pos)} paid on room folios through your POS`].filter(Boolean).join('. ') || null}
+        hint={[
+          Number(recovered.pos) > 0 && `Includes ${naira(recovered.pos)} of old debt paid by POS`,
+          Number(folio.pos) > 0 && `Includes ${naira(folio.pos)} paid on room folios through your POS`,
+          hand.pos > 0 && `Includes ${naira(hand.pos)} of room bills the front desk collected on your charges — your share is written on their slip`,
+          hand.pos < 0 && `Less ${naira(-hand.pos)} of this slip that belongs to the departments, written on it`,
+        ].filter(Boolean).join('. ') || null}
         higher="more on the app than on the POS slip" lower="less on the app than on the POS slip" blind={blind} />
       <AmountRow label="Cash in your drawer" app={appCash} value={cash} onChange={edit(setCash)} gap={cashGap} ok={cashOk}
-        hint={[Number(recovered.cash) > 0 && `Includes ${naira(recovered.cash)} of old debt paid in cash`, Number(folio.cash) > 0 && `Includes ${naira(folio.cash)} paid on room folios in cash`].filter(Boolean).join('. ') || null}
+        hint={[
+          Number(recovered.cash) > 0 && `Includes ${naira(recovered.cash)} of old debt paid in cash`,
+          Number(folio.cash) > 0 && `Includes ${naira(folio.cash)} paid on room folios in cash`,
+          hand.cash > 0 && `Includes ${naira(hand.cash)} of cash the front desk collected on your room charges and hands over at close`,
+          hand.cash < 0 && `Less ${naira(-hand.cash)} of cash handed to the departments for room bills you collected for them`,
+        ].filter(Boolean).join('. ') || null}
         higher="more cash than the app expects" lower="less cash than the app expects" blind={blind} />
       {showCredit && (
         <AmountRow label="Credit you gave today" app={appCredit} value={credit} onChange={edit(setCredit)} gap={creditGap} ok={creditOk}
