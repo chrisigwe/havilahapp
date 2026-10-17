@@ -160,6 +160,23 @@ export default function SalesEntry({ boot }) {
   const currentDept = salesPoints.find(l => l.id === locationId)
   const isRestaurant = /restaurant/i.test(currentDept?.name || '')
   const isReception = /reception/i.test(currentDept?.name || '')
+  // Only the front desk puts anything on a guest's room bill
+  // (17 October 2026, Chris's decision after a week of chasing money
+  // through room bills). Restaurant, MainBar and Minimart went first,
+  // OpenBar the same day: every department now handles its own sales —
+  // payment at the point of sale, or a tab in the guest's own name
+  // which the department collects itself.
+  //
+  // Reception is the one exception and must stay one: the room rate and
+  // anything ordered through the front desk is what a folio IS. Written
+  // as "Reception only" rather than a list of the four, so a department
+  // added later cannot quietly inherit the room bill by not being on a
+  // list someone forgot to update.
+  //
+  // Nothing already charged is touched. Existing charges stay on their
+  // folios, still settle at checkout, and still count as that
+  // department's credit until they are paid.
+  const canChargeToRoom = isReception
   // Which order_items.category a room charge from THIS department
   // lands under — null for Reception, which has no charges of its
   // own. Any department can have items charged to a room, not just
@@ -822,7 +839,7 @@ export default function SalesEntry({ boot }) {
         </div>
       )}
 
-      {(!isReception || canRecordHere) && (
+      {(!isReception || canRecordHere) && canChargeToRoom && (
         <button onClick={() => setRoomCharging(true)}
           className="mt-3 w-full h-12 rounded-xl border border-line text-ink font-semibold">
           Charge to a room
@@ -1412,25 +1429,43 @@ export default function SalesEntry({ boot }) {
                 <div className="font-bold">
                   Room {guestChoice.rooms?.room_number} · {guestChoice.guests?.full_name}
                 </div>
-                <p className="mt-2 text-sm font-semibold">
-                  Charge {naira(basketTotal)} to Room {guestChoice.rooms?.room_number} · {guestChoice.guests?.full_name}
-                  {guestChoice.check_in_date ? ` (checked in ${niceDay(guestChoice.check_in_date)})` : ''}
-                </p>
-                <p className="text-dim text-sm mt-1">
-                  Is this the right guest? Check the name and room before charging.
-                </p>
-                <button onClick={() => chooseRoomBill(guestChoice)}
-                  className="mt-3 w-full h-12 rounded-xl bg-amber text-bg font-bold">
-                  Add to room bill
-                </button>
-                <button onClick={() => chooseSeparateTab(guestChoice)}
-                  className="mt-2 w-full h-12 rounded-xl border border-amber text-amber font-semibold">
-                  Separate bar tab
-                </button>
-                <p className="text-dim text-xs mt-2">
-                  A separate tab is billed on its own (e.g. for company expenses) but
-                  still shows to the front desk at checkout.
-                </p>
+                {canChargeToRoom ? (<>
+                  <p className="mt-2 text-sm font-semibold">
+                    Charge {naira(basketTotal)} to Room {guestChoice.rooms?.room_number} · {guestChoice.guests?.full_name}
+                    {guestChoice.check_in_date ? ` (checked in ${niceDay(guestChoice.check_in_date)})` : ''}
+                  </p>
+                  <p className="text-dim text-sm mt-1">
+                    Is this the right guest? Check the name and room before charging.
+                  </p>
+                  <button onClick={() => chooseRoomBill(guestChoice)}
+                    className="mt-3 w-full h-12 rounded-xl bg-amber text-bg font-bold">
+                    Add to room bill
+                  </button>
+                  <button onClick={() => chooseSeparateTab(guestChoice)}
+                    className="mt-2 w-full h-12 rounded-xl border border-amber text-amber font-semibold">
+                    Separate bar tab
+                  </button>
+                  <p className="text-dim text-xs mt-2">
+                    A separate tab is billed on its own (e.g. for company expenses) but
+                    still shows to the front desk at checkout.
+                  </p>
+                </>) : (<>
+                  {/* The room bill is no longer an option here. The guest
+                      is still worth naming — a tab in their name is this
+                      department's own debt, collected by this department,
+                      and the front desk can still see it at checkout. */}
+                  <p className="mt-2 text-sm font-semibold">
+                    Put {naira(basketTotal)} on this guest's own tab
+                  </p>
+                  <p className="text-dim text-sm mt-1">
+                    This department collects its own sales. The tab is yours to collect —
+                    it does not go on the room bill.
+                  </p>
+                  <button onClick={() => chooseSeparateTab(guestChoice)}
+                    className="mt-3 w-full h-12 rounded-xl bg-amber text-bg font-bold">
+                    Open the tab
+                  </button>
+                </>)}
                 <button onClick={() => setGuestChoice(null)}
                   className="mt-2 w-full h-10 text-dim text-sm">Cancel</button>
               </div>
@@ -1439,8 +1474,9 @@ export default function SalesEntry({ boot }) {
             {roomGuard && (
               <div className="mb-5 rounded-2xl border border-clay bg-surface p-4">
                 <p className="text-clay text-sm">
-                  "{roomGuard.name}" looks like a hotel guest. Charge it to their room,
-                  or their own tab, instead?
+                  "{roomGuard.name}" looks like a hotel guest. {canChargeToRoom
+                    ? 'Charge it to their room, or their own tab, instead?'
+                    : 'Put it on a tab in their own name instead?'}
                 </p>
                 <div className="space-y-2 mt-3 max-h-56 overflow-y-auto">
                   {inHouse.map(st => (
