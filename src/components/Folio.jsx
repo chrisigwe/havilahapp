@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { naira, lagosToday, lagosDaysAgo, lagosTime, seesStayTimes, cyclesFor, friendlyStayError, addDays } from '../lib/format'
+import { naira, lagosToday, lagosDaysAgo, lagosTime, partPaidNote, seesStayTimes, cyclesFor, friendlyStayError, addDays } from '../lib/format'
 import { billedToLabel, checkOutStay, checkRepeatPayment, deleteOrderItem, deleteStay, extendStayTo, loadBranchStaySettings, loadFolio, moveRoomChargeDate, recordStayPayment, setPaymentDepartment, splitPaymentToDepartment, reopenStay, saveRepayment, searchSimilarGuests, setPaymentAllocation, updateOrderItem, updateOverstayFee, updateStayBillTo, updateStayDetails } from '../lib/data'
 import { useToast } from '../components/Toast'
 import PaymentMethodPicker, { paymentParts, paymentAllocated } from './PaymentMethodPicker'
@@ -346,6 +346,12 @@ export default function Folio({ boot, room, onClose, onChanged }) {
         day: 'The room',
         what: `Night ${n + 1}`,
         where: d ? d.toISOString().slice(0, 10) : 'Accommodation',
+        // The night the money ran out part-way through shows less than
+        // the nightly rate, which reads as a wrong price unless it says
+        // why. The LAST night can also run HIGHER than the rate when an
+        // over-stay fee rides on it — nothing is part-paid there, so
+        // the note stays away.
+        note: partPaidNote(nightRate, amt),
         amount: Math.round(amt * 100) / 100,
       })
     }
@@ -359,11 +365,10 @@ export default function Folio({ boot, room, onClose, onChanged }) {
       // line said "5 nights at ₦35,000" against ₦30,000. So a part-paid
       // room says what has been paid instead, and only an untouched one
       // describes the stay.
-      where: roomFull - roomLeft > 0.009
-        ? `${naira(roomFull - roomLeft)} of ${naira(roomFull)} already paid`
-        : totalNightsOnBill
+      where: partPaidNote(roomFull, roomLeft)
+        || (totalNightsOnBill
           ? `${totalNightsOnBill} night${totalNightsOnBill > 1 ? 's' : ''} at ${naira(nightRate)}`
-          : 'Accommodation',
+          : 'Accommodation'),
       amount: roomLeft,
     })
   }
@@ -377,6 +382,11 @@ export default function Folio({ boot, room, onClose, onChanged }) {
       what: `${li.description}${Number(li.qty) > 1 ? ` × ${li.qty}` : ''}`,
       where: locName(li.location_id) || (li.category === 'food' ? 'Restaurant'
         : li.category === 'minimart' ? 'Minimart' : 'Bar'),
+      // Mr Ngoka's ₦12,000 pasta had ₦7,000 on it — the ₦35,000 that
+      // settled his bill ran out on that line — and the folio offered
+      // the ₦5,000 with nothing to say why, so it read as a meal nobody
+      // had paid for.
+      note: partPaidNote(li.amount, l),
       amount: l,
     })
   }
@@ -1107,6 +1117,9 @@ export default function Folio({ boot, room, onClose, onChanged }) {
                           <span className="flex-1 min-w-0">
                             <span className="block font-semibold leading-tight">{l.what}</span>
                             <span className="block text-dim text-xs mt-0.5">{l.where}</span>
+                            {l.note && (
+                              <span className="block text-leaf text-xs mt-0.5">{l.note}</span>
+                            )}
                           </span>
                           <span className="tnum font-bold shrink-0">{naira(l.amount)}</span>
                         </label>

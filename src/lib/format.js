@@ -165,3 +165,20 @@ export const startingDept = (list, staff, own = []) => {
   if (mine) return mine.id
   return list?.[0]?.id ?? null
 }
+
+// A figure and the words beside it must describe the SAME quantity.
+//
+// The fault this exists to stop: a line showing what is LEFT while the
+// words beneath describe what was CHARGED. "5 nights at ₦35,000" sat
+// over ₦30,000, and ₦5,000 of a ₦12,000 pasta read as an unpaid meal
+// nobody could account for — both figures correct, both descriptions
+// about something else.
+//
+// So anything part-paid says so, in one phrasing, from one place.
+// Returns null when nothing has been paid, where naming the whole is
+// honest because the whole is what is owed.
+export const partPaidNote = (charged, left) => {
+  const paid = Number(charged || 0) - Number(left || 0)
+  if (!(paid > 0.009)) return null
+  return `${naira(paid)} of ${naira(charged)} already paid`
+}
