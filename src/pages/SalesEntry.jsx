@@ -21,6 +21,7 @@ import RoomChargeSheet from '../components/RoomChargeSheet'
 import CustomerPicker from '../components/CustomerPicker'
 import Receipt from '../components/Receipt'
 import MatchTill from '../components/MatchTill'
+import TillTile, { SubLine, ByMethod } from '../components/TillTile'
 import HandoverNotes from '../components/HandoverNotes'
 import { APPROVE_ROOM_CHARGES, EDITOR, MANAGEMENT, OVERSIGHT, SUPERVISOR, is } from '../lib/roles'
 
@@ -42,46 +43,6 @@ const niceDay = (d) => new Date(d + 'T12:00:00').toLocaleDateString('en-NG', { d
 // waiting state now says what it is before it says anything else: a
 // heading, an amber band naming the one thing to do, and dots where the
 // figures will land. Hidden has to look deliberate, or it looks broken.
-function TillTile({ inHand, note, hidden, checkError }) {
-  const cols = inHand.credit === null ? 'grid-cols-2' : 'grid-cols-3'
-  const Fig = ({ label, value }) => (
-    <div>
-      <div className="text-dim text-sm">{label}</div>
-      {hidden
-        ? <div className="tnum font-bold text-dim tracking-widest">•••</div>
-        : <div className="tnum font-bold">{naira(value)}</div>}
-    </div>
-  )
-  return (
-    <div className={`mt-3 rounded-2xl border bg-surface p-4 ${hidden ? 'border-amber/50' : 'border-line'}`}>
-      <div className="flex items-baseline justify-between gap-2">
-        <p className="font-semibold text-sm">What you should have in hand</p>
-        {hidden && (
-          <span className="text-xs font-bold text-amber border border-amber rounded-full px-2 py-0.5 shrink-0">
-            Count first
-          </span>
-        )}
-      </div>
-      <div className={`grid ${cols} gap-3 mt-2`}>
-        <Fig label="POS" value={inHand.pos} />
-        <Fig label="Cash" value={inHand.cash} />
-        {inHand.credit !== null && <Fig label="Credit" value={inHand.credit} />}
-      </div>
-      {checkError && hidden ? (
-        <p className="text-clay text-xs mt-3">
-          The app could not check whether this till has been counted, so the figures stay
-          covered. This is a fault, not a rule — tell the GM. ({checkError})
-        </p>
-      ) : hidden ? (
-        <p className="text-amber text-xs mt-3">
-          These are hidden until you have counted. Type your POS slip and your drawer into
-          Match your Total Sales below — they fill in the moment you save, and the app tells
-          you whether it agrees.
-        </p>
-      ) : (note && <p className="text-dim text-xs mt-2">{note}</p>)}
-    </div>
-  )
-}
 
 export default function SalesEntry({ boot }) {
   const { staff, locations, allLocations, tiers, methods, items } = boot
@@ -390,6 +351,14 @@ export default function SalesEntry({ boot }) {
         // hand; Credit is the rest of what went out of the door.
         credit: r2((summary?.byMethod?.credit || 0) + roomUnpaidToday) }
 
+  // Two figures at Reception (it gives no credit of its own), three
+  // everywhere else.
+  const tileFigures = [
+    { label: 'POS', value: inHand.pos },
+    { label: 'Cash', value: inHand.cash },
+    ...(inHand.credit === null ? [] : [{ label: 'Credit', value: inHand.credit }]),
+  ]
+
   async function openReceipt(receiptId) {
     // PR, damage, staff meals and room charges are not paid sales, so
     // they have no receipt. Say so plainly instead of reporting it as an
@@ -560,6 +529,9 @@ export default function SalesEntry({ boot }) {
   // Why the tile is covered when it is covered: a till nobody has
   // counted yet, or a check that failed. Kept apart on purpose.
   const [tillCheckError, setTillCheckError] = useState(null)
+  // The day's detail, folded into the POS/Cash/Credit tile. Closed by
+  // default: the three figures are what the page is opened for.
+  const [detailOpen, setDetailOpen] = useState(false)
   // Has the FRONT DESK closed this day? null while unknown.
   const [frontDeskClosed, setFrontDeskClosed] = useState(null)
   const saveTillResult = async (r) => {
@@ -952,14 +924,17 @@ export default function SalesEntry({ boot }) {
         <RoomChargeApprovals branchId={staff.branch_id} onDecided={refresh} />
       )}
 
-      {isReception && (
-        <ReceptionDashboard dashboard={receptionDashboard}
-          canSeeInternal={isGmOrAdmin} roomsSold={roomsSold} showRoomsSold={isGmOrAdmin} />
-      )}
-
       {isReception && receptionDashboard && (
         <>
-          <TillTile inHand={inHand} note={tileNote} hidden={isMyTill && !tillSaved} checkError={tillCheckError} />
+          {/* The front desk's dashboard is this tile's detail, the same
+              way a department's day is. Closed, Reception also reads as
+              what it should have in hand and nothing else. */}
+          <TillTile figures={tileFigures} note={tileNote} hidden={isMyTill && !tillSaved}
+                    checkError={tillCheckError} open={detailOpen}
+                    onToggle={() => setDetailOpen(o => !o)}>
+            <ReceptionDashboard dashboard={receptionDashboard}
+              canSeeInternal={isGmOrAdmin} roomsSold={roomsSold} showRoomsSold={isGmOrAdmin} />
+          </TillTile>
           <MatchTill rows={[]} posTotal={inHand.pos} cashTotal={inHand.cash}
             includes={{ handedOutPos: handedOut.pos, handedOutCash: handedOut.cash }}
             onRecord={saveTillResult} />
@@ -1122,8 +1097,12 @@ export default function SalesEntry({ boot }) {
           creditApp={today.length ? null : inHand.credit}
           itemName={r => itemById[r.stock_item_id]?.name || r.description || ''} />
 
+        {summary && (
+        <TillTile figures={tileFigures} note={tileNote} hidden={isMyTill && !tillSaved}
+                  checkError={tillCheckError} open={detailOpen}
+                  onToggle={() => setDetailOpen(o => !o)}>
         {recon && (
-          <div className="mt-3 rounded-2xl border border-amber bg-surface p-4">
+          <div>
             <div className="text-dim text-sm">Gross sales — value of goods sold</div>
             <div className="tnum text-3xl font-bold text-amber">{naira(recon.grossSales)}</div>
             <div className="mt-3 space-y-1 text-sm">
@@ -1132,9 +1111,9 @@ export default function SalesEntry({ boot }) {
                 value={recon.creditRaised}
                 tone={recon.creditRaised > 0 ? 'text-clay' : ''} />
               {recon.unqualifiedCredit > 0 && (
-                <div className="flex justify-between text-clay">
-                  <span>Not repaid by noon next day — excluded from sales above</span>
-                  <span className="tnum">{naira(recon.unqualifiedCredit)}</span>
+                <div className="flex justify-between gap-3 text-clay">
+                  <span className="min-w-0">Not repaid by noon next day — excluded from sales above</span>
+                  <span className="tnum shrink-0">{naira(recon.unqualifiedCredit)}</span>
                 </div>
               )}
               {/* ONE heading for every debt that came back today, because
@@ -1148,16 +1127,8 @@ export default function SalesEntry({ boot }) {
               <Line label="Debt recovered" value={recon.debtRecovered} tone="text-leaf" />
               {recon.recoveredFromCustomers > 0 && (
                 <>
-                  <div className="flex justify-between pl-4">
-                    <span className="text-dim">· from customer accounts</span>
-                    <span className="tnum text-dim">{naira(recon.recoveredFromCustomers)}</span>
-                  </div>
-                  {Object.entries(recon.customerRecoveredBy || {}).map(([m, amt]) => (
-                    <div key={m} className="flex justify-between pl-8">
-                      <span className="text-dim">· by {methodLabel[m] || m}</span>
-                      <span className="tnum text-dim">{naira(amt)}</span>
-                    </div>
-                  ))}
+                  <SubLine label="· from customer accounts" value={recon.recoveredFromCustomers} />
+                  <ByMethod map={recon.customerRecoveredBy} labels={methodLabel} />
                 </>
               )}
               {/* ONE line for room-bill money, read from the charge ticks.
@@ -1171,31 +1142,18 @@ export default function SalesEntry({ boot }) {
                   Restaurant's 15 October was short by ₦98,500. */}
               {recon.recoveredFromRooms > 0 && (
                 <>
-                  <div className="flex justify-between pl-4">
-                    <span className="text-dim">· from guests' room bills</span>
-                    <span className="tnum text-dim">{naira(recon.recoveredFromRooms)}</span>
-                  </div>
-                  {(recon.roomRecoveredBy?.pos || 0) > 0 && (
-                    <div className="flex justify-between pl-8">
-                      <span className="text-dim">· through the front desk POS</span>
-                      <span className="tnum text-dim">{naira(recon.roomRecoveredBy.pos)}</span>
-                    </div>
-                  )}
-                  {(recon.roomRecoveredBy?.cash || 0) > 0 && (
-                    <div className="flex justify-between pl-8">
-                      <span className="text-dim">· cash, handed over at close</span>
-                      <span className="tnum text-dim">{naira(recon.roomRecoveredBy.cash)}</span>
-                    </div>
-                  )}
+                  <SubLine label="· from guests' room bills" value={recon.recoveredFromRooms} />
+                  <ByMethod map={recon.roomRecoveredBy} labels={methodLabel} />
                   <p className="text-dim text-xs pl-4">
-                    Guests paying off what you charged to their rooms. It reaches you on the
-                    day they pay, and is not part of gross sales above.
+                    Guests paying off what you charged to their rooms, collected by the front
+                    desk — POS money is on their slip, cash is handed over at close. Not part
+                    of gross sales above.
                   </p>
                 </>
               )}
-              <div className="pt-2 mt-2 border-t border-line flex justify-between font-bold">
-                <span>Total income for the day</span>
-                <span className="tnum">{naira(recon.totalMoneyIn)}</span>
+              <div className="pt-2 mt-2 border-t border-line flex justify-between gap-3 font-bold">
+                <span className="min-w-0">Total income for the day</span>
+                <span className="tnum shrink-0">{naira(recon.totalMoneyIn)}</span>
               </div>
 
               {/* Below the total on purpose: goods that have left the
@@ -1227,8 +1185,8 @@ export default function SalesEntry({ boot }) {
 
           </div>
         )}
-
-        {summary && <TillTile inHand={inHand} note={tileNote} hidden={isMyTill && !tillSaved} checkError={tillCheckError} />}
+        </TillTile>
+        )}
 
         <ul className="mt-3 divide-y divide-line/60">
           {combinedToday.slice(0, 20).map(r => (
@@ -1889,14 +1847,18 @@ export default function SalesEntry({ boot }) {
   )
 }
 
+// gap-3 and shrink-0 on the amount: at 320px a long label used to wrap
+// under itself while its figure stayed on the first line, which read as
+// two different rows. The label wraps, the money never moves.
 function Line({ label, value, tone = '' }) {
   return (
-    <div className="flex justify-between">
-      <span className="text-dim">{label}</span>
-      <span className={`tnum ${tone}`}>{naira(value)}</span>
+    <div className="flex justify-between gap-3">
+      <span className="text-dim min-w-0">{label}</span>
+      <span className={`tnum shrink-0 ${tone}`}>{naira(value)}</span>
     </div>
   )
 }
+
 
 function Allocation({ total, paying, methods, onCredit }) {
   const allocated = paying.split

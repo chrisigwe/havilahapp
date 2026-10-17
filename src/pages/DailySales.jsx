@@ -6,6 +6,7 @@ import { findDuplicateCustomers, findDuplicateGuests, loadDailyFinancials, loadR
 import { useToast } from '../components/Toast'
 import ReceptionDashboard from '../components/ReceptionDashboard'
 import WriteoffBreakdown from '../components/WriteoffBreakdown'
+import TillTile, { SubLine, ByMethod } from '../components/TillTile'
 import CorrectionsOnDay from '../components/CorrectionsOnDay'
 import { is, SUPERVISOR } from '../lib/roles'
 
@@ -28,14 +29,11 @@ import { is, SUPERVISOR } from '../lib/roles'
 // It now reads the charge ticks, which record exactly which charges a
 // payment settled, and it gets a line of its own.
 function withRoomBillMoney(f, rows) {
-  const total = (rows || []).reduce((t, r) => t + Number(r.amount || 0), 0)
-  const byMethod = (rows || []).reduce((m, r) => {
-    m[r.method] = Number(m[r.method] || 0) + Number(r.amount || 0); return m
-  }, {})
-  // The day's own figures already include this money as debt recovered
-  // since 531 — the rows are kept only for the list of who paid what.
-  // Adding it to totalMoneyIn here as well counted it twice.
-  return { ...f, roomBill: rows || [], roomBillTotal: total, roomBillByMethod: byMethod }
+  // The day's own figures carry this money as debt recovered since 531,
+  // split by source and by method. All that is wanted from the rows now
+  // is WHO paid — the totals used to be recomputed here as well, which
+  // is how this page and the Sales page came to disagree.
+  return { ...f, roomBill: rows || [] }
 }
 
 export default function DailySales({ boot }) {
@@ -52,6 +50,9 @@ export default function DailySales({ boot }) {
   const [date, setDate] = useState(lagosToday())
   const [locId, setLocId] = useState('all')
   const [summary, setSummary] = useState(null)
+  // The day's detail, folded into the tile (17 October 2026). Same
+  // component as the Sales page, so the two cannot drift apart.
+  const [detailOpen, setDetailOpen] = useState(false)
   const [writeoffs, setWriteoffs] = useState(null)
   // Duplicate customers and guests already have a finder on Corrections,
   // but nobody goes looking — which is how "General manager" came back
@@ -300,61 +301,55 @@ export default function DailySales({ boot }) {
       ) : (
       <>
       {summary && (
-        <div className="mt-2 rounded-2xl border border-amber bg-surface p-4">
-          <div className="grid grid-cols-3 gap-3 pb-3 mb-3 border-b border-line">
-            {['pos', 'cash', 'credit'].map(m => (
-              <div key={m}>
-                <div className="text-dim text-sm">{methodLabel[m] || m}</div>
-                <div className="tnum font-bold">{naira((summary.byMethod || {})[m] || 0)}</div>
-              </div>
-            ))}
-          </div>
+        <TillTile title="The day's sales" open={detailOpen} onToggle={() => setDetailOpen(o => !o)}
+          figures={['pos', 'cash', 'credit'].map(m => ({
+            label: methodLabel[m] || m, value: (summary.byMethod || {})[m] || 0 }))}>
+        <div>
           <div className="text-dim text-sm">Gross sales — value of goods sold</div>
           <div className="tnum text-3xl font-bold text-amber">{naira(summary.grossSales)}</div>
           <div className="mt-3 space-y-1 text-sm">
-            <div className="flex justify-between">
-              <span className="text-dim">Received (POS + Cash)</span>
-              <span className="tnum">{naira(summary.received)}</span>
+            <div className="flex justify-between gap-3">
+              <span className="text-dim min-w-0">Received (POS + Cash)</span>
+              <span className="tnum shrink-0">{naira(summary.received)}</span>
             </div>
-            <div className="flex justify-between">
-              <span className="text-dim">Credit raised</span>
-              <span className={`tnum ${summary.creditRaised > 0 ? 'text-clay' : ''}`}>{naira(summary.creditRaised)}</span>
+            <div className="flex justify-between gap-3">
+              <span className="text-dim min-w-0">Credit raised</span>
+              <span className={`tnum shrink-0 ${summary.creditRaised > 0 ? 'text-clay' : ''}`}>{naira(summary.creditRaised)}</span>
             </div>
             {summary.unqualifiedCredit > 0 && (
-              <div className="flex justify-between text-clay">
-                <span>Not repaid by noon next day — excluded from sales above</span>
-                <span className="tnum">{naira(summary.unqualifiedCredit)}</span>
+              <div className="flex justify-between gap-3 text-clay">
+                <span className="min-w-0">Not repaid by noon next day — excluded from sales above</span>
+                <span className="tnum shrink-0">{naira(summary.unqualifiedCredit)}</span>
               </div>
             )}
-            <div className="flex justify-between">
-              <span className="text-dim">Debt recovered</span>
-              <span className="tnum text-leaf">{naira(summary.debtRecovered)}</span>
+            {/* ONE heading, because a customer paying off an account
+                and a guest paying off a room bill are the same thing
+                (531). Debt recovered already carries both — listing
+                room bills again underneath showed the same money twice
+                on this page, which is exactly the two-panels-one-day
+                drift that started all this. */}
+            <div className="flex justify-between gap-3">
+              <span className="text-dim min-w-0">Debt recovered</span>
+              <span className="tnum text-leaf shrink-0">{naira(summary.debtRecovered)}</span>
             </div>
-            {Object.entries(summary.recoveredBy || {}).map(([m, amt]) => (
-              <div key={m} className="flex justify-between pl-4">
-                <span className="text-dim">· recovered by {methodLabel[m] || m}</span>
-                <span className="tnum text-dim">{naira(amt)}</span>
-              </div>
-            ))}
-            {summary.roomBillTotal > 0 && (
+            {summary.recoveredFromCustomers > 0 && (
               <>
-                <div className="flex justify-between">
-                  <span className="text-dim">Room bills collected</span>
-                  <span className="tnum text-leaf">{naira(summary.roomBillTotal)}</span>
-                </div>
-                {Object.entries(summary.roomBillByMethod || {}).map(([m, amt]) => (
-                  <div key={m} className="flex justify-between pl-4">
-                    <span className="text-dim">· by {methodLabel[m] || m}</span>
-                    <span className="tnum text-dim">{naira(amt)}</span>
-                  </div>
-                ))}
+                <SubLine label="· from customer accounts" value={summary.recoveredFromCustomers} />
+                <ByMethod map={summary.customerRecoveredBy} labels={methodLabel} />
+              </>
+            )}
+            {summary.recoveredFromRooms > 0 && (
+              <>
+                <SubLine label="· from guests' room bills" value={summary.recoveredFromRooms} />
+                <ByMethod map={summary.roomRecoveredBy} labels={methodLabel} />
+                {/* Who paid what — the GM's page keeps the names. */}
                 <div className="pl-4 pt-1 text-sm">
                   {summary.roomBill.map((r, i) => (
-                    <div key={i} className="flex justify-between">
-                      <span className="text-dim truncate">
+                    <div key={i} className="flex justify-between gap-3">
+                      <span className="text-dim truncate min-w-0">
                         · {r.guest || 'Guest'}{r.room ? ` (Room ${r.room})` : ''} · {r.charge || 'charge'}
                       </span>
-                      <span className="tnum text-dim">{naira(r.amount)}</span>
+                      <span className="tnum text-dim shrink-0">{naira(r.amount)}</span>
                     </div>
                   ))}
                 </div>
@@ -362,20 +357,19 @@ export default function DailySales({ boot }) {
             )}
             {roomChargedToday > 0 && (
               <>
-                <div className="flex justify-between">
-                  <span className="text-dim">Charged to guests&#39; rooms today</span>
-                  <span className="tnum text-dim">{naira(roomChargedToday)}</span>
+                <div className="flex justify-between gap-3">
+                  <span className="text-dim min-w-0">Credit given to guests&#39; rooms today</span>
+                  <span className="tnum text-dim shrink-0">{naira(roomChargedToday)}</span>
                 </div>
                 <p className="text-dim text-xs pl-4">
-                  Goods that left on a guest&#39;s room bill. Listed with the entries below, but
-                  in neither figure above: the guest has not paid for it yet, and when they do
-                  they pay at Reception.
+                  Goods that left on a guest&#39;s room bill — credit given to the guest, not
+                  money. It comes back as debt recovered on the day they pay at Reception.
                 </p>
               </>
             )}
-            <div className="pt-2 mt-2 border-t border-line flex justify-between font-bold">
-              <span>Total income for the day</span>
-              <span className="tnum">{naira(summary.totalMoneyIn)}</span>
+            <div className="pt-2 mt-2 border-t border-line flex justify-between gap-3 font-bold">
+              <span className="min-w-0">Total income for the day</span>
+              <span className="tnum shrink-0">{naira(summary.totalMoneyIn)}</span>
             </div>
           </div>
           {/* The old totals-only block was here; the itemised
@@ -389,17 +383,21 @@ export default function DailySales({ boot }) {
           <CorrectionsOnDay branchId={staff.branch_id} date={date}
             locationId={locId === 'all' ? null : locId} />
 
-          {isGmOrAdmin && dupeCount > 0 && (
-            <div className="mt-3 rounded-2xl border border-clay bg-surface p-4">
-              <p className="font-semibold text-clay">
-                {dupeCount} possible duplicate {dupeCount === 1 ? 'record' : 'records'}
-              </p>
-              <p className="text-dim text-sm mt-1">
-                Two records for one person split their debt in two. Review them
-                under More → Corrections → Reception.
-              </p>
-            </div>
-          )}
+        </div>
+        </TillTile>
+      )}
+
+      {/* Outside the fold on purpose: a warning nobody opens the detail
+          to find is a warning nobody sees. */}
+      {isGmOrAdmin && dupeCount > 0 && (
+        <div className="mt-3 rounded-2xl border border-clay bg-surface p-4">
+          <p className="font-semibold text-clay">
+            {dupeCount} possible duplicate {dupeCount === 1 ? 'record' : 'records'}
+          </p>
+          <p className="text-dim text-sm mt-1">
+            Two records for one person split their debt in two. Review them
+            under More → Corrections → Reception.
+          </p>
         </div>
       )}
 
