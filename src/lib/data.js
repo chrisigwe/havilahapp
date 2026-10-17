@@ -2233,6 +2233,25 @@ export async function loadRoomCharges(branchId, date) {
   if (error) throw error
   const rows = data || []
 
+  // How much has been put against each of these charges. Since 505 a
+  // payment records WHICH charges it settled, so a line can finally say
+  // what is still owed on it rather than only what the whole bill owes.
+  // The department's Credit figure is built from this: goods charged to
+  // a room and not yet settled are goods it let go on trust, exactly
+  // like a credit sale.
+  const itemIds = rows.map(r => r.id).filter(Boolean)
+  if (itemIds.length) {
+    const { data: paid } = await supabase.from('payment_items')
+      .select('order_item_id, amount').in('order_item_id', itemIds)
+    const byItem = {}
+    for (const t of (paid || [])) {
+      byItem[t.order_item_id] = (byItem[t.order_item_id] || 0) + Number(t.amount || 0)
+    }
+    for (const r of rows) r.paidOnLine = Number(byItem[r.id] || 0)
+  } else {
+    for (const r of rows) r.paidOnLine = 0
+  }
+
   // Whether the guest's bill has been settled. Restaurant staff asked
   // for this: a meal on the list says the food left the kitchen, not
   // that anyone paid for it. A payment is recorded against the WHOLE

@@ -26,6 +26,47 @@ import { APPROVE_ROOM_CHARGES, EDITOR, MANAGEMENT, OVERSIGHT, SUPERVISOR, is } f
 
 const niceDay = (d) => new Date(d + 'T12:00:00').toLocaleDateString('en-NG', { day: 'numeric', month: 'short' })
 
+// What should be in hand right now: the same three figures Match your
+// Total Sales expects, shown on the dashboard so the two can never
+// disagree. Module-level so typing elsewhere on the page cannot remount it.
+// Held back until the count is saved, for the person whose count it is.
+//
+// Every till check ever recorded, at both branches, came out equal to
+// the penny on both POS and cash — which is why Match your Total Sales
+// hides its own figure until you have typed yours. Printing the same
+// figure on a tile directly above it would hand back exactly what that
+// hides. So the person counting sees it the moment they save, and
+// anyone who is only looking sees it straight away.
+function TillTile({ inHand, note, hidden }) {
+  const cols = inHand.credit === null ? 'grid-cols-2' : 'grid-cols-3'
+  const show = v => hidden ? '—' : naira(v)
+  return (
+    <div className="mt-3 rounded-2xl border border-line bg-surface p-4">
+      <div className={`grid ${cols} gap-3`}>
+        <div>
+          <div className="text-dim text-sm">POS</div>
+          <div className={`tnum font-bold ${hidden ? 'text-dim' : ''}`}>{show(inHand.pos)}</div>
+        </div>
+        <div>
+          <div className="text-dim text-sm">Cash</div>
+          <div className={`tnum font-bold ${hidden ? 'text-dim' : ''}`}>{show(inHand.cash)}</div>
+        </div>
+        {inHand.credit !== null && (
+          <div>
+            <div className="text-dim text-sm">Credit</div>
+            <div className={`tnum font-bold ${hidden ? 'text-dim' : ''}`}>{show(inHand.credit)}</div>
+          </div>
+        )}
+      </div>
+      <p className="text-dim text-xs mt-2">
+        {hidden
+          ? 'Count your drawer and your slip and save it below — these fill in the moment you do.'
+          : note}
+      </p>
+    </div>
+  )
+}
+
 export default function SalesEntry({ boot }) {
   const { staff, locations, allLocations, tiers, methods, items } = boot
   const approvalsOn = boot.roomChargeApprovalLimit != null
@@ -216,6 +257,15 @@ export default function SalesEntry({ boot }) {
     .filter(r => r.entryKind === 'roomCharge' && r.order_type !== 'pr_damage')
     .reduce((t, r) => t + Number(r.amount ?? r.qty * r.unit_price ?? 0), 0)
 
+  // The part of it nobody has settled yet. Goods charged to a room and
+  // not paid for are goods this department let go on trust, which is
+  // what the Credit figure is for — the same thing as a credit sale,
+  // owed by a guest instead of a customer.
+  const roomUnpaidToday = combinedToday
+    .filter(r => r.entryKind === 'roomCharge' && r.order_type !== 'pr_damage')
+    .reduce((t, r) => t + Math.max(0,
+      Number(r.amount ?? r.qty * r.unit_price ?? 0) - Number(r.paidOnLine || 0)), 0)
+
   const locById = useMemo(() =>
     Object.fromEntries((boot.allLocations || locations).map(l => [l.id, l])), [boot, locations])
 
@@ -247,6 +297,55 @@ export default function SalesEntry({ boot }) {
     .filter(h => roomChargeDept(h, boot.allLocations || locations) === locationId))
   const handedOut = splitBy(handover)
   const handedToMeTotal = handedToMe.pos + handedToMe.cash
+  const handedOutTotal = isReception ? handedOut.pos + handedOut.cash : 0
+  // Say what is in the figure whenever it is more than the day's own
+  // sales, so nobody has to guess why the terminal reads more than the
+  // entries below add up to.
+  const tileNote = (() => {
+    const bits = [
+      Number(recon?.recoveredBy?.pos || 0) + Number(recon?.recoveredBy?.cash || 0) > 0
+        && 'old debts paid today',
+      handedToMeTotal > 0 && 'room bills the front desk collected for you',
+    ].filter(Boolean)
+    if (isReception) {
+      return handedOutTotal > 0
+        ? `What should be in hand. Your whole slip and drawer, less ${naira(handedOutTotal)} that belongs to the departments.`
+        : 'What should be in hand at the front desk.'
+    }
+    const credit = roomUnpaidToday > 0
+      ? ` Credit includes ${naira(roomUnpaidToday)} charged to rooms and not yet settled.` : ''
+    if (!bits.length) return `POS and Cash are what should be in hand — your sales for the day.${credit}`
+    return `POS and Cash are what should be in hand — your sales plus ${bits.join(', plus ')}.${credit}`
+  })()
+
+  // ── What this department should physically have at close ───────────
+  //
+  // ONE calculation, used by the POS/Cash/Credit tile and by Match your
+  // Total Sales. They were worked out separately before and disagreed:
+  // the tile counted sales alone, so Reception — which records no sales
+  // at all, only payments — showed ₦0 / ₦0 / ₦0 every day, and a bar
+  // that recovered ₦3,000 of old debt by POS had it on the slip and not
+  // in the tile.
+  //
+  //   POS     sales taken on the terminal, plus old debts paid by POS,
+  //           plus room bills the front desk collected on your charges
+  //   Cash    the same three, in the drawer
+  //   Credit  what you GAVE today — not money, but it is why goods left
+  //
+  // Reception is the mirror image: its money is room payments rather
+  // than sales, and the departments' shares, written on its one slip,
+  // come off because they are not Reception's to account for.
+  const r2 = n => Math.round(Number(n || 0) * 100) / 100
+  const inHand = isReception
+    ? { pos: r2((receptionDashboard?.pos || 0) - handedOut.pos),
+        cash: r2((receptionDashboard?.cash || 0) - handedOut.cash),
+        credit: null }
+    : { pos: r2((summary?.byMethod?.pos || 0) + (recon?.recoveredBy?.pos || 0) + handedToMe.pos),
+        cash: r2((summary?.byMethod?.cash || 0) + (recon?.recoveredBy?.cash || 0) + handedToMe.cash),
+        // Everything that left on trust today: customer credit, plus
+        // room charges still unsettled. POS and Cash are what is in
+        // hand; Credit is the rest of what went out of the door.
+        credit: r2((summary?.byMethod?.credit || 0) + roomUnpaidToday) }
 
   async function openReceipt(receiptId) {
     // PR, damage, staff meals and room charges are not paid sales, so
@@ -390,9 +489,13 @@ export default function SalesEntry({ boot }) {
     finally { setSwitchingId(null) }
   }
 
-  const saveTillResult = (r) => recordTillCheck({
-    branchId: staff.branch_id, locationId, date,
-    appPos: r.appPos, appCash: r.appCash, pos: r.pos, cash: r.cash })
+  const [tillSaved, setTillSaved] = useState(false)
+  const saveTillResult = async (r) => {
+    await recordTillCheck({
+      branchId: staff.branch_id, locationId, date,
+      appPos: r.appPos, appCash: r.appCash, pos: r.pos, cash: r.cash })
+    setTillSaved(true)
+  }
 
   async function undoLast() {
     if (!window.confirm('Undo the last sale? It will be removed as if it never happened.')) return
@@ -783,8 +886,12 @@ export default function SalesEntry({ boot }) {
       )}
 
       {isReception && receptionDashboard && (
-        <MatchTill rows={[]} posTotal={receptionDashboard.pos} cashTotal={receptionDashboard.cash}
-          handover={{ pos: -handedOut.pos, cash: -handedOut.cash }} onRecord={saveTillResult} />
+        <>
+          <TillTile inHand={inHand} note={tileNote} hidden={canRecordHere && !tillSaved} />
+          <MatchTill rows={[]} posTotal={inHand.pos} cashTotal={inHand.cash}
+            includes={{ handedOutPos: handedOut.pos, handedOutCash: handedOut.cash }}
+            onRecord={saveTillResult} />
+        </>
       )}
 
       {isReception && (
@@ -924,17 +1031,14 @@ export default function SalesEntry({ boot }) {
           <span className="tnum font-bold text-lg">{naira(todayTotal)}</span>
         </div>
 
-        {/* No `folio` prop any more. It carried the tagged-payment
-            figure, which is the same money the handover carries from the
-            charge ticks — passing both made a department's expected POS
-            ask for it twice. */}
         <MatchTill rows={today} busyId={switchingId} onFix={fixEntry} onRecord={saveTillResult}
-          recovered={{ pos: recon?.recoveredBy?.pos, cash: recon?.recoveredBy?.cash }}
-          handover={handedToMe}
+          posTotal={inHand.pos} cashTotal={inHand.cash}
+          includes={{ recoveredPos: recon?.recoveredBy?.pos, recoveredCash: recon?.recoveredBy?.cash,
+                      roomPos: handedToMe.pos, roomCash: handedToMe.cash }}
           // Credit comes from the person's own entries (what they actually gave),
           // NOT the day summary's "credit raised", which leaves out credit not
           // repaid by noon next day and so showed 0 for same-day credit.
-          creditApp={today.length ? null : (recon ? recon.creditRaised : null)}
+          creditApp={today.length ? null : inHand.credit}
           itemName={r => itemById[r.stock_item_id]?.name || r.description || ''} />
 
         {recon && (
@@ -1024,23 +1128,7 @@ export default function SalesEntry({ boot }) {
           </div>
         )}
 
-        {summary && (
-          <div className="mt-3 rounded-2xl border border-line bg-surface p-4">
-            <div className="grid grid-cols-3 gap-3">
-              {methods.map(m => (
-                <div key={m}>
-                  <div className="text-dim text-sm">{methodLabel[m] || m}</div>
-                  <div className="tnum font-bold">{naira(summary.byMethod[m] || 0)}</div>
-                </div>
-              ))}
-            </div>
-            {/* The old totals-only block ("Damaged 6 units · ₦22,000")
-                lived here. Replaced by the itemised PR and damage
-                sections above, which name the item, reason and who
-                recorded it. Two blocks showing the same figures
-                differently would only confuse the cash-up. */}
-          </div>
-        )}
+        {summary && <TillTile inHand={inHand} note={tileNote} hidden={canRecordHere && !tillSaved} />}
 
         <ul className="mt-3 divide-y divide-line/60">
           {combinedToday.slice(0, 20).map(r => (
