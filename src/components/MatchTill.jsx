@@ -204,14 +204,14 @@ export default function MatchTill({ rows = [], posTotal = 0, cashTotal = 0, cred
       <AmountRow label="POS slip total" app={appPos} value={pos} onChange={edit(setPos)} gap={posGap} ok={posOk}
         hint={[
           inc.recoveredPos > 0 && `Includes ${naira(inc.recoveredPos)} of old debt paid by POS`,
-          inc.roomPos > 0 && `Includes ${naira(inc.roomPos)} of room bills the front desk collected on your charges — your share is written on their slip`,
+          inc.roomPos > 0 && `Includes ${naira(inc.roomPos)} of guests' debt the front desk recovered on your charges — your share is written on their slip`,
           inc.handedOutPos > 0 && `Less ${naira(inc.handedOutPos)} of this slip that belongs to the departments, written on it`,
         ].filter(Boolean).join('. ') || null}
         higher="more on the app than on the POS slip" lower="less on the app than on the POS slip" blind={blind} />
       <AmountRow label="Cash in your drawer" app={appCash} value={cash} onChange={edit(setCash)} gap={cashGap} ok={cashOk}
         hint={[
           inc.recoveredCash > 0 && `Includes ${naira(inc.recoveredCash)} of old debt paid in cash`,
-          inc.roomCash > 0 && `Includes ${naira(inc.roomCash)} of cash the front desk collected on your room charges and hands over at close`,
+          inc.roomCash > 0 && `Includes ${naira(inc.roomCash)} of guests' debt the front desk recovered in cash and hands over at close`,
           inc.handedOutCash > 0 && `Less ${naira(inc.handedOutCash)} of cash handed to the departments for room bills you collected for them`,
         ].filter(Boolean).join('. ') || null}
         higher="more cash than the app expects" lower="less cash than the app expects" blind={blind} />

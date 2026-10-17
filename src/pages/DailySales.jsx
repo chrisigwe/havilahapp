@@ -32,8 +32,10 @@ function withRoomBillMoney(f, rows) {
   const byMethod = (rows || []).reduce((m, r) => {
     m[r.method] = Number(m[r.method] || 0) + Number(r.amount || 0); return m
   }, {})
-  return { ...f, roomBill: rows || [], roomBillTotal: total, roomBillByMethod: byMethod,
-           totalMoneyIn: f.totalMoneyIn + total }
+  // The day's own figures already include this money as debt recovered
+  // since 531 — the rows are kept only for the list of who paid what.
+  // Adding it to totalMoneyIn here as well counted it twice.
+  return { ...f, roomBill: rows || [], roomBillTotal: total, roomBillByMethod: byMethod }
 }
 
 export default function DailySales({ boot }) {

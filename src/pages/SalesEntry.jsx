@@ -334,19 +334,19 @@ export default function SalesEntry({ boot }) {
     m[k] += h.amount
     return m
   }, { pos: 0, cash: 0 })
-  const handedToMe = splitBy(handover
-    .filter(h => roomChargeDept(h, boot.allLocations || locations) === locationId))
+  // What a department is owed from room bills no longer comes from here
+  // — the day's own figures carry it as debt recovered (531). Reception
+  // still needs the whole of it, because the departments' shares are on
+  // its slip and in its drawer, and come off what it hands over.
   const handedOut = splitBy(handover)
-  const handedToMeTotal = handedToMe.pos + handedToMe.cash
   const handedOutTotal = isReception ? handedOut.pos + handedOut.cash : 0
   // Say what is in the figure whenever it is more than the day's own
   // sales, so nobody has to guess why the terminal reads more than the
   // entries below add up to.
   const tileNote = (() => {
     const bits = [
-      Number(recon?.recoveredBy?.pos || 0) + Number(recon?.recoveredBy?.cash || 0) > 0
-        && 'old debts paid today',
-      handedToMeTotal > 0 && 'room bills the front desk collected for you',
+      Number(recon?.recoveredFromCustomers || 0) > 0 && 'old debts paid today',
+      Number(recon?.recoveredFromRooms || 0) > 0 && 'guests paying off what they charged to their rooms',
     ].filter(Boolean)
     if (isReception) {
       return handedOutTotal > 0
@@ -354,7 +354,7 @@ export default function SalesEntry({ boot }) {
         : 'What should be in hand at the front desk.'
     }
     const credit = roomUnpaidToday > 0
-      ? ` Credit includes ${naira(roomUnpaidToday)} charged to rooms and not yet settled.` : ''
+      ? ` Credit includes ${naira(roomUnpaidToday)} given to guests' rooms and not yet paid.` : ''
     if (!bits.length) return `POS and Cash are what should be in hand — your sales for the day.${credit}`
     return `POS and Cash are what should be in hand — your sales plus ${bits.join(', plus ')}.${credit}`
   })()
@@ -381,8 +381,10 @@ export default function SalesEntry({ boot }) {
     ? { pos: r2((receptionDashboard?.pos || 0) - handedOut.pos),
         cash: r2((receptionDashboard?.cash || 0) - handedOut.cash),
         credit: null }
-    : { pos: r2((summary?.byMethod?.pos || 0) + (recon?.recoveredBy?.pos || 0) + handedToMe.pos),
-        cash: r2((summary?.byMethod?.cash || 0) + (recon?.recoveredBy?.cash || 0) + handedToMe.cash),
+    // recoveredBy already carries the guests' room-bill money since 531
+    // — adding handedToMe here as well would count it twice.
+    : { pos: r2((summary?.byMethod?.pos || 0) + (recon?.recoveredBy?.pos || 0)),
+        cash: r2((summary?.byMethod?.cash || 0) + (recon?.recoveredBy?.cash || 0)),
         // Everything that left on trust today: customer credit, plus
         // room charges still unsettled. POS and Cash are what is in
         // hand; Credit is the rest of what went out of the door.
@@ -423,6 +425,20 @@ export default function SalesEntry({ boot }) {
     tillCheckDone(staff.branch_id, locationId, date)
       .then(r => { setTillSaved(r); setTillCheckError(null) })
       .catch(e => { setTillSaved(false); setTillCheckError(e.message || 'could not check') })
+    // Room-bill money reaches a department at the moment RECEPTION
+    // records the guest's payment — and Reception records yesterday's
+    // payments today, when closing yesterday's account. So a department
+    // that counts before the front desk has finished is counting a
+    // figure that is still moving underneath it. MainBar counted 16
+    // October at 14:27 with ₦4,800 of room-bill money in; ₦4,900 more
+    // landed that afternoon, and the cashier found the app short
+    // against the slips. Nobody was wrong — the day moved after it was
+    // shut. This is what lets the page say so before they count.
+    const frontDesk = (boot.allLocations || locations).find(l => /reception/i.test(l.name))
+    if (frontDesk && frontDesk.id !== locationId) {
+      tillCheckDone(staff.branch_id, frontDesk.id, date)
+        .then(setFrontDeskClosed).catch(() => setFrontDeskClosed(null))
+    } else setFrontDeskClosed(null)
     // On failure, record the error rather than silently showing nothing:
     // a hidden section looks identical to a day with no write-offs, which
     // is how a broken query went unnoticed.
@@ -435,6 +451,8 @@ export default function SalesEntry({ boot }) {
       setRecon({ grossSales: r.grossSales, received: r.received, creditRaised: r.creditRaised,
                  debtRecovered: r.debtRecovered, recoveredBy: r.recoveredBy, totalMoneyIn: r.totalMoneyIn,
                  unqualifiedCredit: r.unqualifiedCredit,
+                 recoveredFromCustomers: r.recoveredFromCustomers, recoveredFromRooms: r.recoveredFromRooms,
+                 customerRecoveredBy: r.customerRecoveredBy, roomRecoveredBy: r.roomRecoveredBy,
                  debtClearedByPayroll: r.debtClearedByPayroll, debtWrittenOff: r.debtWrittenOff })
     }).catch(() => {})
     loadOpeningDate(staff.branch_id).then(setOpeningDate).catch(() => {})
@@ -542,6 +560,8 @@ export default function SalesEntry({ boot }) {
   // Why the tile is covered when it is covered: a till nobody has
   // counted yet, or a check that failed. Kept apart on purpose.
   const [tillCheckError, setTillCheckError] = useState(null)
+  // Has the FRONT DESK closed this day? null while unknown.
+  const [frontDeskClosed, setFrontDeskClosed] = useState(null)
   const saveTillResult = async (r) => {
     await recordTillCheck({
       branchId: staff.branch_id, locationId, date,
@@ -1083,10 +1103,19 @@ export default function SalesEntry({ boot }) {
           <span className="tnum font-bold text-lg">{naira(todayTotal)}</span>
         </div>
 
+        {!isReception && frontDeskClosed === false && (
+          <p className="mt-3 px-4 py-3 rounded-xl border border-amber text-amber text-sm">
+            The front desk has not closed this day yet. When Reception records a guest
+            paying for something you charged to their room, it lands on this day — so
+            this figure can still rise after you have counted. Count once they have
+            closed, or expect it to move.
+          </p>
+        )}
+
         <MatchTill rows={today} busyId={switchingId} onFix={fixEntry} onRecord={saveTillResult}
           posTotal={inHand.pos} cashTotal={inHand.cash}
-          includes={{ recoveredPos: recon?.recoveredBy?.pos, recoveredCash: recon?.recoveredBy?.cash,
-                      roomPos: handedToMe.pos, roomCash: handedToMe.cash }}
+          includes={{ recoveredPos: recon?.customerRecoveredBy?.pos, recoveredCash: recon?.customerRecoveredBy?.cash,
+                      roomPos: recon?.roomRecoveredBy?.pos, roomCash: recon?.roomRecoveredBy?.cash }}
           // Credit comes from the person's own entries (what they actually gave),
           // NOT the day summary's "credit raised", which leaves out credit not
           // repaid by noon next day and so showed 0 for same-day credit.
@@ -1108,13 +1137,29 @@ export default function SalesEntry({ boot }) {
                   <span className="tnum">{naira(recon.unqualifiedCredit)}</span>
                 </div>
               )}
-              <Line label="Debt recovered (earlier sales)" value={recon.debtRecovered} tone="text-leaf" />
-              {Object.entries(recon.recoveredBy || {}).map(([m, amt]) => (
-                <div key={m} className="flex justify-between pl-4">
-                  <span className="text-dim">· recovered by {methodLabel[m] || m}</span>
-                  <span className="tnum text-dim">{naira(amt)}</span>
-                </div>
-              ))}
+              {/* ONE heading for every debt that came back today, because
+                  that is what both of these are. A guest who takes a drink
+                  to their room has been given credit exactly as a customer
+                  has — the only difference is who collects it. Chris's
+                  call, 17 October 2026: a room charge reads as credit to
+                  the guest, and the money as debt recovered on the day the
+                  guest pays. The arithmetic is unchanged; what changed is
+                  that the staff now meet one idea instead of two. */}
+              <Line label="Debt recovered" value={recon.debtRecovered} tone="text-leaf" />
+              {recon.recoveredFromCustomers > 0 && (
+                <>
+                  <div className="flex justify-between pl-4">
+                    <span className="text-dim">· from customer accounts</span>
+                    <span className="tnum text-dim">{naira(recon.recoveredFromCustomers)}</span>
+                  </div>
+                  {Object.entries(recon.customerRecoveredBy || {}).map(([m, amt]) => (
+                    <div key={m} className="flex justify-between pl-8">
+                      <span className="text-dim">· by {methodLabel[m] || m}</span>
+                      <span className="tnum text-dim">{naira(amt)}</span>
+                    </div>
+                  ))}
+                </>
+              )}
               {/* ONE line for room-bill money, read from the charge ticks.
                   There used to be two, three rows apart, contradicting
                   each other: "paid HERE" from the old till tag, and "the
@@ -1124,30 +1169,33 @@ export default function SalesEntry({ boot }) {
                   one reached the total, which is why every day since the
                   tags were cleared showed none of this money at all.
                   Restaurant's 15 October was short by ₦98,500. */}
-              {handedToMeTotal > 0 && (
+              {recon.recoveredFromRooms > 0 && (
                 <>
-                  <Line label="Room bills collected for you today" value={handedToMeTotal} tone="text-leaf" />
-                  {handedToMe.pos > 0 && (
-                    <div className="flex justify-between pl-4">
+                  <div className="flex justify-between pl-4">
+                    <span className="text-dim">· from guests' room bills</span>
+                    <span className="tnum text-dim">{naira(recon.recoveredFromRooms)}</span>
+                  </div>
+                  {(recon.roomRecoveredBy?.pos || 0) > 0 && (
+                    <div className="flex justify-between pl-8">
                       <span className="text-dim">· through the front desk POS</span>
-                      <span className="tnum text-dim">{naira(handedToMe.pos)}</span>
+                      <span className="tnum text-dim">{naira(recon.roomRecoveredBy.pos)}</span>
                     </div>
                   )}
-                  {handedToMe.cash > 0 && (
-                    <div className="flex justify-between pl-4">
+                  {(recon.roomRecoveredBy?.cash || 0) > 0 && (
+                    <div className="flex justify-between pl-8">
                       <span className="text-dim">· cash, handed over at close</span>
-                      <span className="tnum text-dim">{naira(handedToMe.cash)}</span>
+                      <span className="tnum text-dim">{naira(recon.roomRecoveredBy.cash)}</span>
                     </div>
                   )}
                   <p className="text-dim text-xs pl-4">
-                    Guests settling charges you made to their rooms. It belongs to the room
-                    bill, so it is not part of gross sales above.
+                    Guests paying off what you charged to their rooms. It reaches you on the
+                    day they pay, and is not part of gross sales above.
                   </p>
                 </>
               )}
               <div className="pt-2 mt-2 border-t border-line flex justify-between font-bold">
                 <span>Total income for the day</span>
-                <span className="tnum">{naira(recon.totalMoneyIn + handedToMeTotal)}</span>
+                <span className="tnum">{naira(recon.totalMoneyIn)}</span>
               </div>
 
               {/* Below the total on purpose: goods that have left the
@@ -1155,11 +1203,11 @@ export default function SalesEntry({ boot }) {
                   still to come is what stops the card looking short. */}
               {roomChargedToday > 0 && (
                 <div className="pt-2 mt-2 border-t border-line/60">
-                  <Line label="Charged to guests' rooms today" value={roomChargedToday} tone="text-dim" />
+                  <Line label="Credit given to guests' rooms today" value={roomChargedToday} tone="text-dim" />
                   <p className="text-dim text-xs pl-4">
-                    Goods that left this department on a guest&#39;s room bill — not money yet,
-                    so not in the total above. The guest settles at Reception and it reaches
-                    you when they do.
+                    Goods that left this department on a guest&#39;s room bill. Credit given to
+                    the guest, not money, so not in the total above — it comes back to you as
+                    debt recovered on the day they pay at Reception.
                   </p>
                 </div>
               )}

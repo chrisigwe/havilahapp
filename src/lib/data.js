@@ -391,8 +391,21 @@ export async function loadDailyFinancials(branchId, date, locationId) {
     received: Number(data.received || 0),
     creditRaised: Number(data.creditRaised || 0),
     unqualifiedCredit: Number(data.unqualifiedCredit || 0),
+    // Debt recovered now covers BOTH kinds, because they are the same
+    // thing (531): a customer paying off an account, and a guest paying
+    // off what a department let them charge to their room. Kept split
+    // underneath so the day can still say which was which.
+    //
+    // recoveredBy carries both, and it is what the POS/Cash figures are
+    // built from — the app must NOT add room-bill money on top of it
+    // any more, or the same naira is counted twice.
     debtRecovered: Number(data.debtRecovered || 0),
     recoveredBy: data.recoveredBy || {},
+    recoveredFromCustomers: Number(data.recoveredFromCustomers || 0),
+    recoveredFromRooms: Number(data.recoveredFromRooms || 0),
+    customerRecoveredBy: data.customerRecoveredBy || {},
+    roomRecoveredBy: data.roomRecoveredBy || {},
+    roomChargedCountedAsSales: Number(data.roomChargedCountedAsSales || 0),
     totalMoneyIn: Number(data.totalMoneyIn || 0),
   }
 }
