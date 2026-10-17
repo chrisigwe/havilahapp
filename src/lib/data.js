@@ -3125,13 +3125,24 @@ export async function loadMyWeek(branchId, days = 7) {
 // department counts — the question is whether the day was reconciled,
 // not who typed it. Used to unlock the POS/Cash/Credit tile, which
 // stays covered until the person has committed to their own figure.
+//
+// Asked through a function, not by reading till_checks directly
+// (migration 527). till_checks has row security on and no read policy,
+// so a plain select returns nothing to everyone — including the person
+// who has just counted. Counts still SAVED, because saving goes
+// through record_till_check, which runs with the database's own
+// rights; only reading was blocked, so the tile never uncovered for
+// anybody on any day and a deliberate lock looked like a fault.
+//
+// Throws on failure instead of answering false. A denied read and an
+// uncounted till are not the same thing, and reporting one as the
+// other is exactly how this hid for as long as it did.
 export async function tillCheckDone(branchId, locationId, date) {
   if (!branchId || !locationId || !date) return false
-  const { data, error } = await supabase.from('till_checks')
-    .select('id').eq('branch_id', branchId).eq('location_id', locationId)
-    .eq('business_date', date).limit(1)
-  if (error) return false
-  return !!(data && data.length)
+  const { data, error } = await supabase.rpc('till_check_done',
+    { p_branch: branchId, p_location: locationId, p_date: date })
+  if (error) throw error
+  return !!data
 }
 
 export async function loadTillChecks(branchId, days = 14) {

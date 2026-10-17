@@ -42,7 +42,7 @@ const niceDay = (d) => new Date(d + 'T12:00:00').toLocaleDateString('en-NG', { d
 // waiting state now says what it is before it says anything else: a
 // heading, an amber band naming the one thing to do, and dots where the
 // figures will land. Hidden has to look deliberate, or it looks broken.
-function TillTile({ inHand, note, hidden }) {
+function TillTile({ inHand, note, hidden, checkError }) {
   const cols = inHand.credit === null ? 'grid-cols-2' : 'grid-cols-3'
   const Fig = ({ label, value }) => (
     <div>
@@ -67,7 +67,12 @@ function TillTile({ inHand, note, hidden }) {
         <Fig label="Cash" value={inHand.cash} />
         {inHand.credit !== null && <Fig label="Credit" value={inHand.credit} />}
       </div>
-      {hidden ? (
+      {checkError && hidden ? (
+        <p className="text-clay text-xs mt-3">
+          The app could not check whether this till has been counted, so the figures stay
+          covered. This is a fault, not a rule — tell the GM. ({checkError})
+        </p>
+      ) : hidden ? (
         <p className="text-amber text-xs mt-3">
           These are hidden until you have counted. Type your POS slip and your drawer into
           Match your Total Sales below — they fill in the moment you save, and the app tells
@@ -399,7 +404,8 @@ export default function SalesEntry({ boot }) {
     // work was asked for it again — which is how a deliberate lock
     // starts looking like a fault.
     tillCheckDone(staff.branch_id, locationId, date)
-      .then(setTillSaved).catch(() => {})
+      .then(r => { setTillSaved(r); setTillCheckError(null) })
+      .catch(e => { setTillSaved(false); setTillCheckError(e.message || 'could not check') })
     // On failure, record the error rather than silently showing nothing:
     // a hidden section looks identical to a day with no write-offs, which
     // is how a broken query went unnoticed.
@@ -516,6 +522,9 @@ export default function SalesEntry({ boot }) {
   }
 
   const [tillSaved, setTillSaved] = useState(false)
+  // Why the tile is covered when it is covered: a till nobody has
+  // counted yet, or a check that failed. Kept apart on purpose.
+  const [tillCheckError, setTillCheckError] = useState(null)
   const saveTillResult = async (r) => {
     await recordTillCheck({
       branchId: staff.branch_id, locationId, date,
@@ -913,7 +922,7 @@ export default function SalesEntry({ boot }) {
 
       {isReception && receptionDashboard && (
         <>
-          <TillTile inHand={inHand} note={tileNote} hidden={isMyTill && !tillSaved} />
+          <TillTile inHand={inHand} note={tileNote} hidden={isMyTill && !tillSaved} checkError={tillCheckError} />
           <MatchTill rows={[]} posTotal={inHand.pos} cashTotal={inHand.cash}
             includes={{ handedOutPos: handedOut.pos, handedOutCash: handedOut.cash }}
             onRecord={saveTillResult} />
@@ -1154,7 +1163,7 @@ export default function SalesEntry({ boot }) {
           </div>
         )}
 
-        {summary && <TillTile inHand={inHand} note={tileNote} hidden={isMyTill && !tillSaved} />}
+        {summary && <TillTile inHand={inHand} note={tileNote} hidden={isMyTill && !tillSaved} checkError={tillCheckError} />}
 
         <ul className="mt-3 divide-y divide-line/60">
           {combinedToday.slice(0, 20).map(r => (
