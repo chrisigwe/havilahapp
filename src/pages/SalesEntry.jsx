@@ -6,7 +6,7 @@ import { loadStockMap, loadPopular, loadToday, saveBasket, saveWriteoff,
          loadStaffForLocation, loadReceptionActivity, loadReceptionDashboard, deleteEntry,
          loadRoomCharges, loadRoomBillHandover, deleteOrderItem, saveRestaurantWriteoff, loadRoomsSoldInMonth,
          loadWriteoffsOnDate, loadLiveStays, chargeBasketToRoom,
-         getOrCreateGuestTab, updateSaleWithPayments, undoRecentReceipt, recordTillCheck, loadFolioCollectedAt, loadGuestCollections } from '../lib/data'
+         getOrCreateGuestTab, updateSaleWithPayments, undoRecentReceipt, recordTillCheck } from '../lib/data'
 import { enqueue, flush, isConnectionError } from '../lib/outbox'
 import { useToast } from '../components/Toast'
 import ReceptionDashboard from '../components/ReceptionDashboard'
@@ -119,12 +119,10 @@ export default function SalesEntry({ boot }) {
   const [receptionActivity, setReceptionActivity] = useState([])
   const [receptionDashboard, setReceptionDashboard] = useState(null)
   // Room payments taken through THIS department's POS/cash (migration 336).
-  const [folioIn, setFolioIn] = useState({ pos: 0, cash: 0 })
   // Money this department collected from guests against their room bills.
   // It is real money in the drawer here, so it belongs in the day's income —
   // the Match-your-Total-Sales box has always counted it; the summary below
   // it did not, which is why a department's figures looked short.
-  const [guestIn, setGuestIn] = useState([])
   // Ticked room-bill money, by department (migration 505).
   const [handover, setHandover] = useState([])
   const [lastReceiptAt, setLastReceiptAt] = useState(0)
@@ -168,11 +166,6 @@ export default function SalesEntry({ boot }) {
   }
   const [summary, setSummary] = useState(null)
   const [recon, setRecon] = useState(null)
-  // Totals for the guest collections shown with the day's income.
-  const guestTotal = guestIn.reduce((t, p) => t + Number(p.amount), 0)
-  const guestByMethod = guestIn.reduce((m, p) => {
-    m[p.method] = (m[p.method] || 0) + Number(p.amount); return m
-  }, {})
   const [customers, setCustomers] = useState([])
 
   const [basket, setBasket] = useState([])          // [{ key, item, tier, qty, unitPrice }]
@@ -296,10 +289,6 @@ export default function SalesEntry({ boot }) {
                  unqualifiedCredit: r.unqualifiedCredit,
                  debtClearedByPayroll: r.debtClearedByPayroll, debtWrittenOff: r.debtWrittenOff })
     }).catch(() => {})
-    loadFolioCollectedAt(staff.branch_id, date, locationId)
-      .then(setFolioIn).catch(() => setFolioIn({ pos: 0, cash: 0 }))
-    loadGuestCollections(staff.branch_id, date, locationId)
-      .then(setGuestIn).catch(() => setGuestIn([]))
     loadOpeningDate(staff.branch_id).then(setOpeningDate).catch(() => {})
 
     if (canOverrideVariance) {
@@ -935,9 +924,13 @@ export default function SalesEntry({ boot }) {
           <span className="tnum font-bold text-lg">{naira(todayTotal)}</span>
         </div>
 
+        {/* No `folio` prop any more. It carried the tagged-payment
+            figure, which is the same money the handover carries from the
+            charge ticks — passing both made a department's expected POS
+            ask for it twice. */}
         <MatchTill rows={today} busyId={switchingId} onFix={fixEntry} onRecord={saveTillResult}
           recovered={{ pos: recon?.recoveredBy?.pos, cash: recon?.recoveredBy?.cash }}
-          folio={folioIn} handover={handedToMe}
+          handover={handedToMe}
           // Credit comes from the person's own entries (what they actually gave),
           // NOT the day summary's "credit raised", which leaves out credit not
           // repaid by noon next day and so showed 0 for same-day credit.
@@ -950,7 +943,8 @@ export default function SalesEntry({ boot }) {
             <div className="tnum text-3xl font-bold text-amber">{naira(recon.grossSales)}</div>
             <div className="mt-3 space-y-1 text-sm">
               <Line label="Received at sale (POS + Cash)" value={recon.received} />
-              <Line label="Credit raised" value={recon.creditRaised}
+              <Line label={recon.unqualifiedCredit > 0 ? 'Credit raised — counted as sales' : 'Credit raised'}
+                value={recon.creditRaised}
                 tone={recon.creditRaised > 0 ? 'text-clay' : ''} />
               {recon.unqualifiedCredit > 0 && (
                 <div className="flex justify-between text-clay">
@@ -965,45 +959,54 @@ export default function SalesEntry({ boot }) {
                   <span className="tnum text-dim">{naira(amt)}</span>
                 </div>
               ))}
-              {guestTotal > 0 && (
-                <>
-                  <Line label="Collected from guests' room charges" value={guestTotal} tone="text-leaf" />
-                  {Object.entries(guestByMethod).map(([m, amt]) => (
-                    <div key={m} className="flex justify-between pl-4">
-                      <span className="text-dim">· collected by {methodLabel[m] || m}</span>
-                      <span className="tnum text-dim">{naira(amt)}</span>
-                    </div>
-                  ))}
-                  <p className="text-dim text-xs pl-4">
-                    Drinks and food charged to rooms are paid here but belong to the room bill, so
-                    they are not part of gross sales above.
-                  </p>
-                </>
-              )}
-              {roomChargedToday > 0 && (
-                <>
-                  <Line label="Charged to guests' rooms today" value={roomChargedToday} tone="text-dim" />
-                  <p className="text-dim text-xs pl-4">
-                    Goods that left this department on a guest&#39;s room bill. Yours, but not
-                    paid for yet — the guest settles at Reception, and the money comes to you
-                    when they do.
-                  </p>
-                </>
-              )}
+              {/* ONE line for room-bill money, read from the charge ticks.
+                  There used to be two, three rows apart, contradicting
+                  each other: "paid HERE" from the old till tag, and "the
+                  FRONT DESK collected this" from the ticks. On 16
+                  October both read ₦4,800 for MainBar, which has no
+                  terminal, so only one could be true — and only the tag
+                  one reached the total, which is why every day since the
+                  tags were cleared showed none of this money at all.
+                  Restaurant's 15 October was short by ₦98,500. */}
               {handedToMeTotal > 0 && (
                 <>
                   <Line label="Room bills collected for you today" value={handedToMeTotal} tone="text-leaf" />
+                  {handedToMe.pos > 0 && (
+                    <div className="flex justify-between pl-4">
+                      <span className="text-dim">· through the front desk POS</span>
+                      <span className="tnum text-dim">{naira(handedToMe.pos)}</span>
+                    </div>
+                  )}
+                  {handedToMe.cash > 0 && (
+                    <div className="flex justify-between pl-4">
+                      <span className="text-dim">· cash, handed over at close</span>
+                      <span className="tnum text-dim">{naira(handedToMe.cash)}</span>
+                    </div>
+                  )}
                   <p className="text-dim text-xs pl-4">
-                    The front desk collected this against your charges.
-                    {handedToMe.pos > 0 && ` ${naira(handedToMe.pos)} of it went through their POS — your share is written on that slip.`}
-                    {handedToMe.cash > 0 && ` ${naira(handedToMe.cash)} is cash, handed over at close.`}
+                    Guests settling charges you made to their rooms. It belongs to the room
+                    bill, so it is not part of gross sales above.
                   </p>
                 </>
               )}
               <div className="pt-2 mt-2 border-t border-line flex justify-between font-bold">
                 <span>Total income for the day</span>
-                <span className="tnum">{naira(recon.totalMoneyIn + guestTotal)}</span>
+                <span className="tnum">{naira(recon.totalMoneyIn + handedToMeTotal)}</span>
               </div>
+
+              {/* Below the total on purpose: goods that have left the
+                  department but nobody has paid for yet. Naming what is
+                  still to come is what stops the card looking short. */}
+              {roomChargedToday > 0 && (
+                <div className="pt-2 mt-2 border-t border-line/60">
+                  <Line label="Charged to guests' rooms today" value={roomChargedToday} tone="text-dim" />
+                  <p className="text-dim text-xs pl-4">
+                    Goods that left this department on a guest&#39;s room bill — not money yet,
+                    so not in the total above. The guest settles at Reception and it reaches
+                    you when they do.
+                  </p>
+                </div>
+              )}
             </div>
 
             {/* Below the day's total and outside its border: neither PR
