@@ -6,7 +6,7 @@ import { loadStockMap, loadPopular, loadToday, saveBasket, saveWriteoff,
          loadStaffForLocation, loadReceptionActivity, loadReceptionDashboard, deleteEntry,
          loadRoomCharges, loadRoomBillHandover, deleteOrderItem, saveRestaurantWriteoff, loadRoomsSoldInMonth,
          loadWriteoffsOnDate, loadLiveStays, chargeBasketToRoom,
-         getOrCreateGuestTab, updateSaleWithPayments, undoRecentReceipt, recordTillCheck } from '../lib/data'
+         getOrCreateGuestTab, updateSaleWithPayments, undoRecentReceipt, recordTillCheck, tillCheckDone } from '../lib/data'
 import { enqueue, flush, isConnectionError } from '../lib/outbox'
 import { useToast } from '../components/Toast'
 import ReceptionDashboard from '../components/ReceptionDashboard'
@@ -29,37 +29,51 @@ const niceDay = (d) => new Date(d + 'T12:00:00').toLocaleDateString('en-NG', { d
 // What should be in hand right now: the same three figures Match your
 // Total Sales expects, shown on the dashboard so the two can never
 // disagree. Module-level so typing elsewhere on the page cannot remount it.
-// Always shown.
+// Held back until the count is saved, for the person whose count it is.
 //
-// It was briefly held back until the count was saved, to protect the
-// blind count in Match your Total Sales — which hides its own figure
-// because every till check ever recorded came out equal to the penny.
-// But the point of this tile is that the person can see whether what is
-// in their hand agrees with the app, and a row of dashes gives them
-// nothing. The check below still asks for their count before it passes
-// judgement.
-function TillTile({ inHand, note }) {
+// Every till check ever recorded, at both branches, came out equal to
+// the penny on both POS and cash. A check that cannot disagree measures
+// nothing, which is why Match your Total Sales hides its own figure
+// until you have typed yours — and printing the same figure on a tile
+// directly above it would hand straight back what that hides.
+//
+// The first attempt at this showed three dashes and a grey line of
+// explanation, and read as a page that had failed to load. So the
+// waiting state now says what it is before it says anything else: a
+// heading, an amber band naming the one thing to do, and dots where the
+// figures will land. Hidden has to look deliberate, or it looks broken.
+function TillTile({ inHand, note, hidden }) {
   const cols = inHand.credit === null ? 'grid-cols-2' : 'grid-cols-3'
-  const show = v => naira(v)
+  const Fig = ({ label, value }) => (
+    <div>
+      <div className="text-dim text-sm">{label}</div>
+      {hidden
+        ? <div className="tnum font-bold text-dim tracking-widest">•••</div>
+        : <div className="tnum font-bold">{naira(value)}</div>}
+    </div>
+  )
   return (
-    <div className="mt-3 rounded-2xl border border-line bg-surface p-4">
-      <div className={`grid ${cols} gap-3`}>
-        <div>
-          <div className="text-dim text-sm">POS</div>
-          <div className="tnum font-bold">{show(inHand.pos)}</div>
-        </div>
-        <div>
-          <div className="text-dim text-sm">Cash</div>
-          <div className="tnum font-bold">{show(inHand.cash)}</div>
-        </div>
-        {inHand.credit !== null && (
-          <div>
-            <div className="text-dim text-sm">Credit</div>
-            <div className="tnum font-bold">{show(inHand.credit)}</div>
-          </div>
+    <div className={`mt-3 rounded-2xl border bg-surface p-4 ${hidden ? 'border-amber/50' : 'border-line'}`}>
+      <div className="flex items-baseline justify-between gap-2">
+        <p className="font-semibold text-sm">What you should have in hand</p>
+        {hidden && (
+          <span className="text-xs font-bold text-amber border border-amber rounded-full px-2 py-0.5 shrink-0">
+            Count first
+          </span>
         )}
       </div>
-      {note && <p className="text-dim text-xs mt-2">{note}</p>}
+      <div className={`grid ${cols} gap-3 mt-2`}>
+        <Fig label="POS" value={inHand.pos} />
+        <Fig label="Cash" value={inHand.cash} />
+        {inHand.credit !== null && <Fig label="Credit" value={inHand.credit} />}
+      </div>
+      {hidden ? (
+        <p className="text-amber text-xs mt-3">
+          These are hidden until you have counted. Type your POS slip and your drawer into
+          Match your Total Sales below — they fill in the moment you save, and the app tells
+          you whether it agrees.
+        </p>
+      ) : (note && <p className="text-dim text-xs mt-2">{note}</p>)}
     </div>
   )
 }
@@ -371,6 +385,13 @@ export default function SalesEntry({ boot }) {
       loadRoomCharges(staff.branch_id, date).then(setRoomCharges).catch(() => {})
     }
     loadRoomBillHandover(staff.branch_id, date).then(setHandover).catch(() => setHandover([]))
+    // Once this till has been counted for this day the figures stay
+    // open. Without this the tile re-covered itself on every reload and
+    // after every shift change, so the person who had already done the
+    // work was asked for it again — which is how a deliberate lock
+    // starts looking like a fault.
+    tillCheckDone(staff.branch_id, locationId, date)
+      .then(setTillSaved).catch(() => {})
     // On failure, record the error rather than silently showing nothing:
     // a hidden section looks identical to a day with no write-offs, which
     // is how a broken query went unnoticed.
@@ -486,9 +507,13 @@ export default function SalesEntry({ boot }) {
     finally { setSwitchingId(null) }
   }
 
-  const saveTillResult = (r) => recordTillCheck({
-    branchId: staff.branch_id, locationId, date,
-    appPos: r.appPos, appCash: r.appCash, pos: r.pos, cash: r.cash })
+  const [tillSaved, setTillSaved] = useState(false)
+  const saveTillResult = async (r) => {
+    await recordTillCheck({
+      branchId: staff.branch_id, locationId, date,
+      appPos: r.appPos, appCash: r.appCash, pos: r.pos, cash: r.cash })
+    setTillSaved(true)
+  }
 
   async function undoLast() {
     if (!window.confirm('Undo the last sale? It will be removed as if it never happened.')) return
@@ -880,7 +905,7 @@ export default function SalesEntry({ boot }) {
 
       {isReception && receptionDashboard && (
         <>
-          <TillTile inHand={inHand} note={tileNote} />
+          <TillTile inHand={inHand} note={tileNote} hidden={canRecordHere && !tillSaved} />
           <MatchTill rows={[]} posTotal={inHand.pos} cashTotal={inHand.cash}
             includes={{ handedOutPos: handedOut.pos, handedOutCash: handedOut.cash }}
             onRecord={saveTillResult} />
@@ -1121,7 +1146,7 @@ export default function SalesEntry({ boot }) {
           </div>
         )}
 
-        {summary && <TillTile inHand={inHand} note={tileNote} />}
+        {summary && <TillTile inHand={inHand} note={tileNote} hidden={canRecordHere && !tillSaved} />}
 
         <ul className="mt-3 divide-y divide-line/60">
           {combinedToday.slice(0, 20).map(r => (
