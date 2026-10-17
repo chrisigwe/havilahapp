@@ -132,6 +132,14 @@ export default function SalesEntry({ boot }) {
   // and admin keep recording anywhere, exactly as before.
   const ownLocationIds = new Set((locations || []).map(l => l.id))
   const canRecordAt = (id) => is(staff.role, MANAGEMENT) || ownLocationIds.has(id)
+  // Whose till this actually is — not who is allowed to record at it.
+  //
+  // canRecordAt is true at EVERY department for a manager, gm or admin,
+  // so using it to cover the POS/Cash/Credit tile told an auditor or a
+  // manager to go and count a till that is not theirs. Only the person
+  // the count belongs to is asked for it; everyone else sees the
+  // figures, and once the count is saved so does everyone.
+  const isMyTill = ownLocationIds.has(locationId)
   const canRecordHere = canRecordAt(locationId)
   // Mirrors moves_write after 283: anyone who can record, except an
   // auditor. Deliberately NOT canOverrideVariance, which also governs
@@ -905,7 +913,7 @@ export default function SalesEntry({ boot }) {
 
       {isReception && receptionDashboard && (
         <>
-          <TillTile inHand={inHand} note={tileNote} hidden={canRecordHere && !tillSaved} />
+          <TillTile inHand={inHand} note={tileNote} hidden={isMyTill && !tillSaved} />
           <MatchTill rows={[]} posTotal={inHand.pos} cashTotal={inHand.cash}
             includes={{ handedOutPos: handedOut.pos, handedOutCash: handedOut.cash }}
             onRecord={saveTillResult} />
@@ -1146,7 +1154,7 @@ export default function SalesEntry({ boot }) {
           </div>
         )}
 
-        {summary && <TillTile inHand={inHand} note={tileNote} hidden={canRecordHere && !tillSaved} />}
+        {summary && <TillTile inHand={inHand} note={tileNote} hidden={isMyTill && !tillSaved} />}
 
         <ul className="mt-3 divide-y divide-line/60">
           {combinedToday.slice(0, 20).map(r => (
