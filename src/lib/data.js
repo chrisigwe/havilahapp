@@ -940,7 +940,10 @@ export async function loadDepartmentRoomCharges(branchId, locationId = null, day
 // same rule the day's list and the tracker use, stated once.
 export async function loadRoomBillHandover(branchId, date) {
   const { data, error } = await supabase.from('payment_items')
-    .select('amount, order_items!inner(location_id, category), payments!inner(business_date, branch_id, method)')
+    .select(`amount,
+             order_items!inner(location_id, category, description),
+             payments!inner(business_date, branch_id, method,
+                            stays(rooms(room_number), guests!guest_id(full_name)))`)
     .eq('payments.branch_id', branchId)
     .eq('payments.business_date', date)
     // Money only. A write-off clears a debt without anyone paying, and a
@@ -957,6 +960,11 @@ export async function loadRoomBillHandover(branchId, date) {
     method: r.payments?.method || null,
     location_id: r.order_items?.location_id || null,
     category: r.order_items?.category || null,
+    // Only the GM's Daily sales page reads these three; the department
+    // card needs the amount and the method and nothing else.
+    charge: r.order_items?.description || null,
+    room: r.payments?.stays?.rooms?.room_number || null,
+    guest: r.payments?.stays?.guests?.full_name || null,
   }))
 }
 

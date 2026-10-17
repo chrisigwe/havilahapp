@@ -2,7 +2,7 @@ import RoomChargeTracker from '../components/RoomChargeTracker'
 import StockUsedReport from '../components/StockUsedReport'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { naira, lagosToday, lagosDaysAgo, tierLabel, methodLabel, roomChargeDept, whoRecorded, paymentSummary } from '../lib/format'
-import { findDuplicateCustomers, findDuplicateGuests, loadDailyFinancials, loadGuestCollections, loadReceptionActivity, loadReceptionDashboard, loadRoomCharges, loadRoomsSoldInMonth, loadToday, loadWriteoffsOnDate } from '../lib/data'
+import { findDuplicateCustomers, findDuplicateGuests, loadDailyFinancials, loadReceptionActivity, loadReceptionDashboard, loadRoomBillHandover, loadRoomCharges, loadRoomsSoldInMonth, loadToday, loadWriteoffsOnDate } from '../lib/data'
 import { useToast } from '../components/Toast'
 import ReceptionDashboard from '../components/ReceptionDashboard'
 import WriteoffBreakdown from '../components/WriteoffBreakdown'
@@ -14,15 +14,26 @@ import { is, SUPERVISOR } from '../lib/roles'
 // records), and shared with storekeeper/manager/gm/admin as a way to
 // look at a day other than today without switching into the live
 // recording screen.
-// Folds guest room-charge payments collected at a department into its
-// recovered debt and total income, keeping the payment method.
-function withGuestCollections(f, guest) {
-  if (!guest?.length) return f
-  const total = guest.reduce((t, p) => t + Number(p.amount), 0)
-  const recoveredBy = { ...(f.recoveredBy || {}) }
-  for (const p of guest) recoveredBy[p.method] = Number(recoveredBy[p.method] || 0) + Number(p.amount)
-  return { ...f, guestCollections: guest, debtRecovered: f.debtRecovered + total,
-           recoveredBy, totalMoneyIn: f.totalMoneyIn + total }
+// Money guests paid against charges their departments made to a room.
+//
+// This used to read payments.location_id — the old till tag — and fold
+// the result into "Debt recovered". Two things were wrong with that.
+// The tag says whose DRAWER the money is in, not whose charge it
+// settled, and once migration 512 cleared the tags that were untrue the
+// figure went to zero: on 15 October this page showed none of the
+// ₦110,500 of room-bill money Awka's departments had earned. And it is
+// not debt recovery — nobody was on credit — so it never belonged in
+// that line.
+//
+// It now reads the charge ticks, which record exactly which charges a
+// payment settled, and it gets a line of its own.
+function withRoomBillMoney(f, rows) {
+  const total = (rows || []).reduce((t, r) => t + Number(r.amount || 0), 0)
+  const byMethod = (rows || []).reduce((m, r) => {
+    m[r.method] = Number(m[r.method] || 0) + Number(r.amount || 0); return m
+  }, {})
+  return { ...f, roomBill: rows || [], roomBillTotal: total, roomBillByMethod: byMethod,
+           totalMoneyIn: f.totalMoneyIn + total }
 }
 
 export default function DailySales({ boot }) {
@@ -127,8 +138,10 @@ export default function DailySales({ boot }) {
     // against their room charges (e.g. "charge to a room" settled at MainBar).
     Promise.all([
       loadDailyFinancials(staff.branch_id, date, loc),
-      loadGuestCollections(staff.branch_id, date, loc).catch(() => []),
-    ]).then(([f, guest]) => setSummary(withGuestCollections(f, guest)))
+      loadRoomBillHandover(staff.branch_id, date).catch(() => []),
+    ]).then(([f, hand]) => setSummary(withRoomBillMoney(f,
+        locId === 'all' ? hand
+          : hand.filter(h => roomChargeDept(h, allLocations) === locId))))
       .catch(e => toast(e.message, 'error'))
     loadToday(staff.branch_id, date, loc).then(setRows).catch(e => toast(e.message, 'error'))
     if (showsRoomCharges) {
@@ -321,19 +334,29 @@ export default function DailySales({ boot }) {
                 <span className="tnum text-dim">{naira(amt)}</span>
               </div>
             ))}
-            {(summary.guestCollections || []).length > 0 && (
-              <div className="pl-4 pt-1 text-sm">
-                <p className="text-dim">Of which collected from guests' room charges:</p>
-                {summary.guestCollections.map(p => (
-                  <div key={p.id} className="flex justify-between">
-                    <span className="text-dim truncate">
-                      · {p.stays?.guests?.full_name || 'Guest'}{p.stays?.rooms?.room_number ? ` (Room ${p.stays.rooms.room_number})` : ''}
-                      {locId === 'all' && p.collected?.name ? ` · ${p.collected.name}` : ''} · {methodLabel[p.method] || p.method}
-                    </span>
-                    <span className="tnum text-dim">{naira(p.amount)}</span>
+            {summary.roomBillTotal > 0 && (
+              <>
+                <div className="flex justify-between">
+                  <span className="text-dim">Room bills collected</span>
+                  <span className="tnum text-leaf">{naira(summary.roomBillTotal)}</span>
+                </div>
+                {Object.entries(summary.roomBillByMethod || {}).map(([m, amt]) => (
+                  <div key={m} className="flex justify-between pl-4">
+                    <span className="text-dim">· by {methodLabel[m] || m}</span>
+                    <span className="tnum text-dim">{naira(amt)}</span>
                   </div>
                 ))}
-              </div>
+                <div className="pl-4 pt-1 text-sm">
+                  {summary.roomBill.map((r, i) => (
+                    <div key={i} className="flex justify-between">
+                      <span className="text-dim truncate">
+                        · {r.guest || 'Guest'}{r.room ? ` (Room ${r.room})` : ''} · {r.charge || 'charge'}
+                      </span>
+                      <span className="tnum text-dim">{naira(r.amount)}</span>
+                    </div>
+                  ))}
+                </div>
+              </>
             )}
             {roomChargedToday > 0 && (
               <>
