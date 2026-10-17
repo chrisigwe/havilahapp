@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { naira, lagosToday, lagosTime, seesStayTimes, cyclesFor, friendlyStayError, addDays } from '../lib/format'
+import { naira, lagosToday, lagosDaysAgo, lagosTime, seesStayTimes, cyclesFor, friendlyStayError, addDays } from '../lib/format'
 import { billedToLabel, checkOutStay, checkRepeatPayment, deleteOrderItem, deleteStay, extendStayTo, loadBranchStaySettings, loadFolio, moveRoomChargeDate, recordStayPayment, setPaymentDepartment, splitPaymentToDepartment, reopenStay, saveRepayment, searchSimilarGuests, setPaymentAllocation, updateOrderItem, updateOverstayFee, updateStayBillTo, updateStayDetails } from '../lib/data'
 import { useToast } from '../components/Toast'
 import PaymentMethodPicker, { paymentParts, paymentAllocated } from './PaymentMethodPicker'
@@ -1012,8 +1012,18 @@ export default function Folio({ boot, room, onClose, onChanged }) {
             )}
 
             <label className="block text-dim text-sm">Date paid</label>
+            {/* The floor used to be the stay's check-in date, which makes
+                an advance payment impossible to date correctly: Mr Kalu
+                booked ahead, paid on the 16th and arrived on the 17th,
+                so the day he actually paid was greyed out. A deposit is
+                paid BEFORE arrival by definition.
+                Now the earlier of check-in and seven days back — the
+                same window the sales screens allow — so a late entry
+                can always be dated when the money changed hands, and a
+                long stay keeps its whole length. */}
             <input type="date" value={pay.date || lagosToday()}
-              min={checkIn || undefined} max={lagosToday()}
+              min={[checkIn, lagosDaysAgo(7)].filter(Boolean).sort()[0] || undefined}
+              max={lagosToday()}
               onChange={e => setPay(p => ({ ...p, date: e.target.value }))}
               className="mt-1 mb-3 h-12 w-full px-3 rounded-xl bg-raise border border-line tnum" />
             {pay.date && pay.date !== lagosToday() && (

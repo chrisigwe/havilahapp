@@ -29,40 +29,37 @@ const niceDay = (d) => new Date(d + 'T12:00:00').toLocaleDateString('en-NG', { d
 // What should be in hand right now: the same three figures Match your
 // Total Sales expects, shown on the dashboard so the two can never
 // disagree. Module-level so typing elsewhere on the page cannot remount it.
-// Held back until the count is saved, for the person whose count it is.
+// Always shown.
 //
-// Every till check ever recorded, at both branches, came out equal to
-// the penny on both POS and cash — which is why Match your Total Sales
-// hides its own figure until you have typed yours. Printing the same
-// figure on a tile directly above it would hand back exactly what that
-// hides. So the person counting sees it the moment they save, and
-// anyone who is only looking sees it straight away.
-function TillTile({ inHand, note, hidden }) {
+// It was briefly held back until the count was saved, to protect the
+// blind count in Match your Total Sales — which hides its own figure
+// because every till check ever recorded came out equal to the penny.
+// But the point of this tile is that the person can see whether what is
+// in their hand agrees with the app, and a row of dashes gives them
+// nothing. The check below still asks for their count before it passes
+// judgement.
+function TillTile({ inHand, note }) {
   const cols = inHand.credit === null ? 'grid-cols-2' : 'grid-cols-3'
-  const show = v => hidden ? '—' : naira(v)
+  const show = v => naira(v)
   return (
     <div className="mt-3 rounded-2xl border border-line bg-surface p-4">
       <div className={`grid ${cols} gap-3`}>
         <div>
           <div className="text-dim text-sm">POS</div>
-          <div className={`tnum font-bold ${hidden ? 'text-dim' : ''}`}>{show(inHand.pos)}</div>
+          <div className="tnum font-bold">{show(inHand.pos)}</div>
         </div>
         <div>
           <div className="text-dim text-sm">Cash</div>
-          <div className={`tnum font-bold ${hidden ? 'text-dim' : ''}`}>{show(inHand.cash)}</div>
+          <div className="tnum font-bold">{show(inHand.cash)}</div>
         </div>
         {inHand.credit !== null && (
           <div>
             <div className="text-dim text-sm">Credit</div>
-            <div className={`tnum font-bold ${hidden ? 'text-dim' : ''}`}>{show(inHand.credit)}</div>
+            <div className="tnum font-bold">{show(inHand.credit)}</div>
           </div>
         )}
       </div>
-      <p className="text-dim text-xs mt-2">
-        {hidden
-          ? 'Count your drawer and your slip and save it below — these fill in the moment you do.'
-          : note}
-      </p>
+      {note && <p className="text-dim text-xs mt-2">{note}</p>}
     </div>
   )
 }
@@ -489,13 +486,9 @@ export default function SalesEntry({ boot }) {
     finally { setSwitchingId(null) }
   }
 
-  const [tillSaved, setTillSaved] = useState(false)
-  const saveTillResult = async (r) => {
-    await recordTillCheck({
-      branchId: staff.branch_id, locationId, date,
-      appPos: r.appPos, appCash: r.appCash, pos: r.pos, cash: r.cash })
-    setTillSaved(true)
-  }
+  const saveTillResult = (r) => recordTillCheck({
+    branchId: staff.branch_id, locationId, date,
+    appPos: r.appPos, appCash: r.appCash, pos: r.pos, cash: r.cash })
 
   async function undoLast() {
     if (!window.confirm('Undo the last sale? It will be removed as if it never happened.')) return
@@ -887,7 +880,7 @@ export default function SalesEntry({ boot }) {
 
       {isReception && receptionDashboard && (
         <>
-          <TillTile inHand={inHand} note={tileNote} hidden={canRecordHere && !tillSaved} />
+          <TillTile inHand={inHand} note={tileNote} />
           <MatchTill rows={[]} posTotal={inHand.pos} cashTotal={inHand.cash}
             includes={{ handedOutPos: handedOut.pos, handedOutCash: handedOut.cash }}
             onRecord={saveTillResult} />
@@ -1128,7 +1121,7 @@ export default function SalesEntry({ boot }) {
           </div>
         )}
 
-        {summary && <TillTile inHand={inHand} note={tileNote} hidden={canRecordHere && !tillSaved} />}
+        {summary && <TillTile inHand={inHand} note={tileNote} />}
 
         <ul className="mt-3 divide-y divide-line/60">
           {combinedToday.slice(0, 20).map(r => (
