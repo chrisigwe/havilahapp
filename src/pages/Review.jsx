@@ -136,19 +136,25 @@ export default function Review({ boot }) {
           Things worth asking about at {boot.branchName}. Nothing here means anyone
           did wrong — most of it is ordinary correction. It is here so it is seen.
         </p>
-        <div className="flex gap-2 mt-3">
+        {/* Four buttons at px-4 in one unwrapping row ran off the side
+            of a phone. The toggle keeps its width; the three periods are
+            a group that drops to a second line together rather than one
+            of them hanging off the edge alone. */}
+        <div className="flex flex-wrap items-center gap-2 mt-3">
           <button onClick={() => setShowHandled(v => !v)}
-            className={`h-10 px-4 rounded-xl border font-semibold ${showHandled
+            className={`h-10 px-4 rounded-xl border font-semibold shrink-0 ${showHandled
               ? 'border-leaf text-leaf' : 'border-line text-dim'}`}>
             {showHandled ? 'Hiding nothing' : 'Show handled'}
           </button>
-          {[7, 14, 30].map(d => (
-            <button key={d} onClick={() => setDays(d)}
-              className={`h-10 px-4 rounded-xl border font-semibold ${days === d
-                ? 'bg-amber text-bg border-amber' : 'border-line text-dim'}`}>
-              {d} days
-            </button>
-          ))}
+          <div className="flex gap-2 shrink-0">
+            {[7, 14, 30].map(d => (
+              <button key={d} onClick={() => setDays(d)}
+                className={`h-10 px-3 rounded-xl border font-semibold text-sm shrink-0 ${days === d
+                  ? 'bg-amber text-bg border-amber' : 'border-line text-dim'}`}>
+                {d} days
+              </button>
+            ))}
+          </div>
         </div>
       </div>
 
