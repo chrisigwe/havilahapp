@@ -354,9 +354,16 @@ export default function Folio({ boot, room, onClose, onChanged }) {
       key: 'room', kind: 'room', orderItemId: null,
       day: 'The room',
       what: 'Room charge',
-      where: totalNightsOnBill
-        ? `${totalNightsOnBill} night${totalNightsOnBill > 1 ? 's' : ''} at ${naira(nightRate)}`
-        : 'Accommodation',
+      // Once part of the room is paid, describing the WHOLE stay beside
+      // what is LEFT reads as arithmetic that does not work: Mr Ngoka's
+      // line said "5 nights at ₦35,000" against ₦30,000. So a part-paid
+      // room says what has been paid instead, and only an untouched one
+      // describes the stay.
+      where: roomFull - roomLeft > 0.009
+        ? `${naira(roomFull - roomLeft)} of ${naira(roomFull)} already paid`
+        : totalNightsOnBill
+          ? `${totalNightsOnBill} night${totalNightsOnBill > 1 ? 's' : ''} at ${naira(nightRate)}`
+          : 'Accommodation',
       amount: roomLeft,
     })
   }
