@@ -1553,17 +1553,24 @@ async function _recordStayPayment({ staff, stayId, businessDate, cycle, parts, i
     applied_location_id: applied === 'department' ? appliedLocationId : null,
   }))
   if (!rows.length) return
-  const { data: saved, error } = await supabase.from('payments').insert(rows).select('id')
+  const { data: saved, error } = await supabase.from('payments').insert(rows).select('id, amount')
   if (error) throw error
 
   // What the front desk TICKED (migration 505). items is
   // [{ orderItemId | null, amount }] — a null id means the room charge.
   //
-  // Attached to the FIRST payment row: a split across POS and cash is
-  // one settlement recorded as several tenders, and which tender paid
-  // which charge is not a thing anybody knows or needs. Attaching to
-  // one row keeps the total right and avoids inventing a split nobody
-  // made.
+  // Spread across the payment rows in order, each row taking what it is
+  // worth and no more.
+  //
+  // These used to all go on the FIRST row, on the reasoning that a
+  // settlement split across POS and cash is one event and which tender
+  // paid which charge is not a thing anybody knows. The total was right
+  // and every department figure was right — but it left rows like
+  // chigozie promise's ₦26,000 in Nnewi 207 carrying a single ₦30,000
+  // tick, which breaks the one rule that makes the ticks worth reading:
+  // a payment can never settle more than it is worth. Splitting a tick
+  // across two tenders invents nothing, because the two tenders were
+  // one settlement to begin with.
   //
   // Written after the payment, so a failure here cannot leave money
   // unrecorded. If it fails the payment still stands — said plainly,
@@ -1584,13 +1591,27 @@ async function _recordStayPayment({ staff, stayId, businessDate, cycle, parts, i
     ? items.filter(i => Number(i.amount) > 0)
     : await _autoAllocate(stayId, Number(rows.reduce((t, r) => t + Number(r.amount), 0)))
   if (picked.length && saved?.length) {
-    const { error: e2 } = await supabase.from('payment_items').insert(
-      picked.map(i => ({
-        payment_id: saved[0].id,
-        order_item_id: i.orderItemId || null,
-        branch_id: staff.branch_id,
-        amount: Number(i.amount),
-      })))
+    const spread = []
+    let row = 0
+    let roomLeft = Number(saved[0].amount || 0)
+    for (const i of picked) {
+      let left = Number(i.amount)
+      while (left > 0.009 && row < saved.length) {
+        const take = Math.min(left, roomLeft)
+        if (take > 0.009) {
+          spread.push({
+            payment_id: saved[row].id,
+            order_item_id: i.orderItemId || null,
+            branch_id: staff.branch_id,
+            amount: Math.round(take * 100) / 100,
+          })
+          left -= take
+          roomLeft -= take
+        }
+        if (roomLeft <= 0.009) { row += 1; roomLeft = Number(saved[row]?.amount || 0) }
+      }
+    }
+    const { error: e2 } = await supabase.from('payment_items').insert(spread)
     if (e2) {
       throw Object.assign(new Error(
         `The payment WAS recorded, but which charges it settles was not (${e2.message}). `
