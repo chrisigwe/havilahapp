@@ -12,8 +12,14 @@ import { naira } from '../lib/format'
 // dashboard, but Daily Sales renders it OUTSIDE, because there it must
 // still show for past dates when this dashboard (current balances
 // only) is hidden. Daily Sales therefore passes showRoomsSold={false}.
+// headless: the POS / Cash / Credit tile now supplies both the card
+// and the three figures (17 October 2026), so inside it this component
+// drops its own border and its own top row. Two "POS" figures on one
+// screen — the tile's net of what belongs to the departments, this
+// one's gross — would be the same label over two different numbers.
 export default function ReceptionDashboard({
   dashboard, canSeeInternal, roomsSold, showRoomsSold = false, className = 'mt-3',
+  headless = false,
 }) {
   if (!dashboard) return null
 
@@ -25,24 +31,29 @@ export default function ReceptionDashboard({
   const roomRateRemainingTotal = roomRateProgress.reduce((s, r) => s + r.remaining, 0)
 
   return (
-    <div className={`${className} rounded-2xl border border-amber bg-surface p-4`}>
-      <p className="font-semibold">Close of day</p>
-      <div className="grid grid-cols-3 gap-3 mt-3 pb-3 border-b border-line">
-        <div>
-          <div className="text-dim text-sm">POS</div>
-          <div className="tnum font-bold">{naira(dashboard.pos)}</div>
-        </div>
-        <div>
-          <div className="text-dim text-sm">Cash</div>
-          <div className="tnum font-bold">{naira(dashboard.cash)}</div>
-        </div>
-        <div>
-          <div className="text-dim text-sm">Credit</div>
-          <div className="tnum font-bold text-clay">{naira(dashboard.deferredTotal)}</div>
-        </div>
-      </div>
+    <div className={headless ? className
+      : `${className} rounded-2xl border border-amber bg-surface p-4`}>
+      {!headless && (
+        <>
+          <p className="font-semibold">Close of day</p>
+          <div className="grid grid-cols-3 gap-3 mt-3 pb-3 border-b border-line">
+            <div>
+              <div className="text-dim text-sm">POS</div>
+              <div className="tnum font-bold">{naira(dashboard.pos)}</div>
+            </div>
+            <div>
+              <div className="text-dim text-sm">Cash</div>
+              <div className="tnum font-bold">{naira(dashboard.cash)}</div>
+            </div>
+            <div>
+              <div className="text-dim text-sm">Credit</div>
+              <div className="tnum font-bold text-clay">{naira(dashboard.deferredTotal)}</div>
+            </div>
+          </div>
+        </>
+      )}
 
-      <div className="mt-3 flex items-baseline justify-between">
+      <div className="mt-3 flex items-baseline justify-between gap-3">
         <span className="text-dim">Deferred — owed across every live stay</span>
         <span className="tnum font-bold text-clay">{naira(dashboard.deferredTotal)}</span>
       </div>

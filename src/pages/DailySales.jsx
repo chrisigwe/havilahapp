@@ -216,9 +216,22 @@ export default function DailySales({ boot }) {
             </p>
           )}
           {/* showRoomsSold is false here: rooms sold renders above,
-              outside this block, so it still shows for past dates. */}
-          <ReceptionDashboard dashboard={receptionDashboard}
-            canSeeInternal={isGmOrAdmin} className="mt-4" />
+              outside this block, so it still shows for past dates.
+              Folded into the same tile every other department uses, so
+              Reception's day reads as three figures here too. */}
+          {receptionDashboard && (
+            <TillTile title="Close of day" open={detailOpen}
+              onToggle={() => setDetailOpen(o => !o)}
+              figures={[
+                { label: 'POS', value: receptionDashboard.pos },
+                { label: 'Cash', value: receptionDashboard.cash },
+                // Clay, as it was: this is what guests owe, not money in.
+                { label: 'Credit', value: receptionDashboard.deferredTotal, tone: 'text-clay' },
+              ]}>
+              <ReceptionDashboard dashboard={receptionDashboard} headless className=""
+                canSeeInternal={isGmOrAdmin} />
+            </TillTile>
+          )}
           {date !== lagosToday() && (
             <p className="text-dim text-sm mt-4">
               Deferred and advance figures only show for today — they reflect current

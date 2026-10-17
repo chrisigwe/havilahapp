@@ -932,7 +932,7 @@ export default function SalesEntry({ boot }) {
           <TillTile figures={tileFigures} note={tileNote} hidden={isMyTill && !tillSaved}
                     checkError={tillCheckError} open={detailOpen}
                     onToggle={() => setDetailOpen(o => !o)}>
-            <ReceptionDashboard dashboard={receptionDashboard}
+            <ReceptionDashboard dashboard={receptionDashboard} headless className=""
               canSeeInternal={isGmOrAdmin} roomsSold={roomsSold} showRoomsSold={isGmOrAdmin} />
           </TillTile>
           <MatchTill rows={[]} posTotal={inHand.pos} cashTotal={inHand.cash}

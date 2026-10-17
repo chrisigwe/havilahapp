@@ -46,12 +46,12 @@ export default function TillTile({
   const cols = figures.length === 2 ? 'grid-cols-2' : 'grid-cols-3'
   const canOpen = !hidden && !!children
 
-  const Fig = ({ label, value }) => (
+  const Fig = ({ label, value, tone }) => (
     <div className="min-w-0">
       <div className="text-dim text-sm">{label}</div>
       {hidden
         ? <div className="tnum font-bold text-dim tracking-widest">•••</div>
-        : <div className="tnum font-bold truncate">{naira(value)}</div>}
+        : <div className={`tnum font-bold truncate ${tone || ''}`}>{naira(value)}</div>}
     </div>
   )
 
@@ -74,7 +74,7 @@ export default function TillTile({
         )}
       </div>
       <div className={`grid ${cols} gap-3 mt-2`}>
-        {figures.map(f => <Fig key={f.label} label={f.label} value={f.value} />)}
+        {figures.map(f => <Fig key={f.label} label={f.label} value={f.value} tone={f.tone} />)}
       </div>
     </>
   )
