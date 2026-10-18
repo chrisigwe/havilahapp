@@ -97,6 +97,20 @@ export default function SalesEntry({ boot }) {
   // carried instead: on a band that stays put, on the button that
   // commits, and in the message that confirms (18 October 2026).
   const offToday = date !== todayDate
+  // Closing yesterday's account this morning is how this hotel works,
+  // not an exception to it (18 October 2026). Thirty days of entries:
+  // 1,568 sales keyed the day after the one they belong to against 332
+  // keyed the same day, and over half of those between 09:00 and 11:00.
+  // Demanding a typed reason for the normal way of working would have
+  // asked for one on four sales in every five — and a reason given
+  // sixty times a morning is "y", which protects nothing.
+  //
+  // So yesterday passes without being questioned; the day is still
+  // named on screen, because keying into the wrong day is the mistake
+  // that matters. Two days back or more is genuinely out of the
+  // ordinary — 138 sales in thirty days — and still has to say why.
+  const yesterdayDate = lagosDaysAgo(1)
+  const needsReason = offToday && date < yesterdayDate
   const dayShort = (d) => new Date(d + 'T12:00:00')
     .toLocaleDateString('en-NG', { weekday: 'short', day: 'numeric', month: 'short' })
 
@@ -665,8 +679,8 @@ export default function SalesEntry({ boot }) {
     }
     // A backdated entry with no reason is the one nobody can explain a
     // week later, when the figure it moved is being argued about.
-    if (offToday && !backdateReason.trim()) {
-      toast(`Say why this is going to ${dayShort(date)} — the reason is required when the date is not today`, 'error')
+    if (needsReason && !backdateReason.trim()) {
+      toast(`Say why this is going to ${dayShort(date)} — a reason is required beyond yesterday`, 'error')
       return
     }
     if (basket.length && looksLikeRepeat() &&
@@ -796,11 +810,17 @@ export default function SalesEntry({ boot }) {
       </div>
 
       {/* Pinned, so it is still on screen at the tenth entry. Nothing
-          at all on an ordinary day — the normal path stays clean. */}
+          at all on an ordinary day — the normal path stays clean.
+
+          Two tones. Closing yesterday only needs the day stated, and an
+          alarm shown every morning stops being read by the second week.
+          Older than that keeps the amber. */}
       {offToday && (
-        <div className="sticky top-0 z-20 -mx-5 px-5 py-2 bg-amber text-bg font-bold text-sm text-center">
+        <div className={`sticky top-0 z-20 -mx-5 px-5 py-2 font-bold text-sm text-center ${
+          needsReason ? 'bg-amber text-bg' : 'bg-raise text-amber border-b border-amber/40'}`}>
           Recording for {new Date(date + 'T12:00:00').toLocaleDateString('en-NG',
-            { weekday: 'long', day: 'numeric', month: 'long' })} — not today
+            { weekday: 'long', day: 'numeric', month: 'long' })}
+          {needsReason ? ' — not today' : ' — yesterday'}
         </div>
       )}
 
@@ -822,9 +842,9 @@ export default function SalesEntry({ boot }) {
               }
               setDate(v)
             }}
-            className={`h-12 px-3 rounded-xl bg-surface border tnum ${date !== todayDate
-              ? 'border-amber text-amber' : 'border-line'}`} />
-          {date !== todayDate && (
+            className={`h-12 px-3 rounded-xl bg-surface border tnum ${needsReason
+              ? 'border-amber text-amber' : offToday ? 'border-amber/40' : 'border-line'}`} />
+          {needsReason && (
             <input value={backdateReason} placeholder="Why this day? (required)"
               onChange={e => setBackdateReason(e.target.value)}
               className={`h-12 flex-1 px-3 rounded-xl bg-surface border ${
@@ -1628,7 +1648,7 @@ export default function SalesEntry({ boot }) {
               The same state as the field on the page: typing in either
               fills both, and whichever was used is what is stored on
               every line of the sale. */}
-          {offToday && (
+          {needsReason && (
             <div className="mt-8 rounded-2xl border border-amber bg-surface p-4">
               <p className="font-bold text-amber">
                 Recording for {new Date(date + 'T12:00:00').toLocaleDateString('en-NG',
@@ -1646,9 +1666,9 @@ export default function SalesEntry({ boot }) {
             </div>
           )}
 
-          <button onClick={commit} disabled={busy || (offToday && !backdateReason.trim())}
+          <button onClick={commit} disabled={busy || (needsReason && !backdateReason.trim())}
             className={`w-full h-16 rounded-2xl bg-amber text-bg text-xl font-bold disabled:opacity-40 ${
-              offToday ? 'mt-3' : 'mt-8'}`}>
+              needsReason ? 'mt-3' : 'mt-8'}`}>
             {busy ? 'Saving…'
               : paying.roomStay ? `Charge to Room ${paying.roomStay.room}`
                 : offToday ? `Save sale · ${dayShort(date)}` : 'Save sale'}
