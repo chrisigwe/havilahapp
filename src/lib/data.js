@@ -955,7 +955,7 @@ export async function loadRoomBillHandover(branchId, date) {
   const { data, error } = await supabase.from('payment_items')
     .select(`amount,
              order_items!inner(location_id, category, description),
-             payments!inner(business_date, branch_id, method,
+             payments!inner(business_date, branch_id, method, location_id,
                             stays(rooms(room_number), guests!guest_id(full_name)))`)
     .eq('payments.branch_id', branchId)
     .eq('payments.business_date', date)
@@ -971,6 +971,10 @@ export async function loadRoomBillHandover(branchId, date) {
     // POS money is in the bank and the departments' shares are written on
     // the one physical slip; cash actually changes hands at close.
     method: r.payments?.method || null,
+    // WHERE the money was taken. Null is the front desk; anything else
+    // is a department's own till. Reception may only be debited for
+    // shares that actually passed through Reception — see SalesEntry.
+    paymentLocationId: r.payments?.location_id || null,
     location_id: r.order_items?.location_id || null,
     category: r.order_items?.category || null,
     // Only the GM's Daily sales page reads these three; the department

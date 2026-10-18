@@ -299,7 +299,21 @@ export default function SalesEntry({ boot }) {
   // — the day's own figures carry it as debt recovered (531). Reception
   // still needs the whole of it, because the departments' shares are on
   // its slip and in its drawer, and come off what it hands over.
-  const handedOut = splitBy(handover)
+  // Only what the FRONT DESK collected on the departments' behalf.
+  //
+  // 18 October 2026. Awka's 17th: nine card payments, ₦228,700. Six
+  // were room rate at the front desk (₦175,000); the other three were
+  // guests settling food and drink AT the Restaurant's and MainBar's
+  // own tills (₦53,700). Reception's figure counts front-desk money
+  // only — correctly — but this deduction counted every department
+  // share from every payment, so ₦53,700 that was never in Reception's
+  // slip was taken out of it anyway. The tile read ₦121,300 where the
+  // front desk had ₦175,000 on the terminal.
+  //
+  // A department collecting at its own till keeps that money and is
+  // credited with recovering the debt (531); Reception never holds it,
+  // so Reception is never debited for it.
+  const handedOut = splitBy(handover.filter(h => !h.paymentLocationId))
   const handedOutTotal = isReception ? handedOut.pos + handedOut.cash : 0
   // Say what is in the figure whenever it is more than the day's own
   // sales, so nobody has to guess why the terminal reads more than the
@@ -311,7 +325,7 @@ export default function SalesEntry({ boot }) {
     ].filter(Boolean)
     if (isReception) {
       return handedOutTotal > 0
-        ? `What should be in hand. Your whole slip and drawer, less ${naira(handedOutTotal)} that belongs to the departments.`
+        ? `What should be in hand. Your whole slip and drawer, less ${naira(handedOutTotal)} you collected here on the departments' behalf.`
         : 'What should be in hand at the front desk.'
     }
     const credit = roomUnpaidToday > 0
