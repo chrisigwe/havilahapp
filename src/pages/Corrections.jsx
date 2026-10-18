@@ -221,10 +221,6 @@ export default function Corrections({ boot }) {
     return [...m.entries()].sort((a, b) => b[0].localeCompare(a[0]))
   }
   const entryDays = useMemo(() => groupBy(filteredRows, r => r.business_date), [filteredRows])
-  // Grouped by the day the CHANGE was made, which is the question this
-  // view answers — not the day the entry it changed belongs to. Both
-  // are shown on the row.
-  const auditDays = useMemo(() => groupBy(filteredAudit, a => lagosDateOf(a.happened_at)), [filteredAudit])
   const saleCount = scopedRows.filter(r => r.kind === 'sale').length
   const moveCount = scopedRows.length - saleCount
   // Each half of the query is capped at 300 rows. Nothing said so, so a
@@ -259,6 +255,16 @@ export default function Corrections({ boot }) {
       || (a.business_date || '').includes(q)
       || (a.done_by_name || '').toLowerCase().includes(q))
   }, [audit, query, actionFilter])
+
+  // Grouped by the day the CHANGE was made, which is the question this
+  // view answers — not the day the entry it changed belongs to. Both
+  // are shown on the row.
+  //
+  // MUST stay below filteredAudit: useMemo runs its function during
+  // render, so reading a const declared further down throws "Cannot
+  // access before initialization" and takes the whole page with it.
+  // Same fault, same shape, as roomChargedToday on the Sales page.
+  const auditDays = useMemo(() => groupBy(filteredAudit, a => lagosDateOf(a.happened_at)), [filteredAudit])
 
   const refresh = useCallback(() => {
     if (canEdit) {
