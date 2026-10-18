@@ -278,22 +278,33 @@ export async function loadActivity(branchId, days = 14, ownOnlyStaffId = null, l
     ? (col === 'sale' ? q.eq('location_id', locationId)
                        : q.or(`from_location.eq.${locationId},to_location.eq.${locationId}`))
     : q
+  // Who recorded it, by name. A corrections list that cannot say whose
+  // entry this is makes every judgement about it guesswork, and the
+  // page already decides what you may do by comparing recorded_by to
+  // your own id — it just never showed it (18 October 2026). Both joins
+  // are the ones loadToday and the Store screen already use, so they
+  // resolve over the same foreign keys and the same policies.
+  const saleCols = 'id, business_date, stock_item_id, description, location_id, tier, qty, unit_price, amount,'
+    + ' recorded_by, on_behalf_of, created_at, customers(name),'
+    + ' recorder:recorded_by(full_name), stood_in_for:on_behalf_of(full_name)'
+  const moveCols = 'id, business_date, stock_item_id, movement_type, from_location, to_location, qty,'
+    + ' unit_cost, note, damage_reason, recorded_by, created_at, staff:recorded_by(full_name)'
   const [sales, moves] = await Promise.all([
     // a sale recorded on someone's behalf belongs on THEIR list, not
     // the recorder's, so match either column
     atLocation(
       (ownOnlyStaffId
         ? supabase.from('sales')
-            .select('id, business_date, stock_item_id, description, location_id, tier, qty, unit_price, amount, recorded_by, on_behalf_of, created_at, customers(name)')
+            .select(saleCols)
             .eq('branch_id', branchId).gte('business_date', since)
             .or(`recorded_by.eq.${ownOnlyStaffId},on_behalf_of.eq.${ownOnlyStaffId}`)
         : supabase.from('sales')
-            .select('id, business_date, stock_item_id, description, location_id, tier, qty, unit_price, amount, recorded_by, on_behalf_of, created_at, customers(name)')
+            .select(saleCols)
             .eq('branch_id', branchId).gte('business_date', since)
       ), 'sale'
     ).order('created_at', { ascending: false }).limit(300),
     atLocation(own(supabase.from('stock_movements')
-      .select('id, business_date, stock_item_id, movement_type, from_location, to_location, qty, unit_cost, note, damage_reason, recorded_by, created_at')
+      .select(moveCols)
       .eq('branch_id', branchId).gte('business_date', since)
       .is('reference_id', null)          // sale deductions are shown as their sale
       ), 'movement').order('created_at', { ascending: false }).limit(300),

@@ -10,6 +10,40 @@ import MergeGuestsSheet from '../components/MergeGuestsSheet'
 import MergeCustomersSheet from '../components/MergeCustomersSheet'
 import { MANAGEMENT, RECEPTION_EDIT, SUPERVISOR, is } from '../lib/roles'
 
+// The movement labels, in one place. describe() held them inline and
+// the row badge needed the same words — two copies drift.
+const MOVEMENT_LABEL = {
+  restock: 'Received', transfer: 'Disbursed', issue: 'Issued',
+  damage: 'Damaged', complimentary: 'PR / free', adjustment: 'Adjustment',
+  opening: 'Opening', conversion: 'Converted',
+}
+
+// A day of entries or changes, closed unless it is the newest or the
+// person opened it. Fourteen days of two departments is several hundred
+// rows, and they were all painted at once in one flat list: the only way
+// to find Tuesday's entry was to scroll past Wednesday's.
+function DayGroup({ label, sub, right, open, onToggle, children }) {
+  return (
+    <section className="mt-3 rounded-2xl border border-line bg-surface">
+      <button type="button" onClick={onToggle} aria-expanded={open}
+        className="w-full px-4 py-3 flex items-baseline justify-between gap-3 text-left">
+        <span className="min-w-0">
+          <span className="font-semibold">{label}</span>
+          {sub && <span className="text-dim text-sm block">{sub}</span>}
+        </span>
+        <span className="flex items-baseline gap-2 shrink-0">
+          {right}
+          <svg viewBox="0 0 20 20" className={`w-4 h-4 text-dim transition-transform ${open ? 'rotate-180' : ''}`}
+               fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+            <path d="M5 8l5 5 5-5" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+        </span>
+      </button>
+      {open && <div className="px-4 pb-1 border-t border-line">{children}</div>}
+    </section>
+  )
+}
+
 export default function Corrections({ boot }) {
   const { staff, allLocations, locations, items, methods } = boot
   const toast = useToast()
@@ -58,6 +92,13 @@ export default function Corrections({ boot }) {
   const [confirm, setConfirm] = useState(null)
   const [busy, setBusy] = useState(false)
   const [query, setQuery] = useState('')
+  // Shape only. Neither of these changes what is loaded or what may be
+  // corrected — they filter and fold rows already in hand.
+  const [kindFilter, setKindFilter] = useState('all')      // all | sale | movement
+  const [actionFilter, setActionFilter] = useState('all')  // all | edited | deleted
+  // null = "only the newest day is open". A Set once the person has
+  // opened or shut one themselves.
+  const [openDays, setOpenDays] = useState(null)
   // Editors (storekeeper+) legitimately oversee every department, so
   // they see all of them with an "All departments" option, same as
   // Sales/Credit/Recovery. Departmental staff (bar/front_desk) should
@@ -118,8 +159,18 @@ export default function Corrections({ boot }) {
   const locById  = useMemo(() => Object.fromEntries(allLocations.map(l => [l.id, l])), [allLocations])
 
   const rowLocationId = (r) => r.kind === 'sale' ? r.location_id : (r.to_location || r.from_location)
+  // The figure openEdit() put in the price box, so "was" compares
+  // against the same thing the form was filled from.
+  const origPrice = (r) => r.kind === 'sale' ? r.unit_price : (r.unit_cost ?? null)
 
-  const filteredRows = useMemo(() => {
+  // Department and search scope. Kept apart from the Sales/Stock filter
+  // below so the counts on the card describe the whole scope, not
+  // whichever kind happens to be selected.
+  //
+  // Who recorded it is searchable now that the name is loaded — "find
+  // me Daniel's entries" was the first thing asked of this box and the
+  // only thing it could not do.
+  const scopedRows = useMemo(() => {
     const q = query.trim().toLowerCase()
     return (rows || []).filter(r => {
       if (deptFilter !== 'all' && rowLocationId(r) !== deptFilter) return false
@@ -128,16 +179,86 @@ export default function Corrections({ boot }) {
       const dept = locById[rowLocationId(r)]?.name?.toLowerCase() || ''
       const date = r.business_date || ''
       const customer = r.customers?.name?.toLowerCase() || ''
-      return item.includes(q) || dept.includes(q) || date.includes(q) || customer.includes(q)
+      const who = (r.kind === 'sale'
+        ? `${r.recorder?.full_name || ''} ${r.stood_in_for?.full_name || ''}`
+        : (r.staff?.full_name || '')).toLowerCase()
+      return item.includes(q) || dept.includes(q) || date.includes(q)
+        || customer.includes(q) || who.includes(q)
     })
   }, [rows, query, deptFilter, itemById, locById])
 
+  const filteredRows = useMemo(() =>
+    kindFilter === 'all' ? scopedRows : scopedRows.filter(r => r.kind === kindFilter),
+    [scopedRows, kindFilter])
+
+  // ── Folding by day ────────────────────────────────────────────────
+  // While a search is running every day is open: collapsing them would
+  // have hidden the very rows the search found, and the page would read
+  // as "nothing matches".
+  const searching = !!query.trim()
+  const dayOpen = (d, first) => searching || (openDays ? openDays.has(d) : d === first)
+  const toggleDay = (d, first) => setOpenDays(cur => {
+    const next = cur ? new Set(cur) : new Set(first ? [first] : [])
+    if (next.has(d)) next.delete(d); else next.add(d)
+    return next
+  })
+  const dayLabel = (d) =>
+    d === lagosToday() ? 'Today'
+    : d === lagosDaysAgo(1) ? 'Yesterday'
+    : new Date(d + 'T12:00:00').toLocaleDateString('en-NG',
+        { weekday: 'long', day: 'numeric', month: 'long' })
+  // The Lagos calendar date of a timestamp, so a change made at 00:30
+  // Lagos is not filed under the previous day by the device's clock.
+  const lagosDateOf = (ts) =>
+    new Date(ts).toLocaleDateString('en-CA', { timeZone: 'Africa/Lagos' })
+  const groupBy = (list, keyOf) => {
+    const m = new Map()
+    for (const r of list) {
+      const k = keyOf(r) || '—'
+      if (!m.has(k)) m.set(k, [])
+      m.get(k).push(r)
+    }
+    return [...m.entries()].sort((a, b) => b[0].localeCompare(a[0]))
+  }
+  const entryDays = useMemo(() => groupBy(filteredRows, r => r.business_date), [filteredRows])
+  // Grouped by the day the CHANGE was made, which is the question this
+  // view answers — not the day the entry it changed belongs to. Both
+  // are shown on the row.
+  const auditDays = useMemo(() => groupBy(filteredAudit, a => lagosDateOf(a.happened_at)), [filteredAudit])
+  const saleCount = scopedRows.filter(r => r.kind === 'sale').length
+  const moveCount = scopedRows.length - saleCount
+  // Each half of the query is capped at 300 rows. Nothing said so, so a
+  // busy fortnight silently stopped short of the oldest days.
+  const capHit = (rows || []).filter(r => r.kind === 'sale').length >= 300
+    || (rows || []).filter(r => r.kind === 'movement').length >= 300
+
+  // Who keyed it in, by name. The page decided what you could do to a
+  // row by comparing recorded_by with your own id, and never showed it.
+  const whoOf = (r) => r.kind === 'sale'
+    ? (r.stood_in_for?.full_name
+        ? `${r.stood_in_for.full_name} (keyed by ${r.recorder?.full_name || 'unknown'})`
+        : (r.recorder?.full_name || 'unknown'))
+    : (r.staff?.full_name || 'unknown')
+  const timeOf = (r) => r.created_at
+    ? new Date(r.created_at).toLocaleTimeString('en-NG',
+        { timeZone: 'Africa/Lagos', hour: '2-digit', minute: '2-digit' })
+    : ''
+  const badgeOf = (r) => r.kind === 'sale'
+    ? 'Sale' : (MOVEMENT_LABEL[r.movement_type] || r.movement_type)
+
   const filteredAudit = useMemo(() => {
     const q = query.trim().toLowerCase()
-    if (!q) return audit || []
-    return (audit || []).filter(a =>
-      a.summary?.toLowerCase().includes(q) || (a.business_date || '').includes(q))
-  }, [audit, query])
+    const byAction = actionFilter === 'all'
+      ? (audit || [])
+      : (audit || []).filter(a => (a.action === 'deleted' ? 'deleted' : 'edited') === actionFilter)
+    if (!q) return byAction
+    // Who made the change is searchable here too — it is the question
+    // this view exists to answer.
+    return byAction.filter(a =>
+      a.summary?.toLowerCase().includes(q)
+      || (a.business_date || '').includes(q)
+      || (a.done_by_name || '').toLowerCase().includes(q))
+  }, [audit, query, actionFilter])
 
   const refresh = useCallback(() => {
     if (canEdit) {
@@ -160,9 +281,7 @@ export default function Corrections({ boot }) {
           + (r.customers?.name ? ` · customer: ${r.customers.name}` : ''),
         money: naira(r.amount ?? r.qty * r.unit_price) }
     }
-    const label = { restock: 'Received', transfer: 'Disbursed', issue: 'Issued',
-                    damage: 'Damaged', complimentary: 'PR / free', adjustment: 'Adjustment',
-                    opening: 'Opening', conversion: 'Converted' }[r.movement_type] || r.movement_type
+    const label = MOVEMENT_LABEL[r.movement_type] || r.movement_type
     const where = r.movement_type === 'transfer'
       ? `to ${locById[r.to_location]?.name || '—'}`
       : r.movement_type === 'conversion'
@@ -299,7 +418,7 @@ export default function Corrections({ boot }) {
         {[...(seesGuests && landsOnReception ? [['guests', 'Reception']] : []),
           ['entries', 'Entries'],
           ...(seesGuests && !landsOnReception ? [['guests', 'Reception']] : []),
-          ...(!ownOnly ? [['history', 'Change history']] : [])].map(([k, label]) => (
+          ...(!ownOnly ? [['history', 'History']] : [])].map(([k, label]) => (
           <button key={k} onClick={() => setView(k)}
             className={`flex-1 h-12 rounded-xl border font-bold ${view === k
               ? 'bg-amber text-bg border-amber' : 'border-line text-dim'}`}>
@@ -315,7 +434,7 @@ export default function Corrections({ boot }) {
       )}
 
       <input value={query} onChange={e => setQuery(e.target.value)}
-        placeholder="Search by item, customer, department, or date (YYYY-MM-DD)"
+        placeholder="Search by item, person, customer, department, or date (YYYY-MM-DD)"
         className="w-full h-12 px-4 mt-1 mb-2 rounded-xl bg-surface border border-line placeholder:text-dim" />
 
       {view !== 'history' && deptChips.length > 1 && (
@@ -512,82 +631,206 @@ export default function Corrections({ boot }) {
           )}
         </>
       ) : view === 'history' ? (
-        <ul className="divide-y divide-line/60">
-          {filteredAudit.map(a => (
-            <li key={a.id} className="py-3">
-              <div className="flex items-baseline gap-3">
-                <span className={`text-sm font-bold ${a.action === 'deleted' ? 'text-clay' : 'text-amber'}`}>
-                  {a.action === 'deleted' ? 'Deleted' : 'Edited'}
-                </span>
-                <span className="flex-1" />
-                <span className="tnum text-dim text-sm">
-                  {new Date(a.happened_at).toLocaleString('en-NG', { timeZone: 'Africa/Lagos',
-                    day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}
-                </span>
-              </div>
-              <p className="mt-1">{a.summary}</p>
-              <p className="text-dim text-sm mt-0.5">by {a.done_by_name || 'unknown'}</p>
-            </li>
-          ))}
-          {audit && !filteredAudit.length && (
-            <li className="py-8 text-center text-dim">
-              {audit.length ? 'Nothing matches that search.' : 'Nothing has been changed or deleted yet.'}
-            </li>
+        <>
+        {/* The record of who changed what. It said "every edit and
+            deletion at this branch" and showed the newest hundred —
+            true of the query, not of the sentence. It says so now, and
+            counts what it is holding (18 October 2026). */}
+        <section className="rounded-2xl border border-line bg-surface p-4">
+          <div className="text-dim text-sm">Changes to records at this branch</div>
+          <div className="tnum text-2xl font-bold">
+            {filteredAudit.length} {filteredAudit.length === 1 ? 'change' : 'changes'}
+          </div>
+          {!!audit?.length && (
+            <div className="text-dim text-sm mt-1">
+              {audit.filter(a => a.action !== 'deleted').length} edited ·{' '}
+              <span className={audit.filter(a => a.action === 'deleted').length ? 'text-clay' : ''}>
+                {audit.filter(a => a.action === 'deleted').length} deleted
+              </span>
+              {audit.length >= 100 && <span className="text-amber"> · newest 100 only</span>}
+            </div>
           )}
-          {!audit && <li className="py-8 text-center text-dim">Loading…</li>}
-        </ul>
-      ) : (
-      <>
-      <p className="text-dim text-sm pb-2">
-        {ownOnly
-          ? 'Your own entries from the last 7 days. You can correct them here; ask a manager if something needs removing.'
-          : 'Last 14 days. Deleting a sale also reverses its stock deduction.'}
-      </p>
-      <ul className="divide-y divide-line/60">
-        {filteredRows.map(r => {
-          const d = describe(r)
+          <p className="text-dim text-xs mt-2 pt-2 border-t border-line">
+            Nothing here can be altered. An entry that was deleted still shows what it
+            was and who removed it.
+          </p>
+        </section>
+
+        <div className="flex gap-2 mt-3">
+          {[['all', 'All'], ['edited', 'Edits'], ['deleted', 'Deletions']].map(([k, label]) => (
+            <button key={k} onClick={() => setActionFilter(k)}
+              className={`flex-1 h-10 rounded-xl border text-sm font-semibold ${actionFilter === k
+                ? 'bg-raise border-amber text-amber' : 'border-line text-dim'}`}>
+              {label}
+            </button>
+          ))}
+        </div>
+
+        {auditDays.map(([day, dayRows]) => {
+          const first = auditDays[0][0]
+          const dels = dayRows.filter(a => a.action === 'deleted').length
           return (
-            <li key={`${r.kind}:${r.id}`} className="py-3">
-              <div className="flex items-baseline gap-3">
-                <span className="flex-1 min-w-0 truncate font-semibold">{d.title}</span>
-                <span className="tnum text-dim text-sm">{r.business_date?.slice(5)}</span>
-              </div>
-              <div className="flex items-center gap-3 mt-1">
-                <span className="flex-1 text-dim text-sm truncate">{d.detail}</span>
-                <span className="tnum">{r.qty}</span>
-                {d.money && <span className="tnum text-dim">{d.money}</span>}
-              </div>
-              <div className="flex gap-2 mt-2">
-                {(isEditor || (canCorrectSales && r.kind === 'sale')
-                  || (r.recorded_by === staff.id && r.business_date >= lagosDaysAgo(6))) && (
-                  <button onClick={() => openEdit(r)}
-                    className="h-10 px-4 rounded-lg border border-line text-sm font-semibold">Edit</button>
-                )}
-                {!isEditor && r.recorded_by === staff.id && r.business_date < lagosDaysAgo(6) && (
-                  <span className="text-dim text-sm self-center">
-                    Too old to edit yourself — ask a manager
-                  </span>
-                )}
-                {(canDeleteAny || (isStorekeeper && r.kind !== 'sale'
-                    && r.recorded_by === staff.id && r.business_date >= lagosDaysAgo(1))) && (
-                  <button onClick={() => setConfirm(r)}
-                    className="h-10 px-4 rounded-lg border border-clay text-clay text-sm font-semibold">Delete</button>
-                )}
-                {r.on_behalf_of && r.recorded_by !== staff.id && (
-                  <span className="text-dim text-sm self-center">
-                    Recorded on your behalf — ask a manager to correct it
-                  </span>
-                )}
-              </div>
-            </li>
+            <DayGroup key={day} label={dayLabel(day)}
+              sub={`${dayRows.length} ${dayRows.length === 1 ? 'change' : 'changes'}`}
+              right={dels > 0
+                ? <span className="text-clay text-sm font-semibold">{dels} deleted</span>
+                : null}
+              open={dayOpen(day, first)} onToggle={() => toggleDay(day, first)}>
+              <ul className="divide-y divide-line/60">
+                {dayRows.map(a => (
+                  <li key={a.id} className="py-3">
+                    <div className="flex items-baseline gap-2">
+                      <span className={`text-xs font-bold rounded-full px-2 py-0.5 border shrink-0 ${
+                        a.action === 'deleted' ? 'border-clay text-clay' : 'border-amber text-amber'}`}>
+                        {a.action === 'deleted' ? 'Deleted' : 'Edited'}
+                      </span>
+                      {a.entity && <span className="text-dim text-xs shrink-0">{a.entity}</span>}
+                      <span className="flex-1" />
+                      <span className="tnum text-dim text-xs shrink-0">
+                        {new Date(a.happened_at).toLocaleTimeString('en-NG', { timeZone: 'Africa/Lagos',
+                          hour: '2-digit', minute: '2-digit' })}
+                      </span>
+                    </div>
+                    <p className="mt-1 break-words">{a.summary}</p>
+                    <p className="text-dim text-sm mt-0.5">
+                      by {a.done_by_name || 'unknown'}
+                      {a.business_date && <span> · entry dated {a.business_date}</span>}
+                    </p>
+                  </li>
+                ))}
+              </ul>
+            </DayGroup>
           )
         })}
-        {!filteredRows.length && (
-          <li className="py-8 text-center text-dim">
-            {rows.length ? 'Nothing matches that search.' : 'No entries in the last 14 days.'}
-          </li>
+
+        {audit && !filteredAudit.length && (
+          <p className="py-8 text-center text-dim">
+            {!audit.length ? 'Nothing has been changed or deleted yet.'
+              : searching ? `Nothing matches “${query.trim()}”.`
+              : actionFilter === 'deleted' ? 'Nothing has been deleted.'
+              : 'Nothing has been edited.'}
+          </p>
         )}
-      </ul>
+        {!audit && <p className="py-8 text-center text-dim">Loading…</p>}
+        </>
+      ) : (
+      <>
+      {/* What this list is, before the list (18 October 2026). The page
+          opened on one grey sentence and then several hundred identical
+          rows: no count, no sense of how far back it really reached,
+          and nothing saying the query stops at 300 of each kind. */}
+      <section className="rounded-2xl border border-line bg-surface p-4">
+        <div className="text-dim text-sm">
+          {ownOnly ? 'Your own entries · last 7 days' : 'Last 14 days'}
+          {deptFilter !== 'all' && locById[deptFilter]
+            ? ` · ${locById[deptFilter].name}`
+            : ' · all departments'}
+        </div>
+        <div className="tnum text-2xl font-bold">
+          {filteredRows.length} {filteredRows.length === 1 ? 'entry' : 'entries'}
+        </div>
+        <div className="text-dim text-sm mt-1">
+          {saleCount} {saleCount === 1 ? 'sale' : 'sales'} · {moveCount} stock{' '}
+          {moveCount === 1 ? 'movement' : 'movements'}
+          {capHit && <span className="text-amber"> · newest 300 of each kind</span>}
+        </div>
+        <p className="text-dim text-xs mt-2 pt-2 border-t border-line">
+          {ownOnly
+            ? 'You can correct these yourself. Ask a manager if something needs removing.'
+            : 'Deleting a sale also reverses its stock deduction. Every edit and deletion is kept under History.'}
+        </p>
+      </section>
+
+      {/* A correction is nearly always to one or the other, and the two
+          were shuffled together in one stream. */}
+      <div className="flex gap-2 mt-3">
+        {[['all', 'All'], ['sale', 'Sales'], ['movement', 'Stock']].map(([k, label]) => (
+          <button key={k} onClick={() => setKindFilter(k)}
+            className={`flex-1 h-10 rounded-xl border text-sm font-semibold ${kindFilter === k
+              ? 'bg-raise border-amber text-amber' : 'border-line text-dim'}`}>
+            {label}
+          </button>
+        ))}
+      </div>
+
+      {entryDays.map(([day, dayRows]) => {
+        const first = entryDays[0][0]
+        const money = dayRows.reduce((t, r) => t + (r.kind === 'sale'
+          ? Number(r.amount ?? r.qty * r.unit_price ?? 0) : 0), 0)
+        return (
+          <DayGroup key={day} label={dayLabel(day)}
+            sub={`${dayRows.length} ${dayRows.length === 1 ? 'entry' : 'entries'}`}
+            right={money > 0 ? <span className="tnum font-semibold">{naira(money)}</span> : null}
+            open={dayOpen(day, first)} onToggle={() => toggleDay(day, first)}>
+            <ul className="divide-y divide-line/60">
+              {dayRows.map(r => {
+                const d = describe(r)
+                return (
+                  <li key={`${r.kind}:${r.id}`} className="py-3">
+                    <div className="flex items-baseline gap-2">
+                      <span className="flex-1 min-w-0 font-semibold break-words">{d.title}</span>
+                      {/* The kind, as a word rather than buried in the
+                          middle of a grey sentence. A damage write-off
+                          and a sale looked identical at a glance. */}
+                      <span className={`shrink-0 text-xs font-bold rounded-full px-2 py-0.5 border ${
+                        r.kind === 'sale' ? 'border-line text-dim'
+                        : r.movement_type === 'damage' ? 'border-clay text-clay'
+                        : 'border-amber text-amber'}`}>
+                        {badgeOf(r)}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-3 mt-1">
+                      <span className="flex-1 min-w-0 text-dim text-sm break-words">{d.detail}</span>
+                      <span className="tnum shrink-0">{r.qty}</span>
+                      {d.money && <span className="tnum text-dim shrink-0">{d.money}</span>}
+                    </div>
+                    {/* Who keyed it and when. Without a name, every
+                        judgement about whether a row should be touched
+                        was guesswork — and two entries of the same item
+                        on the same day could not be told apart at all. */}
+                    <div className="text-dim text-xs mt-0.5">
+                      {timeOf(r) && <span className="tnum">{timeOf(r)} · </span>}
+                      by {whoOf(r)}
+                    </div>
+                    <div className="flex gap-2 mt-2">
+                      {(isEditor || (canCorrectSales && r.kind === 'sale')
+                        || (r.recorded_by === staff.id && r.business_date >= lagosDaysAgo(6))) && (
+                        <button onClick={() => openEdit(r)}
+                          className="h-10 px-4 rounded-lg border border-line text-sm font-semibold">Edit</button>
+                      )}
+                      {!isEditor && r.recorded_by === staff.id && r.business_date < lagosDaysAgo(6) && (
+                        <span className="text-dim text-sm self-center">
+                          Too old to edit yourself — ask a manager
+                        </span>
+                      )}
+                      {(canDeleteAny || (isStorekeeper && r.kind !== 'sale'
+                          && r.recorded_by === staff.id && r.business_date >= lagosDaysAgo(1))) && (
+                        <button onClick={() => setConfirm(r)}
+                          className="h-10 px-4 rounded-lg border border-clay text-clay text-sm font-semibold">Delete</button>
+                      )}
+                      {r.on_behalf_of && r.recorded_by !== staff.id && (
+                        <span className="text-dim text-sm self-center">
+                          Recorded on your behalf — ask a manager to correct it
+                        </span>
+                      )}
+                    </div>
+                  </li>
+                )
+              })}
+            </ul>
+          </DayGroup>
+        )
+      })}
+
+      {!filteredRows.length && (
+        <p className="py-8 text-center text-dim">
+          {!rows.length ? (ownOnly ? 'You have no entries in the last 7 days.' : 'No entries in the last 14 days.')
+            : searching ? `Nothing matches “${query.trim()}”.`
+            : kindFilter === 'sale' ? 'No sales here in this period.'
+            : kindFilter === 'movement' ? 'No stock movements here in this period.'
+            : 'Nothing to show.'}
+        </p>
+      )}
       </>
       )}
 
@@ -613,16 +856,57 @@ export default function Corrections({ boot }) {
             </>
           )}
 
+          {/* What it was, next to what it is becoming. The date field
+              has always named the move it was making; quantity and
+              price — the two that change money — were typed over in
+              silence, so a mistyped correction looked exactly like a
+              correct one (18 October 2026). */}
           <label className="block mt-6 text-dim">Quantity</label>
           <input type="number" inputMode="decimal" value={edit.qty}
             onChange={e => setEdit({ ...edit, qty: e.target.value })}
-            className="mt-2 h-14 w-full px-4 rounded-xl bg-surface border border-line tnum" />
+            className={`mt-2 h-14 w-full px-4 rounded-xl bg-surface border tnum ${
+              String(edit.qty) !== String(edit.row.qty) ? 'border-amber' : 'border-line'}`} />
+          {String(edit.qty) !== String(edit.row.qty) && (
+            <p className="text-amber text-sm mt-1 tnum">Was {edit.row.qty}</p>
+          )}
           <label className="block mt-4 text-dim">
             {edit.row.kind === 'sale' ? 'Unit price' : 'Unit cost (optional)'}
           </label>
           <input type="number" inputMode="decimal" value={edit.price}
             onChange={e => setEdit({ ...edit, price: e.target.value })}
-            className="mt-2 h-14 w-full px-4 rounded-xl bg-surface border border-line tnum" />
+            className={`mt-2 h-14 w-full px-4 rounded-xl bg-surface border tnum ${
+              String(edit.price) !== String(origPrice(edit.row) ?? '') ? 'border-amber' : 'border-line'}`} />
+          {String(edit.price) !== String(origPrice(edit.row) ?? '') && (
+            <p className="text-amber text-sm mt-1 tnum">
+              Was {origPrice(edit.row) == null ? 'blank' : naira(origPrice(edit.row))}
+            </p>
+          )}
+
+          {/* The line's own total, before and after. The payments box
+              below already demands a figure to match; this is where
+              that figure comes from. */}
+          {(() => {
+            const wasTotal = Number(edit.row.kind === 'sale'
+              ? (edit.row.amount ?? edit.row.qty * edit.row.unit_price)
+              : edit.row.qty * (edit.row.unit_cost || 0))
+            const nowTotal = Number(edit.qty || 0) * Number(edit.price || 0)
+            if (!wasTotal && !nowTotal) return null
+            const moved = Math.abs(nowTotal - wasTotal) > 0.009
+            return (
+              <div className="mt-4 rounded-xl border border-line bg-raise px-4 py-3">
+                <div className="flex justify-between gap-3">
+                  <span className="text-dim text-sm">Line total</span>
+                  <span className="tnum font-bold">{naira(nowTotal)}</span>
+                </div>
+                {moved && (
+                  <div className="flex justify-between gap-3 mt-1">
+                    <span className="text-amber text-sm">Was</span>
+                    <span className="tnum text-amber text-sm">{naira(wasTotal)}</span>
+                  </div>
+                )}
+              </div>
+            )
+          })()}
           {edit.row.kind === 'sale' && edit.payments && (
             <div className="mt-5">
               <div className="text-dim mb-2">
@@ -772,10 +1056,20 @@ export default function Corrections({ boot }) {
       {confirm && (
         <Sheet onClose={() => setConfirm(null)}>
           <h2 className="text-2xl font-bold">Delete this entry?</h2>
-          <p className="text-dim mt-2">
-            {describe(confirm).title} · {describe(confirm).detail} · {confirm.qty}
+          <p className="mt-2 font-semibold">{describe(confirm).title}</p>
+          <p className="text-dim mt-1">
+            {describe(confirm).detail} · {confirm.qty}
+            {describe(confirm).money ? ` · ${describe(confirm).money}` : ''}
           </p>
-          <p className="text-dim mt-3">This cannot be undone. Stock returns to what it was.</p>
+          {/* Whose entry, and when they keyed it. Deleting someone
+              else's record without being told whose it is was how a
+              correction became an argument. */}
+          <p className="text-dim text-sm mt-1">
+            Recorded by {whoOf(confirm)}
+            {timeOf(confirm) && <span className="tnum"> at {timeOf(confirm)}</span>}
+            {confirm.business_date && <span className="tnum"> on {confirm.business_date}</span>}
+          </p>
+          <p className="text-clay mt-3">This cannot be undone. Stock returns to what it was.</p>
           <button onClick={doDelete} disabled={busy}
             className="mt-6 w-full h-14 rounded-2xl bg-clay text-bg text-lg font-bold disabled:opacity-40">
             {busy ? 'Deleting…' : 'Delete'}
