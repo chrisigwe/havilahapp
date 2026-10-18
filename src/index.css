@@ -22,8 +22,19 @@ input, button { font: inherit; }
 /* The browser's own calendar glyph is dark and unreadable on this
    theme, and inverting it is unreliable across versions. Replace it
    with our own white icon instead. */
-input[type="date"] { color-scheme: dark; }
-input[type="date"]::-webkit-calendar-picker-indicator {
+/* Every picker the app uses, not just the day one: the Credit page's
+   month picker was left dark and all but invisible because this rule
+   named a single input type (18 October 2026). */
+input[type="date"],
+input[type="month"],
+input[type="week"],
+input[type="time"],
+input[type="datetime-local"] { color-scheme: dark; }
+input[type="date"]::-webkit-calendar-picker-indicator,
+input[type="month"]::-webkit-calendar-picker-indicator,
+input[type="week"]::-webkit-calendar-picker-indicator,
+input[type="time"]::-webkit-calendar-picker-indicator,
+input[type="datetime-local"]::-webkit-calendar-picker-indicator {
   background-image: url("data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="%23ffffff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M8 3v4M16 3v4M3 10h18"/></svg>");
   background-size: 20px 20px;
   background-position: center;
@@ -36,7 +47,11 @@ input[type="date"]::-webkit-calendar-picker-indicator {
   margin-left: 4px;
   cursor: pointer;
 }
-input[type="date"]::-webkit-calendar-picker-indicator:hover { opacity: 0.75; }
+input[type="date"]::-webkit-calendar-picker-indicator:hover,
+input[type="month"]::-webkit-calendar-picker-indicator:hover,
+input[type="week"]::-webkit-calendar-picker-indicator:hover,
+input[type="time"]::-webkit-calendar-picker-indicator:hover,
+input[type="datetime-local"]::-webkit-calendar-picker-indicator:hover { opacity: 0.75; }
 *:focus-visible { outline: 2px solid var(--color-amber); outline-offset: 2px; }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
 
