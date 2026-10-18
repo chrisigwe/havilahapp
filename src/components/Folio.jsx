@@ -1028,28 +1028,6 @@ export default function Folio({ boot, room, onClose, onChanged }) {
               </p>
             )}
 
-            <label className="block text-dim text-sm">Date paid</label>
-            {/* The floor used to be the stay's check-in date, which makes
-                an advance payment impossible to date correctly: Mr Kalu
-                booked ahead, paid on the 16th and arrived on the 17th,
-                so the day he actually paid was greyed out. A deposit is
-                paid BEFORE arrival by definition.
-                Now the earlier of check-in and seven days back — the
-                same window the sales screens allow — so a late entry
-                can always be dated when the money changed hands, and a
-                long stay keeps its whole length. */}
-            <input type="date" value={pay.date || lagosToday()}
-              min={[checkIn, lagosDaysAgo(7)].filter(Boolean).sort()[0] || undefined}
-              max={lagosToday()}
-              onChange={e => setPay(p => ({ ...p, date: e.target.value }))}
-              className="mt-1 mb-3 h-12 w-full px-3 rounded-xl bg-raise border border-line tnum" />
-            {pay.date && pay.date !== lagosToday() && (
-              <p className="text-amber text-sm -mt-2 mb-3">
-                Dating this payment {pay.date}. It will count towards that day's
-                takings, not today's.
-              </p>
-            )}
-
             <label className="block text-dim text-sm">Amount</label>
             <div className="flex items-center gap-3 mt-1">
               <input type="number" inputMode="decimal" value={pay.amount}
@@ -1161,6 +1139,34 @@ export default function Folio({ boot, room, onClose, onChanged }) {
                 The control remains on each recorded payment below, as
                 "Change department", so the ones already tagged wrongly can
                 be put back to Reception. */}
+
+            {/* LAST, deliberately (18 October 2026). The date used to be
+                the first field, so it was read before anyone had thought
+                about the money and left on today by habit — which is how
+                ₦30,000 of Mr Anthony's bill was recorded against 18
+                September. The last thing touched before the button is
+                the thing most likely to be checked. */}
+            <label className="block text-dim text-sm">Date paid</label>
+            {/* The floor used to be the stay's check-in date, which makes
+                an advance payment impossible to date correctly: Mr Kalu
+                booked ahead, paid on the 16th and arrived on the 17th,
+                so the day he actually paid was greyed out. A deposit is
+                paid BEFORE arrival by definition.
+                Now the earlier of check-in and seven days back — the
+                same window the sales screens allow — so a late entry
+                can always be dated when the money changed hands, and a
+                long stay keeps its whole length. */}
+            <input type="date" value={pay.date || lagosToday()}
+              min={[checkIn, lagosDaysAgo(7)].filter(Boolean).sort()[0] || undefined}
+              max={lagosToday()}
+              onChange={e => setPay(p => ({ ...p, date: e.target.value }))}
+              className="mt-1 mb-3 h-12 w-full px-3 rounded-xl bg-raise border border-line tnum" />
+            {pay.date && pay.date !== lagosToday() && (
+              <p className="text-amber text-sm -mt-2 mb-3">
+                Dating this payment {pay.date}. It will count towards that day's
+                takings, not today's.
+              </p>
+            )}
 
             <label className="flex items-center gap-2 text-dim mt-3">
               <input type="checkbox" checked={isOverstay} onChange={e => setIsOverstay(e.target.checked)} />

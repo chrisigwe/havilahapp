@@ -64,7 +64,14 @@ export default function Corrections({ boot }) {
   // only ever see their OWN assigned department(s) — not every
   // department in the branch, and not defaulted to a mixed "all of
   // mine" view when they have more than one.
-  const deptChips = seesAllDeptChips ? allLocations : (locations || [])
+  // Store sits first, straight after "All departments" (18 October
+  // 2026). It was last in the row, off the end of a phone's scroll, and
+  // it is the tab most often wanted here — a correction to stock is
+  // nearly always a correction to the store. Everything else keeps its
+  // existing order.
+  const isStore = l => !!l?.is_store || /store/i.test(l?.name || '')
+  const deptChips = [...(seesAllDeptChips ? (allLocations || []) : (locations || []))]
+    .sort((a, b) => (isStore(a) ? 0 : 1) - (isStore(b) ? 0 : 1))
   // Reception records no sales, so defaulting the Entries subfilter to
   // it (the front desk default_location_id since migration 204) showed
   // an empty list. Prefer their first NON-Reception department —

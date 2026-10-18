@@ -90,6 +90,15 @@ export default function SalesEntry({ boot }) {
     return openingDate && openingDate > floor ? openingDate : floor
   })()
   const [backdateReason, setBackdateReason] = useState('')
+  // The page's date is a SETTING, not a field on an entry: set once, it
+  // governs everything recorded until it is changed. So it cannot be
+  // guarded the way the folio's date is — by sitting last on the form —
+  // because by the tenth entry it is off the top of the screen. It is
+  // carried instead: on a band that stays put, on the button that
+  // commits, and in the message that confirms (18 October 2026).
+  const offToday = date !== todayDate
+  const dayShort = (d) => new Date(d + 'T12:00:00')
+    .toLocaleDateString('en-NG', { weekday: 'short', day: 'numeric', month: 'short' })
 
   const [locationId, setLocationId] = useState(startingDept(salesPoints, staff, locations))
   // SEEING a department and RECORDING at it are separate. Store managers
@@ -650,6 +659,12 @@ export default function SalesEntry({ boot }) {
       toast('View only — you can record only at your own departments', 'error')
       return
     }
+    // A backdated entry with no reason is the one nobody can explain a
+    // week later, when the figure it moved is being argued about.
+    if (offToday && !backdateReason.trim()) {
+      toast(`Say why this is going to ${dayShort(date)} — the reason is required when the date is not today`, 'error')
+      return
+    }
     if (basket.length && looksLikeRepeat() &&
         !window.confirm('You recorded the same thing less than two minutes ago. '
           + 'Save it again?\n\nTap Cancel if your first save already went through.')) {
@@ -718,7 +733,8 @@ export default function SalesEntry({ boot }) {
       try {
         const rid = await saveBasket({ staff, locationId, lines: basket, payments,
                                        date, customerId, backdateReason, onBehalfOf })
-        toast(`Saved · ${basket.length} item${basket.length > 1 ? 's' : ''} · ${naira(basketTotal)}`, 'success')
+        toast(`Saved · ${basket.length} item${basket.length > 1 ? 's' : ''} · ${naira(basketTotal)}`
+              + (offToday ? ` · ${dayShort(date)}, not today` : ''), 'success')
         setLastReceiptId(rid); setLastReceiptAt(Date.now())
       } catch (e) {
         if (!isConnectionError(e)) throw e
@@ -749,7 +765,8 @@ export default function SalesEntry({ boot }) {
         await saveWriteoff({ staff, item: w.item, locationId, kind: w.kind,
           qty: w.qty, unitValue: w.unitValue, date: wDate,
           note: w.note || null, damageReason: w.kind === 'damage' ? (w.damageReason || null) : null })
-        toast(`${w.qty} × ${w.item.name} recorded as ${w.kind === 'damage' ? 'damaged' : 'PR'}`, 'success')
+        toast(`${w.qty} × ${w.item.name} recorded as ${w.kind === 'damage' ? 'damaged' : 'PR'}`
+              + (wDate !== todayDate ? ` · ${dayShort(wDate)}, not today` : ''), 'success')
       } catch (e) {
         if (!isConnectionError(e)) throw e
         enqueue({ kind: 'writeoff', payload })
@@ -774,6 +791,15 @@ export default function SalesEntry({ boot }) {
         ))}
       </div>
 
+      {/* Pinned, so it is still on screen at the tenth entry. Nothing
+          at all on an ordinary day — the normal path stays clean. */}
+      {offToday && (
+        <div className="sticky top-0 z-20 -mx-5 px-5 py-2 bg-amber text-bg font-bold text-sm text-center">
+          Recording for {new Date(date + 'T12:00:00').toLocaleDateString('en-NG',
+            { weekday: 'long', day: 'numeric', month: 'long' })} — not today
+        </div>
+      )}
+
       {canBackdate ? (
         <div className="mt-2 flex items-center gap-3">
           <input type="date" value={date} max={todayDate} min={earliestDate}
@@ -795,9 +821,10 @@ export default function SalesEntry({ boot }) {
             className={`h-12 px-3 rounded-xl bg-surface border tnum ${date !== todayDate
               ? 'border-amber text-amber' : 'border-line'}`} />
           {date !== todayDate && (
-            <input value={backdateReason} placeholder="Reason (optional)"
+            <input value={backdateReason} placeholder="Why this day? (required)"
               onChange={e => setBackdateReason(e.target.value)}
-              className="h-12 flex-1 px-3 rounded-xl bg-surface border border-line" />
+              className={`h-12 flex-1 px-3 rounded-xl bg-surface border ${
+                backdateReason.trim() ? 'border-line' : 'border-amber'}`} />
           )}
         </div>
       ) : null}
@@ -1537,7 +1564,8 @@ export default function SalesEntry({ boot }) {
           <button onClick={commit} disabled={busy}
             className="mt-8 w-full h-16 rounded-2xl bg-amber text-bg text-xl font-bold disabled:opacity-40">
             {busy ? 'Saving…'
-              : paying.roomStay ? `Charge to Room ${paying.roomStay.room}` : 'Save sale'}
+              : paying.roomStay ? `Charge to Room ${paying.roomStay.room}`
+                : offToday ? `Save sale · ${dayShort(date)}` : 'Save sale'}
           </button>
         </Sheet>
       )}
@@ -1600,7 +1628,10 @@ export default function SalesEntry({ boot }) {
           )}
           <button onClick={commitWriteoff} disabled={busy || (writeoff.kind === 'damage' && !writeoff.damageReason)}
             className="mt-8 w-full h-16 rounded-2xl bg-amber text-bg text-xl font-bold disabled:opacity-40">
-            {busy ? 'Saving…' : 'Save write-off'}
+            {busy ? 'Saving…'
+              : (writeoff.date || date) !== todayDate
+                ? `Save write-off · ${dayShort(writeoff.date || date)}`
+                : 'Save write-off'}
           </button>
         </Sheet>
       )}

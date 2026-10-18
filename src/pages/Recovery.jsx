@@ -133,22 +133,36 @@ export default function Recovery({ boot }) {
     return [...m.entries()]
   }, [rows])
 
+  // Room payments the chosen day — or all of them when no day is
+  // chosen.
+  //
+  // 18 October 2026. Picking a date narrowed the customer-credit half
+  // of this page and left the Reception half showing all sixty days,
+  // because that block sits outside the day/rolling branch below. For
+  // anyone at the front desk, whose recoveries ARE room payments,
+  // choosing a date appeared to do nothing whatsoever. One list, one
+  // filter, both halves.
+  const roomRows = useMemo(() => {
+    const all = roomPayments || []
+    return dayFilter ? all.filter(p => p.business_date === dayFilter) : all
+  }, [roomPayments, dayFilter])
+
   const roomByDay = useMemo(() => {
     const m = new Map()
-    for (const p of (roomPayments || [])) {
+    for (const p of roomRows) {
       if (!m.has(p.business_date)) m.set(p.business_date, [])
       m.get(p.business_date).push(p)
     }
     return [...m.entries()]
-  }, [roomPayments])
+  }, [roomRows])
 
   if (!rows) return <p className="px-5 text-dim">Loading…</p>
   const total = rows.reduce((s, r) => s + Number(r.amount), 0)
   const byMethod = {}
   for (const r of rows) byMethod[r.method] = (byMethod[r.method] || 0) + Number(r.amount)
-  const roomTotal = (roomPayments || []).reduce((s, p) => s + Number(p.amount), 0)
+  const roomTotal = roomRows.reduce((s, p) => s + Number(p.amount), 0)
   const roomByMethod = {}
-  for (const p of (roomPayments || [])) roomByMethod[p.method] = (roomByMethod[p.method] || 0) + Number(p.amount)
+  for (const p of roomRows) roomByMethod[p.method] = (roomByMethod[p.method] || 0) + Number(p.amount)
 
   // Outstanding per customer, by name — customers are unique per branch,
   // so the name is a safe key here.
@@ -380,7 +394,9 @@ export default function Recovery({ boot }) {
       {hasReceptionAccess && (
         <>
           <div className="rounded-2xl border border-leaf bg-surface p-4 my-2">
-            <div className="text-dim text-sm">Recovered at Reception, last 60 days</div>
+            <div className="text-dim text-sm">
+              {dayFilter ? `Recovered at Reception on ${dayFilter}` : 'Recovered at Reception, last 60 days'}
+            </div>
             <div className="tnum text-2xl font-bold text-leaf">{naira(roomTotal)}</div>
             <div className="flex gap-4 mt-2 text-sm">
               {Object.entries(roomByMethod).map(([m, amt]) => (
@@ -390,6 +406,10 @@ export default function Recovery({ boot }) {
               ))}
             </div>
           </div>
+
+          {dayFilter && !roomRows.length && (
+            <p className="text-dim py-6 text-center">Nothing recovered at Reception on {dayFilter}.</p>
+          )}
 
           {roomByDay.map(([day, items]) => (
             <section key={day} className="mt-4">
