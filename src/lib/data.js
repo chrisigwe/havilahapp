@@ -518,7 +518,8 @@ export async function loadCounts(branchId) {
 
 export async function loadCountLines(countId) {
   const { data, error } = await supabase.from('stock_count_lines')
-    .select('stock_item_id, system_qty, counted_qty, auditor_adjusted, adjusted_by').eq('count_id', countId)
+    .select('stock_item_id, system_qty, counted_qty, auditor_adjusted, adjusted_by, variance_reason')
+    .eq('count_id', countId)
   if (error) throw error
   return data
 }
@@ -526,6 +527,18 @@ export async function loadCountLines(countId) {
 export async function saveCountLine(countId, itemId, qty) {
   const { error } = await supabase.from('stock_count_lines')
     .update({ counted_qty: qty }).eq('count_id', countId).eq('stock_item_id', itemId)
+  if (error) throw error
+}
+
+// Why this line differs from the book (migration 545). Carried onto the
+// stock movement when the count posts, so the item's history says why
+// the figure moved and not merely that it did. verify_stock_count and
+// post_opening_balance both refuse to post without it — this is the
+// pleasant way to supply it, not the rule itself.
+export async function saveCountReason(countId, itemId, reason) {
+  const { error } = await supabase.from('stock_count_lines')
+    .update({ variance_reason: reason || null })
+    .eq('count_id', countId).eq('stock_item_id', itemId)
   if (error) throw error
 }
 
@@ -810,9 +823,9 @@ export async function loadUnfinishedCounts(branchId) {
 // overwrites the counted quantity and flags the line as
 // auditor-adjusted. Only works on a submitted (not verified) count,
 // enforced in the database function.
-export async function auditorAdjustCountLine(countId, itemId, qty) {
+export async function auditorAdjustCountLine(countId, itemId, qty, reason) {
   const { error } = await supabase.rpc('auditor_adjust_count_line', {
-    p_count: countId, p_item: itemId, p_qty: qty,
+    p_count: countId, p_item: itemId, p_qty: qty, p_reason: reason,
   })
   if (error) throw error
 }

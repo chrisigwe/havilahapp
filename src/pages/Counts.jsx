@@ -1,10 +1,29 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { loadStockMap, loadCounts, loadCountLines, saveCountLine,
+import { loadStockMap, loadCounts, loadCountLines, saveCountLine, saveCountReason,
          startCountOfType, submitCount, verifyCount, deleteCount,
          postOpeningBalance, auditorAdjustCountLine } from '../lib/data'
 import { lagosToday, startingDept } from '../lib/format'
 import { enqueue, flush, isConnectionError } from '../lib/outbox'
 import { useToast } from '../components/Toast'
+
+// Why a counted figure differs from the book (migration 545).
+//
+// A list, not a blank box. A compulsory empty field gets you
+// "adjustment", "correction" and ".", which is a field gained and
+// nothing else; a short list of real answers is easy to be honest with
+// AND countable later — "how much did Nnewi lose to expiry this
+// quarter" is a question free text can never answer.
+//
+// Order matters: the ones that cost money come first, so nobody has to
+// scroll past "Miscount" to admit a loss.
+const REASONS = [
+  'Breakage', 'Expired', 'Theft or loss', 'Supplier short-delivered',
+  'Miscount corrected', 'Found extra', 'Opening balance wrong',
+]
+const hasReason = (l) => !!(l?.variance_reason || '').trim()
+       && (l.variance_reason || '').trim().length >= 4
+const differs = (l) => l.counted_qty !== null && l.counted_qty !== undefined
+       && Number(l.counted_qty) !== Number(l.system_qty)
 
 const AUDITOR = ['auditor', 'gm', 'admin']
 // A count with ANY adjusted line needs a second person to verify it —
@@ -103,12 +122,37 @@ export default function Counts({ boot }) {
   // auditor correcting one line of a SUBMITTED count — different path
   // from setLine (which upserts via saveCountLine, draft-only). This
   // goes through the auditor RPC and flags the line as adjusted.
+  // The reason for a line that differs. Saved as it is tapped, so a
+  // half-finished count keeps what has been said about it.
+  async function setReason(itemId, reason) {
+    const countId = open.count.id
+    setOpen(o => ({ ...o, lines: o.lines.map(l =>
+      l.stock_item_id === itemId ? { ...l, variance_reason: reason } : l) }))
+    const line = open.lines.find(l => l.stock_item_id === itemId)
+    try {
+      if (open.count.status === 'submitted' && canAdjust) {
+        // A submitted count is only writable through the auditor RPC.
+        if (line?.counted_qty === null || line?.counted_qty === undefined) return
+        await auditorAdjustCountLine(countId, itemId, Number(line.counted_qty), reason)
+      } else {
+        await saveCountReason(countId, itemId, reason)
+      }
+    } catch (e) { toast('Could not save that reason: ' + e.message, 'error') }
+  }
+
   async function adjustLine(line) {
     if (open.count.status !== 'submitted' || !canAdjust) return
     if (line.counted_qty === null || line.counted_qty === undefined) return
     const countId = open.count.id
+    // The database refuses an adjustment nobody explained, so there is
+    // no point sending one — say so here instead of showing its error.
+    if (differs(line) && !hasReason(line)) {
+      toast('Say why this differs from the book before changing it', 'error')
+      return
+    }
     try {
-      await auditorAdjustCountLine(countId, line.stock_item_id, Number(line.counted_qty))
+      await auditorAdjustCountLine(countId, line.stock_item_id, Number(line.counted_qty),
+                                   (line.variance_reason || '').trim())
       setOpen(o => o?.count.id === countId ? { ...o, lines: o.lines.map(l =>
         l.stock_item_id === line.stock_item_id ? { ...l, auditor_adjusted: true, adjusted_by: staff.id } : l) } : o)
     } catch (e) { toast('Could not adjust: ' + e.message, 'error') }
@@ -139,10 +183,23 @@ export default function Counts({ boot }) {
     }
   }
 
+  // Every line that differs must say why — checked here so it is caught
+  // while the counter is still standing at the shelf, and again by the
+  // database when the count posts, which is the rule that actually
+  // holds (545).
+  function unexplained() {
+    return open.lines.filter(l => differs(l) && !hasReason(l))
+  }
+
   async function doSubmit() {
     const missing = open.lines.filter(l => Number(l.system_qty) !== 0 && l.counted_qty === null).length
     if (missing > 0) {
       toast(`${missing} item${missing > 1 ? 's' : ''} with stock here still need a count entered`, 'error')
+      return
+    }
+    const why = unexplained()
+    if (why.length) {
+      toast(`${why.length} line${why.length > 1 ? 's differ' : ' differs'} from the book with no reason given`, 'error')
       return
     }
     const odd = open.lines.filter(looksOff)
@@ -165,6 +222,11 @@ export default function Counts({ boot }) {
   }
 
   async function doPostOpening() {
+    const why = unexplained()
+    if (why.length) {
+      toast(`${why.length} line${why.length > 1 ? 's differ' : ' differs'} from the book with no reason given`, 'error')
+      return
+    }
     setBusy(true)
     try { await postOpeningBalance(open.count.id); setOpen(null); refresh()
           toast('Posted — system quantities now match the count', 'success') }
@@ -324,6 +386,57 @@ export default function Counts({ boot }) {
                         <p className="basis-full text-clay text-sm mt-1">
                           System expects {l.system_qty}, you typed {l.counted_qty}. Count again to be sure.
                         </p>
+                      )}
+
+                      {/* Only where there is something to explain. A
+                          line that matches the book asks nothing —
+                          demanding a reason fifty times is how you
+                          train people to type rubbish on the one line
+                          that mattered. */}
+                      {differs(l) && (open.count.status === 'draft'
+                        || (open.count.status === 'submitted' && canAdjust)) && (
+                        <div className="basis-full mt-2">
+                          <div className={`text-sm mb-1 ${hasReason(l) ? 'text-dim' : 'text-clay font-semibold'}`}>
+                            {hasReason(l) ? 'Why it differs' : 'Say why it differs'}
+                          </div>
+                          <div className="flex flex-wrap gap-2">
+                            {REASONS.map(r => (
+                              <button key={r} onClick={() => setReason(l.stock_item_id, r)}
+                                className={`h-9 px-3 rounded-full border text-sm ${
+                                  (l.variance_reason || '') === r
+                                    ? 'bg-raise border-amber text-amber font-bold'
+                                    : 'border-line text-dim'}`}>
+                                {r}
+                              </button>
+                            ))}
+                            <button onClick={() => setReason(l.stock_item_id, REASONS.includes(l.variance_reason || '') ? '' : (l.variance_reason || ''))}
+                              className={`h-9 px-3 rounded-full border text-sm ${
+                                l.variance_reason !== null && l.variance_reason !== undefined
+                                  && !REASONS.includes(l.variance_reason)
+                                  ? 'bg-raise border-amber text-amber font-bold'
+                                  : 'border-line text-dim'}`}>
+                              Other
+                            </button>
+                          </div>
+                          {l.variance_reason !== null && l.variance_reason !== undefined
+                            && !REASONS.includes(l.variance_reason) && (
+                            <input value={l.variance_reason || ''} autoFocus
+                              placeholder="Say what happened"
+                              onChange={e => setOpen(o => ({ ...o, lines: o.lines.map(x =>
+                                x.stock_item_id === l.stock_item_id
+                                  ? { ...x, variance_reason: e.target.value } : x) }))}
+                              onBlur={e => setReason(l.stock_item_id, e.target.value.trim())}
+                              className={`mt-2 h-11 w-full px-3 rounded-xl bg-surface border ${
+                                hasReason(l) ? 'border-line' : 'border-clay'}`} />
+                          )}
+                        </div>
+                      )}
+
+                      {/* Verified counts keep the reason on show — a
+                          reason nobody ever sees is a reason nobody
+                          writes honestly. */}
+                      {open.count.status === 'verified' && differs(l) && l.variance_reason && (
+                        <p className="basis-full text-dim text-sm mt-1">{l.variance_reason}</p>
                       )}
                     </li>
                   )
