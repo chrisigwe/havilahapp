@@ -1619,8 +1619,36 @@ export default function SalesEntry({ boot }) {
           </div>
           )}
 
-          <button onClick={commit} disabled={busy}
-            className="mt-8 w-full h-16 rounded-2xl bg-amber text-bg text-xl font-bold disabled:opacity-40">
+          {/* The reason, in the place that refuses the save (18 October
+              2026). It lived only on the page behind this sheet, so
+              from here the app demanded a reason and showed no field to
+              put one in — the person is told to do something they
+              cannot reach, and the sale cannot be saved at all.
+
+              The same state as the field on the page: typing in either
+              fills both, and whichever was used is what is stored on
+              every line of the sale. */}
+          {offToday && (
+            <div className="mt-8 rounded-2xl border border-amber bg-surface p-4">
+              <p className="font-bold text-amber">
+                Recording for {new Date(date + 'T12:00:00').toLocaleDateString('en-NG',
+                  { weekday: 'long', day: 'numeric', month: 'long' })} — not today
+              </p>
+              <p className="text-dim text-sm mt-1">
+                Say why. It is kept with the sale, so the figure it moves can be
+                explained later.
+              </p>
+              <input value={backdateReason}
+                placeholder="Why this day? (required)"
+                onChange={e => setBackdateReason(e.target.value)}
+                className={`mt-3 h-12 w-full px-3 rounded-xl bg-raise border ${
+                  backdateReason.trim() ? 'border-line' : 'border-amber'}`} />
+            </div>
+          )}
+
+          <button onClick={commit} disabled={busy || (offToday && !backdateReason.trim())}
+            className={`w-full h-16 rounded-2xl bg-amber text-bg text-xl font-bold disabled:opacity-40 ${
+              offToday ? 'mt-3' : 'mt-8'}`}>
             {busy ? 'Saving…'
               : paying.roomStay ? `Charge to Room ${paying.roomStay.room}`
                 : offToday ? `Save sale · ${dayShort(date)}` : 'Save sale'}
