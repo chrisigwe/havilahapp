@@ -6,6 +6,69 @@ import { loadMyCredit } from '../lib/data'
 const MONTHS = ['January','February','March','April','May','June','July','August',
                 'September','October','November','December']
 
+const shortDay = (d) => new Date(d + 'T12:00:00')
+  .toLocaleDateString('en-NG', { day: 'numeric', month: 'short' })
+
+// A section that opens on a tap. Written here rather than shared,
+// because this page's folds hold a person's own pay and the wording in
+// them is particular to that (18 October 2026).
+function Fold({ title, right, children, open, onToggle, tone = 'border-line' }) {
+  return (
+    <section className={`mt-3 rounded-2xl border ${tone} bg-surface p-4`}>
+      <button type="button" onClick={onToggle} aria-expanded={!!open}
+        className="w-full text-left flex items-baseline justify-between gap-3">
+        <span className="font-semibold">{title}</span>
+        <span className="flex items-baseline gap-2 shrink-0">
+          {right}
+          <svg viewBox="0 0 20 20" className={`w-4 h-4 text-dim transition-transform ${open ? 'rotate-180' : ''}`}
+               fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+            <path d="M5 8l5 5 5-5" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+        </span>
+      </button>
+      {open && <div className="mt-3 pt-3 border-t border-line">{children}</div>}
+    </section>
+  )
+}
+
+function Row({ label, v, plus, minus }) {
+  return (
+    <div className="flex justify-between gap-3">
+      <span className="text-dim min-w-0">{label}</span>
+      <span className={`tnum shrink-0 ${minus ? 'text-clay' : plus ? 'text-leaf' : ''}`}>
+        {minus ? '−' : plus ? '+' : ''}{naira(v)}
+      </span>
+    </div>
+  )
+}
+
+function Fig({ label, value, tone = '' }) {
+  return (
+    <div className="min-w-0">
+      <div className="text-dim text-sm">{label}</div>
+      <div className={`tnum font-bold truncate ${tone}`}>{naira(value)}</div>
+    </div>
+  )
+}
+
+// A line of days worked, drawn rather than described. A person knows
+// what two-thirds of a month looks like faster than they read "17 of
+// 26 days recorded".
+function DaysBar({ worked, total }) {
+  const pct = total > 0 ? Math.min(100, Math.round((worked / total) * 100)) : 0
+  return (
+    <div className="mt-3">
+      <div className="flex justify-between text-sm">
+        <span className="text-dim">Days recorded</span>
+        <span className="tnum">{worked} of {total}</span>
+      </div>
+      <div className="mt-1 h-2 rounded-full bg-raise overflow-hidden">
+        <div className="h-full bg-amber" style={{ width: `${pct}%` }} />
+      </div>
+    </div>
+  )
+}
+
 // This month's staff credit, live.
 //
 // Payroll deducts staff credit at the end of the month from the customer
@@ -13,13 +76,16 @@ const MONTHS = ['January','February','March','April','May','June','July','August
 // that figure after it had been taken, which is how a large deduction
 // arrives as a shock. This shows the same account as it fills.
 //
-// It deliberately shows NO projected take-home. Contributions, the pot
-// and savings are decided when the month is finalised; a number shown
-// now would move later, and the first figure someone sees is the one
-// they remember and argue from.
+// It deliberately shows NO projected take-home beyond salary less
+// credit. Contributions, the pot and savings are decided when the month
+// is finalised; a number shown now would move later, and the first
+// figure someone sees is the one they remember and argue from.
 function ThisMonth({ branchId, branchName }) {
   const [c, setC] = useState(null)
   const [err, setErr] = useState(null)
+  const [openTook, setOpenTook] = useState(false)
+  const [openPaid, setOpenPaid] = useState(false)
+
   // Never swallow this. A silent blank on a pay page reads as "you owe
   // nothing", which is a claim rather than an absence — the first
   // version hid a broken query behind an empty space.
@@ -69,82 +135,71 @@ function ThisMonth({ branchId, branchName }) {
   const repayments = c.repayments || []
   const given = c.given || []
   const givenTotal = Number(c.given_total || 0)
+  const likely = Math.max(0, salary - owing)
 
   return (
-    <section className="mt-4 rounded-2xl border border-amber bg-surface p-4">
-      <div className="flex items-baseline justify-between">
-        <p className="font-bold text-lg">
-          This month so far
-          {branchName && <span className="text-dim text-sm font-normal"> · {branchName}</span>}
-        </p>
-        <span className="text-dim text-sm tnum">
-          from {new Date(c.month_from + 'T12:00:00').toLocaleDateString('en-NG',
-            { day: 'numeric', month: 'short' })}
-        </span>
-      </div>
+    <>
+      {/* The question this page is opened to answer, at the top of it.
+          It used to sit below the credit figure, three scrolls down. */}
+      <section className="mt-4 rounded-2xl border border-amber bg-surface p-4">
+        <div className="flex items-baseline justify-between gap-2">
+          <p className="font-bold text-lg">
+            This month so far
+            {branchName && <span className="text-dim text-sm font-normal"> · {branchName}</span>}
+          </p>
+          <span className="text-dim text-sm tnum shrink-0">from {shortDay(c.month_from)}</span>
+        </div>
 
-      <div className="mt-3 space-y-1 text-sm">
-        <Row label="You took on credit this month" v={Number(c.taken_this_month || 0)} minus />
-        {Number(c.repaid_this_month) > 0 && (
-          <Row label="Already paid back this month" v={Number(c.repaid_this_month)} plus />
+        {salary > 0 ? (
+          <>
+            <div className="text-dim text-sm mt-3">If you work the full month, about</div>
+            <div className="tnum text-3xl font-bold text-amber">{naira(likely)}</div>
+            <div className="grid grid-cols-2 gap-3 mt-3 pt-3 border-t border-line">
+              <Fig label="Salary, full month" value={salary} />
+              <Fig label="Your credit, to come off" value={owing}
+                   tone={owing > 0.009 ? 'text-clay' : 'text-leaf'} />
+            </div>
+          </>
+        ) : (
+          <>
+            <div className="text-dim text-sm mt-3">Your own credit — still to come off your pay</div>
+            <div className={`tnum text-3xl font-bold ${owing > 0.009 ? 'text-clay' : 'text-leaf'}`}>
+              {naira(owing)}
+            </div>
+          </>
         )}
-      </div>
 
-      <div className="mt-3 pt-3 border-t border-line">
-        <div className="text-dim text-sm">
-          Your own credit — still to come off your pay
-        </div>
-        <div className={`tnum text-3xl font-bold ${owing > 0.009 ? 'text-clay' : 'text-leaf'}`}>
-          {naira(owing)}
-        </div>
         {owing <= 0.009 && (
-          <p className="text-leaf text-sm mt-1">Nothing owing. All of your pay is yours.</p>
+          <p className="text-leaf text-sm mt-2">Nothing owing. All of your pay is yours.</p>
         )}
-      </div>
 
-      {/* What a full month would leave. Shown because seeing credit against
-          the salary it will come out of is what makes a person stop and
-          think — a bare figure does not. Labelled as a full month on
-          purpose: days not worked reduce it, and the person must not read
-          this as a promise. Pot, contributions and savings are still not
-          projected; those are settled at month end and a number shown now
-          would move. */}
-      {salary > 0 && (
-        <div className="mt-3 pt-3 border-t border-line">
-          <div className="space-y-1 text-sm">
-            <Row label="Your salary for a full month" v={salary} />
-            {owing > 0.009 && <Row label="Less what you owe" v={owing} minus />}
-          </div>
-          <div className="text-dim text-sm mt-2">
-            If you work the full month, you would receive about
-          </div>
-          <div className="tnum text-2xl font-bold text-amber">{naira(Math.max(0, salary - owing))}</div>
-
-          {hasDays ? (
-            <p className="text-dim text-sm mt-1">
-              {c.days_worked} of {c.working_days} days recorded so far this month.
-              Fewer days worked means less than this.
-            </p>
-          ) : (
-            <p className="text-dim text-sm mt-1">
+        {hasDays
+          ? <DaysBar worked={Number(c.days_worked)} total={Number(c.working_days)} />
+          : (
+            <p className="text-dim text-sm mt-3">
               Your days for this month are not counted yet. Days not worked
-              reduce this figure.
+              reduce what you receive.
             </p>
           )}
-        </div>
-      )}
 
+        <p className="text-dim text-xs mt-3">
+          An estimate, not a pay slip. Any pot, contribution or savings is worked
+          out when the month is finished, and days not worked reduce it. If
+          something below is not yours, say so now rather than at month end.
+        </p>
+      </section>
+
+      {/* The detail, folded. Same three lists as before — a person who
+          wants to check an item still can, in one tap, and a person who
+          only wants the figure is not made to scroll past them. */}
       {items.length > 0 && (
-        <>
-          <p className="text-dim text-sm mt-4 mb-1">What you took</p>
+        <Fold title="What you took this month" open={openTook} onToggle={() => setOpenTook(o => !o)}
+          right={<span className="tnum text-clay">−{naira(Number(c.taken_this_month || 0))}</span>}>
           <ul className="divide-y divide-line/60">
             {items.map((it, i) => (
               <li key={i} className="py-1.5 flex items-baseline gap-3 text-sm">
-                <span className="text-dim tnum shrink-0 w-14">
-                  {new Date(it.date + 'T12:00:00').toLocaleDateString('en-NG',
-                    { day: 'numeric', month: 'short' })}
-                </span>
-                <span className="flex-1 min-w-0 truncate">
+                <span className="text-dim tnum shrink-0 w-14">{shortDay(it.date)}</span>
+                <span className="flex-1 min-w-0 break-words">
                   {Number(it.qty) > 1 ? `${Number(it.qty)} × ` : ''}{it.item}
                   {it.department && <span className="text-dim"> · {it.department}</span>}
                 </span>
@@ -152,67 +207,114 @@ function ThisMonth({ branchId, branchName }) {
               </li>
             ))}
           </ul>
-        </>
+        </Fold>
       )}
 
       {repayments.length > 0 && (
-        <>
-          <p className="text-dim text-sm mt-4 mb-1">What you paid back</p>
+        <Fold title="What you paid back" open={openPaid} onToggle={() => setOpenPaid(o => !o)}
+          right={<span className="tnum text-leaf">+{naira(Number(c.repaid_this_month || 0))}</span>}>
           <ul className="divide-y divide-line/60">
             {repayments.map((r, i) => (
               <li key={i} className="py-1.5 flex items-baseline gap-3 text-sm">
-                <span className="text-dim tnum shrink-0 w-14">
-                  {new Date(r.date + 'T12:00:00').toLocaleDateString('en-NG',
-                    { day: 'numeric', month: 'short' })}
-                </span>
-                <span className="flex-1 min-w-0 truncate text-dim">
+                <span className="text-dim tnum shrink-0 w-14">{shortDay(r.date)}</span>
+                <span className="flex-1 min-w-0 break-words text-dim">
                   {r.note || (r.method === 'payroll' ? 'Taken from your pay' : r.method?.toUpperCase())}
                 </span>
                 <span className="tnum text-leaf shrink-0">{naira(Number(r.amount))}</span>
               </li>
             ))}
           </ul>
-        </>
+        </Fold>
       )}
 
-      {/* Credit this person GAVE at the till. Deliberately its own block
-          with its own heading and a different colour: it is the
-          business's money to recover, not theirs to repay, and one
-          combined figure would read as personal debt. */}
+      {/* Credit this person GAVE at the till. Its own card now, not a
+          block inside the pay card: it is the business's money to
+          recover, not theirs to repay, and anything sharing a border
+          with "what comes off your pay" will eventually be read as
+          part of it. */}
       {given.length > 0 && (
-        <div className="mt-4 pt-4 border-t border-line">
-          <div className="flex items-baseline justify-between">
+        <section className="mt-4 rounded-2xl border border-leaf bg-surface p-4">
+          <div className="flex items-baseline justify-between gap-3">
             <p className="font-bold">Credit you gave to customers</p>
-            <span className="tnum font-bold text-amber">{naira(givenTotal)}</span>
+            <span className="tnum font-bold text-amber shrink-0">{naira(givenTotal)}</span>
           </div>
           <p className="text-dim text-sm mt-1">
             Money customers owe the business, recorded by you. This is{' '}
             <span className="text-leaf font-semibold">not</span> taken off your
             pay — it is yours to collect.
           </p>
-          <ul className="mt-2 divide-y divide-line/60">
+          <ul className="mt-3 divide-y divide-line/60">
             {given.map((g, i) => (
               <li key={i} className="py-1.5 flex items-baseline gap-3 text-sm">
-                <span className="flex-1 min-w-0 truncate">{g.customer}</span>
+                <span className="flex-1 min-w-0 break-words">{g.customer}</span>
                 {g.last_credit && (
-                  <span className="text-dim text-xs tnum shrink-0">
-                    {new Date(g.last_credit + 'T12:00:00').toLocaleDateString('en-NG',
-                      { day: 'numeric', month: 'short' })}
-                  </span>
+                  <span className="text-dim text-xs tnum shrink-0">{shortDay(g.last_credit)}</span>
                 )}
                 <span className="tnum text-amber shrink-0">{naira(Number(g.balance))}</span>
               </li>
             ))}
           </ul>
+        </section>
+      )}
+    </>
+  )
+}
+
+// A finished month: the figure received, and the whole working behind
+// it one tap away. The most recent opens by default — it is the one
+// people check — and the rest stay shut so a year of history is a
+// readable list rather than a scroll.
+function FinishedMonth({ m, showBranch, defaultOpen }) {
+  const [open, setOpen] = useState(!!defaultOpen)
+  const t = lineTotals(m, m.pot, m.working_days)
+  const extra = [...(m.payroll_addition || [])]
+  const deductions = m.payroll_deduction || []
+
+  return (
+    <section className="mt-3 rounded-2xl border border-line bg-surface p-4">
+      <button type="button" onClick={() => setOpen(o => !o)} aria-expanded={open}
+        className="w-full text-left">
+        <div className="flex items-baseline justify-between gap-3">
+          <h2 className="font-bold min-w-0">
+            {MONTHS[m.month - 1]} {m.year}
+          </h2>
+          <span className="flex items-baseline gap-2 shrink-0">
+            <span className="tnum text-xl font-bold text-amber">{naira(t.net)}</span>
+            <svg viewBox="0 0 20 20" className={`w-4 h-4 text-dim transition-transform ${open ? 'rotate-180' : ''}`}
+                 fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+              <path d="M5 8l5 5 5-5" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+          </span>
+        </div>
+        <div className="text-dim text-sm">
+          You received · {m.days_worked} of {m.working_days} days
+          {showBranch && m.branch && <> · {m.branch}</>}
+        </div>
+      </button>
+
+      {open && (
+        <div className="mt-3 pt-3 border-t border-line space-y-1 text-sm">
+          <Row label={`Pay for ${m.days_worked} days (salary ${naira(m.monthly_salary)})`} v={t.earned} />
+          {Number(m.additions) > 0 && <Row label="Addition" v={Number(m.additions)} plus />}
+          {extra.map((a, i) => (
+            <Row key={i} plus v={Number(a.amount)}
+                 label={a.note || (a.source === 'award' ? 'Staff of the Month prize' : 'Addition')} />
+          ))}
+          {deductions.map((d, i) => (
+            <Row key={i} minus v={Number(d.amount)}
+                 label={d.note || (d.source === 'credit' ? 'Credit taken'
+                        : d.source === 'advance' ? 'Salary advance' : 'Deduction')} />
+          ))}
+          {t.contribution > 0 && <Row label="Paid into the contribution pot" v={t.contribution} minus />}
+          {t.pot > 0 && <Row label="Received from the pot" v={t.pot} plus />}
+          {t.savings > 0 && <Row label="Held as your savings" v={t.savings} minus />}
+          <div className="pt-2 mt-2 border-t border-line flex justify-between gap-3 font-bold">
+            <span className="min-w-0">What reached you</span>
+            <span className="tnum shrink-0 text-amber">{naira(t.net)}</span>
+          </div>
+          {m.remark && <p className="mt-2 text-dim text-xs">{m.remark}</p>}
         </div>
       )}
-
-      <p className="text-dim text-xs mt-4">
-        This is an estimate, not your pay slip. Any pot, contribution or
-        savings is worked out when the month is finished, and days not worked
-        reduce what you receive. If an item here is not yours, say so now
-        rather than at the end of the month.
-      </p>
     </section>
   )
 }
@@ -228,6 +330,7 @@ export default function MyPay({ data, boot }) {
   if (!data.months.length) {
     return (
       <div className="px-5 pb-8">
+        <p className="text-dim text-sm py-2">Only you can see this.</p>
         <ThisMonth branchId={branchId} branchName={branchName} />
         <p className="py-8 text-center text-dim">
           No finished month yet. Your pay slip shows here once the month is finalised.
@@ -245,59 +348,37 @@ export default function MyPay({ data, boot }) {
     ? data.months.filter(m => m.branch_id === branchId)
     : data.months
   const manyBranches = new Set(months.map(m => m.branch)).size > 1
+
+  // Paid across the finished months shown. A year of pay slips with no
+  // total is a filing cabinet; one line makes it a record.
+  const paidTotal = months.reduce((s, m) => s + lineTotals(m, m.pot, m.working_days).net, 0)
+
   return (
     <div className="px-5 pb-8">
       <p className="text-dim text-sm py-2">Only you can see this.</p>
       <ThisMonth branchId={branchId} branchName={branchName} />
-      <p className="text-dim text-sm pt-5">
-        Finished months{branchName ? ` · ${branchName}` : ''}
-      </p>
+
+      <div className="flex items-baseline justify-between gap-3 pt-6">
+        <p className="text-dim text-sm">
+          Finished months{branchName ? ` · ${branchName}` : ''}
+        </p>
+        {months.length > 1 && (
+          <p className="text-dim text-sm tnum shrink-0">
+            {naira(paidTotal)} over {months.length} months
+          </p>
+        )}
+      </div>
+
       {!months.length && (
         <p className="text-dim text-sm py-6 text-center">
           No finished month at this branch.
         </p>
       )}
-      {months.map(m => {
-        const t = lineTotals(m, m.pot, m.working_days)
-        const extra = [...(m.payroll_addition || [])]
-        return (
-          <section key={`${m.year}-${m.month}-${m.branch}`} className="mt-4 rounded-2xl border border-line bg-surface p-4">
-            <div className="flex items-baseline justify-between">
-              <h2 className="font-bold text-lg">{MONTHS[m.month - 1]} {m.year}
-                {manyBranches && m.branch && <span className="text-dim text-sm font-normal"> · {m.branch}</span>}
-              </h2>
-              <span className="text-dim text-sm tnum">{m.days_worked} of {m.working_days} days</span>
-            </div>
-            <div className="mt-1 text-dim text-sm">You received</div>
-            <div className="tnum text-3xl font-bold text-amber">{naira(t.net)}</div>
 
-            <div className="mt-3 space-y-1 text-sm">
-              <Row label={`Pay for ${m.days_worked} days (salary ${naira(m.monthly_salary)})`} v={t.earned} />
-              {Number(m.additions) > 0 && <Row label="Addition" v={Number(m.additions)} plus />}
-              {extra.map((a, i) => <Row key={i} label={a.note || (a.source === 'award' ? 'Staff of the Month prize' : 'Addition')} v={Number(a.amount)} plus />)}
-              {(m.payroll_deduction || []).map((d, i) => (
-                <Row key={i} label={d.note || (d.source === 'credit' ? 'Credit taken' : d.source === 'advance' ? 'Salary advance' : 'Deduction')}
-                     v={Number(d.amount)} minus />
-              ))}
-              {t.contribution > 0 && <Row label="Paid into the contribution pot" v={t.contribution} minus />}
-              {t.pot > 0 && <Row label="Received from the pot" v={t.pot} plus />}
-              {t.savings > 0 && <Row label="Held as your savings" v={t.savings} minus />}
-            </div>
-            {m.remark && <p className="mt-2 text-dim text-xs">{m.remark}</p>}
-          </section>
-        )
-      })}
-    </div>
-  )
-}
-
-function Row({ label, v, plus, minus }) {
-  return (
-    <div className="flex justify-between gap-3">
-      <span className="text-dim">{label}</span>
-      <span className={`tnum ${minus ? 'text-clay' : plus ? 'text-leaf' : ''}`}>
-        {minus ? '−' : plus ? '+' : ''}{naira(v)}
-      </span>
+      {months.map((m, i) => (
+        <FinishedMonth key={`${m.year}-${m.month}-${m.branch}`} m={m}
+          showBranch={manyBranches} defaultOpen={i === 0} />
+      ))}
     </div>
   )
 }
