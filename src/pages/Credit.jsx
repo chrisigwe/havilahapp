@@ -100,6 +100,10 @@ export default function Credit({ boot }) {
   const [moveBusy, setMoveBusy] = useState(false)
   const [pay, setPay] = useState(null)
   const [busy, setBusy] = useState(false)
+  // Shape only — neither touches what is loaded, so neither can change
+  // a figure. Search filters the rows already in hand; sort reorders them.
+  const [find, setFind] = useState('')
+  const [sort, setSort] = useState('recent')   // recent | biggest | longest
   const itemById = useMemo(() => Object.fromEntries(items.map(i => [i.id, i])), [items])
   const locById = useMemo(() => Object.fromEntries((allLocations || []).map(l => [l.id, l])), [allLocations])
   const isReception = /reception/i.test(locById[locId]?.name || '')
@@ -297,6 +301,39 @@ export default function Credit({ boot }) {
   const owing = combined.filter(r => Number(r.balance) > 0.009)
   const total = owing.reduce((s, r) => s + Number(r.balance), 0)
 
+  // Which of the three questions is on screen. Derived, not stored, so
+  // it cannot drift out of step with the two filters it reads.
+  const view = monthFilter ? 'month' : dayFilter ? 'day' : 'balances'
+
+  // Finding one person in a list of debtors was done by scrolling.
+  // Filtering on what is already loaded — no query, no spinner.
+  const needle = find.trim().toLowerCase()
+  const matched = needle
+    ? owing.filter(c => (c.name || '').toLowerCase().includes(needle))
+    : owing
+  // Recent stays the default: it is the order the data arrives in and
+  // the order this page has always been read in. The other two are for
+  // chasing money — who owes most, and who has been owing longest.
+  const shown = sort === 'biggest'
+    ? [...matched].sort((a, b) => Number(b.balance) - Number(a.balance))
+    : sort === 'longest'
+      ? [...matched].sort((a, b) =>
+          String(a.first_credit_date || '9999-12-31').localeCompare(String(b.first_credit_date || '9999-12-31')))
+      : matched
+
+  // Days between a business date and today, counted in Lagos dates
+  // rather than in milliseconds from the device clock.
+  const daysSince = (d) => {
+    if (!d) return null
+    const a = new Date(d + 'T12:00:00'), b = new Date(lagosToday() + 'T12:00:00')
+    return Math.round((b - a) / 86400000)
+  }
+  const oldest = owing.reduce((o, r) =>
+    r.first_credit_date && (!o || r.first_credit_date < o) ? r.first_credit_date : o, null)
+  const biggest = owing.reduce((m, r) => Math.max(m, Number(r.balance)), 0)
+  const takenAllTime = owing.reduce((t, r) => t + Number(r.credit_taken || 0), 0)
+  const repaidAllTime = owing.reduce((t, r) => t + Number(r.repaid || 0), 0)
+
   return (
     <div className="px-5">
       {salesPoints.length > 1 && (
@@ -335,37 +372,50 @@ export default function Credit({ boot }) {
         </div>
       )}
 
-      {/* A date switches from running balances to that DAY's credit
-          activity. Balances are as-of-now by nature, so filtering them
-          by date would be meaningless; what a daily view answers is
-          who took credit that day and what came back. */}
-      <div className="flex items-center gap-2 py-2">
-        <input type="date" value={dayFilter} max={lagosToday()}
-          onChange={e => { setDayFilter(e.target.value); if (e.target.value) setMonthFilter(null) }}
-          className="h-11 px-3 rounded-xl bg-surface border border-line tnum" />
-        {dayFilter
-          ? <button onClick={() => setDayFilter('')}
-              className="h-11 px-3 rounded-xl border border-amber text-amber text-sm font-semibold">
-              Back to balances
-            </button>
-          : <span className="text-dim text-sm">Pick a date for that day's credit</span>}
+      {/* ONE switch, three views (18 October 2026).
+          This page carried a date row and a month row, each with its own
+          hint and its own way back — four rows of controls before a
+          single figure, and nothing saying that picking one abandoned
+          the other. The view is chosen here; its picker appears under
+          it, and only then.
+
+          The three answer different questions and are never mixed.
+          Balances are as-of-now by nature, so a date cannot filter
+          them. A day answers "what happened that day". A month answers
+          "what does each person owe", which is what sets the payroll
+          deduction. */}
+      <div className="flex gap-2 py-2">
+        {[['balances', 'Balances'], ['day', 'A day'], ['month', 'A month']].map(([k, label]) => (
+          <button key={k}
+            onClick={() => {
+              if (k === 'balances') { setDayFilter(''); setMonthFilter(null) }
+              if (k === 'day') { setMonthFilter(null); setDayFilter(d => d || lagosToday()) }
+              if (k === 'month') { setDayFilter(''); setMonthFilter(m => m || lagosToday().slice(0, 7)) }
+            }}
+            className={`flex-1 h-11 rounded-xl border font-semibold text-sm ${view === k
+              ? 'bg-amber text-bg border-amber' : 'border-line text-dim'}`}>
+            {label}
+          </button>
+        ))}
       </div>
 
-      {/* A MONTH, for the credit analysis before payroll deductions. The
-          day view answers "what happened"; this answers "what do they
-          owe". Only one at a time — showing both would invite reading a
-          day's figure as a month's. */}
-      <div className="flex items-center gap-2 pb-2">
-        <input type="month" value={monthFilter || ''} max={lagosToday().slice(0, 7)}
-          onChange={e => { setMonthFilter(e.target.value || null); if (e.target.value) setDayFilter('') }}
-          className="h-11 px-3 rounded-xl bg-surface border border-line tnum" />
-        {monthFilter
-          ? <button onClick={() => setMonthFilter(null)}
-              className="h-11 px-3 rounded-xl border border-amber text-amber text-sm font-semibold">
-              Back to balances
-            </button>
-          : <span className="text-dim text-sm">Or a whole month, for deductions</span>}
-      </div>
+      {view === 'day' && (
+        <div className="flex items-center gap-2 pb-2">
+          <input type="date" value={dayFilter} max={lagosToday()}
+            onChange={e => { if (e.target.value) { setDayFilter(e.target.value); setMonthFilter(null) } }}
+            className="h-11 px-3 rounded-xl bg-surface border border-amber text-amber tnum" />
+          <span className="text-dim text-sm">What was taken and repaid that day</span>
+        </div>
+      )}
+
+      {view === 'month' && (
+        <div className="flex items-center gap-2 pb-2">
+          <input type="month" value={monthFilter || ''} max={lagosToday().slice(0, 7)}
+            onChange={e => { if (e.target.value) { setMonthFilter(e.target.value); setDayFilter('') } }}
+            className="h-11 px-3 rounded-xl bg-surface border border-amber text-amber tnum" />
+          <span className="text-dim text-sm">What each owes, for deductions</span>
+        </div>
+      )}
 
       {monthFilter && (() => {
         if (monthRows === null) return <p className="text-dim py-8 text-center">Loading…</p>
@@ -508,48 +558,102 @@ export default function Credit({ boot }) {
         </>
       ) : (
       <>
-      <div className="flex items-baseline justify-between py-2">
-        <h2 className="text-dim">
+      {/* The figure this page exists for, at the top of it and in a size
+          that matches what it means. It was a small number on the right
+          of a heading, the same weight as the headings above it. */}
+      <section className="rounded-2xl border border-clay bg-surface p-4 mt-1">
+        <div className="text-dim text-sm">
           {locId === 'all' ? 'Owed across all departments' : `Owed to ${locById[locId]?.name || 'this department'}`}
           {staffFilter && people.find(p => p.id === staffFilter)
             ? ` · ${people.find(p => p.id === staffFilter).full_name}` : ''}
-          <span className="ml-2 text-sm">
-            ({owing.length} debtor{owing.length === 1 ? '' : 's'})
-          </span>
-        </h2>
-        <span className="tnum font-bold text-lg text-clay">{naira(total)}</span>
-      </div>
+        </div>
+        <div className="tnum text-3xl font-bold text-clay">{naira(total)}</div>
+        <div className="text-dim text-sm mt-1">
+          {owing.length} {owing.length === 1 ? 'person owes' : 'people owe'} it
+          {biggest > 0 && <> · biggest {naira(biggest)}</>}
+          {oldest && <> · oldest since {new Date(oldest + 'T12:00:00')
+            .toLocaleDateString('en-NG', { day: 'numeric', month: 'short' })}</>}
+        </div>
+        {/* All time, and said so. These two are each customer's whole
+            history at this department, not this month's — summing them
+            under a monthly heading is how a figure gets quoted wrongly. */}
+        {takenAllTime > 0 && (
+          <div className="text-dim text-xs mt-2 pt-2 border-t border-line">
+            {naira(takenAllTime)} given and {naira(repaidAllTime)} paid back by these{' '}
+            {owing.length === 1 ? 'person' : 'people'}, all time
+          </div>
+        )}
+      </section>
 
-      <ul className="divide-y divide-line/60">
-        {owing.map(c => (
-          <li key={c.customer_id} className="py-3 flex items-center gap-3">
-            <button onClick={() => openCustomer(c)} className="flex-1 min-w-0 text-left">
-              <div className="font-semibold truncate">{c.name}</div>
-              <div className="text-dim text-sm">
-                {naira(c.credit_taken)} taken · {naira(c.repaid)} repaid
-              </div>
-              {!!c.deptIds?.length && (
-                <div className="text-dim text-xs">
-                  {c.deptIds.map(id => locById[id]?.name).filter(Boolean).join(', ')}
+      {/* Only once the list is long enough to be worth searching. */}
+      {owing.length > 4 && (
+        <>
+          <input value={find} onChange={e => setFind(e.target.value)}
+            placeholder="Find a name" aria-label="Find a name"
+            className="mt-3 h-11 w-full px-3 rounded-xl bg-surface border border-line" />
+          <div className="flex gap-2 mt-2">
+            {[['recent', 'Recent'], ['biggest', 'Biggest'], ['longest', 'Oldest']].map(([k, label]) => (
+              <button key={k} onClick={() => setSort(k)}
+                className={`flex-1 h-10 rounded-xl border text-sm font-semibold ${sort === k
+                  ? 'bg-raise border-amber text-amber' : 'border-line text-dim'}`}>
+                {label}
+              </button>
+            ))}
+          </div>
+        </>
+      )}
+
+      <ul className="mt-2 divide-y divide-line/60">
+        {shown.map(c => {
+          const days = daysSince(c.last_credit_date)
+          return (
+          <li key={c.customer_id}>
+            {/* The whole row opens the statement. It always did, but
+                nothing said so — no chevron, no label — so staff asked
+                where a customer's history was. */}
+            <button onClick={() => openCustomer(c)}
+              className="w-full py-3 flex items-center gap-3 text-left">
+              <div className="flex-1 min-w-0">
+                <div className="font-semibold break-words">{c.name}</div>
+                <div className="text-dim text-sm">
+                  {naira(c.credit_taken)} taken · {naira(c.repaid)} repaid
                 </div>
-              )}
-              <div className="text-dim text-sm">
-                {c.last_credit_date && (
-                  <span>
-                    {new Date(c.last_credit_date + 'T12:00:00').toLocaleDateString('en-NG',
-                      { day: 'numeric', month: 'short' })}
-                    {c.first_credit_date && c.first_credit_date !== c.last_credit_date
-                      && ` (since ${new Date(c.first_credit_date + 'T12:00:00')
-                          .toLocaleDateString('en-NG', { day: 'numeric', month: 'short' })})`}
-                  </span>
+                {!!c.deptIds?.length && (
+                  <div className="text-dim text-xs">
+                    {c.deptIds.map(id => locById[id]?.name).filter(Boolean).join(', ')}
+                  </div>
                 )}
-                {c.staff_name && <span> · by {c.staff_name}</span>}
+                <div className="text-sm">
+                  {/* Days, not just a date. "3 Oct" needs working out;
+                      "15 days ago" is the thing being judged. Clay past
+                      a month — a fact about when credit was last taken,
+                      which is all this data says: nothing here records
+                      a due date, so nothing here calls it overdue. */}
+                  {days != null && (
+                    <span className={days >= 30 ? 'text-clay' : 'text-dim'}>
+                      last took credit {days === 0 ? 'today' : days === 1 ? 'yesterday' : `${days} days ago`}
+                    </span>
+                  )}
+                  {c.first_credit_date && c.first_credit_date !== c.last_credit_date && (
+                    <span className="text-dim"> · since {new Date(c.first_credit_date + 'T12:00:00')
+                      .toLocaleDateString('en-NG', { day: 'numeric', month: 'short' })}</span>
+                  )}
+                  {c.staff_name && <span className="text-dim"> · by {c.staff_name}</span>}
+                </div>
               </div>
+              <span className="shrink-0 text-right">
+                <span className="tnum font-bold text-clay block">{naira(c.balance)}</span>
+                <span className="text-dim text-xs">statement ›</span>
+              </span>
             </button>
-            <span className="tnum font-bold text-clay">{naira(c.balance)}</span>
           </li>
-        ))}
+        )})}
         {!owing.length && <li className="py-8 text-center text-dim">Nobody owes anything.</li>}
+        {!!owing.length && !shown.length && (
+          <li className="py-8 text-center text-dim">
+            Nobody owing matches “{find}”. {owing.length} {owing.length === 1 ? 'debtor' : 'debtors'} in all.
+          </li>
+        )}
       </ul>
       </>
       )}
@@ -579,15 +683,13 @@ export default function Credit({ boot }) {
         const gbTotal = gb.reduce((s, r) => s + r.outstanding + r.departmentCredit + r.billedToYou, 0)
         return (
           <>
-            <div className="flex items-baseline justify-between py-2">
-              <h2 className="text-dim">
-                Guest room balances
-                <span className="ml-2 text-sm">
-                  ({gb.length} room{gb.length === 1 ? '' : 's'})
-                </span>
-              </h2>
-              <span className="tnum font-bold text-lg text-clay">{naira(gbTotal)}</span>
-            </div>
+            <section className="rounded-2xl border border-clay bg-surface p-4 mt-6">
+              <div className="text-dim text-sm">Guest room balances</div>
+              <div className="tnum text-2xl font-bold text-clay">{naira(gbTotal)}</div>
+              <div className="text-dim text-sm mt-1">
+                across {gb.length} room{gb.length === 1 ? '' : 's'} · tap a room to take payment
+              </div>
+            </section>
             <ul className="divide-y divide-line/60">
               {gb.map(g => (
                 <li key={g.stay_id} className="py-3 flex items-center gap-3">
@@ -614,8 +716,11 @@ export default function Credit({ boot }) {
                       </div>
                     )}
                   </button>
-                  <span className="tnum font-bold text-clay">
-                    {naira(g.outstanding + g.departmentCredit + g.billedToYou)}
+                  <span className="shrink-0 text-right">
+                    <span className="tnum font-bold text-clay block">
+                      {naira(g.outstanding + g.departmentCredit + g.billedToYou)}
+                    </span>
+                    <span className="text-dim text-xs">take payment ›</span>
                   </span>
                 </li>
               ))}

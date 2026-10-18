@@ -555,6 +555,10 @@ export default function SalesEntry({ boot }) {
   // The day's detail, folded into the POS/Cash/Credit tile. Closed by
   // default: the three figures are what the page is opened for.
   const [detailOpen, setDetailOpen] = useState(false)
+  // How many of the day's entries show before asking. Twenty was
+  // hard-coded into the slice with nothing naming it.
+  const ENTRY_PAGE = 20
+  const [showAllToday, setShowAllToday] = useState(false)
   // Has the FRONT DESK closed this day? null while unknown.
   const [frontDeskClosed, setFrontDeskClosed] = useState(null)
   const saveTillResult = async (r) => {
@@ -828,13 +832,13 @@ export default function SalesEntry({ boot }) {
           )}
         </div>
       ) : null}
-      {date !== todayDate && (
-        <p className="mt-2 text-amber text-sm">
-          Posting to {new Date(date + 'T12:00:00').toLocaleDateString('en-NG',
-            { weekday: 'long', day: 'numeric', month: 'long' })} — not today.
-        </p>
-      )}
-      {canBackdate && !canOverrideVariance && (
+      {/* The pinned amber band above already says which day this is,
+          and keeps saying it. A paragraph repeating it put the same
+          sentence on screen three times — band, paragraph, button —
+          and pushed Sell Item further down the page. The backdate
+          limit is said once, where it bites: when the day is not today
+          (18 October 2026). */}
+      {canBackdate && !canOverrideVariance && offToday && (
         <p className="mt-1 text-dim text-sm">
           You can post up to {STAFF_BACKDATE_DAYS} days back. Ask a manager for anything older.
         </p>
@@ -970,6 +974,7 @@ export default function SalesEntry({ boot }) {
           {/* The front desk's dashboard is this tile's detail, the same
               way a department's day is. Closed, Reception also reads as
               what it should have in hand and nothing else. */}
+          <p className="text-dim text-sm mt-6">Closing the day</p>
           <TillTile figures={tileFigures} note={tileNote} hidden={isMyTill && !tillSaved}
                     checkError={tillCheckError} open={detailOpen}
                     onToggle={() => setDetailOpen(o => !o)}>
@@ -1028,11 +1033,21 @@ export default function SalesEntry({ boot }) {
 
       {isReception && (
         <div className="mt-4">
-          <div className="flex items-baseline justify-between">
-            <h2 className="text-dim">Today at Reception</h2>
-            <span className="tnum font-bold text-lg">
+          <div className="rounded-2xl border border-line bg-surface p-4">
+            <div className="text-dim text-sm">
+              Front desk · collected{' '}
+              {offToday
+                ? new Date(date + 'T12:00:00').toLocaleDateString('en-NG',
+                    { weekday: 'long', day: 'numeric', month: 'long' })
+                : 'today'}
+            </div>
+            <div className="tnum text-2xl font-bold">
               {naira(receptionActivity.reduce((s, p) => s + Number(p.amount || 0), 0))}
-            </span>
+            </div>
+            <div className="text-dim text-sm mt-1">
+              {receptionActivity.length} {receptionActivity.length === 1 ? 'payment' : 'payments'}
+              {' '}from guests
+            </div>
           </div>
           <ul className="mt-2 divide-y divide-line/60">
             {receptionActivity.map(p => (
@@ -1108,16 +1123,39 @@ export default function SalesEntry({ boot }) {
 
       {!isReception && (
       <section className="mt-6">
-        <div className="flex items-baseline justify-between">
-          <div>
-            <h2 className="text-dim">Today</h2>
-            <p className="text-dim text-sm">
-              {new Date(date + 'T12:00:00').toLocaleDateString('en-NG',
-                { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}
-            </p>
+        {/* "Today" over a date, with a figure on the right that named
+            neither the department nor what it counted. It counts sales
+            rung up at THIS till — not room charges, which are goods
+            gone out on a guest's bill and are named separately, on
+            their own line, so the two can never be added by eye. */}
+        <div className="rounded-2xl border border-line bg-surface p-4">
+          <div className="text-dim text-sm">
+            {currentDept?.name || 'This department'} · sold here{' '}
+            {offToday
+              ? new Date(date + 'T12:00:00').toLocaleDateString('en-NG',
+                  { weekday: 'long', day: 'numeric', month: 'long' })
+              : 'today'}
           </div>
-          <span className="tnum font-bold text-lg">{naira(todayTotal)}</span>
+          <div className="tnum text-2xl font-bold">{naira(todayTotal)}</div>
+          <div className="text-dim text-sm mt-1">
+            {combinedToday.length} {combinedToday.length === 1 ? 'entry' : 'entries'}
+            {roomChargedToday > 0 && (
+              <> · {naira(roomChargedToday)} more charged to guests&#39; rooms</>
+            )}
+          </div>
         </div>
+
+        {/* Counting is a separate job from selling, and it happens once,
+            at the end. It is named here so the controls for it read as
+            one piece of work rather than as more of the page.
+
+            The tile goes ABOVE the count form, which is also what its
+            own words say: "type your POS slip and your drawer into
+            Match your Total Sales below". It sat underneath that form
+            and still said "below". Nothing leaks by moving it — the
+            tile stays covered until the count is saved, which is the
+            whole reason it can stand here at all (18 October 2026). */}
+        <p className="text-dim text-sm mt-6">Closing the day</p>
 
         {!isReception && frontDeskClosed === false && (
           <p className="mt-3 px-4 py-3 rounded-xl border border-amber text-amber text-sm">
@@ -1127,16 +1165,6 @@ export default function SalesEntry({ boot }) {
             closed, or expect it to move.
           </p>
         )}
-
-        <MatchTill rows={today} busyId={switchingId} onFix={fixEntry} onRecord={saveTillResult}
-          posTotal={inHand.pos} cashTotal={inHand.cash}
-          includes={{ recoveredPos: recon?.customerRecoveredBy?.pos, recoveredCash: recon?.customerRecoveredBy?.cash,
-                      roomPos: recon?.roomRecoveredBy?.pos, roomCash: recon?.roomRecoveredBy?.cash }}
-          // Credit comes from the person's own entries (what they actually gave),
-          // NOT the day summary's "credit raised", which leaves out credit not
-          // repaid by noon next day and so showed 0 for same-day credit.
-          creditApp={today.length ? null : inHand.credit}
-          itemName={r => itemById[r.stock_item_id]?.name || r.description || ''} />
 
         {summary && (
         <TillTile figures={tileFigures} note={tileNote} hidden={isMyTill && !tillSaved}
@@ -1229,8 +1257,38 @@ export default function SalesEntry({ boot }) {
         </TillTile>
         )}
 
-        <ul className="mt-3 divide-y divide-line/60">
-          {combinedToday.slice(0, 20).map(r => (
+        <MatchTill rows={today} busyId={switchingId} onFix={fixEntry} onRecord={saveTillResult}
+          posTotal={inHand.pos} cashTotal={inHand.cash}
+          includes={{ recoveredPos: recon?.customerRecoveredBy?.pos, recoveredCash: recon?.customerRecoveredBy?.cash,
+                      roomPos: recon?.roomRecoveredBy?.pos, roomCash: recon?.roomRecoveredBy?.cash }}
+          // Credit comes from the person's own entries (what they actually gave),
+          // NOT the day summary's "credit raised", which leaves out credit not
+          // repaid by noon next day and so showed 0 for same-day credit.
+          creditApp={today.length ? null : inHand.credit}
+          itemName={r => itemById[r.stock_item_id]?.name || r.description || ''} />
+
+        {/* Every entry, not the newest twenty with no sign there were
+            more. On a busy night the morning's sales fell off the
+            bottom of the list and nothing said so, so a staff member
+            checking one could not find it and had no way to know the
+            list had been cut. */}
+        <div className="flex items-baseline justify-between mt-6">
+          <p className="text-dim text-sm">
+            {combinedToday.length} {combinedToday.length === 1 ? 'entry' : 'entries'}
+            {!showAllToday && combinedToday.length > ENTRY_PAGE && (
+              <span> · newest {ENTRY_PAGE}</span>
+            )}
+          </p>
+          {combinedToday.length > ENTRY_PAGE && (
+            <button onClick={() => setShowAllToday(x => !x)}
+              className="text-amber text-sm font-semibold shrink-0 py-2.5 pl-3">
+              {showAllToday ? `Show newest ${ENTRY_PAGE}` : `Show all ${combinedToday.length}`}
+            </button>
+          )}
+        </div>
+
+        <ul className="mt-1 divide-y divide-line/60">
+          {(showAllToday ? combinedToday : combinedToday.slice(0, ENTRY_PAGE)).map(r => (
             <li key={`${r.entryKind}:${r.id}`} className="py-3 flex items-center gap-3"
                 onClick={() => r.entryKind === 'sale' && openReceipt(r.receipt_id)}>
               <div className="flex-1 min-w-0">
