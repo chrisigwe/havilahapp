@@ -28,6 +28,39 @@ export default function Shell({ staff, tab, onTab, children,
                                 branches = [], viewBranch, onBranch, pendingCount = 0,
                                 alertEligible = false, recordsSales = false, hasPay = false }) {
   const [confirmingSignOut, setConfirmingSignOut] = useState(false)
+  // The tab bar gets out of the way while you read down a page and
+  // comes back the moment you scroll up (19 October 2026). The same
+  // behaviour as tabBarMinimizeBehavior(.onScrollDown) on iOS, which is
+  // a SwiftUI setting and has no equivalent on the web — so it is done
+  // here by hand.
+  //
+  // Never hidden near the top of a page, so it cannot be missing when
+  // someone has not scrolled anywhere. Small movements are ignored, or
+  // the bar would flicker on every thumb tremor.
+  const [navDown, setNavDown] = useState(false)
+  useEffect(() => {
+    let last = window.scrollY
+    let frame = 0
+    const onScroll = () => {
+      if (frame) return
+      frame = requestAnimationFrame(() => {
+        frame = 0
+        const y = window.scrollY
+        const dy = y - last
+        if (Math.abs(dy) < 6) return
+        last = y
+        if (y < 80) { setNavDown(false); return }
+        setNavDown(dy > 0)
+      })
+    }
+    window.addEventListener('scroll', onScroll, { passive: true })
+    return () => {
+      window.removeEventListener('scroll', onScroll)
+      if (frame) cancelAnimationFrame(frame)
+    }
+  }, [])
+  // A tab change scrolls to a new page; the bar must be there when it does.
+  useEffect(() => { setNavDown(false) }, [tab])
   // The bar comes from tabsFor() — the single definition shared with
   // the More menu and the landing screen. See lib/tabs.js.
   const tabs = tabsFor(staff.role, { recordsSales, canRecordSales: !!staff.can_record_sales, hasPay })
@@ -162,7 +195,8 @@ export default function Shell({ staff, tab, onTab, children,
             className="mt-3 w-full h-12 text-dim">Cancel</button>
         </div>
       )}
-      <nav className="lg:hidden fixed bottom-3 inset-x-3 z-40"
+      <nav className={`lg:hidden fixed bottom-3 inset-x-3 z-40 transition-transform duration-200 ease-out ${
+        navDown ? 'translate-y-[150%]' : 'translate-y-0'}`}
         style={{ marginBottom: 'env(safe-area-inset-bottom)' }}>
         <div className="mx-auto max-w-md flex gap-1 p-1.5 rounded-[28px]
                          bg-surface/70

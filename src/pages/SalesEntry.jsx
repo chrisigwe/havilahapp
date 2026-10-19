@@ -27,6 +27,58 @@ import { APPROVE_ROOM_CHARGES, EDITOR, MANAGEMENT, OVERSIGHT, SUPERVISOR, is } f
 
 const niceDay = (d) => new Date(d + 'T12:00:00').toLocaleDateString('en-NG', { day: 'numeric', month: 'short' })
 
+// Why a sale is being dated to a day that is not today or yesterday.
+//
+// 19 October 2026, Chris's design: chips, with typing required only on
+// Other. A free-text box asked at the end of a long entry gets "y" — a
+// chip takes one tap and still says something true.
+//
+// These are reasons a SALE is late, not reasons stock moved. Breakage,
+// expired, theft, short delivery and the rest belong to a count, where
+// they already are; none of them explains why a sale carries Saturday's
+// date. A list that does not fit what is being recorded gets answered
+// at random, which is the same as not asking.
+const LATE_SALE_REASONS = [
+  'Not keyed on the day',
+  'No network',
+  'Closing an old day',
+  'Found in the written record',
+  'Wrong date first time',
+]
+
+// Named ...Field deliberately: it is the control that answers the
+// refusal, and tools/check-guards.mjs looks for a control in the same
+// sheet as the guard that demands it.
+function BackdateReasonField({ value, onChange, other, onOther }) {
+  const chip = (active) => `h-10 px-3 rounded-full border text-sm font-semibold ${active
+    ? 'bg-amber text-bg border-amber' : 'border-line text-dim'}`
+  return (
+    <div>
+      <div className="flex flex-wrap gap-2">
+        {LATE_SALE_REASONS.map(r => (
+          <button key={r} type="button"
+            onClick={() => { onOther(false); onChange(value === r ? '' : r) }}
+            className={chip(!other && value === r)}>
+            {r}
+          </button>
+        ))}
+        <button type="button"
+          onClick={() => { onOther(true); onChange('') }}
+          className={chip(other)}>
+          Other
+        </button>
+      </div>
+      {other && (
+        <input value={value} autoFocus
+          onChange={e => onChange(e.target.value)}
+          placeholder="Say what happened (required)"
+          className={`mt-2 h-12 w-full px-3 rounded-xl bg-raise border ${
+            value.trim() ? 'border-line' : 'border-amber'}`} />
+      )}
+    </div>
+  )
+}
+
 // What should be in hand right now: the same three figures Match your
 // Total Sales expects, shown on the dashboard so the two can never
 // disagree. Module-level so typing elsewhere on the page cannot remount it.
@@ -90,6 +142,10 @@ export default function SalesEntry({ boot }) {
     return openingDate && openingDate > floor ? openingDate : floor
   })()
   const [backdateReason, setBackdateReason] = useState('')
+  // Whether Other is the chosen chip. The reason itself is the one
+  // string that gets stored either way; this only says which control
+  // is showing.
+  const [reasonOther, setReasonOther] = useState(false)
   // The page's date is a SETTING, not a field on an entry: set once, it
   // governs everything recorded until it is changed. So it cannot be
   // guarded the way the folio's date is — by sitting last on the form —
@@ -825,7 +881,8 @@ export default function SalesEntry({ boot }) {
       )}
 
       {canBackdate ? (
-        <div className="mt-2 flex items-center gap-3">
+        <div className="mt-2">
+          <div className="flex items-center gap-3">
           <input type="date" value={date} max={todayDate} min={earliestDate}
             onChange={e => {
               const v = e.target.value
@@ -844,11 +901,15 @@ export default function SalesEntry({ boot }) {
             }}
             className={`h-12 px-3 rounded-xl bg-surface border tnum ${needsReason
               ? 'border-amber text-amber' : offToday ? 'border-amber/40' : 'border-line'}`} />
+          </div>
+          {/* Under the date rather than beside it: six chips do not fit
+              on one line beside a date box on a phone. */}
           {needsReason && (
-            <input value={backdateReason} placeholder="Why this day? (required)"
-              onChange={e => setBackdateReason(e.target.value)}
-              className={`h-12 flex-1 px-3 rounded-xl bg-surface border ${
-                backdateReason.trim() ? 'border-line' : 'border-amber'}`} />
+            <div className="mt-2">
+              <p className="text-dim text-sm mb-2">Why this day?</p>
+              <BackdateReasonField value={backdateReason} onChange={setBackdateReason}
+                other={reasonOther} onOther={setReasonOther} />
+            </div>
           )}
         </div>
       ) : null}
@@ -1654,15 +1715,12 @@ export default function SalesEntry({ boot }) {
                 Recording for {new Date(date + 'T12:00:00').toLocaleDateString('en-NG',
                   { weekday: 'long', day: 'numeric', month: 'long' })} — not today
               </p>
-              <p className="text-dim text-sm mt-1">
+              <p className="text-dim text-sm mt-1 mb-3">
                 Say why. It is kept with the sale, so the figure it moves can be
                 explained later.
               </p>
-              <input value={backdateReason}
-                placeholder="Why this day? (required)"
-                onChange={e => setBackdateReason(e.target.value)}
-                className={`mt-3 h-12 w-full px-3 rounded-xl bg-raise border ${
-                  backdateReason.trim() ? 'border-line' : 'border-amber'}`} />
+              <BackdateReasonField value={backdateReason} onChange={setBackdateReason}
+                other={reasonOther} onOther={setReasonOther} />
             </div>
           )}
 

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useToast } from '../components/Toast'
-import { lagosToday } from '../lib/format'
+import { lagosDaysAgo, lagosToday } from '../lib/format'
 import { loadDepartmentSupplies, loadStockMap, loadPopular, loadDepartmentHistory,
          loadReceiveHistory, loadMoveHistory, loadConvertHistory } from '../lib/data'
 import { supabase } from '../lib/supabase'
@@ -97,6 +97,17 @@ export default function Store({ boot }) {
 
   async function save() {
     if (!lines.length) return
+    // 19 October 2026. A restock of 25 bags of rice was keyed on 1
+    // October carrying 28 October — a month typed wrong. max= on the
+    // input is a hint the browser may or may not honour, and the date
+    // picker on a phone did not. The book counted those bags from the
+    // day it was typed, because v_stock_on_hand pays no attention to
+    // dates at all. So the refusal lives here, where it cannot be
+    // walked around.
+    if (date > lagosToday()) {
+      toast('That date has not happened yet. Stock cannot be recorded ahead of today.', 'error')
+      return
+    }
     setBusy(true)
     try {
       const dept = departments.find(d => d.id === toDept)
@@ -149,6 +160,10 @@ export default function Store({ boot }) {
   }
 
   async function saveConvert() {
+    if (date > lagosToday()) {
+      toast('That date has not happened yet. Stock cannot be recorded ahead of today.', 'error')
+      return
+    }
     if (!convertFrom?.item || !convertTo?.item || !convertFrom.qty || !convertTo.qty) return
     if (convertFrom.item.id === convertTo.item.id) {
       toast('Pick two different items — this converts one into another', 'error'); return
@@ -193,8 +208,24 @@ export default function Store({ boot }) {
   const shownHistory = history && history.filter(h =>
     (kind === 'supplies') === supplyNames.has(h.stock_items?.name))
 
+  const offToday = date !== lagosToday()
+  const dayLong = (d) => new Date(d + 'T12:00:00')
+    .toLocaleDateString('en-NG', { weekday: 'long', day: 'numeric', month: 'long' })
+
   return (
     <div className="px-5">
+      {/* The day this will be recorded on, pinned, in the same words and
+          the same two tones as the Sales page (19 October 2026). The
+          date box sits halfway down this form, below the mode chips and
+          the department chips, and nothing above it ever said which day
+          was about to be written. */}
+      {offToday && (
+        <div className={`sticky top-0 z-20 -mx-5 px-5 py-2 font-bold text-sm text-center ${
+          date < lagosDaysAgo(1) ? 'bg-amber text-bg' : 'bg-raise text-amber border-b border-amber/40'}`}>
+          Recording for {dayLong(date)}
+          {date < lagosDaysAgo(1) ? ' — not today' : ' — yesterday'}
+        </div>
+      )}
       <div className="flex gap-2 pt-2">
         {[['stock', 'Stock'], ['supplies', 'Supplies']].map(([k, label]) => (
           <button key={k} onClick={() => { setKind(k); setMode('receive'); setLines([]) }}
@@ -287,8 +318,18 @@ export default function Store({ boot }) {
               {mode === 'receive' ? 'Date received' : 'Date'}
             </div>
             <input type="date" value={date} max={lagosToday()}
-              onChange={e => setDate(e.target.value)}
-              className="h-12 px-3 rounded-xl bg-surface border border-line tnum" />
+              onChange={e => {
+                const v = e.target.value
+                if (!v) return
+                if (v > lagosToday()) {
+                  setDate(lagosToday())
+                  toast('That date has not happened yet', 'error')
+                  return
+                }
+                setDate(v)
+              }}
+              className={`h-12 px-3 rounded-xl bg-surface border tnum ${
+                date !== lagosToday() ? 'border-amber text-amber' : 'border-line'}`} />
           </div>
           {mode !== 'receive' && (
             <div className="flex-1">

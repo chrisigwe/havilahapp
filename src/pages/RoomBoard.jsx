@@ -231,42 +231,87 @@ export default function RoomBoard({ boot }) {
 
   return (
     <div className="px-5">
-      {!!rooms.length && (
-        <div className="flex flex-wrap items-baseline gap-x-5 gap-y-2 py-3 border-b border-line mb-3">
-          {/* Tap a count to see only those rooms. This is the triage the
-              urgency sort used to give, without moving a single card:
-              the rooms that stay are still in building order, the rest
-              are just out of the way for a moment. */}
-          {Object.entries(STATE).map(([key, s]) => {
-            const n = tally[key] || 0
-            const on = filter === key
-            return (
-              <button key={key} disabled={!n}
-                onClick={() => setFilter(on ? null : key)}
-                aria-pressed={on}
-                className={`text-dim text-sm rounded-lg px-2 -mx-1 py-0.5 disabled:opacity-50
-                  ${on ? 'bg-raise ring-1 ring-line' : ''}`}>
-                <b className={`text-lg font-bold tnum ${s.text}`}>{n}</b> {s.label.toLowerCase()}
-              </button>
-            )
-          })}
-          {owed > 0 && (
-            <span className="text-dim text-sm ml-auto">
-              <b className="text-lg font-bold tnum text-clay">{naira(owed)}</b> outstanding
-            </span>
-          )}
-          {onDeposit > 0 && (
-            <span className="text-dim text-sm">
-              <b className="text-lg font-bold tnum text-leaf">{naira(onDeposit)}</b> on deposit
-            </span>
-          )}
-          {booked > 0 && (
-            <span className="text-dim text-sm">
-              <b className="text-lg font-bold tnum text-amber">{naira(booked)}</b> booked, not arrived
-            </span>
-          )}
-        </div>
-      )}
+      {!!rooms.length && (() => {
+        // How full the house is, which is the first thing anyone asks of
+        // a room board and the one figure it never showed (19 October
+        // 2026). Occupied means a guest is in the bed tonight: every
+        // state except vacant and maintenance.
+        const beds = rooms.length
+        const free = tally.vacant || 0
+        const oos = tally.service || 0
+        const taken = beds - free - oos
+        const pct = beds - oos > 0 ? Math.round((taken / (beds - oos)) * 100) : 0
+        return (
+          <>
+            <section className="rounded-2xl border border-line bg-surface p-4 mt-3">
+              <div className="text-dim text-sm">Rooms taken tonight</div>
+              <div className="flex items-baseline gap-2">
+                <span className="tnum text-3xl font-bold text-amber">{taken}</span>
+                <span className="text-dim">of {beds - oos}</span>
+                <span className="tnum text-dim ml-auto">{pct}%</span>
+              </div>
+              <div className="mt-2 h-2 rounded-full bg-raise overflow-hidden">
+                <div className="h-full bg-amber" style={{ width: `${pct}%` }} />
+              </div>
+              <div className="text-dim text-sm mt-1">
+                {free} free{oos > 0 && <> · {oos} out of service</>}
+              </div>
+
+              {/* The money, separated from the room counts by a rule.
+                  These three were mixed into the same wrapping row as
+                  the status tallies, where a naira figure and a count of
+                  rooms sat side by side reading as the same kind of
+                  thing.
+
+                  Rows, not columns: three figures side by side cut
+                  ₦1,650,000 down to "₦1,650,0…" at 320px, and a
+                  truncated naira figure is worse than no figure. */}
+              {(owed > 0 || onDeposit > 0 || booked > 0) && (
+                <div className="mt-3 pt-3 border-t border-line space-y-1 text-sm">
+                  <div className="flex justify-between gap-3">
+                    <span className="text-dim min-w-0">Outstanding</span>
+                    <span className="tnum font-bold text-clay shrink-0">{naira(owed)}</span>
+                  </div>
+                  <div className="flex justify-between gap-3">
+                    <span className="text-dim min-w-0">On deposit</span>
+                    <span className="tnum font-bold text-leaf shrink-0">{naira(onDeposit)}</span>
+                  </div>
+                  <div className="flex justify-between gap-3">
+                    <span className="text-dim min-w-0">Booked, not arrived</span>
+                    <span className="tnum font-bold text-amber shrink-0">{naira(booked)}</span>
+                  </div>
+                </div>
+              )}
+            </section>
+
+            {/* Tap a count to see only those rooms. This is the triage the
+                urgency sort used to give, without moving a single card:
+                the rooms that stay are still in building order, the rest
+                are just out of the way for a moment.
+
+                Proper chips now, each its own tap target. They were text
+                runs sharing one wrapping line, and on a phone the edge of
+                one sat against the start of the next. */}
+            <div className="flex gap-2 overflow-x-auto py-3 -mx-1 px-1 mb-1">
+              {Object.entries(STATE).map(([key, st]) => {
+                const n = tally[key] || 0
+                const on = filter === key
+                if (!n) return null
+                return (
+                  <button key={key}
+                    onClick={() => setFilter(on ? null : key)}
+                    aria-pressed={on}
+                    className={`shrink-0 h-11 px-3 rounded-full border text-sm flex items-baseline gap-1.5 ${
+                      on ? 'bg-raise border-amber' : 'border-line'}`}>
+                    <b className={`text-base font-bold tnum ${st.text}`}>{n}</b>
+                    <span className={on ? 'text-ink' : 'text-dim'}>{st.label.toLowerCase()}</span>
+                  </button>
+                )
+              })}
+            </div>
+          </>
+        )
+      })()}
 
       {canBook && (
         <button onClick={() => setCheckingIn(true)}
