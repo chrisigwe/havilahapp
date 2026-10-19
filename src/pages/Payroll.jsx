@@ -130,6 +130,76 @@ export default function Payroll({ boot }) {
 
   const groups = ['management', 'junior']
 
+  // One card per person, for a phone. Only the figures that are not
+  // zero are shown: a column of dashes is what made the table
+  // unreadable at this width in the first place.
+  const phoneSheet = period ? (
+    <div className="mt-2">
+      {groups.map(g => {
+        const rows = (lines || []).filter(l => l.tier === g)
+        if (!rows.length) return null
+        const groupNet = rows.reduce((t, l) =>
+          t + lineTotals(l, payoutFor(l.employee_id), period?.working_days).net, 0)
+        return (
+          <section key={g} className="mt-4">
+            <div className="flex items-baseline justify-between">
+              <h2 className="font-bold uppercase text-sm tracking-wide">
+                {g === 'management' ? 'Management staff' : 'Junior staff'}
+              </h2>
+              <span className="tnum font-bold text-amber">{naira(groupNet)}</span>
+            </div>
+            <p className="text-dim text-sm">
+              {rows.length} {rows.length === 1 ? 'person' : 'people'}
+              {!final && ' · tap to edit'}
+            </p>
+            <ul className="mt-2 space-y-2">
+              {rows.map(l => {
+                const x = lineTotals(l, payoutFor(l.employee_id), period?.working_days)
+                const bits = [
+                  ['Salary', naira(l.monthly_salary), ''],
+                  ['Days', `${l.days_worked} of ${period?.working_days ?? '—'}`, ''],
+                  x.deductions ? ['Deductions', naira(x.deductions), 'text-clay'] : null,
+                  x.additions ? ['Additions', naira(x.additions), 'text-leaf'] : null,
+                  x.contribution ? ['Contribution', naira(x.contribution), 'text-clay'] : null,
+                  x.savings ? ['Savings held', naira(x.savings), 'text-clay'] : null,
+                  x.gift ? ['Gift', naira(x.gift), 'text-leaf'] : null,
+                  ['Documented', naira(x.documented), 'text-dim'],
+                ].filter(Boolean)
+                return (
+                  <li key={l.id}>
+                    <button type="button" disabled={final}
+                      onClick={() => !final && setEditEmp({ line: l })}
+                      className="w-full text-left rounded-2xl border border-line bg-surface p-4">
+                      <div className="flex items-baseline justify-between gap-3">
+                        <span className="min-w-0">
+                          <span className="font-semibold break-words block">{l.full_name}</span>
+                          <span className="text-dim text-sm">{l.role_title}</span>
+                        </span>
+                        <span className="text-right shrink-0">
+                          <span className={`tnum text-xl font-bold block ${
+                            x.net < 0 ? 'text-clay' : 'text-amber'}`}>{naira(x.net)}</span>
+                          <span className="text-dim text-xs">net pay</span>
+                        </span>
+                      </div>
+                      <div className="mt-3 pt-3 border-t border-line space-y-1 text-sm">
+                        {bits.map(([k, v, tone]) => (
+                          <div key={k} className="flex justify-between gap-3">
+                            <span className="text-dim min-w-0">{k}</span>
+                            <span className={`tnum shrink-0 ${tone}`}>{v}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </button>
+                  </li>
+                )
+              })}
+            </ul>
+          </section>
+        )
+      })}
+    </div>
+  ) : null
+
   const sheet = period ? (
     <div className="invoice-print">
       <div className="invoice-head">
@@ -293,7 +363,14 @@ export default function Payroll({ boot }) {
             )}
           </div>
 
-          {sheet}
+          {/* The sheet is an eleven-column table. On a laptop it is the
+              right shape — it is the payroll, and it prints. On a phone
+              eleven columns of naira either run off the screen or squash
+              into something nobody can read, so the phone gets a card
+              per person carrying the same figures (19 October 2026).
+              Both read the same lineTotals, so they cannot disagree. */}
+          <div className="hidden lg:block">{sheet}</div>
+          <div className="lg:hidden">{phoneSheet}</div>
           {period && createPortal(
             <div className="print-portal print-only">{sheet}</div>, document.body)}
 

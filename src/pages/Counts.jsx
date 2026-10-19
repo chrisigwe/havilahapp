@@ -68,6 +68,11 @@ export default function Counts({ boot }) {
   const toast = useToast()
 
   const [counts, setCounts] = useState(null)
+  // Without this a failed load left counts at null and the page sat on
+  // "Loading…" for good, which reads as a slow line rather than a fault
+  // (19 October 2026).
+  const [countsErr, setCountsErr] = useState(null)
+  const [statusFilter, setStatusFilter] = useState('all')
   const [stockMap, setStockMap] = useState({})
   const [open, setOpen] = useState(null)      // { count, lines }
   // Recomputed from the lines on screen, so the moment an auditor adjusts a
@@ -96,7 +101,9 @@ export default function Counts({ boot }) {
   }, [pickableLocations, newLoc])
 
   const refresh = useCallback(() => {
-    loadCounts(staff.branch_id).then(setCounts).catch(e => toast(e.message, 'error'))
+    loadCounts(staff.branch_id)
+      .then(c => { setCounts(c); setCountsErr(null) })
+      .catch(e => setCountsErr(e.message || 'could not load'))
     loadStockMap(staff.branch_id).then(setStockMap).catch(console.error)
   }, [staff.branch_id])
   useEffect(refresh, [refresh])
@@ -241,7 +248,28 @@ export default function Counts({ boot }) {
     setBusy(false)
   }
 
+  if (countsErr) {
+    return (
+      <div className="px-5">
+        <section className="mt-4 rounded-2xl border border-clay bg-surface p-4">
+          <p className="font-bold text-clay">Counts could not be loaded</p>
+          <p className="text-dim text-sm mt-1">
+            This does not mean there are none waiting. Tell the GM.
+          </p>
+          <p className="text-dim text-xs mt-2 break-words">{countsErr}</p>
+        </section>
+      </div>
+    )
+  }
   if (!counts) return <p className="px-5 text-dim">Loading…</p>
+  // What is waiting on someone. A count sitting submitted is the only
+  // thing on this page that needs doing, and it was a word on a row in
+  // a list of forty.
+  const nDraft = counts.filter(c => c.status === 'draft').length
+  const nSubmitted = counts.filter(c => c.status === 'submitted').length
+  const nVerified = counts.length - nDraft - nSubmitted
+  const shownCounts = statusFilter === 'all' ? counts
+    : counts.filter(c => c.status === statusFilter)
 
   const statusStyle = { draft: 'text-dim', submitted: 'text-amber', verified: 'text-leaf' }
 
@@ -265,8 +293,19 @@ export default function Counts({ boot }) {
           )}
           {canManageAny ? (
             <input type="date" value={newDate} max={lagosToday()}
-              onChange={e => setNewDate(e.target.value)}
-              className="h-12 px-3 mb-2 rounded-xl bg-surface border border-line tnum" />
+              onChange={e => {
+                const v = e.target.value
+                if (!v) return
+                // max= is a hint the phone's picker may ignore — a stock
+                // movement dated 27 days ahead got in that way on 1
+                // October. The refusal is here as well.
+                if (v > lagosToday()) {
+                  setNewDate(lagosToday()); toast('That date has not happened yet', 'error'); return
+                }
+                setNewDate(v)
+              }}
+              className={`h-12 px-3 mb-2 rounded-xl bg-surface border tnum ${
+                newDate !== lagosToday() ? 'border-amber text-amber' : 'border-line'}`} />
           ) : (
             <p className="text-dim text-sm mb-2">
               Dated today ({lagosToday()}) — submitted to your department's history
@@ -292,8 +331,32 @@ export default function Counts({ boot }) {
         </div>
       )}
 
+      {/* What is waiting, before the list of forty. */}
+      <section className={`rounded-2xl border bg-surface p-4 mt-1 ${
+        nSubmitted > 0 ? 'border-amber' : 'border-line'}`}>
+        <div className="text-dim text-sm">Waiting for the auditor</div>
+        <div className={`tnum text-3xl font-bold ${nSubmitted > 0 ? 'text-amber' : 'text-leaf'}`}>
+          {nSubmitted}
+        </div>
+        <div className="text-dim text-sm mt-1">
+          {nDraft} still being counted · {nVerified} verified
+          {counts.length >= 40 && <span className="text-amber"> · newest 40 only</span>}
+        </div>
+      </section>
+
+      <div className="flex gap-2 mt-3 mb-1">
+        {[['all', 'All'], ['submitted', 'Waiting'], ['draft', 'Counting'], ['verified', 'Verified']]
+          .map(([k, label]) => (
+          <button key={k} onClick={() => setStatusFilter(k)}
+            className={`flex-1 h-10 rounded-xl border text-sm font-semibold ${statusFilter === k
+              ? 'bg-raise border-amber text-amber' : 'border-line text-dim'}`}>
+            {label}
+          </button>
+        ))}
+      </div>
+
       <ul className="divide-y divide-line/60">
-        {counts.map(c => (
+        {shownCounts.map(c => (
           <li key={c.id}>
             <button onClick={() => openCount(c)} className="w-full text-left py-3">
               <div className="flex items-center gap-3">
@@ -310,6 +373,13 @@ export default function Counts({ boot }) {
           </li>
         ))}
         {!counts.length && <li className="py-8 text-center text-dim">No counts yet.</li>}
+        {!!counts.length && !shownCounts.length && (
+          <li className="py-8 text-center text-dim">
+            {statusFilter === 'submitted' ? 'Nothing is waiting for the auditor.'
+              : statusFilter === 'draft' ? 'Nothing is part-counted.'
+              : 'Nothing verified yet.'}
+          </li>
+        )}
       </ul>
 
       {open && (

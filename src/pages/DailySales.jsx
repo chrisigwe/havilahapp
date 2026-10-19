@@ -185,11 +185,59 @@ export default function DailySales({ boot }) {
 
   const total = combinedRows.reduce((s, r) => s + Number(r.amount ?? r.qty * r.unit_price), 0)
 
+  // Stepping back a day is what this page is opened to do, and it took
+  // opening a date picker and finding yesterday in a calendar grid every
+  // time (19 October 2026). Arrows do it in one tap; the date box is
+  // still there for a day further off.
+  const shiftDay = (by) => {
+    const d = new Date(date + 'T12:00:00')
+    d.setDate(d.getDate() + by)
+    const next = d.toISOString().slice(0, 10)
+    if (next > lagosToday()) return
+    setDate(next)
+  }
+  const isToday = date === lagosToday()
+  const dayName = isToday ? 'Today'
+    : date === lagosDaysAgo(1) ? 'Yesterday'
+    : new Date(date + 'T12:00:00').toLocaleDateString('en-NG',
+        { weekday: 'long', day: 'numeric', month: 'long' })
+
   return (
     <div className="px-5">
-      <input type="date" value={date} max={lagosToday()}
-        onChange={e => setDate(e.target.value)}
-        className="h-12 px-3 mt-1 mb-2 rounded-xl bg-surface border border-line tnum" />
+      <div className="flex items-center gap-2 mt-1 mb-2">
+        <button onClick={() => shiftDay(-1)} aria-label="The day before"
+          className="h-12 w-12 shrink-0 rounded-xl bg-surface border border-line text-xl font-bold">
+          ‹
+        </button>
+        <div className="flex-1 min-w-0 text-center">
+          <div className="font-bold truncate">{dayName}</div>
+          <div className="text-dim text-xs tnum">{date}</div>
+        </div>
+        <button onClick={() => shiftDay(1)} disabled={isToday} aria-label="The day after"
+          className="h-12 w-12 shrink-0 rounded-xl bg-surface border border-line text-xl font-bold disabled:opacity-30">
+          ›
+        </button>
+      </div>
+      <div className="flex items-center gap-2 mb-2">
+        <input type="date" value={date} max={lagosToday()}
+          onChange={e => {
+            const v = e.target.value
+            if (!v) return
+            if (v > lagosToday()) { setDate(lagosToday()); return }
+            setDate(v)
+          }}
+          className={`h-12 px-3 rounded-xl bg-surface border tnum ${
+            isToday ? 'border-line' : 'border-amber text-amber'}`} />
+        {/* One word: "Back to today" wrapped to two lines beside the
+            date box at 320px, and the stepper above already names the
+            day. */}
+        {!isToday && (
+          <button onClick={() => setDate(lagosToday())}
+            className="h-12 px-4 shrink-0 rounded-xl border border-amber text-amber text-sm font-semibold">
+            Today
+          </button>
+        )}
+      </div>
 
       {salesPoints.length > 1 && (
         <div className="flex gap-2 overflow-x-auto pb-2 -mx-1 px-1">

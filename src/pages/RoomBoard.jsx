@@ -301,10 +301,19 @@ export default function RoomBoard({ boot }) {
                   <button key={key}
                     onClick={() => setFilter(on ? null : key)}
                     aria-pressed={on}
-                    className={`shrink-0 h-11 px-3 rounded-full border text-sm flex items-baseline gap-1.5 ${
-                      on ? 'bg-raise border-amber' : 'border-line'}`}>
-                    <b className={`text-base font-bold tnum ${st.text}`}>{n}</b>
-                    <span className={on ? 'text-ink' : 'text-dim'}>{st.label.toLowerCase()}</span>
+                    className={`shrink-0 h-11 px-4 rounded-full border text-sm inline-flex items-center gap-1.5 ${
+                      on ? 'bg-amber text-bg border-amber font-bold' : 'border-line text-dim'}`}>
+                    {/* items-center, not items-baseline: baseline
+                        alignment of a bold number against a smaller
+                        label left both sitting high in a 44px pill
+                        instead of centred in it.
+
+                        And the chosen chip is solid amber, the same as
+                        every other chip row in the app. It used to be a
+                        raised background with an amber edge, which on a
+                        dark screen is almost the same as not chosen. */}
+                    <b className={`text-base font-bold tnum ${on ? 'text-bg' : st.text}`}>{n}</b>
+                    <span>{st.label.toLowerCase()}</span>
                   </button>
                 )
               })}
