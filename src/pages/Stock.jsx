@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { loadStockMap } from '../lib/data'
 import { OPENS_ON_ALL, is } from '../lib/roles'
+import Notice from '../components/Notice'
 
 export default function Stock({ boot }) {
   const { staff, locations, items, seesAll } = boot
@@ -82,13 +83,10 @@ export default function Stock({ boot }) {
   if (err) {
     return (
       <div className="px-5">
-        <section className="mt-4 rounded-2xl border border-clay bg-surface p-4">
-          <p className="font-bold text-clay">Stock could not be loaded</p>
-          <p className="text-dim text-sm mt-1">
-            This is not an empty shelf — the figures did not arrive. Tell the GM.
-          </p>
-          <p className="text-dim text-xs mt-2 break-words">{err}</p>
-        </section>
+        <Notice tone="problem" title="Stock could not be loaded" className="mt-4">
+          <p>This is not an empty shelf — the figures did not arrive. Tell the GM.</p>
+          <p className="text-xs mt-2 break-words">{err}</p>
+        </Notice>
       </div>
     )
   }

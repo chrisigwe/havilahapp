@@ -9,6 +9,7 @@ import Folio from '../components/Folio'
 import ReopenSearch from '../components/ReopenSearch'
 import { useToast } from '../components/Toast'
 import { is, MANAGEMENT, SUPERVISOR } from '../lib/roles'
+import Notice from '../components/Notice'
 
 // Phase 2 of bringing the front-desk app's functionality into this
 // one: check-in and new bookings, alongside the view-only room status
@@ -337,12 +338,9 @@ export default function RoomBoard({ boot }) {
       {/* Opens the same folio "Recently checked out" does — payment can
           already be recorded on it without reopening the stay. */}
       {!!owingCheckouts.length && (
-        <div className="mb-4 rounded-2xl border-2 border-clay bg-clay/10 p-4">
-          <p className="text-clay font-bold">
-            {owingCheckouts.length} guest{owingCheckouts.length === 1 ? '' : 's'} checked out
-            still owing
-          </p>
-          <div className="mt-2 space-y-2">
+        <Notice tone="problem" className="mb-4"
+          title={`${owingCheckouts.length} guest${owingCheckouts.length === 1 ? '' : 's'} checked out still owing`}>
+          <div className="space-y-2">
             {owingCheckouts.map(g => (
               <button key={g.stay_id} onClick={() => setOpenStay({
                   // Matches what ReopenSearch's onPick supplies — that is
@@ -360,7 +358,7 @@ export default function RoomBoard({ boot }) {
               </button>
             ))}
           </div>
-        </div>
+        </Notice>
       )}
 
       {!rooms.length && <p className="py-8 text-center text-dim">No rooms set up for this branch yet.</p>}

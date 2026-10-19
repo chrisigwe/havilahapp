@@ -5,6 +5,7 @@ import { loadStockMap, loadCounts, loadCountLines, saveCountLine, saveCountReaso
 import { lagosToday, startingDept } from '../lib/format'
 import { enqueue, flush, isConnectionError } from '../lib/outbox'
 import { useToast } from '../components/Toast'
+import Notice from '../components/Notice'
 
 // Why a counted figure differs from the book (migration 545).
 //
@@ -251,13 +252,10 @@ export default function Counts({ boot }) {
   if (countsErr) {
     return (
       <div className="px-5">
-        <section className="mt-4 rounded-2xl border border-clay bg-surface p-4">
-          <p className="font-bold text-clay">Counts could not be loaded</p>
-          <p className="text-dim text-sm mt-1">
-            This does not mean there are none waiting. Tell the GM.
-          </p>
-          <p className="text-dim text-xs mt-2 break-words">{countsErr}</p>
-        </section>
+        <Notice tone="problem" title="Counts could not be loaded" className="mt-4">
+          <p>This does not mean there are none waiting. Tell the GM.</p>
+          <p className="text-xs mt-2 break-words">{countsErr}</p>
+        </Notice>
       </div>
     )
   }

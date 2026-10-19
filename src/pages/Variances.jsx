@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { lagosDaysAgo, lagosToday, naira } from '../lib/format'
 import { loadVariances } from '../lib/data'
+import Notice from '../components/Notice'
 
 export default function Variances({ boot }) {
   const { staff } = boot
@@ -66,13 +67,10 @@ export default function Variances({ boot }) {
   if (err) {
     return (
       <div className="px-5">
-        <section className="mt-4 rounded-2xl border border-clay bg-surface p-4">
-          <p className="font-bold text-clay">Variances could not be loaded</p>
-          <p className="text-dim text-sm mt-1">
-            This is not the same as there being none. Tell the GM.
-          </p>
-          <p className="text-dim text-xs mt-2 break-words">{err}</p>
-        </section>
+        <Notice tone="problem" title="Variances could not be loaded" className="mt-4">
+          <p>This is not the same as there being none. Tell the GM.</p>
+          <p className="text-xs mt-2 break-words">{err}</p>
+        </Notice>
       </div>
     )
   }

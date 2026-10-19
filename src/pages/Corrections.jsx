@@ -9,6 +9,7 @@ import { useToast } from '../components/Toast'
 import MergeGuestsSheet from '../components/MergeGuestsSheet'
 import MergeCustomersSheet from '../components/MergeCustomersSheet'
 import { MANAGEMENT, RECEPTION_EDIT, SUPERVISOR, is } from '../lib/roles'
+import Notice from '../components/Notice'
 
 // The movement labels, in one place. describe() held them inline and
 // the row badge needed the same words — two copies drift.
@@ -508,9 +509,8 @@ export default function Corrections({ boot }) {
             ))}
           </ul>
           {canMerge && !!dupes?.length && (
-            <div className="mt-4 rounded-2xl border border-clay bg-surface p-4">
-              <p className="font-semibold">Possible duplicate guests</p>
-              <p className="text-dim text-xs mt-1 mb-3">
+            <Notice tone="warn" title="Possible duplicate guests" className="mt-4">
+              <p className="mb-3">
                 Same person entered twice. Check each one — a shared phone can
                 also just mean two people in one family. Merging moves every
                 stay, room charge and department balance onto the record you keep.
@@ -562,7 +562,7 @@ export default function Corrections({ boot }) {
                   </button>
                 </div>
               ))}
-            </div>
+            </Notice>
           )}
           {canMerge && dupes?.length === 0 && (
             <p className="text-dim text-sm mt-4">No likely duplicate guests found.</p>
@@ -574,9 +574,8 @@ export default function Corrections({ boot }) {
             </button>
           )}
           {canMerge && !!custDupes?.length && (
-            <div className="mt-4 rounded-2xl border border-clay bg-surface p-4">
-              <p className="font-semibold">Possible duplicate customers</p>
-              <p className="text-dim text-xs mt-1 mb-3">
+            <Notice tone="warn" title="Possible duplicate customers" className="mt-4">
+              <p className="mb-3">
                 Credit accounts at the bars, minimart and restaurant. Balance and
                 departments are shown so you can see which record holds the real
                 history before choosing. Merging moves every sale and repayment
@@ -624,7 +623,7 @@ export default function Corrections({ boot }) {
                   </button>
                 </div>
               ))}
-            </div>
+            </Notice>
           )}
           {canMerge && custDupes?.length === 0 && (
             <p className="text-dim text-sm mt-4">No likely duplicate customers found.</p>

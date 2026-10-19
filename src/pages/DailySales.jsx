@@ -9,6 +9,7 @@ import WriteoffBreakdown from '../components/WriteoffBreakdown'
 import TillTile, { SubLine, ByMethod } from '../components/TillTile'
 import CorrectionsOnDay from '../components/CorrectionsOnDay'
 import { is, SUPERVISOR } from '../lib/roles'
+import Notice from '../components/Notice'
 
 // Read-only — browse any past day's sales by department. Built for
 // the auditor (who has no live Sales tab at all, by design — never
@@ -451,15 +452,13 @@ export default function DailySales({ boot }) {
       {/* Outside the fold on purpose: a warning nobody opens the detail
           to find is a warning nobody sees. */}
       {isGmOrAdmin && dupeCount > 0 && (
-        <div className="mt-3 rounded-2xl border border-clay bg-surface p-4">
-          <p className="font-semibold text-clay">
-            {dupeCount} possible duplicate {dupeCount === 1 ? 'record' : 'records'}
-          </p>
+        <Notice tone="warn" className="mt-3"
+          title={`${dupeCount} possible duplicate ${dupeCount === 1 ? 'record' : 'records'}`}>
           <p className="text-dim text-sm mt-1">
             Two records for one person split their debt in two. Review them
             under More → Corrections → Reception.
           </p>
-        </div>
+        </Notice>
       )}
 
       {!isReception && (

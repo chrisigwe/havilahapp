@@ -8,6 +8,7 @@ import PaymentMethodPicker, { paymentParts, paymentAllocated } from '../componen
 import FolioStatement from '../components/FolioStatement'
 import { EDITOR, OPENS_ON_ALL, OVERSIGHT, SUPERVISOR, is } from '../lib/roles'
 import { accountStatementPdf, savePdf } from '../lib/pdfSheet'
+import Notice from '../components/Notice'
 
 
 
@@ -774,10 +775,10 @@ export default function Credit({ boot }) {
                 the two. Linking one makes it appear on that guest's
                 folio from then on. */}
             {!!unlinked?.length && (
-              <div className="mt-6 rounded-2xl border border-clay bg-surface p-4">
-                <p className="font-semibold">Department accounts not linked to a guest</p>
-                <p className="text-dim text-xs mt-1 mb-3">
-                  These balances will not show on any guest's folio at checkout.
+              <Notice tone="problem" className="mt-6"
+                title="Department accounts not linked to a guest">
+                <p className="mb-3">
+                  These balances will not show on any guest&#39;s folio at checkout.
                   Link one to the guest it belongs to, if it belongs to a guest.
                 </p>
                 {unlinked.map(c => (
@@ -796,7 +797,7 @@ export default function Credit({ boot }) {
                     </button>
                   </div>
                 ))}
-              </div>
+              </Notice>
             )}
           </>
         )

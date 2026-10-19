@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { naira } from '../lib/format'
 import { lineTotals } from '../lib/payroll'
 import { loadMyCredit } from '../lib/data'
+import Notice from '../components/Notice'
 
 const MONTHS = ['January','February','March','April','May','June','July','August',
                 'September','October','November','December']
@@ -100,14 +101,13 @@ function ThisMonth({ branchId, branchName }) {
 
   if (err) {
     return (
-      <section className="mt-4 rounded-2xl border border-clay bg-surface p-4">
-        <p className="font-bold text-clay">This month could not be loaded</p>
-        <p className="text-dim text-sm mt-1">
+      <Notice tone="problem" title="This month could not be loaded" className="mt-4">
+        <p>
           Your credit for this month is not showing. It does not mean you owe
           nothing — ask the GM to check.
         </p>
-        <p className="text-dim text-xs mt-2 break-words">{err}</p>
-      </section>
+        <p className="text-xs mt-2 break-words">{err}</p>
+      </Notice>
     )
   }
   if (!c || !c.linked) return null

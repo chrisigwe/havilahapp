@@ -6,6 +6,7 @@ import { loadLoginsForPayroll, loadPossibleDuplicateAccounts } from '../lib/data
 import {
   addDeduction, endEmployment, finalisePeriod, giveRaise, lineTotals, loadCustomersForLinking, loadEmployees, loadLines, loadPayouts, loadPeriod, loadPotNext, loadSalaryHistory, openPeriod, proposeCreditDeductions, proposeLinkedDeductions, loadResponsibleLinks, setCustomerResponsible, loadAccountBalances, removeAddition, removeDeduction, reopenPeriod, saveEmployee, savePayout, savingsBalances, setEmployeeCreditAccount, updateLine,
 } from '../lib/payroll'
+import Notice from '../components/Notice'
 
 const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June',
                 'July', 'August', 'September', 'October', 'November', 'December']
@@ -377,9 +378,8 @@ export default function Payroll({ boot }) {
           {period && (
             <div className="print:hidden mt-6">
               {!final && dupAccts.length > 0 && (
-                <div className="mb-4 rounded-2xl border border-clay bg-surface p-4">
-                  <p className="font-semibold text-clay">Possible duplicate credit accounts</p>
-                  <p className="text-dim text-xs mt-1 mb-2">
+                <Notice tone="warn" className="mb-4" title="Possible duplicate credit accounts">
+                  <p className="mb-2">
                     Only the account linked to the employee is deducted from pay.
                     Credit sitting on another account of the same person is missed.
                     Merge them in Corrections (Reception tab) before finalising.
@@ -394,7 +394,7 @@ export default function Payroll({ boot }) {
                       </div>
                     </div>
                   ))}
-                </div>
+                </Notice>
               )}
               {final
                 ? <button onClick={async () => { await reopenPeriod(period.id); refresh() }}

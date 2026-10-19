@@ -4,6 +4,7 @@ import {
   createStay, findOrCreateGuest, loadBranchStaySettings, loadFreeRooms, loadPriorBalance, searchSimilarGuests, loadUpcomingReservations,
 } from '../lib/data'
 import { useToast } from '../components/Toast'
+import Notice from '../components/Notice'
 
 const RATE_FIELDS = { standard: 'rate_standard', alternate: 'rate_alternate', short: 'rate_short' }
 
@@ -190,10 +191,8 @@ export default function CheckIn({ boot, onDone }) {
           to carry it forward deliberately rather than discover it later
           on an unrelated screen. */}
       {priorBalance > 0.009 && (
-        <div className="mt-3 rounded-2xl border-2 border-clay bg-clay/10 p-4">
-          <p className="text-clay font-bold">
-            Still owes {naira(priorBalance)} from a previous stay
-          </p>
+        <Notice tone="problem" className="mt-3"
+          title={`Still owes ${naira(priorBalance)} from a previous stay`}>
           {priorBilledTo && (
             <p className="text-clay text-sm mt-1">
               ({priorBilledTo})
@@ -204,7 +203,7 @@ export default function CheckIn({ boot, onDone }) {
             carry over automatically — settle it now, or make a note to collect
             it separately.
           </p>
-        </div>
+        </Notice>
       )}
 
       <div className="mt-4">

@@ -24,6 +24,7 @@ import MatchTill from '../components/MatchTill'
 import TillTile, { SubLine, ByMethod } from '../components/TillTile'
 import HandoverNotes from '../components/HandoverNotes'
 import { APPROVE_ROOM_CHARGES, EDITOR, MANAGEMENT, OVERSIGHT, SUPERVISOR, is } from '../lib/roles'
+import Notice from '../components/Notice'
 
 const niceDay = (d) => new Date(d + 'T12:00:00').toLocaleDateString('en-NG', { day: 'numeric', month: 'short' })
 
@@ -902,15 +903,11 @@ export default function SalesEntry({ boot }) {
             className={`h-12 px-3 rounded-xl bg-surface border tnum ${needsReason
               ? 'border-amber text-amber' : offToday ? 'border-amber/40' : 'border-line'}`} />
           </div>
-          {/* Under the date rather than beside it: six chips do not fit
-              on one line beside a date box on a phone. */}
-          {needsReason && (
-            <div className="mt-2">
-              <p className="text-dim text-sm mb-2">Why this day?</p>
-              <BackdateReasonField value={backdateReason} onChange={setBackdateReason}
-                other={reasonOther} onOther={setReasonOther} />
-            </div>
-          )}
+          {/* The reason is asked once, in the payment sheet, at the
+              moment the sale is saved (Chris, 19 October 2026). It was
+              here as well, which put six chips between the date and
+              Sell Item on every backdated entry and asked the same
+              question twice. */}
         </div>
       ) : null}
       {/* The pinned amber band above already says which day this is,
@@ -1034,10 +1031,10 @@ export default function SalesEntry({ boot }) {
       {/* Shown instead of the recording buttons, so the missing
           controls read as deliberate rather than as a broken page. */}
       {!canRecordHere && (
-        <p className="mt-3 px-4 py-3 rounded-xl bg-raise border border-line text-dim text-sm">
+        <Notice tone="note" className="mt-3">
           Viewing {currentDept?.name || 'this department'}. You can see its sales here,
           but you can only record sales at your own departments.
-        </p>
+        </Notice>
       )}
 
       <HandoverNotes branchId={staff.branch_id} locationId={locationId} />
@@ -1239,12 +1236,11 @@ export default function SalesEntry({ boot }) {
         <p className="text-dim text-sm mt-6">Closing the day</p>
 
         {!isReception && frontDeskClosed === false && (
-          <p className="mt-3 px-4 py-3 rounded-xl border border-amber text-amber text-sm">
-            The front desk has not closed this day yet. When Reception records a guest
-            paying for something you charged to their room, it lands on this day — so
-            this figure can still rise after you have counted. Count once they have
-            closed, or expect it to move.
-          </p>
+          <Notice tone="warn" title="The front desk has not closed this day yet" className="mt-3">
+            When Reception records a guest paying for something you charged to their
+            room, it lands on this day — so this figure can still rise after you have
+            counted. Count once they have closed, or expect it to move.
+          </Notice>
         )}
 
         {summary && (
