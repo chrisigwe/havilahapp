@@ -1444,16 +1444,29 @@ export async function loadFolio(stayId) {
   // Keyed by order_item_id, with the room charge under 'room' — the one
   // payable thing on a folio that is not an order line.
   const paidByItem = { room: 0 }
+  // And WHO recorded it (564). A charge settled by the department that
+  // sold it carries that department's name and the person's, so the
+  // front desk can see on the bill that the money reached them —
+  // which is the whole point of the department recording it.
+  const receiptByItem = {}
   const { data: ticked } = await supabase.from('payment_items')
-    .select('order_item_id, amount, payments!inner(stay_id)')
+    .select(`order_item_id, amount, recorded_at, payments!inner(stay_id),
+             dept:received_location_id(name), who:recorded_by(full_name)`)
     .eq('payments.stay_id', stayId)
   for (const t of (ticked || [])) {
     const k = t.order_item_id || 'room'
     paidByItem[k] = (paidByItem[k] || 0) + Number(t.amount || 0)
+    if (t.dept?.name) {
+      receiptByItem[k] = {
+        dept: t.dept.name,
+        by: t.who?.full_name || null,
+        at: t.recorded_at || null,
+      }
+    }
   }
 
   return { orders: orders || [], payments: payments || [], folio: folio || null, stay: stay || null,
-           departmentCredit, billedToYou, paidByItem }
+           departmentCredit, billedToYou, paidByItem, receiptByItem }
 }
 
 // Was this same money already put on this same bill a moment ago?

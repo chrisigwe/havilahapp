@@ -82,7 +82,7 @@ export default function Folio({ boot, room, onClose, onChanged }) {
     </div>
   )
 
-  const { orders, payments, folio, stay, departmentCredit, billedToYou, paidByItem } = data
+  const { orders, payments, folio, stay, departmentCredit, billedToYou, paidByItem, receiptByItem } = data
   const outstanding = Number(folio?.outstanding ?? 0)
   // The room's own balance — used for the pay-button default and
   // checkout logic below, which are genuinely room-specific
@@ -406,19 +406,11 @@ export default function Folio({ boot, room, onClose, onChanged }) {
   }
 
   // Newest day first, the room always at the top.
-  const payDays = []
-  for (const p of payables) {
-    let g = payDays.find(x => x.day === p.day)
-    if (!g) { g = { day: p.day, lines: [] }; payDays.push(g) }
-    g.lines.push(p)
-  }
-  payDays.sort((a, b) => {
-    if (a.day === 'The room') return -1
-    if (b.day === 'The room') return 1
-    if (a.day === 'On credit') return 1
-    if (b.day === 'On credit') return -1
-    return String(b.day).localeCompare(String(a.day))
-  })
+  // payDays, billAll, billTotal and billLeft lived here. They grouped
+  // and totalled the old tick list; the bill is now drawn from
+  // billableLines and the v_stay_folio figures, which is what the
+  // printed invoice uses too, so the screen and the paper cannot
+  // disagree in front of a guest (20 October 2026).
 
   const pickedList = payables.filter(p => picked[p.key])
   // The ticking is gone (20 October 2026): the front desk no longer
@@ -1055,34 +1047,137 @@ export default function Folio({ boot, room, onClose, onChanged }) {
                 front desk's job. Deciding who gets it is not. */}
             {payables.length > 0 && (
               <div className="mt-4">
-                <label className="block font-semibold">What this bill is made of</label>
+                {/* THE WHOLE BILL, in one place (Chris, 20 October 2026).
+                    It listed only what was still owed, so once the room
+                    was paid and the departments had claimed their share
+                    it emptied down to the credit accounts and looked as
+                    though the charges had vanished.
+
+                    It is read to the guest at checkout and printed as
+                    their invoice, so it has to hold everything: every
+                    charge, what has been paid, and what is left. */}
+                <div className="flex items-baseline justify-between gap-3">
+                  <label className="block font-semibold">What this bill is made of</label>
+                  <button type="button" onClick={() => setPrinting(true)}
+                    className="text-amber text-sm font-semibold shrink-0">
+                    Print invoice
+                  </button>
+                </div>
                 <p className="text-dim text-sm mt-0.5">
-                  The money goes against the bill as a whole. Each department
-                  records its own share once it has been handed the slip and the
-                  cash.
+                  Read it to the guest. The money goes against the bill as a whole;
+                  each department records its own share once it has been handed the
+                  slip and the cash.
                 </p>
 
-                <div className="mt-2 rounded-2xl border border-line bg-surface px-4">
-                  {payDays.map(g => (
-                    <div key={g.day}>
-                      <p className="pt-3 pb-0.5 text-dim text-xs font-bold uppercase tracking-wide">
-                        {g.day}
-                      </p>
-                      {g.lines.map(l => (
-                        <div key={l.key} className="py-2.5 flex items-baseline gap-3">
-                          <span className="flex-1 min-w-0">
-                            <span className="block font-semibold leading-tight break-words">{l.what}</span>
-                            <span className="block text-dim text-xs mt-0.5">{l.where}</span>
-                            {l.note && (
-                              <span className="block text-leaf text-xs mt-0.5">{l.note}</span>
-                            )}
+                {/* Every charge, paid or not, with where its money has
+                    got to. Built from the same billableLines and folio
+                    figures the printed invoice uses, so the two cannot
+                    disagree in front of a guest. */}
+                <div className="mt-2 rounded-2xl border border-line bg-surface px-4 py-1">
+                  <div className="py-2.5 flex items-baseline gap-3 border-b border-line/60">
+                    <span className="flex-1 min-w-0">
+                      <span className="block font-semibold leading-tight">Room charge</span>
+                      <span className="block text-dim text-xs mt-0.5">
+                        {folio?.nights} night{folio?.nights === 1 ? '' : 's'}
+                        {folio?.daily_rate ? ` at ${naira(folio.daily_rate)}` : ''}
+                      </span>
+                    </span>
+                    <span className="tnum font-bold shrink-0">{naira(folio?.room_charge ?? 0)}</span>
+                  </div>
+
+                  {billableLines.map(li => {
+                    const got = Number((paidByItem || {})[li.id] || 0)
+                    const r = (receiptByItem || {})[li.id]
+                    const amt = Number(li.amount || 0)
+                    const deptId = roomChargeDept(li, allLocations || locations)
+                    const dept = (allLocations || locations || []).find(l => l.id === deptId)
+                    return (
+                      <div key={li.id} className="py-2.5 flex items-baseline gap-3 border-b border-line/60 last:border-0">
+                        <span className="flex-1 min-w-0">
+                          <span className="block font-semibold leading-tight break-words">
+                            {li.qty} × {li.description}
                           </span>
-                          <span className="tnum font-bold shrink-0">{naira(l.amount)}</span>
-                        </div>
-                      ))}
+                          <span className="block text-dim text-xs mt-0.5">
+                            {dept ? `${dept.name} · ` : ''}{li.date}
+                          </span>
+                          {got >= amt - 0.009 && r && (
+                            <span className="block text-leaf text-xs mt-0.5">
+                              {r.dept} has this money
+                            </span>
+                          )}
+                          {got < amt - 0.009 && Number(folio?.outstanding ?? 0) <= 0.009 && (
+                            <span className="block text-amber text-xs mt-0.5">
+                              Paid · the front desk still holds this
+                            </span>
+                          )}
+                        </span>
+                        <span className="tnum font-bold shrink-0">{naira(amt)}</span>
+                      </div>
+                    )
+                  })}
+
+                  {Number(folio?.overstay_charge ?? 0) > 0.009 && (
+                    <div className="py-2.5 flex items-baseline gap-3 border-t border-line/60">
+                      <span className="flex-1 min-w-0 font-semibold">Over-stay</span>
+                      <span className="tnum font-bold shrink-0">{naira(folio.overstay_charge)}</span>
                     </div>
-                  ))}
+                  )}
+
+                  <div className="py-2.5 border-t border-line space-y-1 text-sm">
+                    <div className="flex justify-between gap-3">
+                      <span className="text-dim">Total for the stay</span>
+                      <span className="tnum font-bold">{naira(folio?.total_due ?? 0)}</span>
+                    </div>
+                    <div className="flex justify-between gap-3">
+                      <span className="text-dim">Paid so far</span>
+                      <span className="tnum font-bold text-leaf">{naira(folio?.total_paid ?? 0)}</span>
+                    </div>
+                    <div className="flex justify-between gap-3 pt-1 border-t border-line/60">
+                      <span className="font-bold">Still to pay</span>
+                      <span className={`tnum font-bold ${
+                        Number(folio?.outstanding ?? 0) > 0.009 ? 'text-clay' : 'text-leaf'}`}>
+                        {naira(folio?.outstanding ?? 0)}
+                      </span>
+                    </div>
+                  </div>
                 </div>
+
+                {/* The credit accounts stay listed below, named for what
+                    they are: another ledger, settled on the Credit page,
+                    never by this payment. */}
+                {/* Only the credit accounts now. The rest of what was
+                    listed here is in the bill above, where it belongs —
+                    repeating it underneath showed a guest the same
+                    charge twice at the moment they were being asked for
+                    money. */}
+                {(() => {
+                  const creditLines = payables.filter(p2 => p2.kind === 'credit')
+                  if (!creditLines.length) return null
+                  const creditTotal = creditLines.reduce((t, c) => t + c.amount, 0)
+                  return (
+                    <>
+                      <div className="flex items-baseline justify-between gap-3 mt-4 mb-1">
+                        <p className="text-dim text-sm">Owed on a department account</p>
+                        <p className="tnum text-dim text-sm">{naira(creditTotal)}</p>
+                      </div>
+                      <div className="rounded-2xl border border-line bg-surface px-4">
+                        {creditLines.map(l => (
+                          <div key={l.key} className="py-2.5 flex items-baseline gap-3 border-b border-line/60 last:border-0">
+                            <span className="flex-1 min-w-0">
+                              <span className="block font-semibold leading-tight break-words">{l.what}</span>
+                              <span className="block text-dim text-xs mt-0.5">{l.where}</span>
+                            </span>
+                            <span className="tnum font-bold shrink-0">{naira(l.amount)}</span>
+                          </div>
+                        ))}
+                      </div>
+                      <p className="text-dim text-xs mt-1">
+                        A separate ledger. This payment does not touch it — it is
+                        settled on the Credit page.
+                      </p>
+                    </>
+                  )
+                })()}
               </div>
             )}
 
@@ -1213,6 +1308,37 @@ export default function Folio({ boot, room, onClose, onChanged }) {
                           </button>
                         )}
                       </div>
+                      {/* Where this charge's money has got to (564).
+                          Three states, and the middle one is the one
+                          that used to be invisible: the guest has paid
+                          and the department has not yet been handed it.
+                          A charge does not disappear once it is
+                          recorded — it says who has the money. */}
+                      {(() => {
+                        const got = Number((paidByItem || {})[li.id] || 0)
+                        const r = (receiptByItem || {})[li.id]
+                        const amt = Number(li.amount || 0)
+                        if (got >= amt - 0.009 && r) {
+                          return (
+                            <div className="text-leaf text-xs font-semibold mt-0.5">
+                              {r.dept} has this money{r.by ? ` · recorded by ${r.by}` : ''}
+                            </div>
+                          )
+                        }
+                        if (got >= amt - 0.009) {
+                          return <div className="text-leaf text-xs font-semibold mt-0.5">Settled</div>
+                        }
+                        if (Number(folio?.outstanding ?? 0) <= 0.009
+                            && li.settlement === 'charged_to_room') {
+                          return (
+                            <div className="text-amber text-xs font-semibold mt-0.5">
+                              Guest has paid · the front desk still holds this
+                              {got > 0.009 && <> · {naira(amt - got)} of it</>}
+                            </div>
+                          )
+                        }
+                        return null
+                      })()}
                       <div className="text-dim text-sm">
                         {/* Whose money this is (20 October 2026). The line
                             said what was sold and what it cost, and never
@@ -1349,7 +1475,14 @@ export default function Folio({ boot, room, onClose, onChanged }) {
                             className="flex-1 h-10 rounded-lg border border-line text-dim">Cancel</button>
                         </div>
                       </div>
-                    ) : (deptOptions.length > 0 && (
+                    ) : (deptOptions.length > 0 && is(staff.role, SUPERVISOR) && (
+                      /* GM and admin only now (Chris, 20 October 2026).
+                         The front desk does not decide whose money a
+                         payment is — the department records its own. But
+                         a payment keyed at the wrong till has happened
+                         twice this month, and without this the only way
+                         to correct one is SQL, so it stays for whoever
+                         is called when that happens. */
                       <button onClick={() => setMovingPay({ id: p.id, loc: p.location_id || '', part: String(p.amount), total: p.amount })}
                         className="block text-dim text-xs underline mt-1">Change department</button>
                     ))}
