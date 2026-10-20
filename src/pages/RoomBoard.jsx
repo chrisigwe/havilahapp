@@ -201,6 +201,29 @@ export default function RoomBoard({ boot }) {
   }
   const rooms = [...byRoom.values()].map(h => h.row)
 
+  // TWO GUESTS IN ONE ROOM (20 October 2026).
+  //
+  // Keeping the most live row per room is right for a booking sitting
+  // behind a guest. It is wrong when two rows are both 'occupied': the
+  // ranks tie, one is kept arbitrarily, and the other disappears from
+  // the board with nothing said.
+  //
+  // That is how Room 103 at Awka carried Mr Factor — checked in on the
+  // 18th, due out on the 19th, never checked out — while Pst Pascal was
+  // checked into the same room on the 19th. The desk could not see it,
+  // because the board showed one card and one name. His bill sat open
+  // on a bed somebody else was sleeping in.
+  //
+  // A reopened checkout does the same thing: while it is being
+  // corrected its status reads 'occupied', so it competes with whoever
+  // is in the room now.
+  const liveByRoom = new Map()
+  for (const r of visible) {
+    if (r.status !== 'occupied') continue
+    liveByRoom.set(r.room_id, [...(liveByRoom.get(r.room_id) || []), r])
+  }
+  const doubled = [...liveByRoom.values()].filter(list => list.length > 1)
+
   const tally = rooms.reduce((acc, r) => {
     const s = stateOf(r, paidThrough); acc[s] = (acc[s] || 0) + 1; return acc
   }, {})
@@ -322,6 +345,30 @@ export default function RoomBoard({ boot }) {
           </>
         )
       })()}
+
+      {!!doubled.length && (
+        <Notice tone="problem" className="mb-4"
+          title={`${doubled.length} room${doubled.length === 1 ? '' : 's'} with two guests checked in`}>
+          <p className="mb-2">
+            Two stays are open on the same room. One of them is almost certainly a
+            guest who was never checked out — their bill is still running on a bed
+            somebody else is in, and only one of the two shows on the board below.
+          </p>
+          {doubled.map(list => (
+            <div key={list[0].room_id} className="py-1 border-t border-line/40 first:border-0">
+              <span className="font-semibold">Room {list[0].room_number}</span>
+              {list.map(r => (
+                <span key={r.stay_id} className="block text-xs">
+                  {r.guest_name || 'Guest'} · in {r.check_in_date} · due {r.scheduled_out}
+                </span>
+              ))}
+            </div>
+          ))}
+          <p className="mt-2 text-xs">
+            Check the one who has left out of their room, on the day they actually left.
+          </p>
+        </Notice>
+      )}
 
       {canBook && (
         <button onClick={() => setCheckingIn(true)}

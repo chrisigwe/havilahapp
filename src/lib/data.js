@@ -1,6 +1,7 @@
 import { supabase } from './supabase'
 import { lagosDaysAgo, lagosToday, addDays, chargeCategoryFor, nameKey } from './format'
 import { normalizeCustomerName } from './customerName'
+import { nightsInWindow } from './nights'
 import { SUPERVISOR } from './roles'
 import { tracked } from './activity'
 
@@ -2557,13 +2558,23 @@ export async function loadRoomsSoldInMonth(branchId, date) {
   const { data: internalRooms } = await supabase.from('rooms')
     .select('id').eq('branch_id', branchId).eq('is_internal', true)
 
-  let q = supabase.from('stays').select('id', { count: 'exact', head: true })
-    .eq('branch_id', branchId).gte('check_in_date', monthStart).lt('check_in_date', upperBoundExclusive)
+  // Every stay that could TOUCH the month, not only those that began in
+  // it. A guest who arrived on 28 September and left on 4 October sold
+  // three nights of October, and the old query could not see them at
+  // all. The lower bound is a year back, which covers any real stay
+  // while keeping the query bounded.
+  let q = supabase.from('stays')
+    .select('check_in_date, scheduled_out, actual_out, status, room_id, pre_reopen_actual_out')
+    .eq('branch_id', branchId)
+    .lt('check_in_date', upperBoundExclusive)
+    .gte('check_in_date', addDays(monthStart, -366))
   const internalIds = (internalRooms || []).map(r => r.id)
   if (internalIds.length) q = q.not('room_id', 'in', `(${internalIds.join(',')})`)
-  const { count, error } = await q
+  const { data, error } = await q
   if (error) throw error
-  return count || 0
+
+  return (data || []).reduce(
+    (total, st) => total + nightsInWindow(st, monthStart, upperBoundExclusive, today), 0)
 }
 
 // ---------- Corrections: Reception (live guests) ----------

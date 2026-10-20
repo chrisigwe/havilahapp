@@ -262,6 +262,7 @@ export default function DailySales({ boot }) {
           {isGmOrAdmin && roomsSold != null && (
             <p className="text-dim text-sm mt-3">
               {roomsSold} room{roomsSold === 1 ? '' : 's'} sold {date.slice(0, 7) === lagosToday().slice(0, 7) ? 'this month' : 'in this month'}
+              <span className="text-xs"> · one per room per night</span>
             </p>
           )}
           {/* showRoomsSold is false here: rooms sold renders above,

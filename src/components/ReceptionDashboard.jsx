@@ -74,7 +74,10 @@ export default function ReceptionDashboard({
         <span className="tnum font-bold text-leaf">{naira(roomRateRemainingTotal)} left</span>
       </div>
       {showRoomsSold && roomsSold != null && (
-        <p className="text-dim text-sm mt-0.5">{roomsSold} room{roomsSold === 1 ? '' : 's'} sold this month</p>
+        <p className="text-dim text-sm mt-0.5">
+          {roomsSold} room{roomsSold === 1 ? '' : 's'} sold this month
+          <span className="text-xs"> · one per room per night</span>
+        </p>
       )}
       <div className="mt-1 space-y-2">
         {roomRateProgress.map(r => (
