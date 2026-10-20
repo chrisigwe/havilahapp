@@ -2279,6 +2279,34 @@ async function _splitPaymentToDepartment(paymentId, amount, locationId) {
   if (error) throw error
 }
 
+// Room-rate debt recovered (565). Chris, 20 October 2026: a guest who
+// checked out owing for the ROOM and pays weeks later is recovering a
+// debt, and nothing said so. get_daily_financials only ever counted the
+// department side — payment_items against order_items — so Sir Ben's
+// ₦62,300 landed in Reception's takings and appeared nowhere as money
+// coming back.
+//
+// This is the room side: money on a stay that had already checked out,
+// paid on a later day, less any part already tied to a department's
+// charge (that part is counted by get_daily_financials and must not be
+// counted twice). It belongs to Reception, so the caller only adds it
+// when looking at the whole branch.
+//
+// Kept as its own function rather than folded into get_daily_financials:
+// that one decides every department's Total Sales, and a transcription
+// slip inside it would be a slip in everybody's money.
+export async function loadStayDebtRecovered(branchId, date) {
+  const { data, error } = await supabase.rpc('stay_debt_recovered', {
+    p_branch: branchId, p_date: date,
+  })
+  if (error) throw error
+  return {
+    total: Number(data?.total || 0),
+    byMethod: data?.byMethod || {},
+    rows: data?.rows || [],
+  }
+}
+
 // What a department collected on room folios on a day: {pos, cash}. Part of
 // that department's Match Total Sales.
 export async function loadFolioCollectedAt(branchId, date, locationId) {

@@ -2,7 +2,7 @@ import RoomChargeTracker from '../components/RoomChargeTracker'
 import StockUsedReport from '../components/StockUsedReport'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { naira, lagosToday, lagosDaysAgo, tierLabel, methodLabel, roomChargeDept, whoRecorded, paymentSummary } from '../lib/format'
-import { findDuplicateCustomers, findDuplicateGuests, loadDailyFinancials, loadReceptionActivity, loadReceptionDashboard, loadRoomBillHandover, loadRoomCharges, loadRoomsSoldInMonth, loadToday, loadWriteoffsOnDate } from '../lib/data'
+import { findDuplicateCustomers, findDuplicateGuests, loadDailyFinancials, loadReceptionActivity, loadReceptionDashboard, loadRoomBillHandover, loadRoomCharges, loadRoomsSoldInMonth, loadStayDebtRecovered, loadToday, loadWriteoffsOnDate } from '../lib/data'
 import { useToast } from '../components/Toast'
 import ReceptionDashboard from '../components/ReceptionDashboard'
 import WriteoffBreakdown from '../components/WriteoffBreakdown'
@@ -35,6 +35,25 @@ function withRoomBillMoney(f, rows) {
   // is WHO paid — the totals used to be recomputed here as well, which
   // is how this page and the Sales page came to disagree.
   return { ...f, roomBill: rows || [] }
+}
+
+// Room-rate debt recovered, added here rather than inside
+// get_daily_financials (565). A guest who left owing for the room and
+// paid later is recovering a debt; until today that money appeared
+// only in Reception's takings and in no figure that said what it was.
+//
+// Added for the whole branch only. It is Reception's money, and adding
+// it to a department's day would put it on a till that never held it.
+// stays null-safe so the page still renders if the function has not
+// been created yet.
+function withStayDebt(f, stayDebt) {
+  if (!stayDebt || !(stayDebt.total > 0.009)) return { ...f, stayDebt: null }
+  return {
+    ...f,
+    stayDebt,
+    debtRecovered: Number(f.debtRecovered || 0) + stayDebt.total,
+    totalMoneyIn: Number(f.totalMoneyIn || 0) + stayDebt.total,
+  }
 }
 
 export default function DailySales({ boot }) {
@@ -143,9 +162,14 @@ export default function DailySales({ boot }) {
     Promise.all([
       loadDailyFinancials(staff.branch_id, date, loc),
       loadRoomBillHandover(staff.branch_id, date).catch(() => []),
-    ]).then(([f, hand]) => setSummary(withRoomBillMoney(f,
+      // Whole branch only — see withStayDebt. Null on failure so a
+      // database that has not had 565 run yet still shows the day.
+      locId === 'all'
+        ? loadStayDebtRecovered(staff.branch_id, date).catch(() => null)
+        : Promise.resolve(null),
+    ]).then(([f, hand, stayDebt]) => setSummary(withStayDebt(withRoomBillMoney(f,
         locId === 'all' ? hand
-          : hand.filter(h => roomChargeDept(h, allLocations) === locId))))
+          : hand.filter(h => roomChargeDept(h, allLocations) === locId)), stayDebt)))
       .catch(e => toast(e.message, 'error'))
     loadToday(staff.branch_id, date, loc).then(setRows).catch(e => toast(e.message, 'error'))
     if (showsRoomCharges) {
@@ -411,6 +435,23 @@ export default function DailySales({ boot }) {
                     <div key={i} className="flex justify-between gap-3">
                       <span className="text-dim truncate min-w-0">
                         · {r.guest || 'Guest'}{r.room ? ` (Room ${r.room})` : ''} · {r.charge || 'charge'}
+                      </span>
+                      <span className="tnum text-dim shrink-0">{naira(r.amount)}</span>
+                    </div>
+                  ))}
+                </div>
+              </>
+            )}
+            {summary.stayDebt && (
+              <>
+                <SubLine label="· from room bills paid after check-out"
+                  value={summary.stayDebt.total} />
+                <ByMethod map={summary.stayDebt.byMethod} labels={methodLabel} />
+                <div className="pl-4 pt-1 text-sm">
+                  {summary.stayDebt.rows.map((r, i) => (
+                    <div key={i} className="flex justify-between gap-3">
+                      <span className="text-dim truncate min-w-0">
+                        · {r.guest || 'Guest'}{r.room ? ` (Room ${r.room})` : ''} · left {r.left}
                       </span>
                       <span className="tnum text-dim shrink-0">{naira(r.amount)}</span>
                     </div>
