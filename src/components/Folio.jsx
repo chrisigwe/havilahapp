@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { naira, lagosToday, lagosDaysAgo, lagosTime, partPaidNote, roomChargeDept, seesStayTimes, cyclesFor, friendlyStayError, addDays } from '../lib/format'
-import { billedToLabel, checkOutStay, checkRepeatPayment, deleteOrderItem, deleteStay, extendStayTo, loadBranchStaySettings, loadFolio, moveRoomChargeDate, recordStayPayment, setPaymentDepartment, splitPaymentToDepartment, reopenStay, saveRepayment, searchSimilarGuests, setPaymentAllocation, updateOrderItem, updateOverstayFee, updateStayBillTo, updateStayDetails } from '../lib/data'
+import { billedToLabel, checkOutStay, checkRepeatPayment, deleteOrderItem, deleteStay, extendStayTo, loadBranchStaySettings, loadFolio, moveRoomChargeDate, recordStayPayment, reopenStay, saveRepayment, searchSimilarGuests, updateOrderItem, updateOverstayFee, updateStayBillTo, updateStayDetails } from '../lib/data'
 import { useToast } from '../components/Toast'
 import PaymentMethodPicker, { paymentParts, paymentAllocated } from './PaymentMethodPicker'
 import FolioStatement from './FolioStatement'
@@ -41,13 +41,10 @@ export default function Folio({ boot, room, onClose, onChanged }) {
   // charged to the room, then paid on the bar's terminal). Empty = Reception.
   // Which PART of the bill a payment clears — the room, one department, or
   // (empty, the default) the bill as a whole (migration 496).
-  const [allocating, setAllocating] = useState(null)   // payment id whose allocation is being changed
-  const [allocDraft, setAllocDraft] = useState('')
   // Which charges the guest is paying for right now (migration 505).
   // Empty = against the whole bill, exactly as every payment behaved
   // before ticking existed.
   const [picked, setPicked] = useState({})
-  const [movingPay, setMovingPay] = useState(null)   // { id, loc } while changing an existing payment's department
   const [editing, setEditing] = useState(null)   // { dailyRate, billingCycle, scheduledOut, rateReason } while open
   const [billToSuggestions, setBillToSuggestions] = useState([])
   const [billToOpen, setBillToOpen] = useState(false)
@@ -416,23 +413,8 @@ export default function Folio({ boot, room, onClose, onChanged }) {
   // The ticking is gone (20 October 2026): the front desk no longer
   // decides what a payment settles, so there is nothing to tick and
   // nothing to fill in from it. picked stays as an empty object because
-  // the save path still reads it, and an existing payment can still be
-  // re-pointed by a GM through Change department below.
+  // the save path still reads it.
 
-  // Changing what an existing payment clears is a correction to the
-  // record, so it sits with the other corrections: GM and admin.
-  const canSetAllocation = is(staff.role, SUPERVISOR) && showParts
-
-  async function saveAllocation(p) {
-    const part = billParts.find(x => x.key === allocDraft) || null
-    setBusy(true)
-    try {
-      await setPaymentAllocation(p.id, part?.applied || null, part?.locationId || null)
-      toast(part ? `Payment now clears ${part.name}` : 'Payment now clears the whole bill', 'success')
-      setAllocating(null); refresh(); onChanged?.()
-    } catch (e) { toast(friendlyStayError(e), 'error') }
-    setBusy(false)
-  }
   const cycles = cyclesFor(branchSettings?.allowedCycles)
   const overstayDefault = branchSettings?.overstayDefault ?? null
   const currentOverstay = stay?.overstay_fee != null ? Number(stay.overstay_fee) : null
@@ -582,26 +564,6 @@ export default function Folio({ boot, room, onClose, onChanged }) {
     setBusy(false)
   }
 
-  // Departments that can take a room payment: real sales points of THIS stay's
-  // branch, never the store and never Reception itself (that is the default).
-  const deptOptions = (allLocations || locations || []).filter(l =>
-    l.is_sales_point && !l.is_store && !/reception/i.test(l.name)
-    && (!folio?.branch_id || !l.branch_id || l.branch_id === folio.branch_id))
-
-  async function saveMovedPayment() {
-    setBusy(true)
-    try {
-      const part = Number(movingPay.part)
-      if (movingPay.loc && movingPay.part !== '' && part > 0 && part < Number(movingPay.total)) {
-        await splitPaymentToDepartment(movingPay.id, part, movingPay.loc)
-      } else {
-        await setPaymentDepartment(movingPay.id, movingPay.loc || null)
-      }
-      toast('Payment moved', 'success')
-      setMovingPay(null); refresh(); onChanged?.()
-    } catch (e) { toast(friendlyStayError(e), 'error') }
-    setBusy(false)
-  }
 
   // Checking out used to stamp today, full stop. On a stay that had been
   // reopened to fix a charge, that quietly moved the departure date and
@@ -1190,9 +1152,8 @@ export default function Folio({ boot, room, onClose, onChanged }) {
                 left MainBar's Total Sales expecting POS that was never in
                 it. Ticking the charges answers that question properly now.
 
-                The control remains on each recorded payment below, as
-                "Change department", so the ones already tagged wrongly can
-                be put back to Reception. */}
+                The "Change department" control that replaced it is gone
+                too (20 October 2026) — see the Payments list below. */}
 
             {/* LAST, deliberately (18 October 2026). The date used to be
                 the first field, so it was read before anyone had thought
@@ -1408,84 +1369,26 @@ export default function Folio({ boot, room, onClose, onChanged }) {
                           : locName(p.applied_location_id) || 'a department'}
                       </div>
                     )}
-                    {/* Correcting what an older payment was for. Money paid
-                        forward for the room should stay against the room
-                        instead of being absorbed by a bar tab that turns up
-                        later — and before 496 a payment could not say so. */}
-                    {canSetAllocation && (
-                      allocating === p.id ? (
-                        <div className="mt-2">
-                          <select value={allocDraft}
-                            onChange={e => setAllocDraft(e.target.value)}
-                            className="h-11 w-full px-3 rounded-xl bg-raise border border-line">
-                            <option value="">The whole bill</option>
-                            {billParts.filter(x => x.applied && !x.onCredit).map(x => (
-                              <option key={x.key} value={x.key}>{x.name}</option>
-                            ))}
-                          </select>
-                          <div className="flex gap-2 mt-2">
-                            <button onClick={() => saveAllocation(p)} disabled={busy}
-                              className="h-11 px-4 rounded-xl bg-amber text-bg font-semibold disabled:opacity-40">
-                              Save
-                            </button>
-                            <button onClick={() => setAllocating(null)}
-                              className="h-11 px-4 text-dim">Cancel</button>
-                          </div>
-                        </div>
-                      ) : (
-                        <button
-                          onClick={() => {
-                            setAllocating(p.id)
-                            setAllocDraft(p.applied_to === 'room' ? 'room'
-                              : p.applied_to === 'department' ? p.applied_location_id || '' : '')
-                          }}
-                          className="block text-dim text-xs underline mt-1">
-                          {p.applied_to ? 'Change what this clears' : 'Say what this payment was for'}
-                        </button>
-                      )
-                    )}
-                    {movingPay?.id === p.id ? (
-                      <div className="mt-2">
-                        <select value={movingPay.loc}
-                          onChange={e => setMovingPay(m => ({ ...m, loc: e.target.value }))}
-                          className="h-11 w-full px-3 rounded-xl bg-raise border border-line">
-                          <option value="">Reception (this desk)</option>
-                          {deptOptions.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
-                        </select>
-                        {movingPay.loc && (
-                          <div className="mt-2">
-                            <label className="text-dim text-sm">
-                              How much of this {naira(p.amount)} was for that department?
-                            </label>
-                            <input type="number" inputMode="decimal" value={movingPay.part}
-                              onChange={e => setMovingPay(m => ({ ...m, part: e.target.value }))}
-                              className="mt-1 h-11 w-full px-3 rounded-xl bg-raise border border-line tnum" />
-                            {Number(movingPay.part) > 0 && Number(movingPay.part) < Number(p.amount) && (
-                              <p className="text-amber text-sm mt-1">
-                                {naira(movingPay.part)} goes to that department; {naira(Number(p.amount) - Number(movingPay.part))} stays
-                                {p.collected?.name ? ` at ${p.collected.name}` : ' with Reception'}. The guest's total paid does not change.
-                              </p>
-                            )}
-                          </div>
-                        )}
-                        <div className="flex gap-2 mt-2">
-                          <button onClick={saveMovedPayment} disabled={busy}
-                            className="flex-1 h-10 rounded-lg bg-amber text-bg font-semibold disabled:opacity-40">Save</button>
-                          <button onClick={() => setMovingPay(null)}
-                            className="flex-1 h-10 rounded-lg border border-line text-dim">Cancel</button>
-                        </div>
-                      </div>
-                    ) : (deptOptions.length > 0 && is(staff.role, SUPERVISOR) && (
-                      /* GM and admin only now (Chris, 20 October 2026).
-                         The front desk does not decide whose money a
-                         payment is — the department records its own. But
-                         a payment keyed at the wrong till has happened
-                         twice this month, and without this the only way
-                         to correct one is SQL, so it stays for whoever
-                         is called when that happens. */
-                      <button onClick={() => setMovingPay({ id: p.id, loc: p.location_id || '', part: String(p.amount), total: p.amount })}
-                        className="block text-dim text-xs underline mt-1">Change department</button>
-                    ))}
+                    {/* Both controls that used to sit here are gone
+                        (Chris, 20 October 2026). "Say what this payment was
+                        for" and "Change department" let the desk — or a GM
+                        standing at it — re-point money after the fact, and
+                        the front desk does not decide whose money a room
+                        payment is any more: it accepts the room bill, and
+                        each department records what it was physically
+                        handed.
+
+                        The sharper reason is that these buttons rendered on
+                        EVERY payment row, including a department's own
+                        receipt recorded through 564. Moving one of those
+                        would have shifted the till figure away from the
+                        charge it settled and left the two disagreeing with
+                        nothing on screen to show it.
+
+                        A payment keyed at the wrong till is a correction to
+                        the record, and corrections to money are made by id,
+                        with the before and after read first — not by a
+                        dropdown on a live guest's bill. */}
                   </div>
                   <span className="tnum font-semibold">{naira(p.amount)}</span>
                 </li>

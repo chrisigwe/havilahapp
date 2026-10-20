@@ -2166,7 +2166,11 @@ export async function loadRoomPayments(branchId, days = 60) {
 //
 // Only the allocation moves. The amount, the date, the method and whose
 // till took it are all left exactly as they are.
-export async function setPaymentAllocation(paymentId, appliedTo, appliedLocationId = null) {
+// Not wired to any screen since 20 October 2026 — the control was removed
+// from the folio. Kept because it is the repair for a payment pointed at
+// the wrong part of a bill, and that repair is made by id, not by a
+// dropdown on a live guest's bill.
+async function _setPaymentAllocation(paymentId, appliedTo, appliedLocationId = null) {
   const applied = appliedTo === 'department' && appliedLocationId ? 'department'
     : appliedTo === 'room' ? 'room' : null
   const { error } = await supabase.from('payments')
@@ -2206,7 +2210,12 @@ async function _recordDepartmentReceipt({ stayId, locationId, pos, cash }) {
 
 // Move a room payment to the department whose till took the money, or back to
 // Reception (locationId = null). Server decides who may (migration 336).
-export async function setPaymentDepartment(paymentId, locationId) {
+// Not wired to any screen since 20 October 2026 (see above): a room payment
+// at the front desk is Reception's by definition now, and a department's own
+// money comes in through record_department_receipt, which also ties it to the
+// charge it settles. Moving one of those with this would have left the till
+// figure and the settled charge naming different departments.
+async function _setPaymentDepartment(paymentId, locationId) {
   const { error } = await supabase.rpc('set_payment_department', {
     p_payment: paymentId, p_location: locationId || null })
   if (error) throw error
@@ -2214,7 +2223,7 @@ export async function setPaymentDepartment(paymentId, locationId) {
 
 // Move only PART of a lump payment to a department (migration 339); the
 // guest's total paid does not change.
-export async function splitPaymentToDepartment(paymentId, amount, locationId) {
+async function _splitPaymentToDepartment(paymentId, amount, locationId) {
   const { error } = await supabase.rpc('split_payment_to_department', {
     p_payment: paymentId, p_amount: amount, p_location: locationId })
   if (error) throw error
