@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { loadStockUsedOnDay } from '../lib/data'
+import { tracked } from '../lib/loadfail'
 
 const TYPE = { standard: 'Standard', pr_damage: 'PR / Damage', staff: 'Staff' }
 
@@ -12,7 +13,7 @@ export default function StockUsedReport({ branchId, date, locationId = null }) {
   useEffect(() => {
     if (!branchId || !date) return
     setRows(null)
-    loadStockUsedOnDay(branchId, date, locationId).then(setRows).catch(() => setRows([]))
+    tracked('Stock used on this day', loadStockUsedOnDay(branchId, date, locationId)).then(setRows).catch(() => setRows([]))
   }, [branchId, date, locationId])
 
   if (!rows || !rows.length) return null

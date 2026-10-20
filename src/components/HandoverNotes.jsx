@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { loadHandoverNotes, addHandoverNote, ackHandoverNote } from '../lib/data'
 import { useToast } from './Toast'
+import { tracked } from '../lib/loadfail'
 
 // Short notes between shifts for one department: "Fanta is low", "Room 205 owes 5,000".
 // The next person taps "Got it"; notes disappear after 3 days.
@@ -13,7 +14,7 @@ export default function HandoverNotes({ branchId, locationId }) {
 
   const refresh = useCallback(() => {
     if (!branchId || !locationId) return
-    loadHandoverNotes(branchId, locationId).then(setNotes).catch(() => setNotes([]))
+    tracked('Handover notes', loadHandoverNotes(branchId, locationId)).then(setNotes).catch(() => setNotes([]))
   }, [branchId, locationId])
   useEffect(refresh, [refresh])
 

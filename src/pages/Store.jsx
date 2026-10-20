@@ -6,6 +6,7 @@ import { loadDepartmentSupplies, loadStockMap, loadPopular, loadDepartmentHistor
 import { supabase } from '../lib/supabase'
 import { enqueue, flush, isConnectionError } from '../lib/outbox'
 import ItemPicker from '../components/ItemPicker'
+import { tracked } from '../lib/loadfail'
 
 export default function Store({ boot }) {
   const { staff, allLocations } = boot
@@ -73,7 +74,7 @@ export default function Store({ boot }) {
     else if (mode === 'disburse' && toDept) p = loadDepartmentHistory(staff.branch_id, toDept)
     else if (mode === 'move' && fromDept) p = loadMoveHistory(staff.branch_id, fromDept)
     else if (mode === 'convert' && convertLoc) p = loadConvertHistory(staff.branch_id, convertLoc)
-    if (p) p.then(setHistory).catch(() => setHistory([]))
+    if (p) tracked('Store history', p).then(setHistory).catch(() => setHistory([]))
     else setHistory([])
   }, [staff.branch_id, mode, toDept, fromDept, convertLoc, store?.id])
   useEffect(() => reloadHistory(true), [reloadHistory])

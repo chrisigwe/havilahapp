@@ -3,6 +3,7 @@ import { lagosDaysAgo, lagosToday, naira, orderableLocations } from '../lib/form
 import { searchLiveStays, chargeItemToRoom, chargeWriteoffToRoom } from '../lib/data'
 import RoomItemPicker from './RoomItemPicker'
 import StockUsedField from './StockUsedField'
+import { tracked } from '../lib/loadfail'
 
 // Charges items to a hotel room/guest stay — the front desk's own
 // side of this (their FolioDrawer) adds one item at a time, each its
@@ -69,7 +70,7 @@ export default function RoomChargeSheet({ boot, stockMap, onClose, toast, fromRe
   useEffect(() => {
     if (stay) return
     const t = setTimeout(() => {
-      searchLiveStays(staff.branch_id, q).then(setStays).catch(() => setStays([]))
+      tracked('The search for a guest in house', searchLiveStays(staff.branch_id, q)).then(setStays).catch(() => setStays([]))
     }, 200)
     return () => clearTimeout(t)
   }, [q, staff.branch_id, stay])

@@ -9,6 +9,7 @@ import FolioStatement from '../components/FolioStatement'
 import { EDITOR, OPENS_ON_ALL, OVERSIGHT, SUPERVISOR, is } from '../lib/roles'
 import { accountStatementPdf, savePdf } from '../lib/pdfSheet'
 import Notice from '../components/Notice'
+import { tracked } from '../lib/loadfail'
 
 
 
@@ -121,9 +122,9 @@ export default function Credit({ boot }) {
   // a separate load rather than folded into the customer refresh above.
   const refreshGuestBalances = useCallback(() => {
     if (!hasReceptionAccess) return
-    loadGuestBalances(staff.branch_id, isEditor ? staffFilter : null)
+    tracked('What guests owe', loadGuestBalances(staff.branch_id, isEditor ? staffFilter : null))
       .then(setGuestBalances).catch(() => setGuestBalances([]))
-    loadReservedValue(staff.branch_id).then(setUpcoming).catch(() => setUpcoming([]))
+    tracked('Bookings not yet arrived', loadReservedValue(staff.branch_id)).then(setUpcoming).catch(() => setUpcoming([]))
   }, [staff.branch_id, hasReceptionAccess, isEditor, staffFilter])
   useEffect(refreshGuestBalances, [refreshGuestBalances])
 
@@ -159,7 +160,7 @@ export default function Credit({ boot }) {
 
   const refreshUnlinked = useCallback(() => {
     if (!hasReceptionAccess) return
-    loadUnlinkedCustomerBalances(staff.branch_id).then(setUnlinked).catch(() => setUnlinked([]))
+    tracked('Customer accounts not linked to a guest', loadUnlinkedCustomerBalances(staff.branch_id)).then(setUnlinked).catch(() => setUnlinked([]))
   }, [hasReceptionAccess, staff.branch_id])
   useEffect(refreshUnlinked, [refreshUnlinked])
 
@@ -174,7 +175,7 @@ export default function Credit({ boot }) {
     if (!monthFilter) { setMonthRows(null); return }
     const [y, m] = monthFilter.split('-').map(Number)
     setMonthRows(null)
-    loadCreditForMonth(staff.branch_id, y, m, locId)
+    tracked('Credit for the month', loadCreditForMonth(staff.branch_id, y, m, locId))
       .then(setMonthRows).catch(() => setMonthRows([]))
   }, [monthFilter, locId, staff.branch_id])
 

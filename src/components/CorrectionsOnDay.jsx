@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { loadCorrectionsOnDate } from '../lib/data'
 import { lagosTime } from '../lib/format'
+import { tracked } from '../lib/loadfail'
 
 // What was undone to this day, after the fact.
 //
@@ -25,7 +26,7 @@ export default function CorrectionsOnDay({ branchId, date, locationId = null }) 
   useEffect(() => {
     if (!branchId || !date) return
     setRows(null)
-    loadCorrectionsOnDate(branchId, date, locationId).then(setRows).catch(() => setRows([]))
+    tracked('Corrections made on this day', loadCorrectionsOnDate(branchId, date, locationId)).then(setRows).catch(() => setRows([]))
   }, [branchId, date, locationId])
 
   if (!rows?.length) return null

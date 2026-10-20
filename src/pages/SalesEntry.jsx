@@ -25,6 +25,7 @@ import TillTile, { SubLine, ByMethod } from '../components/TillTile'
 import HandoverNotes from '../components/HandoverNotes'
 import { APPROVE_ROOM_CHARGES, EDITOR, MANAGEMENT, OVERSIGHT, SUPERVISOR, is } from '../lib/roles'
 import Notice from '../components/Notice'
+import { tracked } from '../lib/loadfail'
 
 const niceDay = (d) => new Date(d + 'T12:00:00').toLocaleDateString('en-NG', { day: 'numeric', month: 'short' })
 
@@ -479,7 +480,7 @@ export default function SalesEntry({ boot }) {
     if (!isReception) {
       loadRoomCharges(staff.branch_id, date).then(setRoomCharges).catch(() => {})
     }
-    loadRoomBillHandover(staff.branch_id, date).then(setHandover).catch(() => setHandover([]))
+    tracked('Money waiting from the front desk', loadRoomBillHandover(staff.branch_id, date)).then(setHandover).catch(() => setHandover([]))
     // Once this till has been counted for this day the figures stay
     // open. Without this the tile re-covered itself on every reload and
     // after every shift change, so the person who had already done the
@@ -499,7 +500,7 @@ export default function SalesEntry({ boot }) {
     // shut. This is what lets the page say so before they count.
     const frontDesk = (boot.allLocations || locations).find(l => /reception/i.test(l.name))
     if (frontDesk && frontDesk.id !== locationId) {
-      tillCheckDone(staff.branch_id, frontDesk.id, date)
+      tracked('Whether this till has been counted', tillCheckDone(staff.branch_id, frontDesk.id, date))
         .then(setFrontDeskClosed).catch(() => setFrontDeskClosed(null))
     } else setFrontDeskClosed(null)
     // On failure, record the error rather than silently showing nothing:
@@ -532,10 +533,10 @@ export default function SalesEntry({ boot }) {
     }
 
     const wantsBalances = methods.includes('credit')
-    Promise.all([
+    tracked('Customer accounts', Promise.all([
       loadCustomers(staff.branch_id),
       wantsBalances ? loadBalances(staff.branch_id, locationId).catch(() => []) : Promise.resolve([]),
-    ])
+    ]))
       .then(([cs, bals]) => {
         const byId = Object.fromEntries(bals.map(b => [b.customer_id, Number(b.balance)]))
         setCustomers(cs.map(c => ({ ...c, balance: byId[c.id] || 0 })))
@@ -680,7 +681,7 @@ export default function SalesEntry({ boot }) {
   // one at the bar to charge. Internal rooms (GM Office) excluded.
   useEffect(() => {
     if (!paying) return
-    loadLiveStays(staff.branch_id)
+    tracked('Guests in house', loadLiveStays(staff.branch_id))
       .then(rows => setInHouse((rows || [])
         .filter(r => r.status === 'occupied' && !r.rooms?.is_internal)
         .sort((a, b) => String(a.rooms?.room_number).localeCompare(

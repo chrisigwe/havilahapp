@@ -3,6 +3,7 @@ import { loadDepartmentRoomCharges, recordDepartmentReceipt } from '../lib/data'
 import { naira, lagosToday, lagosTime } from '../lib/format'
 import Notice from './Notice'
 import { useToast } from './Toast'
+import { tracked } from '../lib/loadfail'
 
 const dShort = d => d ? new Date(String(d).slice(0, 10) + 'T12:00:00')
   .toLocaleDateString('en-NG', { day: 'numeric', month: 'short' }) : ''
@@ -36,7 +37,7 @@ export default function RoomChargeTracker({ branchId, locationId = null, refresh
   useEffect(() => {
     if (!branchId) return
     setLines(null)
-    loadDepartmentRoomCharges(branchId, locationId, mode === 'recovered' ? 60 : 14).then(setLines).catch(() => setLines([]))
+    tracked('Money waiting from the front desk', loadDepartmentRoomCharges(branchId, locationId, mode === 'recovered' ? 60 : 14)).then(setLines).catch(() => setLines([]))
   }, [branchId, locationId, refreshKey, tick])
 
   if (!lines) return null

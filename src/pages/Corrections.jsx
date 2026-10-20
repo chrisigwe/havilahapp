@@ -10,6 +10,7 @@ import MergeGuestsSheet from '../components/MergeGuestsSheet'
 import MergeCustomersSheet from '../components/MergeCustomersSheet'
 import { MANAGEMENT, RECEPTION_EDIT, SUPERVISOR, is } from '../lib/roles'
 import Notice from '../components/Notice'
+import { tracked } from '../lib/loadfail'
 
 // The movement labels, in one place. describe() held them inline and
 // the row badge needed the same words — two copies drift.
@@ -276,7 +277,7 @@ export default function Corrections({ boot }) {
     // history is their core evidence. Without this they would land on the
     // history view (they can't edit) and it would never be fetched.
     if (!ownOnly || staff.role === 'auditor')
-      loadAudit(staff.branch_id).then(setAudit).catch(() => setAudit([]))
+      tracked('The corrections record', loadAudit(staff.branch_id)).then(setAudit).catch(() => setAudit([]))
   }, [staff.branch_id, canEdit, ownOnly, staff.id, deptFilter])
   useEffect(refresh, [refresh])
 
@@ -357,13 +358,13 @@ export default function Corrections({ boot }) {
 
   const refreshDupes = useCallback(() => {
     if (!canMerge) return
-    findDuplicateGuests(staff.branch_id).then(setDupes).catch(() => setDupes([]))
+    tracked('Guests entered twice', findDuplicateGuests(staff.branch_id)).then(setDupes).catch(() => setDupes([]))
   }, [canMerge, staff.branch_id])
   useEffect(() => { if (view === 'guests') refreshDupes() }, [view, refreshDupes])
 
   const refreshCustDupes = useCallback(() => {
     if (!canMerge) return
-    findDuplicateCustomers(staff.branch_id).then(setCustDupes).catch(() => setCustDupes([]))
+    tracked('Customers entered twice', findDuplicateCustomers(staff.branch_id)).then(setCustDupes).catch(() => setCustDupes([]))
   }, [canMerge, staff.branch_id])
   useEffect(() => { if (view === 'guests') refreshCustDupes() }, [view, refreshCustDupes])
 

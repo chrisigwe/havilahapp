@@ -10,6 +10,7 @@ import ReopenSearch from '../components/ReopenSearch'
 import { useToast } from '../components/Toast'
 import { is, MANAGEMENT, SUPERVISOR } from '../lib/roles'
 import Notice from '../components/Notice'
+import { tracked } from '../lib/loadfail'
 
 // Phase 2 of bringing the front-desk app's functionality into this
 // one: check-in and new bookings, alongside the view-only room status
@@ -119,7 +120,7 @@ export default function RoomBoard({ boot }) {
   // not quietly fall off "Recently checked out" after 14 days.
   const [owingCheckouts, setOwingCheckouts] = useState([])
   useEffect(() => {
-    loadCheckoutsStillOwing(staff.branch_id).then(setOwingCheckouts).catch(() => setOwingCheckouts([]))
+    tracked('Guests who left still owing', loadCheckoutsStillOwing(staff.branch_id)).then(setOwingCheckouts).catch(() => setOwingCheckouts([]))
   }, [staff.branch_id, openStay])  // openStay: refetch after a payment is recorded
   const [markingOOS, setMarkingOOS] = useState(null)   // the room being marked out of service
   const [oosReason, setOosReason] = useState('')
@@ -139,10 +140,10 @@ export default function RoomBoard({ boot }) {
   const seesInternal = is(staff.role, SUPERVISOR)
   const [internalIds, setInternalIds] = useState([])
   const refresh = () => {
-    loadOccupancy(staff.branch_id).then(setAllRooms).catch(() => setAllRooms([]))
-    loadUpcomingReservations(staff.branch_id).then(setReservations).catch(() => setReservations([]))
-    loadPaidThrough(staff.branch_id).then(setPaidThrough).catch(() => setPaidThrough({}))
-    loadInternalRoomIds(staff.branch_id).then(setInternalIds).catch(() => setInternalIds([]))
+    tracked('The room board', loadOccupancy(staff.branch_id)).then(setAllRooms).catch(() => setAllRooms([]))
+    tracked('Bookings not yet arrived', loadUpcomingReservations(staff.branch_id)).then(setReservations).catch(() => setReservations([]))
+    tracked('How far each room is paid', loadPaidThrough(staff.branch_id)).then(setPaidThrough).catch(() => setPaidThrough({}))
+    tracked('Which rooms are internal', loadInternalRoomIds(staff.branch_id)).then(setInternalIds).catch(() => setInternalIds([]))
   }
   useEffect(refresh, [staff.branch_id])
 

@@ -65,7 +65,14 @@ for (const file of files) {
           file: relative(ROOT, file),
           line: code.slice(0, n.start).split('\n').length,
           setter: m[1], value: m[2],
-          toasts: /toast\(/.test(body),
+          // A catch is only silent if NOTHING tells the person. Three
+          // things count: a toast, its own error state, or the load
+          // being wrapped in tracked(), which puts the failure on the
+          // strip at the top of the app (20 October 2026). The whole
+          // statement is searched for tracked(), not just the handler,
+          // because the wrap sits at the head of the chain.
+          toasts: /toast\(/.test(body) || /setErr\w*\(/.test(body)
+                  || /\btracked\s*\(/.test(src(n)),
         })
       }
     }
@@ -88,6 +95,7 @@ for (const f of found) {
   byFile.get(f.file).push(f)
 }
 
+const silentOnly = found.filter(f => !f.toasts)
 console.log(`${found.length} places where a failed load empties the screen:\n`)
 for (const [file, list] of [...byFile.entries()].sort()) {
   console.log(`  ${file}`)
@@ -96,6 +104,11 @@ for (const [file, list] of [...byFile.entries()].sort()) {
       + (f.toasts ? '  — says something' : '  — SILENT'))
   }
 }
-const silent = found.filter(f => !f.toasts).length
+const silent = silentOnly.length
+if (silent === 0) {
+  console.log('\nEvery one of them says so. None reads as "there is nothing here".')
+  process.exit(0)
+}
 console.log(`\n${silent} of them say nothing at all. Those are the ones that read`)
 console.log('as "there is nothing here" when the truth is "this did not load".')
+process.exitCode = 1

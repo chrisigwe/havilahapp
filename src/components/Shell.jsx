@@ -7,6 +7,8 @@ import ReservationBanner from './ReservationBanner'
 import NavIcon from './NavIcon'
 import { tabsFor, countBadgeTabFor } from '../lib/tabs'
 import ReadOnlyBanner from './ReadOnlyBanner'
+import LoadFailures from './LoadFailures'
+import { clearAllLoadFailures } from '../lib/loadfail'
 import NotificationSetup from './NotificationSetup'
 import { signOutCleanly } from '../lib/push'
 import { moreItemsFor } from '../pages/More'
@@ -27,6 +29,11 @@ const MORE = ['mypay', 'tillchecks', 'dailysales', 'roomboard', 'credit', 'recov
 export default function Shell({ staff, tab, onTab, children,
                                 branches = [], viewBranch, onBranch, pendingCount = 0,
                                 alertEligible = false, recordsSales = false, hasPay = false }) {
+  // A new screen asks its own questions. Clearing here stops a failure
+  // from one tab being read as a fault on the next — the loads that
+  // matter here will report again if they still cannot answer.
+  useEffect(() => { clearAllLoadFailures() }, [tab])
+
   const [confirmingSignOut, setConfirmingSignOut] = useState(false)
   // The tab bar gets out of the way while you read down a page and
   // comes back the moment you scroll up (19 October 2026). The same
@@ -177,6 +184,9 @@ export default function Shell({ staff, tab, onTab, children,
       )}
       <ReadOnlyBanner readOnly={staff.is_read_only} />
       <NotificationSetup staff={staff} alertEligible={alertEligible} />
+      {/* Above the page, because what is missing from a figure has to be
+          read before the figure is. */}
+      <LoadFailures />
       {children}
       </div>
       </div>

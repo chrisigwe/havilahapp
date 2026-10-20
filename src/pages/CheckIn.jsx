@@ -5,6 +5,7 @@ import {
 } from '../lib/data'
 import { useToast } from '../components/Toast'
 import Notice from '../components/Notice'
+import { tracked } from '../lib/loadfail'
 
 const RATE_FIELDS = { standard: 'rate_standard', alternate: 'rate_alternate', short: 'rate_short' }
 
@@ -81,7 +82,7 @@ export default function CheckIn({ boot, onDone }) {
   }, [billTo, staff.branch_id, billToOpen])
 
   useEffect(() => {
-    loadFreeRooms(staff.branch_id, checkIn, scheduledOut).then(list => {
+    tracked('Rooms free for those dates', loadFreeRooms(staff.branch_id, checkIn, scheduledOut)).then(list => {
       setRooms(list)
       // The previously-picked room may no longer be free for the
       // newly-selected dates — don't let a stale selection through.
@@ -94,13 +95,13 @@ export default function CheckIn({ boot, onDone }) {
   // room is explained rather than a mystery.
   const [reservations, setReservations] = useState([])
   useEffect(() => {
-    loadUpcomingReservations(staff.branch_id).then(setReservations).catch(() => setReservations([]))
+    tracked('Bookings not yet arrived', loadUpcomingReservations(staff.branch_id)).then(setReservations).catch(() => setReservations([]))
   }, [staff.branch_id])
   const heldBack = (checkIn && scheduledOut)
     ? reservations.filter(r => r.checkIn < scheduledOut && checkIn < r.scheduledOut) : []
 
   useEffect(() => {
-    loadBranchStaySettings(staff.branch_id).then(s => {
+    tracked("The branch's stay settings", loadBranchStaySettings(staff.branch_id)).then(s => {
       setAllowedCycles(s.allowedCycles)
       setRateLabels(s.rateLabels)
     }).catch(() => setAllowedCycles(null))

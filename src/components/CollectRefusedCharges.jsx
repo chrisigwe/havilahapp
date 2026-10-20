@@ -3,6 +3,7 @@ import { naira, methodLabel } from '../lib/format'
 import { loadRoomChargesByStatus, collectRejectedRoomCharge } from '../lib/data'
 import { useToast } from './Toast'
 import CustomerPicker from './CustomerPicker'
+import { tracked } from '../lib/loadfail'
 
 // Room charges the front desk refused. The drinks were already served,
 // so the bar has to collect another way — POS, Cash, Credit or Split.
@@ -27,7 +28,7 @@ export default function CollectRefusedCharges({
   const [busy, setBusy] = useState(false)
 
   const refresh = useCallback(() => {
-    loadRoomChargesByStatus(branchId, 'rejected').then(setRows).catch(() => setRows([]))
+    tracked('Charges the guest refused', loadRoomChargesByStatus(branchId, 'rejected')).then(setRows).catch(() => setRows([]))
   }, [branchId])
 
   useEffect(() => {

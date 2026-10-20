@@ -5,6 +5,7 @@ import { useToast } from '../components/Toast'
 import PaymentMethodPicker, { paymentParts, paymentAllocated } from './PaymentMethodPicker'
 import FolioStatement from './FolioStatement'
 import { MANAGEMENT, SUPERVISOR, is } from '../lib/roles'
+import { tracked } from '../lib/loadfail'
 
 // Was named SUPERVISOR_ROLES but has always been manager/gm/admin —
 // NOT the gm/admin set that is_supervisor() means.
@@ -59,10 +60,10 @@ export default function Folio({ boot, room, onClose, onChanged }) {
   // goes away immediately instead of waiting for the folio to reload.
   const [extended, setExtended] = useState(false)
 
-  const refresh = () => { loadFolio(room.stay_id).then(setData).catch(() => setData(null)) }
+  const refresh = () => { tracked("This guest's bill", loadFolio(room.stay_id)).then(setData).catch(() => setData(null)) }
   useEffect(refresh, [room.stay_id])
   useEffect(() => {
-    loadBranchStaySettings(staff.branch_id).then(setBranchSettings).catch(() => setBranchSettings(null))
+    tracked("The branch's stay settings", loadBranchStaySettings(staff.branch_id)).then(setBranchSettings).catch(() => setBranchSettings(null))
   }, [staff.branch_id])
   useEffect(() => {
     if (!billToOpen) return

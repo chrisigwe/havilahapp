@@ -38,6 +38,7 @@ import Activity from './pages/Activity'
 import Supplies from './pages/Supplies'
 import Attendance from './pages/Attendance'
 import { startPresence } from './lib/presence'
+import { tracked } from './lib/loadfail'
 
 export default function App() {
   const [session, setSession] = useState(undefined) // undefined = loading
@@ -153,7 +154,7 @@ export default function App() {
   // Own pay slips: only people whose login GM/admin linked to a payroll employee.
   useEffect(() => {
     if (!boot?.staff?.id) { setMyPay(null); return }
-    loadMyPay().then(setMyPay).catch(() => setMyPay(null))
+    tracked('My pay', loadMyPay()).then(setMyPay).catch(() => setMyPay(null))
   }, [boot?.staff?.id])
 
   // badge for auditor/storekeeper/manager/gm/admin: how many counts

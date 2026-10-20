@@ -7,6 +7,7 @@ import { lagosToday } from '../lib/format'
 import { useToast } from '../components/Toast'
 import { SUPERVISOR, is } from '../lib/roles'
 import Notice from '../components/Notice'
+import { tracked } from '../lib/loadfail'
 
 const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June',
   'July', 'August', 'September', 'October', 'November', 'December']
@@ -73,7 +74,7 @@ export default function StaySettings({ boot }) {
       // An empty list on failure read as "this branch has no rooms"
       // (20 October 2026).
       .catch(e => setRoomsErr(e.message || 'could not load'))
-    loadBranchStaySettings(staff.branch_id).then(s => {
+    tracked("The branch's stay settings", loadBranchStaySettings(staff.branch_id)).then(s => {
       setBranchSettings(s)
       setFee(s.overstayDefault != null ? String(s.overstayDefault) : '')
     }).catch(() => setBranchSettings(null))
@@ -81,7 +82,7 @@ export default function StaySettings({ boot }) {
 
   useEffect(() => {
     if (!canPostStaffOfMonth) return
-    loadStaffOfMonth(staff.branch_id).then(e => {
+    tracked('Staff of the month', loadStaffOfMonth(staff.branch_id)).then(e => {
       setSomEntry(e); setSomName(e?.staff_name || ''); setSomPrizeAmount(e ? String(e.prize_amount) : '10000')
       // Pre-fill the salary link ONLY for a same-day correction, which updates
       // that post in place. Any other post is a new row, so it starts blank
@@ -92,8 +93,8 @@ export default function StaySettings({ boot }) {
         }).catch(() => {})
       }
     }).catch(() => setSomEntry(null))
-    loadEmployees(staff.branch_id).then(setEmployees).catch(() => setEmployees([]))
-    loadDraftPeriods(staff.branch_id).then(setDraftPeriods).catch(() => setDraftPeriods([]))
+    tracked('The employee list', loadEmployees(staff.branch_id)).then(setEmployees).catch(() => setEmployees([]))
+    tracked('Draft pay periods', loadDraftPeriods(staff.branch_id)).then(setDraftPeriods).catch(() => setDraftPeriods([]))
   }, [canPostStaffOfMonth, staff.branch_id])
 
   if (!canManageRooms) {

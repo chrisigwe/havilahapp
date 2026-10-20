@@ -4,6 +4,7 @@ import { loadStockMap, loadSuppliesUse, recordSuppliesUse, voidSuppliesUse,
 import { lagosDaysAgo } from '../lib/format'
 import { useToast } from '../components/Toast'
 import { VersionLine } from './More'
+import { tracked } from '../lib/loadfail'
 
 // Supplies used. The Store hands supplies to a department (Store > Supplies >
 // Issue); the department holds them and records each use here, with a note.
@@ -48,7 +49,7 @@ export default function Supplies({ boot }) {
 
   const refresh = () => {
     loadStockMap(staff.branch_id).then(setStockMap).catch(console.error)
-    loadSuppliesUse(staff.branch_id, days).then(setFeed).catch(() => setFeed([]))
+    tracked('Supplies used', loadSuppliesUse(staff.branch_id, days)).then(setFeed).catch(() => setFeed([]))
     loadDepartmentSupplies(staff.branch_id).then(setDeptLists).catch(() => {})
   }
   useEffect(refresh, [staff.branch_id, days])

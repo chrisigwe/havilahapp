@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { loadStaffOfMonth } from '../lib/data'
 import { naira } from '../lib/format'
+import { tracked } from '../lib/loadfail'
 
 // Per branch — shows THIS branch's own winner, not a shared one.
 // Fetches once per mount for the current branch (the banner doesn't
@@ -13,7 +14,7 @@ export default function StaffOfMonthBanner({ branchId }) {
   const [entry, setEntry] = useState(null)
   useEffect(() => {
     if (!branchId) return
-    loadStaffOfMonth(branchId).then(setEntry).catch(() => setEntry(null))
+    tracked('Staff of the month', loadStaffOfMonth(branchId)).then(setEntry).catch(() => setEntry(null))
   }, [branchId])
 
   if (!entry || !entry.isActive) return null

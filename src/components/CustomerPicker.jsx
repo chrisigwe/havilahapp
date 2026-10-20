@@ -3,6 +3,7 @@ import { naira } from '../lib/format'
 
 import { normalizeCustomerName as nameKey } from '../lib/customerName'
 import { findSimilarCustomers } from '../lib/data'
+import { tracked } from '../lib/loadfail'
 
 // "GM" and "General manager" are the same person, but no spelling test
 // can see that. Compare the initials of a multi-word name with a short
@@ -34,7 +35,7 @@ export default function CustomerPicker({ customers, value, onPick, onCreate, bra
     clearTimeout(timer.current)
     // Waits for a pause in typing: one lookup, not one per keystroke.
     timer.current = setTimeout(() => {
-      findSimilarCustomers(branchId, q).then(setSimilar).catch(() => setSimilar([]))
+      tracked('Customers with a similar name', findSimilarCustomers(branchId, q)).then(setSimilar).catch(() => setSimilar([]))
     }, 350)
     return () => clearTimeout(timer.current)
   }, [q, branchId])

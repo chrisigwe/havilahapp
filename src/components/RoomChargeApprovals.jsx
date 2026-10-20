@@ -3,6 +3,7 @@ import { naira } from '../lib/format'
 import { loadRoomChargesByStatus, approveRoomCharge, rejectRoomCharge } from '../lib/data'
 import { useToast } from './Toast'
 import { pulseAlert, unlockAudio, audioReady } from '../lib/alert'
+import { tracked } from '../lib/loadfail'
 
 // Room charges over the branch limit, made by bar staff, waiting for the
 // front desk. Nothing here is on a guest's bill until approved.
@@ -22,7 +23,7 @@ export default function RoomChargeApprovals({ branchId, onDecided }) {
   const known = useRef(null)
 
   const refresh = useCallback(() => {
-    loadRoomChargesByStatus(branchId, 'pending').then(next => {
+    tracked('Room charges waiting for approval', loadRoomChargesByStatus(branchId, 'pending')).then(next => {
       setRows(next)
       const prev = known.current
       known.current = new Set(next.map(r => r.id))

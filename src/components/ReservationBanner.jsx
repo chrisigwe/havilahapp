@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { loadUpcomingReservations } from '../lib/data'
 import { lagosToday, addDays } from '../lib/format'
+import { tracked } from '../lib/loadfail'
 
 // Shown on every page (not just Rooms) to the people who sell rooms, so a
 // booked-in-advance room is not sold by mistake. Covers anything due today,
@@ -11,7 +12,7 @@ export default function ReservationBanner({ branchId, tab, onTab }) {
   useEffect(() => {
     if (!branchId) return
     let live = true
-    const go = () => loadUpcomingReservations(branchId, 1)
+    const go = () => tracked('Guests arriving today', loadUpcomingReservations(branchId, 1))
       .then(r => { if (live) setList(r) }).catch(() => { if (live) setList([]) })
     go()
     const t = setInterval(go, 5 * 60 * 1000)

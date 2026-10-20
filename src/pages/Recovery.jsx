@@ -4,6 +4,7 @@ import { deleteRepayment, deleteRoomPayment, loadBalances, loadBalancesAsAt, loa
 import { useToast } from '../components/Toast'
 import RoomChargeTracker from '../components/RoomChargeTracker'
 import { OPENS_ON_ALL, OVERSIGHT, SUPERVISOR, is } from '../lib/roles'
+import { tracked } from '../lib/loadfail'
 
 // Deliberately excludes storekeeper — an explicit choice, not an
 // oversight, matching how storekeeper's write access has been pulled
@@ -86,11 +87,11 @@ export default function Recovery({ boot }) {
   }, [staff.branch_id])
 
   const refresh = useCallback(() => {
-    loadBalances(staff.branch_id, locId === 'all' ? null : locId, null)
+    tracked('Recovery balances', loadBalances(staff.branch_id, locId === 'all' ? null : locId, null))
       .then(setBalances).catch(() => setBalances([]))
     // Only fetched when a day is actually selected.
     if (dayFilter) {
-      loadBalancesAsAt(staff.branch_id, dayFilter, locId)
+      tracked('Balances as at that day', loadBalancesAsAt(staff.branch_id, dayFilter, locId))
         .then(setAsAtBalances).catch(() => setAsAtBalances([]))
     } else setAsAtBalances(null)
     loadRecovery(staff.branch_id, locId === 'all' ? null : locId).then(setRows).catch(e => toast(e.message, 'error'))
@@ -102,7 +103,7 @@ export default function Recovery({ boot }) {
   // rather than folded into the one above.
   const refreshRoomPayments = useCallback(() => {
     if (!hasReceptionAccess) return
-    loadRoomPayments(staff.branch_id).then(setRoomPayments).catch(() => setRoomPayments([]))
+    tracked('Room payments', loadRoomPayments(staff.branch_id)).then(setRoomPayments).catch(() => setRoomPayments([]))
   }, [staff.branch_id, hasReceptionAccess])
   useEffect(refreshRoomPayments, [refreshRoomPayments])
 

@@ -7,6 +7,7 @@ import {
   addDeduction, endEmployment, finalisePeriod, giveRaise, lineTotals, loadCustomersForLinking, loadEmployees, loadLines, loadPayouts, loadPeriod, loadPotNext, loadSalaryHistory, openPeriod, proposeCreditDeductions, proposeLinkedDeductions, loadResponsibleLinks, setCustomerResponsible, loadAccountBalances, removeAddition, removeDeduction, reopenPeriod, saveEmployee, savePayout, savingsBalances, setEmployeeCreditAccount, updateLine,
 } from '../lib/payroll'
 import Notice from '../components/Notice'
+import { tracked } from '../lib/loadfail'
 
 const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June',
                 'July', 'August', 'September', 'October', 'November', 'December']
@@ -550,8 +551,8 @@ function EmployeeSheet({ value, employees, final, onClose, onSaved, toast, branc
   const [logins, setLogins] = useState([])
   useEffect(() => {
     if (!branchId) return
-    loadLoginsForPayroll(branchId).then(setLogins).catch(() => setLogins([]))
-    loadCustomersForLinking(branchId).then(setCustomers).catch(() => setCustomers([]))
+    tracked('Staff logins', loadLoginsForPayroll(branchId)).then(setLogins).catch(() => setLogins([]))
+    tracked('Customer accounts for linking', loadCustomersForLinking(branchId)).then(setCustomers).catch(() => setCustomers([]))
   }, [branchId])
 
   const isLine = !!value.line
@@ -783,7 +784,7 @@ function SalaryPanel({ employee, onSaved, toast }) {
   const [month, setMonth] = useState(months[0].value)
 
   useEffect(() => {
-    loadSalaryHistory(employee.id).then(setHistory).catch(() => setHistory([]))
+    tracked("This employee's salary history", loadSalaryHistory(employee.id)).then(setHistory).catch(() => setHistory([]))
   }, [employee.id])
 
   async function submit() {
