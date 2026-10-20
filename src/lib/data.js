@@ -1968,20 +1968,70 @@ export async function loadRoomRateProgress(branchId) {
 // who simply made no payment or order today) would otherwise be
 // invisible on this screen, easily mistaken for having checked out.
 export async function loadReceptionDashboard(branchId, date) {
-  const [{ data: todayPayments, error: e1 }, { data: occ, error: e5 }] = await Promise.all([
+  const [{ data: todayPayments, error: e1 }, { data: occ, error: e5 },
+         { data: handedOver, error: e6 }] = await Promise.all([
     supabase.from('payments')
       .select('method, amount, stay_id, location_id').eq('branch_id', branchId).eq('business_date', date),
     supabase.from('v_occupancy_today')
       .select('stay_id, room_number, guest_name, outstanding')
       .eq('branch_id', branchId).eq('status', 'occupied'),
+    // What departments have recorded being physically handed out of the
+    // money the guest paid at this desk (564). Joined through payments so
+    // only this branch and this day's takings come back.
+    supabase.from('payment_items')
+      .select('amount, dept:received_location_id(name), payments!inner(method, business_date, branch_id, location_id)')
+      .not('received_location_id', 'is', null)
+      .eq('payments.branch_id', branchId)
+      .eq('payments.business_date', date),
   ])
   if (e1) throw e1
   if (e5) throw e5
+  // Loudly, not silently. If this one query fails the desk is shown MORE
+  // money than it holds, which is the error that ends in someone being
+  // asked to account for cash they handed over hours earlier.
+  if (e6) throw e6
+
   // Room payments taken through ANOTHER department's POS/cash (location_id set)
   // belong to that department's total, not Reception's (migration 336).
   const atFrontDesk = (todayPayments || []).filter(p => !p.location_id)
-  const pos = atFrontDesk.filter(p => p.method === 'pos').reduce((s, p) => s + Number(p.amount), 0)
-  const cash = atFrontDesk.filter(p => p.method === 'cash').reduce((s, p) => s + Number(p.amount), 0)
+  const took = (m) => atFrontDesk.filter(p => p.method === m)
+    .reduce((s, p) => s + Number(p.amount), 0)
+
+  // Chris, 20 October 2026: "The reception only keeps money paid for
+  // room/stays, and the other departments take their own payments."
+  //
+  // So a guest's payment is Reception's only until the slip and the cash
+  // are handed over. Before this, recording a handover settled the charge
+  // and moved the money onto the department's figure but left it on
+  // Reception's as well — the same naira counted on two tills, which is
+  // the exact discrepancy 564 was built to end.
+  //
+  // Deducted on the PAYMENT's day, not the day it was recorded, so both
+  // sides move together: get_daily_financials credits the department on
+  // p.business_date too. A handover recorded late therefore changes the
+  // day the money was taken, which is the honest answer — and the reason
+  // a handover left unconfirmed belongs on Needs a look.
+  const given = (handedOver || []).filter(h => !h.payments?.location_id)
+  const gave = (m) => given.filter(h => h.payments?.method === m)
+    .reduce((s, h) => s + Number(h.amount || 0), 0)
+  const posGiven = gave('pos')
+  const cashGiven = gave('cash')
+  const pos = took('pos') - posGiven
+  const cash = took('cash') - cashGiven
+
+  // Who it went to, so a figure that dropped can be explained without
+  // opening a second screen.
+  const handoverByDept = {}
+  for (const h of given) {
+    const name = h.dept?.name || 'a department'
+    handoverByDept[name] = (handoverByDept[name] || 0) + Number(h.amount || 0)
+  }
+  const handedToDepartments = {
+    pos: posGiven, cash: cashGiven, total: posGiven + cashGiven,
+    byDept: Object.entries(handoverByDept)
+      .map(([name, amount]) => ({ name, amount }))
+      .sort((a, b) => b.amount - a.amount),
+  }
 
   const paidTodayByStay = {}
   for (const p of (todayPayments || [])) {
@@ -2006,7 +2056,7 @@ export async function loadReceptionDashboard(branchId, date) {
   const deferredTotal = deferred.reduce((s, g) => s + g.outstanding + g.departmentCredit + g.billedToYou, 0)
   const roomRateRemainingTotal = roomRateProgress.reduce((s, r) => s + r.remaining, 0)
 
-  return { pos, cash, deferred, deferredTotal, roomRateProgress, roomRateRemainingTotal, inHouse }
+  return { pos, cash, handedToDepartments, deferred, deferredTotal, roomRateProgress, roomRateRemainingTotal, inHouse }
 }
 
 // Rooms booked but not yet arrived, with what the booking COMES TO.

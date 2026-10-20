@@ -53,6 +53,34 @@ export default function ReceptionDashboard({
         </>
       )}
 
+      {/* Why the POS and Cash figures above are lower than the day's
+          takings. Reception keeps room and stay money; a department's
+          share stops being Reception's the moment the slip and the cash
+          are handed over, and this is what has gone (20 October 2026).
+          Without it the figures just look wrong. */}
+      {Number(dashboard.handedToDepartments?.total || 0) > 0 && (
+        <div className="mt-3 rounded-xl border border-line bg-raise p-3">
+          <div className="flex items-baseline justify-between gap-3">
+            <span className="text-dim">Handed to departments — no longer this desk's</span>
+            <span className="tnum font-bold shrink-0">
+              {naira(dashboard.handedToDepartments.total)}
+            </span>
+          </div>
+          <div className="mt-1 space-y-0.5 text-sm">
+            {dashboard.handedToDepartments.byDept.map(d => (
+              <div key={d.name} className="flex justify-between gap-3">
+                <span className="text-dim min-w-0 break-words">{d.name}</span>
+                <span className="tnum shrink-0">{naira(d.amount)}</span>
+              </div>
+            ))}
+          </div>
+          <p className="text-dim text-xs mt-2">
+            Already taken off POS and Cash above. Each department recorded being
+            handed this, so it counts on their till, not here.
+          </p>
+        </div>
+      )}
+
       <div className="mt-3 flex items-baseline justify-between gap-3">
         <span className="text-dim">Deferred — owed across every live stay</span>
         <span className="tnum font-bold text-clay">{naira(dashboard.deferredTotal)}</span>
