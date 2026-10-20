@@ -47,22 +47,67 @@ export default function RoomChargeTracker({ branchId, locationId = null, refresh
 
   if (recovered) {
     if (!collectedLines.length) return null
+    // Grouped by guest (21 October 2026). Chris: "How will Restaurant
+    // and MainBar verify that the money came into their dept?" A flat
+    // list of items cannot answer that — nobody adds up seven meals in
+    // their head to check a handover. One line per guest, with the
+    // figure, and the name of whoever recorded being handed it.
+    const byGuest = []
+    const seen = new Map()
+    for (const l of collectedLines) {
+      // Per guest AND per department when every department is in view
+      // (21 October 2026). Grouping by guest alone merged Sir Ben's
+      // ₦48,500 of Restaurant food with MainBar's ₦13,800 into a single
+      // ₦62,300 row carrying one department's name — a figure neither
+      // of them received. With a department selected the key can stay
+      // the guest, because every line already belongs to that one.
+      const key = (l.stay_id || `${l.guest}|${l.room}`)
+        + (locationId ? '' : `|${l.dept_id || l.dept || ''}`)
+      let g = seen.get(key)
+      if (!g) {
+        g = { key, guest: l.guest, room: l.room, dept: l.dept, total: 0, items: [],
+              received_by: null, received_at: null }
+        seen.set(key, g); byGuest.push(g)
+      }
+      g.total += Number(l.paid_amt || 0)
+      g.items.push(l)
+      // The latest receipt on any of their lines — who to ask.
+      if (l.received_at && (!g.received_at || l.received_at > g.received_at)) {
+        g.received_at = l.received_at; g.received_by = l.received_by
+      }
+    }
+    byGuest.sort((a, b) => b.total - a.total)
     return (
-      <Section title="Room charges recovered" open={open} setOpen={setOpen}
-        subtitle={`${collectedLines.length} item${collectedLines.length === 1 ? '' : 's'} on bills now settled, last 60 days`}
+      <Section title="Money received for room charges" open={open} setOpen={setOpen}
+        subtitle={`${byGuest.length} guest${byGuest.length === 1 ? '' : 's'}, last 60 days`}
         amount={<span className="tnum font-bold text-leaf">{naira(collectedTotal)}</span>}>
         <ul className="divide-y divide-line/60">
-          {collectedLines.map(l => (
-            <li key={l.id} className="py-3 flex items-start gap-3">
-              <div className="flex-1 min-w-0">
-                <p className="font-semibold">{l.qty} × {l.item}
-                  {!locationId && l.dept && <span className="text-dim font-normal"> · {l.dept}</span>}
-                </p>
-                <p className="text-dim text-sm">
-                  Room {l.room || '—'}{l.guest ? ` · ${l.guest}` : ''} · sold {dShort(l.date)}
-                </p>
+          {byGuest.map(g => (
+            <li key={g.key} className="py-3">
+              <div className="flex items-baseline gap-3">
+                <span className="flex-1 min-w-0 font-semibold break-words">
+                  {g.guest || 'Guest'}{g.room ? ` · Room ${g.room}` : ''}
+                  {!locationId && g.dept && <span className="text-dim font-normal"> · {g.dept}</span>}
+                </span>
+                <span className="tnum font-bold text-leaf shrink-0">{naira(g.total)}</span>
               </div>
-              <p className="tnum font-semibold text-leaf shrink-0">{naira(l.paid_amt)}</p>
+              {/* The verification. Without a name this is just a figure
+                  that appeared; with one there is someone to ask. */}
+              <p className="text-dim text-sm">
+                {g.received_by
+                  ? <>Recorded by {g.received_by}{g.received_at ? ` · ${dShort(g.received_at)} ${lagosTime(g.received_at)}` : ''}</>
+                  : 'Settled on the bill — no handover recorded'}
+              </p>
+              <div className="mt-1 space-y-0.5 text-sm">
+                {g.items.map(l => (
+                  <div key={l.id} className="flex justify-between gap-3">
+                    <span className="text-dim min-w-0 break-words">
+                      {l.qty} × {l.item} · sold {dShort(l.date)}
+                    </span>
+                    <span className="tnum text-dim shrink-0">{naira(l.paid_amt)}</span>
+                  </div>
+                ))}
+              </div>
             </li>
           ))}
         </ul>
