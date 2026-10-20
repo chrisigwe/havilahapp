@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { SUPERVISOR, is } from '../lib/roles'
 import { loadStaffAccounts, resetStaffPassword, deactivateStaff } from '../lib/data'
 import { useToast } from '../components/Toast'
+import Notice from '../components/Notice'
 
 // Staff logins, for the GM.
 //
@@ -25,13 +26,18 @@ export default function StaffAccounts({ boot }) {
   const { staff } = boot
   const toast = useToast()
   const [rows, setRows] = useState(null)
+  // Setting rows to empty on failure made the page say "No staff
+  // accounts at this branch", which is a statement about the business
+  // rather than about a request that failed (20 October 2026).
+  const [loadErr, setLoadErr] = useState(null)
   const [handover, setHandover] = useState(null)
   const [confirmOff, setConfirmOff] = useState(null)
   const [busy, setBusy] = useState(false)
 
   const refresh = useCallback(() => {
     loadStaffAccounts(staff.branch_id)
-      .then(setRows).catch(e => { setRows([]); toast(e.message, 'error') })
+      .then(r => { setRows(r); setLoadErr(null) })
+      .catch(e => setLoadErr(e.message || 'could not load'))
   }, [staff.branch_id, toast])
   useEffect(refresh, [refresh])
 
@@ -73,7 +79,24 @@ export default function StaffAccounts({ boot }) {
         belongs to the job and someone else is taking over, change the password.
       </p>
 
-      {rows === null && <p className="text-dim py-8 text-center">Loading…</p>}
+      {loadErr && (
+        <Notice tone="problem" title="Staff accounts could not be loaded" className="mb-3">
+          <p>This does not mean there are none. Tell your developer.</p>
+          <p className="text-xs mt-2 break-words">{loadErr}</p>
+        </Notice>
+      )}
+
+      {!loadErr && !!list.length && (
+        <section className="rounded-2xl border border-line bg-surface p-4 mb-3">
+          <div className="text-dim text-sm">Logins at this branch</div>
+          <div className="tnum text-2xl font-bold">{list.length}</div>
+          <div className="text-dim text-sm mt-1">
+            Each one can sell, record or approve under the name it carries.
+          </div>
+        </section>
+      )}
+
+      {rows === null && !loadErr && <p className="text-dim py-8 text-center">Loading…</p>}
 
       {list.map(r => (
         <div key={r.id} className="py-3 border-b border-line/60">
@@ -99,7 +122,7 @@ export default function StaffAccounts({ boot }) {
         </div>
       ))}
 
-      {!!rows && !list.length && (
+      {!!rows && !loadErr && !list.length && (
         <p className="text-dim py-8 text-center">No staff accounts at this branch.</p>
       )}
 

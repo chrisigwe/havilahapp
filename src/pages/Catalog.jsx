@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { naira } from '../lib/format'
 import { saveItemPrices, createItem, loadAllCatalogItems, deleteCatalogItem } from '../lib/data'
 import { useToast } from '../components/Toast'
+import Notice from '../components/Notice'
 
 export default function Catalog({ boot, onChanged }) {
   const { staff, tiers } = boot
@@ -12,10 +13,16 @@ export default function Catalog({ boot, onChanged }) {
   const [edit, setEdit] = useState(null)
   const [adding, setAdding] = useState(null)
   const [confirmDel, setConfirmDel] = useState(null)
+  const [loadErr, setLoadErr] = useState(null)
   const [busy, setBusy] = useState(false)
 
+  // A failed load used to set the list to empty, so the catalogue read
+  // as "no items" — a claim about the business, from a request that did
+  // not arrive (20 October 2026).
   const refreshAll = () => {
-    loadAllCatalogItems(staff.branch_id).then(setAll).catch(() => setAll([]))
+    loadAllCatalogItems(staff.branch_id)
+      .then(a => { setAll(a); setLoadErr(null) })
+      .catch(e => setLoadErr(e.message || 'could not load'))
   }
   useEffect(refreshAll, [staff.branch_id])
 
@@ -108,6 +115,34 @@ export default function Catalog({ boot, onChanged }) {
         ))}
       </div>
 
+      {loadErr && (
+        <Notice tone="problem" title="The catalogue could not be loaded">
+          <p>This is not an empty catalogue — the list did not arrive. Tell the GM.</p>
+          <p className="text-xs mt-2 break-words">{loadErr}</p>
+        </Notice>
+      )}
+
+      {/* What is in the catalogue, before the list of it. Prices are
+          what this page is for, so the span is named too. */}
+      {!loadErr && !!all?.length && (() => {
+        const active = all.filter(i => i?.is_active).length
+        const priced = list.filter(i => Number(i.selling_price) > 0).length
+        return (
+          <section className="rounded-2xl border border-line bg-surface p-4 mb-3">
+            <div className="text-dim text-sm">
+              {show === 'active' ? 'Active items' : show === 'inactive' ? 'Inactive items' : 'All items'}
+            </div>
+            <div className="tnum text-2xl font-bold">{list.length}</div>
+            <div className="text-dim text-sm mt-1">
+              {active} active of {all.length} in all
+              {priced < list.length && (
+                <span className="text-amber"> · {list.length - priced} with no selling price</span>
+              )}
+            </div>
+          </section>
+        )
+      })()}
+
       <ul className="divide-y divide-line/60">
         {list.map(i => (
           <li key={i.id}>
@@ -125,7 +160,14 @@ export default function Catalog({ boot, onChanged }) {
             </button>
           </li>
         ))}
-        {!list.length && <li className="py-8 text-center text-dim">Nothing matches.</li>}
+        {!loadErr && all && !list.length && (
+          <li className="py-8 text-center text-dim">
+            {q.trim() ? `Nothing matches “${q.trim()}”.`
+              : show === 'inactive' ? 'Nothing has been switched off.'
+              : 'No items in the catalogue yet.'}
+          </li>
+        )}
+        {!all && !loadErr && <li className="py-8 text-center text-dim">Loading…</li>}
       </ul>
       {brokenCount > 0 && (
         <p className="mt-3 text-clay text-sm">

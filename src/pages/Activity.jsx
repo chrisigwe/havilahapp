@@ -3,6 +3,7 @@ import { SUPERVISOR, is } from '../lib/roles'
 import { loadStaffActivity } from '../lib/data'
 import { useToast } from '../components/Toast'
 import { lagosTime } from '../lib/format'
+import Notice from '../components/Notice'
 
 const roleLabel = r => ({ front_desk: 'Front desk', gm: 'GM', admin: 'Admin', storekeeper: 'Storekeeper',
   manager: 'Manager', auditor: 'Auditor', bar: 'Bar' }[r] || r || '')
@@ -49,14 +50,20 @@ export default function Activity({ boot }) {
   const [days, setDays] = useState(30)
   const [rows, setRows] = useState(null)
   const [open, setOpen] = useState(null)
+  const [err, setErr] = useState(null)
 
   useEffect(() => {
     if (!is(staff.role, SUPERVISOR)) return
+    setErr(null)
     setRows(null)
     loadStaffActivity(boot.viewBranchId || staff.branch_id, days)
-      .then(setRows)
-      .catch(e => { setRows([]); toast(/function|does not exist/i.test(e.message)
-        ? 'Staff activity is not switched on yet — run the 342 SQL first.' : e.message, 'error') })
+      .then(r => { setRows(r); setErr(null) })
+      // Setting rows to empty made the page read "No activity recorded
+      // yet in this period" — which says the staff did nothing, when in
+      // fact the request failed (20 October 2026).
+      .catch(e => setErr(/function|does not exist/i.test(e.message)
+        ? 'Staff activity is not switched on yet — run the 342 SQL first.'
+        : (e.message || 'could not load')))
   }, [staff.branch_id, boot.viewBranchId, days])
 
   if (!is(staff.role, SUPERVISOR)) {
@@ -81,8 +88,32 @@ export default function Activity({ boot }) {
         ))}
       </div>
 
-      {!rows && <p className="text-dim py-6">Loading…</p>}
-      {rows && !used.length && <p className="text-dim py-6">No activity recorded yet in this period.</p>}
+      {err && (
+        <Notice tone="problem" title="Staff activity could not be loaded" className="mt-4">
+          <p>This is not the same as nobody using the app. Tell your developer.</p>
+          <p className="text-xs mt-2 break-words">{err}</p>
+        </Notice>
+      )}
+
+      {/* Who is using the app at all, before the list of them. */}
+      {!err && !!used.length && (
+        <section className="rounded-2xl border border-line bg-surface p-4 mt-4">
+          <div className="text-dim text-sm">People who used the app</div>
+          <div className="tnum text-2xl font-bold">
+            {used.length} <span className="text-base font-semibold text-dim">of {rows.length}</span>
+          </div>
+          <div className="text-dim text-sm mt-1">
+            {used.reduce((t, r) => t + r.actions_total, 0).toLocaleString('en-NG')} actions
+            in the last {days} days
+            {idle.length > 0 && <> · {idle.length} did not open it</>}
+          </div>
+        </section>
+      )}
+
+      {!rows && !err && <p className="text-dim py-6">Loading…</p>}
+      {rows && !err && !used.length && (
+        <p className="text-dim py-6">No activity recorded yet in this period.</p>
+      )}
 
       <ul className="mt-4 space-y-3">
         {used.map(r => {
@@ -92,15 +123,25 @@ export default function Activity({ boot }) {
               <button onClick={() => setOpen(isOpen ? null : r.staff_id)} className="w-full text-left px-4 py-3">
                 <div className="flex items-start gap-3">
                   <div className="flex-1 min-w-0">
-                    <p className="font-bold truncate">{r.name}</p>
+                    {/* Wrapped, not clipped: this page exists to say who
+                        did a thing, and a long name was cut short at
+                        320px. */}
+                    <p className="font-bold break-words">{r.name}</p>
                     <p className="text-dim text-sm">{roleLabel(r.role)} · last seen {when(r.last_seen)}</p>
                     {r.pages[0] && <p className="text-dim text-sm">Most used: {r.pages.slice(0, 3).map(p => p.name).join(', ')}</p>}
+                    <p className="text-dim text-sm tnum mt-1">
+                      <b className="text-ink">{r.days_active}</b> day{r.days_active === 1 ? '' : 's'}
+                      {' · '}<b className="text-ink">{r.visits}</b> visits
+                      {' · '}<b className="text-ink">{r.actions_total}</b> actions
+                    </p>
                   </div>
-                  <div className="text-right shrink-0 text-sm">
-                    <p className="tnum"><b>{r.days_active}</b> <span className="text-dim">day{r.days_active === 1 ? '' : 's'}</span></p>
-                    <p className="tnum"><b>{r.visits}</b> <span className="text-dim">page visits</span></p>
-                    <p className="tnum"><b>{r.actions_total}</b> <span className="text-dim">actions</span></p>
-                  </div>
+                  {/* Three stacked figures with their words beside them
+                      wrapped badly next to a long name at 320px. One
+                      line of three, under the name, holds its shape. */}
+                  <svg viewBox="0 0 20 20" className={`w-4 h-4 shrink-0 mt-1 text-dim transition-transform ${isOpen ? 'rotate-180' : ''}`}
+                       fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+                    <path d="M5 8l5 5 5-5" strokeLinecap="round" strokeLinejoin="round" />
+                  </svg>
                 </div>
               </button>
               {isOpen && (

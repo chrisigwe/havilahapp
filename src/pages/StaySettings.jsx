@@ -6,6 +6,7 @@ import { loadAwardPayroll, loadDraftPeriods, loadEmployees, setAwardPayroll } fr
 import { lagosToday } from '../lib/format'
 import { useToast } from '../components/Toast'
 import { SUPERVISOR, is } from '../lib/roles'
+import Notice from '../components/Notice'
 
 const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June',
   'July', 'August', 'September', 'October', 'November', 'December']
@@ -33,6 +34,7 @@ export default function StaySettings({ boot }) {
   const { staff } = boot
   const toast = useToast()
   const [rooms, setRooms] = useState(null)
+  const [roomsErr, setRoomsErr] = useState(null)
   const [branchSettings, setBranchSettings] = useState(null)
   const [drafts, setDrafts] = useState({})
   const [fee, setFee] = useState('')
@@ -66,7 +68,11 @@ export default function StaySettings({ boot }) {
 
   useEffect(() => {
     if (!canManageRooms) return
-    loadRoomsForSettings(staff.branch_id).then(setRooms).catch(() => setRooms([]))
+    loadRoomsForSettings(staff.branch_id)
+      .then(r => { setRooms(r); setRoomsErr(null) })
+      // An empty list on failure read as "this branch has no rooms"
+      // (20 October 2026).
+      .catch(e => setRoomsErr(e.message || 'could not load'))
     loadBranchStaySettings(staff.branch_id).then(s => {
       setBranchSettings(s)
       setFee(s.overstayDefault != null ? String(s.overstayDefault) : '')
@@ -95,6 +101,19 @@ export default function StaySettings({ boot }) {
       <div className="px-5">
         <h2 className="text-2xl font-bold mt-2">Settings</h2>
         <p className="text-dim mt-2">Room rates and charges are managed by a manager, GM, or admin.</p>
+      </div>
+    )
+  }
+  if (roomsErr) {
+    return (
+      <div className="px-5">
+        <Notice tone="problem" title="Room rates could not be loaded" className="mt-4">
+          <p>
+            This does not mean the branch has no rooms. Nothing has been changed —
+            do not re-enter rates until this loads.
+          </p>
+          <p className="text-xs mt-2 break-words">{roomsErr}</p>
+        </Notice>
       </div>
     )
   }
@@ -347,14 +366,18 @@ export default function StaySettings({ boot }) {
                   <span className="text-dim text-sm">{room.room_categories?.name}</span>
                   {!room.is_active && <span className="text-clay text-sm">inactive</span>}
                 </div>
-                <div className="grid grid-cols-3 gap-3">
+                {/* One column on a phone, three on a laptop. Three
+                    naira boxes side by side left about 70px each at
+                    320px, which is not enough for a rate and its label
+                    (20 October 2026). */}
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                   {Object.entries(RATE_FIELDS).map(([key, field]) => (
-                    <div key={key}>
-                      <div className="text-dim text-sm mb-1">{labels[key]}</div>
+                    <div key={key} className="flex items-center gap-3 sm:block">
+                      <div className="text-dim text-sm mb-1 flex-1 sm:flex-none">{labels[key]}</div>
                       <input type="number" inputMode="decimal" min="0"
                         value={draft[key] ?? room[field] ?? 0}
                         onChange={e => edit(room.id, key, e.target.value)}
-                        className="h-11 w-full px-2 rounded-xl bg-raise border border-line tnum text-sm" />
+                        className="h-11 w-32 sm:w-full px-2 rounded-xl bg-raise border border-line tnum text-sm" />
                     </div>
                   ))}
                 </div>

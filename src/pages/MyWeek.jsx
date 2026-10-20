@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { loadMyWeek } from '../lib/data'
 import { OVERSIGHT, is } from '../lib/roles'
+import Notice from '../components/Notice'
 
 // "My week" — how steadily a person is doing the Total Sales check.
 //
@@ -52,7 +53,10 @@ export default function MyWeek({ boot }) {
     setData(null); setErr(null)
     loadMyWeek(staff.branch_id, 7)
       .then(setData)
-      .catch(e => { setErr(e.message || 'could not load'); setData({ me: [], team: [] }) })
+      // Leaving data empty as well made the page show "Nothing yet"
+      // underneath the error, as though the absence were a fact
+      // (20 October 2026).
+      .catch(e => { setErr(e.message || 'could not load'); setData({ me: [], team: [], failed: true }) })
   }, [staff.branch_id])
 
   if (!data) return <p className="px-5 text-dim py-6">Loading…</p>
@@ -71,7 +75,12 @@ export default function MyWeek({ boot }) {
         </p>
       </div>
 
-      {err && <p className="text-clay py-3">{err}</p>}
+      {err && (
+        <Notice tone="problem" title="Your week could not be loaded" className="my-3">
+          <p>Your streak is not showing. It does not mean you missed a count.</p>
+          <p className="text-xs mt-2 break-words">{err}</p>
+        </Notice>
+      )}
 
       {/* Said plainly, because a count of days someone "missed" is only
           fair if it starts when the check first existed. */}
@@ -83,7 +92,7 @@ export default function MyWeek({ boot }) {
         </p>
       )}
 
-      {!me.length && !oversight && (
+      {!me.length && !oversight && !data.failed && (
         <p className="text-dim py-8 text-center">
           Nothing yet. Your days appear here once you record sales and save your
           count at close.
@@ -119,7 +128,9 @@ export default function MyWeek({ boot }) {
       {oversight && (
         <>
           <h2 className="text-dim mt-6 mb-2">Everyone</h2>
-          {!team.length && <p className="text-dim text-sm py-4">No selling days recorded yet.</p>}
+          {!team.length && !data.failed && (
+            <p className="text-dim text-sm py-4">No selling days recorded yet.</p>
+          )}
           <ul className="divide-y divide-line/60">
             {team.map((r, i) => (
               <li key={`${r.staff}-${r.counter}-${i}`} className="py-3 flex items-baseline gap-3">
