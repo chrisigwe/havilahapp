@@ -2183,47 +2183,13 @@ async function _recordDepartmentReceipt({ stayId, locationId, pos, cash }) {
   return data
 }
 
-// ---------- Reception handing a department its money (migration 508) ----------
-//
-// NOT IN USE. Written in migration 508 and never wired to a screen; the
-// handover is recorded by the DEPARTMENT now (564), against the charges
-// themselves rather than as a daily lump, so there is one source for
-// what a department has been paid and not two. Left here only because
-// the table still holds whatever it holds — nothing reads it.
+// Migration 508's department_handovers table was never created — the
+// table does not exist in the database, and the three functions that
+// read and wrote it were never wired to a screen. They are removed
+// here rather than left to be found and used (20 October 2026). The
+// handover is recorded by the department itself now, against the
+// charges, by record_department_receipt.
 
-// Per department: what their charges have been paid for, what Reception
-// has already handed over, and the difference.
-export async function loadDepartmentMoneyOwed(branchId) {
-  const { data, error } = await supabase.rpc('department_money_owed', { p_branch: branchId })
-  if (error) throw error
-  return data || []
-}
-
-async function _recordHandover({ staff, locationId, amount, method, businessDate, note }) {
-  const { error } = await supabase.from('department_handovers').insert({
-    branch_id: staff.branch_id,
-    location_id: locationId,
-    business_date: businessDate,
-    amount: Number(amount),
-    method: method || 'cash',
-    handed_by: staff.id,
-    note: note || null,
-  })
-  if (error) throw error
-}
-
-// What a department was handed on one day, for its own till check. Read
-// by the department itself, so the figure it is asked to account for is
-// the money it was actually given.
-export async function loadHandoversReceived(branchId, locationId, date) {
-  if (!branchId || !locationId || !date) return []
-  const { data, error } = await supabase.from('department_handovers')
-    .select('id, amount, method, note, created_at, handed:handed_by(full_name)')
-    .eq('branch_id', branchId).eq('location_id', locationId).eq('business_date', date)
-    .order('created_at', { ascending: true })
-  if (error) return []
-  return data || []
-}
 
 // Move a room payment to the department whose till took the money, or back to
 // Reception (locationId = null). Server decides who may (migration 336).
@@ -3279,7 +3245,6 @@ export const chargeItemToRoom = tracked('Charged an item to a room', _chargeItem
 export const chargeBasketToRoom = tracked('Charged items to a room', _chargeBasketToRoom)
 export const chargeWriteoffToRoom = tracked('Charged a PR/staff order to a room', _chargeWriteoffToRoom)
 export const recordStayPayment = tracked('Recorded a room payment', _recordStayPayment)
-export const recordHandover = tracked('Handed a department its room-charge money', _recordHandover)
 export const recordDepartmentReceipt = tracked('Recorded money received from the front desk', _recordDepartmentReceipt)
 export const checkOutStay = tracked('Checked a guest out', _checkOutStay)
 export const recordTillCheck = tracked('Entered Total Sales at close', _recordTillCheck)
