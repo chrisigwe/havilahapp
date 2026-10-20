@@ -7,6 +7,16 @@ import { guestStatementPdf, savePdf } from '../lib/pdfSheet'
 // infrastructure Receipt.jsx already uses, not the reference app's
 // separate portal-based printing (which it needed only because of its
 // own drawer nesting; this app doesn't have that problem).
+// A guest reads "20 Oct", not "2026-10-20". The ISO date stays in the
+// PDF data and on the printed table, where a date column is expected;
+// on screen it is written the way somebody says it out loud.
+const niceDay = (d) => {
+  if (!d) return ''
+  const t = new Date(String(d).slice(0, 10) + 'T12:00:00')
+  return isNaN(t) ? String(d)
+    : t.toLocaleDateString('en-NG', { weekday: 'short', day: 'numeric', month: 'short' })
+}
+
 export default function FolioStatement({ room, folio, orderLines, freeLines, payments, branchName, departmentCredit, billedToYou, checkedInAt, allLocations, onClose }) {
   // Which department a line came from, by name. It used to be read off
   // category alone, so every bar printed as "Bar" — a guest querying a
@@ -109,7 +119,78 @@ export default function FolioStatement({ room, folio, orderLines, freeLines, pay
             </div>
           </div>
 
-          <table className="invoice-table mt-6">
+          {/* THE SAME CHARGES, TWICE (20 October 2026).
+              On paper a three-column table is right — it is an invoice,
+              and a date column is what people expect. On a phone those
+              three columns leave about 90px for the description, so
+              "Nsala and garri with beef" became three cramped lines and
+              the guest could not read their own bill.
+
+              Phones get the list below; the table prints. Both are
+              built from the same orderLines and the same v_stay_folio
+              figures, so they cannot differ. */}
+          <div className="lg:hidden print:hidden mt-6">
+            <h3 className="font-bold mb-2">What you were charged</h3>
+            <div className="rounded-2xl border border-line bg-surface px-4">
+              <div className="py-3 flex items-baseline gap-3 border-b border-line/60">
+                <span className="flex-1 min-w-0">
+                  <span className="block font-semibold leading-tight">Accommodation</span>
+                  <span className="block text-dim text-xs mt-0.5">
+                    Room {room.room_number} · {folio?.nights} night{folio?.nights > 1 ? 's' : ''}
+                    {folio?.daily_rate ? ` at ${naira(folio.daily_rate)}` : ''}
+                    {' · '}{niceDay(room.check_in_date)}
+                  </span>
+                </span>
+                <span className="tnum font-bold shrink-0">{naira(roomCharge)}</span>
+              </div>
+              {overstay > 0 && (
+                <div className="py-3 flex items-baseline gap-3 border-b border-line/60">
+                  <span className="flex-1 min-w-0 font-semibold">Over-stay charge</span>
+                  <span className="tnum font-bold shrink-0">{naira(overstay)}</span>
+                </div>
+              )}
+              {orderLines.map(li => (
+                <div key={li.id} className="py-3 flex items-baseline gap-3 border-b border-line/60 last:border-0">
+                  <span className="flex-1 min-w-0">
+                    <span className="block font-semibold leading-tight break-words">
+                      {li.qty} × {li.description}
+                    </span>
+                    <span className="block text-dim text-xs mt-0.5">
+                      {whereFrom(li)} · {niceDay(li.date)}
+                    </span>
+                  </span>
+                  <span className="tnum font-bold shrink-0">{naira(li.amount)}</span>
+                </div>
+              ))}
+            </div>
+
+            {/* The answer first, in the words a guest asks it in. */}
+            <div className="mt-3 rounded-2xl border border-line bg-surface p-4 space-y-1 text-sm">
+              <div className="flex justify-between gap-3">
+                <span className="text-dim">Room and over-stay</span>
+                <span className="tnum">{naira(roomCharge + overstay)}</span>
+              </div>
+              <div className="flex justify-between gap-3">
+                <span className="text-dim">Food, drinks and minimart</span>
+                <span className="tnum">{naira(orderTotal)}</span>
+              </div>
+              <div className="flex justify-between gap-3 pt-2 mt-1 border-t border-line font-bold">
+                <span>Total charges</span>
+                <span className="tnum">{naira(totalDue)}</span>
+              </div>
+              <div className="flex justify-between gap-3">
+                <span className="text-dim">Paid</span>
+                <span className="tnum text-leaf">{naira(paid)}</span>
+              </div>
+              <div className="flex justify-between gap-3 pt-2 mt-1 border-t border-line">
+                <span className="font-bold">{balance > 0.009 ? 'Balance due' : 'Balance'}</span>
+                <span className={`tnum font-bold text-lg ${
+                  balance > 0.009 ? 'text-clay' : 'text-leaf'}`}>{naira(Math.abs(balance))}</span>
+              </div>
+            </div>
+          </div>
+
+          <table className="invoice-table mt-6 hidden lg:table print:table">
             <thead><tr><th>Date</th><th>Charges</th><th className="num">Amount</th></tr></thead>
             <tbody>
               <tr>
@@ -158,7 +239,7 @@ export default function FolioStatement({ room, folio, orderLines, freeLines, pay
           {!!freeLines?.length && (
             <>
               <h3 className="mt-6 mb-2 font-bold">Complimentary / not charged</h3>
-              <table className="invoice-table">
+              <table className="invoice-table print:table">
                 <thead><tr><th>Date</th><th>Item</th><th className="num">Value</th></tr></thead>
                 <tbody>
                   {freeLines.map(li => (
@@ -174,9 +255,28 @@ export default function FolioStatement({ room, folio, orderLines, freeLines, pay
           )}
 
           {payments.length > 0 && (
+            <div className="lg:hidden print:hidden mt-6">
+              <h3 className="font-bold mb-2">What you paid</h3>
+              <div className="rounded-2xl border border-line bg-surface px-4">
+                {payments.map(p => (
+                  <div key={p.id} className="py-3 flex items-baseline gap-3 border-b border-line/60 last:border-0">
+                    <span className="flex-1 min-w-0">
+                      <span className="block font-semibold">
+                        {p.method.toUpperCase()}{p.is_overstay ? ' (over-stay)' : ''}
+                      </span>
+                      <span className="block text-dim text-xs mt-0.5">{niceDay(p.business_date)}</span>
+                    </span>
+                    <span className="tnum font-bold text-leaf shrink-0">{naira(p.amount)}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {payments.length > 0 && (
             <>
-              <h3 className="mt-6 mb-2 font-bold">Payments received</h3>
-              <table className="invoice-table">
+              <h3 className="mt-6 mb-2 font-bold hidden lg:block print:block">Payments received</h3>
+              <table className="invoice-table hidden lg:table print:table">
                 <thead><tr><th>Date</th><th>Method</th><th className="num">Amount</th></tr></thead>
                 <tbody>
                   {payments.map(p => (
@@ -197,9 +297,15 @@ export default function FolioStatement({ room, folio, orderLines, freeLines, pay
             </>
           )}
 
-          <div className="invoice-balance mt-6">
-            <span>{balance > 0 ? 'Balance due' : 'Balance'}</span>
-            <span className="tnum">{naira(Math.abs(balance))}</span>
+          {/* Wrapped rather than hidden directly: .invoice-balance sets
+              its own display, so a utility class on the same element is
+              a race between two single-class rules. The wrapper has no
+              competing rule. */}
+          <div className="hidden lg:block print:block">
+            <div className="invoice-balance mt-6">
+              <span>{balance > 0 ? 'Balance due' : 'Balance'}</span>
+              <span className="tnum">{naira(Math.abs(balance))}</span>
+            </div>
           </div>
 
           {!!departmentCredit?.length && (
