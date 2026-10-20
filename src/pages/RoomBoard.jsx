@@ -536,9 +536,20 @@ export default function RoomBoard({ boot }) {
                       </p>
                     )}
                     {stateKey === 'reserved_due' && canBook && (
+                      /* Full width and wrapping (21 October 2026). A
+                         fixed-height button with a seven-word label ran
+                         straight out of the card: these sit two to a
+                         row, so there are about 100px to play with and
+                         the text cannot be allowed to set the width.
+                         "Guest arrived — check in now" wrapped to four
+                         lines and made the card twice the height of its
+                         neighbour; "Arrived" keeps the precondition —
+                         do not check a guest in before they turn up —
+                         in two. */
                       <button onClick={(e) => { e.stopPropagation(); checkInNow(room) }} disabled={oosBusy}
-                        className="mt-2 h-9 px-3 rounded-lg bg-amber text-bg text-sm font-bold disabled:opacity-40">
-                        Guest arrived — check in now
+                        className="mt-2 w-full min-h-9 px-2 py-1.5 rounded-lg bg-amber text-bg
+                                   text-xs font-bold leading-tight text-center disabled:opacity-40">
+                        Arrived — check in
                       </button>
                     )}
                     <p className="text-dim text-xs tnum mt-0.5">
