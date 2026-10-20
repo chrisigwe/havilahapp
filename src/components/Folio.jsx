@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { naira, lagosToday, lagosDaysAgo, lagosTime, partPaidNote, seesStayTimes, cyclesFor, friendlyStayError, addDays } from '../lib/format'
+import { naira, lagosToday, lagosDaysAgo, lagosTime, partPaidNote, roomChargeDept, seesStayTimes, cyclesFor, friendlyStayError, addDays } from '../lib/format'
 import { billedToLabel, checkOutStay, checkRepeatPayment, deleteOrderItem, deleteStay, extendStayTo, loadBranchStaySettings, loadFolio, moveRoomChargeDate, recordStayPayment, setPaymentDepartment, splitPaymentToDepartment, reopenStay, saveRepayment, searchSimilarGuests, setPaymentAllocation, updateOrderItem, updateOverstayFee, updateStayBillTo, updateStayDetails } from '../lib/data'
 import { useToast } from '../components/Toast'
 import PaymentMethodPicker, { paymentParts, paymentAllocated } from './PaymentMethodPicker'
@@ -1255,6 +1255,18 @@ export default function Folio({ boot, room, onClose, onChanged }) {
                         )}
                       </div>
                       <div className="text-dim text-sm">
+                        {/* Whose money this is (20 October 2026). The line
+                            said what was sold and what it cost, and never
+                            which department sold it — so a clerk taking
+                            payment at checkout could not see from the bill
+                            who the money belongs to. Resolved the same way
+                            every other page resolves it, so a bar's charge
+                            cannot be read as the other bar's. */}
+                        {(() => {
+                          const deptId = roomChargeDept(li, allLocations || locations)
+                          const dept = (allLocations || locations || []).find(l => l.id === deptId)
+                          return dept ? <span className="text-ink font-semibold">{dept.name} · </span> : null
+                        })()}
                         {li.date} · {li.qty} × {naira(li.unit_price)}
                         {li.order_type === 'pr_damage' && ' · not charged to guest'}
                         {(li.damage_reason || li.pr_meal) && ` · ${li.damage_reason || li.pr_meal}`}

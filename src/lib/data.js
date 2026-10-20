@@ -2165,13 +2165,31 @@ export async function setPaymentAllocation(paymentId, appliedTo, appliedLocation
   if (error) throw error
 }
 
+// A department records the money it was physically handed for its room
+// charges (564). Chris's decision, 20 October 2026: the front desk no
+// longer allocates a guest's payment against charges — the department
+// that is owed records what it actually received, and that entry is
+// what settles the charge and what its till counts.
+//
+// The function ties the money to that department's oldest unpaid
+// charges on that stay and to the guest's real payments, so nothing can
+// be recorded that the guest never paid, and nothing twice.
+async function _recordDepartmentReceipt({ stayId, locationId, pos, cash }) {
+  const { data, error } = await supabase.rpc('record_department_receipt', {
+    p_stay: stayId, p_location: locationId,
+    p_pos: Number(pos) || 0, p_cash: Number(cash) || 0,
+  })
+  if (error) throw error
+  return data
+}
+
 // ---------- Reception handing a department its money (migration 508) ----------
 //
-// A department is responsible for the goods it sold, room charges
-// included. When a guest settles, that department's share is
-// Reception's to hand over — and until it does, Reception is holding
-// the department's money. These two put that on the screen instead of
-// leaving it to be assumed.
+// NOT IN USE. Written in migration 508 and never wired to a screen; the
+// handover is recorded by the DEPARTMENT now (564), against the charges
+// themselves rather than as a daily lump, so there is one source for
+// what a department has been paid and not two. Left here only because
+// the table still holds whatever it holds — nothing reads it.
 
 // Per department: what their charges have been paid for, what Reception
 // has already handed over, and the difference.
@@ -3262,6 +3280,7 @@ export const chargeBasketToRoom = tracked('Charged items to a room', _chargeBask
 export const chargeWriteoffToRoom = tracked('Charged a PR/staff order to a room', _chargeWriteoffToRoom)
 export const recordStayPayment = tracked('Recorded a room payment', _recordStayPayment)
 export const recordHandover = tracked('Handed a department its room-charge money', _recordHandover)
+export const recordDepartmentReceipt = tracked('Recorded money received from the front desk', _recordDepartmentReceipt)
 export const checkOutStay = tracked('Checked a guest out', _checkOutStay)
 export const recordTillCheck = tracked('Entered Total Sales at close', _recordTillCheck)
 export const approveRoomCharge = tracked('Approved a room charge', _approveRoomCharge)

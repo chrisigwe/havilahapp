@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react'
-import { loadDepartmentRoomCharges } from '../lib/data'
+import { loadDepartmentRoomCharges, recordDepartmentReceipt } from '../lib/data'
 import { naira, lagosToday, lagosTime } from '../lib/format'
+import Notice from './Notice'
+import { useToast } from './Toast'
 
 const dShort = d => d ? new Date(String(d).slice(0, 10) + 'T12:00:00')
   .toLocaleDateString('en-NG', { day: 'numeric', month: 'short' }) : ''
@@ -25,12 +27,17 @@ export default function RoomChargeTracker({ branchId, locationId = null, refresh
   const [lines, setLines] = useState(null)
   const [showDone, setShowDone] = useState(false)
   const [open, setOpen] = useState(mode === 'recovered')
+  // Recording what the front desk handed over (564).
+  const [receipt, setReceipt] = useState(null)   // { stayId, guest, room, items, owed, pos, cash }
+  const [busy, setBusy] = useState(false)
+  const [tick, setTick] = useState(0)
+  const toast = useToast()
 
   useEffect(() => {
     if (!branchId) return
     setLines(null)
     loadDepartmentRoomCharges(branchId, locationId, mode === 'recovered' ? 60 : 14).then(setLines).catch(() => setLines([]))
-  }, [branchId, locationId, refreshKey])
+  }, [branchId, locationId, refreshKey, tick])
 
   if (!lines) return null
 
@@ -71,9 +78,28 @@ export default function RoomChargeTracker({ branchId, locationId = null, refresh
   // Desk had cleared Mr Ngoka down to ₦1,500 of room charge and Restaurant
   // food, and MainBar was shown that figure as though it were its own,
   // while the ₦3,000 of water it had actually sold appeared nowhere.
+  // Money the guest has paid that this department has not been handed
+  // yet (564). It is not outstanding — the guest paid — so it must not
+  // sit in the list below under "bill still running", which is what it
+  // would have read as.
+  const waitingByStay = new Map()
+  for (const l of lines) {
+    if (l.status !== 'with_reception') continue
+    const k = l.stay_id
+    if (!waitingByStay.has(k)) {
+      waitingByStay.set(k, { stayId: k, guest: l.guest, room: l.room, owed: 0, items: [] })
+    }
+    const w = waitingByStay.get(k)
+    const left = Number(l.amount || 0) - Number(l.paid_amt || 0)
+    w.owed += left > 0 ? left : 0
+    w.items.push(l)
+  }
+  const waiting = [...waitingByStay.values()].filter(w => w.owed > 0.009)
+  const waitingTotal = waiting.reduce((s2, w) => s2 + w.owed, 0)
+
   const byStay = new Map()
   for (const l of lines) {
-    if (l.status === 'settled') continue
+    if (l.status === 'settled' || l.status === 'with_reception') continue
     const k = l.stay_id
     if (!byStay.has(k)) {
       byStay.set(k, {
@@ -89,7 +115,10 @@ export default function RoomChargeTracker({ branchId, locationId = null, refresh
     (b.status === 'debt') - (a.status === 'debt') || b.billLeft - a.billLeft)
   const settledLines = lines.filter(l => l.status === 'settled')
 
-  if (!guests.length && !settledLines.length) return null
+  // Waiting money counts: a department with nothing outstanding and
+  // nothing settled can still be owed a handover, and returning null
+  // here would have hidden the one thing it needs to act on.
+  if (!guests.length && !settledLines.length && !waiting.length) return null
 
   // The heading figure is what this department sold and has not been paid
   // for — its own money. Summing billLeft put the room charge and every
@@ -98,6 +127,51 @@ export default function RoomChargeTracker({ branchId, locationId = null, refresh
   const gone = guests.filter(g => g.status === 'debt').length
 
   return (
+    <>
+    {/* The front desk is holding this department's money. It only
+        appears once the guest has actually paid, so there is nothing to
+        argue about — the question is only whether the slip and the cash
+        have reached this till. */}
+    {!!waiting.length && locationId && (
+      <Notice tone="warn" className="mt-3"
+        title={`${naira(waitingTotal)} paid by guests, not yet recorded here`}>
+        {/* Not "waiting from the front desk". v_stay_folio counts every
+            payment on the stay wherever it was taken, so some of this
+            may be money the department collected at its own till and is
+            already holding. Saying it is at Reception would be a false
+            statement about where somebody's cash is (20 October 2026). */}
+        <p className="mb-3">
+          These guests have paid their bill. Record what you were handed by the
+          front desk — the printed POS slip and the cash — or what you collected
+          here yourself. It then counts as your money for the day, with your
+          name on it.
+        </p>
+        <ul className="divide-y divide-line/40">
+          {waiting.map(w => (
+            <li key={w.stayId} className="py-2">
+              <div className="flex items-baseline gap-3">
+                <span className="flex-1 min-w-0">
+                  <span className="font-semibold text-ink break-words">{w.guest || 'Guest'}</span>
+                  <span className="text-dim"> · Room {w.room || '—'}</span>
+                </span>
+                <span className="tnum font-bold text-amber shrink-0">{naira(w.owed)}</span>
+              </div>
+              {w.items.map(l => (
+                <div key={l.id} className="text-xs text-dim">
+                  {l.qty} × {l.item} · {dShort(l.date)}
+                </div>
+              ))}
+              <button
+                onClick={() => setReceipt({ ...w, pos: '', cash: String(w.owed) })}
+                className="mt-2 h-10 px-4 rounded-xl border border-amber text-amber text-sm font-semibold">
+                Record what I was handed
+              </button>
+            </li>
+          ))}
+        </ul>
+      </Notice>
+    )}
+
     <Section title="What you charged to rooms, not yet paid" open={open} setOpen={setOpen}
       subtitle={guests.length
         ? `${guests.length} guest${guests.length === 1 ? '' : 's'}${gone ? ` · ${gone} checked out` : ''}`
@@ -187,6 +261,105 @@ export default function RoomChargeTracker({ branchId, locationId = null, refresh
         </>
       )}
     </Section>
+
+    {/* What was handed over, typed by the person holding it. The guest's
+        total is filled in as cash, because that is the common case; both
+        boxes are there because the slip and the cash are two different
+        things and the till has to account for them separately. */}
+    {receipt && (
+      <div className="fixed inset-0 z-50 bg-bg flex flex-col">
+        <div className="p-5 flex-1 overflow-y-auto">
+          <button onClick={() => setReceipt(null)} className="text-dim">Back</button>
+          <h2 className="mt-3 text-2xl font-bold">Record what you received</h2>
+          <p className="text-dim mt-1">
+            {receipt.guest || 'Guest'} · Room {receipt.room || '—'}
+          </p>
+
+          <div className="mt-4 rounded-2xl border border-line bg-surface p-4">
+            <div className="text-dim text-sm">This department is owed</div>
+            <div className="tnum text-3xl font-bold text-amber">{naira(receipt.owed)}</div>
+            <ul className="mt-3 pt-3 border-t border-line space-y-1 text-sm">
+              {receipt.items.map(l => (
+                <li key={l.id} className="flex justify-between gap-3">
+                  <span className="text-dim min-w-0 break-words">{l.qty} × {l.item}</span>
+                  <span className="tnum shrink-0">{naira(l.amount)}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+
+          {/* Each guest's own payments, so the person recording can see
+              where the money was taken before typing anything. */}
+          {!!receipt.items[0]?.payments?.length && (
+            <div className="mt-4 text-sm">
+              <p className="text-dim mb-1">How this guest paid</p>
+              <ul className="space-y-0.5">
+                {receipt.items[0].payments.map((pay, i) => (
+                  <li key={i} className="flex justify-between gap-3">
+                    <span className="text-dim min-w-0 break-words">
+                      {pay.method?.toUpperCase()} at {pay.dept} · {pay.date}
+                    </span>
+                    <span className="tnum shrink-0">{naira(pay.amount)}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          <label className="block mt-5 text-dim">On the POS slip</label>
+          <input type="number" inputMode="decimal" value={receipt.pos}
+            onChange={e => setReceipt(r => ({ ...r, pos: e.target.value }))}
+            placeholder="0"
+            className="mt-2 h-14 w-full px-4 rounded-xl bg-surface border border-line tnum" />
+
+          <label className="block mt-4 text-dim">Cash in your hand</label>
+          <input type="number" inputMode="decimal" value={receipt.cash}
+            onChange={e => setReceipt(r => ({ ...r, cash: e.target.value }))}
+            placeholder="0"
+            className="mt-2 h-14 w-full px-4 rounded-xl bg-surface border border-line tnum" />
+
+          {(() => {
+            const typed = (Number(receipt.pos) || 0) + (Number(receipt.cash) || 0)
+            const diff = receipt.owed - typed
+            return (
+              <div className="mt-4 rounded-xl border border-line bg-raise px-4 py-3 space-y-1">
+                <div className="flex justify-between gap-3">
+                  <span className="text-dim text-sm">You are recording</span>
+                  <span className="tnum font-bold">{naira(typed)}</span>
+                </div>
+                {Math.abs(diff) > 0.009 && (
+                  <div className="flex justify-between gap-3">
+                    <span className="text-amber text-sm">
+                      {diff > 0 ? 'Still with the front desk after this' : 'More than you are owed'}
+                    </span>
+                    <span className="tnum text-amber text-sm">{naira(Math.abs(diff))}</span>
+                  </div>
+                )}
+              </div>
+            )
+          })()}
+
+          <button
+            disabled={busy || ((Number(receipt.pos) || 0) + (Number(receipt.cash) || 0)) <= 0}
+            onClick={async () => {
+              setBusy(true)
+              try {
+                await recordDepartmentReceipt({
+                  stayId: receipt.stayId, locationId,
+                  pos: receipt.pos, cash: receipt.cash,
+                })
+                toast('Recorded — this is your money now', 'success')
+                setReceipt(null); setTick(t => t + 1)
+              } catch (e) { toast(e.message, 'error') }
+              setBusy(false)
+            }}
+            className="mt-6 w-full h-14 rounded-2xl bg-amber text-bg text-lg font-bold disabled:opacity-40">
+            {busy ? 'Recording…' : 'Record it'}
+          </button>
+        </div>
+      </div>
+    )}
+    </>
   )
 }
 
