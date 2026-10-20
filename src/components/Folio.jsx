@@ -421,26 +421,11 @@ export default function Folio({ boot, room, onClose, onChanged }) {
   })
 
   const pickedList = payables.filter(p => picked[p.key])
-  const pickedTotal = pickedList.reduce((s, p) => s + p.amount, 0)
-  // Ticking fills the amount in. That is the whole point of the screen:
-  // the desk is told "the two waters", taps them, and the figure is
-  // already right. It stays editable — a guest handing over less than
-  // the ticked total is normal, and the money then covers the ticked
-  // lines in order.
-  const sumOf = (sel) => payables.filter(p => sel[p.key])
-    .reduce((s, p) => s + p.amount, 0)
-  const applyPick = (next) => {
-    setPicked(next)
-    const t = sumOf(next)
-    setPay(p => ({ ...p, amount: t > 0.009 ? String(Math.round(t * 100) / 100) : '', split: null }))
-  }
-  const togglePick = (key) => {
-    const next = { ...picked }
-    if (next[key]) delete next[key]; else next[key] = true
-    applyPick(next)
-  }
-  const pickOnly = (test) => applyPick(
-    Object.fromEntries(payables.filter(test).map(p => [p.key, true])))
+  // The ticking is gone (20 October 2026): the front desk no longer
+  // decides what a payment settles, so there is nothing to tick and
+  // nothing to fill in from it. picked stays as an empty object because
+  // the save path still reads it, and an existing payment can still be
+  // re-pointed by a GM through Change department below.
 
   // Changing what an existing payment clears is a correction to the
   // record, so it sits with the other corrections: GM and admin.
@@ -527,12 +512,26 @@ export default function Folio({ boot, room, onClose, onChanged }) {
       //
       // Credit accounts are left out: that is another ledger, and moving
       // money into it is a decision, never a default.
-      const toSettle = pickedList.length ? pickedList
-        : [...payables].filter(p => p.kind !== 'credit').sort((a, b) => {
-            if (a.kind === 'room' && b.kind !== 'room') return -1
-            if (b.kind === 'room' && a.kind !== 'room') return 1
-            return String(a.day).localeCompare(String(b.day))
-          })
+      // THE FRONT DESK SETTLES THE ROOM. NOTHING ELSE. (20 October 2026)
+      //
+      // This used to spread an untagged payment across the room AND
+      // every department charge, oldest first — which is why a clerk who
+      // ticked nothing still "allocated" MainBar's money, and why
+      // Reception appeared to be recording payments on departments'
+      // behalf in the live test.
+      //
+      // The reasoning behind the old behaviour was sound at the time: a
+      // payment that named nothing reached no department at all, and
+      // ₦4,900 of Mr Ngoka's never got to MainBar. The answer then was
+      // to let the app guess. The answer now is better — the department
+      // records what it was physically handed, so there is nothing left
+      // to guess and nothing for the front desk to get wrong.
+      //
+      // The guest's bill still clears in full: outstanding counts every
+      // payment on the stay however it was allocated. The department
+      // charges simply sit as "paid by the guest, not yet recorded
+      // here" until the department claims them.
+      const toSettle = [...payables].filter(p => p.kind === 'room')
       for (const p of toSettle) {
         if (pot <= 0.009) break
         const take = Math.min(pot, p.amount)
@@ -1045,40 +1044,23 @@ export default function Folio({ boot, room, onClose, onChanged }) {
                 value={pay} onChange={v => setPay(p => ({ ...p, ...v }))} />
             </div>
 
-            {/* WHAT the guest is paying for. The desk is asked "I'll pay
-                for the two waters" or "just last night's food", so this
-                asks the same question back rather than making anyone
-                translate it into a department. Tick nothing and the money
-                goes against the whole bill, exactly as before. */}
+            {/* WHAT THE BILL IS MADE OF — read only (Chris, 20 October
+                2026). The desk reads this to the guest and takes the
+                money; it does not decide whose money it is. Each
+                department records what it was handed, on its own page,
+                and that entry is what settles its charges.
+
+                The lines are still here, and in more detail than
+                before, because telling the guest what they owe is the
+                front desk's job. Deciding who gets it is not. */}
             {payables.length > 0 && (
               <div className="mt-4">
-                <label className="block font-semibold">What are they paying for?</label>
+                <label className="block font-semibold">What this bill is made of</label>
                 <p className="text-dim text-sm mt-0.5">
-                  Tap the lines. Leave them all untapped to put the money against
-                  the whole bill.
+                  The money goes against the bill as a whole. Each department
+                  records its own share once it has been handed the slip and the
+                  cash.
                 </p>
-
-                <div className="mt-2 flex gap-2 flex-wrap">
-                  {[
-                    ['Just the room', p => p.kind === 'room'],
-                    ['All the food', p => p.kind === 'food'],
-                    ['All the drinks', p => p.kind === 'drink'],
-                    ['Everything', () => true],
-                  ].map(([label, test]) => (
-                    payables.some(test) && (
-                      <button key={label} onClick={() => pickOnly(test)}
-                        className="h-9 px-3.5 rounded-full bg-raise border border-line text-dim text-sm font-semibold">
-                        {label}
-                      </button>
-                    )
-                  ))}
-                  {!!pickedList.length && (
-                    <button onClick={() => applyPick({})}
-                      className="h-9 px-3.5 rounded-full border border-line text-dim text-sm font-semibold">
-                      Clear
-                    </button>
-                  )}
-                </div>
 
                 <div className="mt-2 rounded-2xl border border-line bg-surface px-4">
                   {payDays.map(g => (
@@ -1087,43 +1069,20 @@ export default function Folio({ boot, room, onClose, onChanged }) {
                         {g.day}
                       </p>
                       {g.lines.map(l => (
-                        <label key={l.key}
-                          className="py-2.5 flex items-center gap-3 cursor-pointer">
-                          <input type="checkbox" checked={!!picked[l.key]}
-                            onChange={() => togglePick(l.key)}
-                            className="w-6 h-6 shrink-0 accent-amber" />
+                        <div key={l.key} className="py-2.5 flex items-baseline gap-3">
                           <span className="flex-1 min-w-0">
-                            <span className="block font-semibold leading-tight">{l.what}</span>
+                            <span className="block font-semibold leading-tight break-words">{l.what}</span>
                             <span className="block text-dim text-xs mt-0.5">{l.where}</span>
                             {l.note && (
                               <span className="block text-leaf text-xs mt-0.5">{l.note}</span>
                             )}
                           </span>
                           <span className="tnum font-bold shrink-0">{naira(l.amount)}</span>
-                        </label>
+                        </div>
                       ))}
                     </div>
                   ))}
                 </div>
-
-                {!!pickedList.length && (
-                  <p className="mt-2 text-leaf text-sm font-semibold">
-                    {pickedList.length} line{pickedList.length === 1 ? '' : 's'} picked
-                    {' · '}{naira(pickedTotal)}
-                    {payAllocated > 0.009 && pickedTotal - payAllocated > 0.009 && (
-                      <span className="block text-amber font-normal mt-0.5">
-                        {naira(payAllocated)} received covers {naira(payAllocated)} of it,
-                        oldest charge first. The rest stays owing.
-                      </span>
-                    )}
-                    {payAllocated - pickedTotal > 0.009 && (
-                      <span className="block text-amber font-normal mt-0.5">
-                        {naira(payAllocated)} is more than the {naira(pickedTotal)} picked.
-                        The extra goes against the rest of the bill.
-                      </span>
-                    )}
-                  </p>
-                )}
               </div>
             )}
 
