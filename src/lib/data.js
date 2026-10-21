@@ -2279,6 +2279,30 @@ async function _splitPaymentToDepartment(paymentId, amount, locationId) {
   if (error) throw error
 }
 
+// A guest's bill put on credit, against a named account (567).
+//
+// Chris, 21 October 2026. A guest who leaves owing was only ever an
+// implicit balance on a banner; the app's whole debt machinery —
+// customer accounts, the Credit page, Recovery, debtRecovered — could
+// not see room debt at all. This moves the debt off the bill and onto
+// an account that machinery already understands.
+//
+// One RPC, not three writes, deliberately: it clears the folio, books
+// the sale and records the credit line together. Three separate writes
+// could clear a bill and then fail to record the debt, which is a
+// guest's money erased by a dropped connection.
+export async function recordStayCredit({ stayId, amount, customerId, customerName, note }) {
+  const { data, error } = await supabase.rpc('record_stay_credit', {
+    p_stay: stayId,
+    p_amount: Number(amount),
+    p_customer: customerId || null,
+    p_customer_name: customerId ? null : (customerName || null),
+    p_note: note || null,
+  })
+  if (error) throw error
+  return data
+}
+
 // Room-rate debt recovered (565). Chris, 20 October 2026: a guest who
 // checked out owing for the ROOM and pays weeks later is recovering a
 // debt, and nothing said so. get_daily_financials only ever counted the

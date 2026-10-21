@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { naira, lagosToday, lagosDaysAgo, lagosTime, partPaidNote, roomChargeDept, seesStayTimes, cyclesFor, friendlyStayError, addDays } from '../lib/format'
-import { billedToLabel, checkOutStay, checkRepeatPayment, deleteOrderItem, deleteStay, extendStayTo, loadBranchStaySettings, loadFolio, moveRoomChargeDate, recordStayPayment, reopenStay, saveRepayment, searchSimilarGuests, updateOrderItem, updateOverstayFee, updateStayBillTo, updateStayDetails } from '../lib/data'
+import { billedToLabel, checkOutStay, loadCustomers, recordStayCredit, checkRepeatPayment, deleteOrderItem, deleteStay, extendStayTo, loadBranchStaySettings, loadFolio, moveRoomChargeDate, recordStayPayment, reopenStay, saveRepayment, searchSimilarGuests, updateOrderItem, updateOverstayFee, updateStayBillTo, updateStayDetails } from '../lib/data'
 import { useToast } from '../components/Toast'
 import PaymentMethodPicker, { paymentParts, paymentAllocated } from './PaymentMethodPicker'
 import FolioStatement from './FolioStatement'
@@ -29,6 +29,16 @@ export default function Folio({ boot, room, onClose, onChanged }) {
   // pays the next should have the payment dated when it was taken, so the
   // day's reception figures are right. Defaults to today.
   const [pay, setPay] = useState({ amount: '', method: 'pos', split: null, date: lagosToday() })
+  // Putting the bill on credit (567). A guest who leaves owing was only
+  // ever an implicit balance on a banner; this moves the debt onto a
+  // named account, where Credit and Recovery already know how to chase
+  // it. Manager/GM/admin only — turning money due into a debt is not a
+  // front-desk decision, and if nobody senior is there the bill simply
+  // stays outstanding, which is what happens today and is safe.
+  const [creditOpen, setCreditOpen] = useState(false)
+  const [creditDraft, setCreditDraft] = useState(null)
+  const [accounts, setAccounts] = useState(null)
+  const [accountSearch, setAccountSearch] = useState('')
   // Correcting the date of a charge already on the folio — GM/admin only
   // (migration 292). Previously impossible: Corrections covers sales and
   // stock movements, not room charges, so every mistake needed SQL.
@@ -429,6 +439,43 @@ export default function Folio({ boot, room, onClose, onChanged }) {
   const canSetNonDefaultOverstay = is(staff.role, SUPERVISOR)
   // Arrival/departure clock times: oversight roles only.
   const showTimes = seesStayTimes(staff.role)
+
+  function openCredit() {
+    setCreditDraft({
+      amount: String(outstanding > 0 ? Number(outstanding.toFixed(2)) : ''),
+      customerId: '',
+      // Brackets, because a bare room number in an account name is
+      // refused by the name rule — a room is not a person, and the
+      // room changes.
+      name: `${room.guest_name || 'Guest'}${room.room_number ? ` (${room.room_number})` : ''}`,
+      note: '',
+    })
+    setCreditOpen(true)
+    if (accounts === null) {
+      tracked('Customer accounts', loadCustomers(staff.branch_id))
+        .then(setAccounts).catch(() => setAccounts([]))
+    }
+  }
+
+  async function saveCredit() {
+    const amt = Number(creditDraft?.amount)
+    if (!(amt > 0)) { toast('Enter how much is going on credit.', 'error'); return }
+    if (!creditDraft.customerId && !creditDraft.name.trim()) {
+      toast('Say whose account this debt goes on.', 'error'); return
+    }
+    setBusy(true)
+    try {
+      const r = await recordStayCredit({
+        stayId: room.stay_id, amount: amt,
+        customerId: creditDraft.customerId || null,
+        customerName: creditDraft.name.trim(),
+        note: creditDraft.note.trim() || null,
+      })
+      toast(`${naira(r.amount)} now owed by ${r.customer}`, 'success')
+      setCreditOpen(false); setCreditDraft(null); refresh(); onChanged?.()
+    } catch (e) { toast(friendlyStayError(e), 'error') }
+    setBusy(false)
+  }
 
   async function submitPayment() {
     if (payAllocated <= 0) return
@@ -986,7 +1033,7 @@ export default function Folio({ boot, room, onClose, onChanged }) {
             <div className="flex items-center gap-3 mt-1">
               <input type="number" inputMode="decimal" value={pay.amount}
                 onChange={e => setPay(p => ({ ...p, amount: e.target.value }))}
-                className="h-12 flex-1 px-3 rounded-xl bg-raise border border-line tnum" />
+                className="h-12 flex-1 min-w-0 px-3 rounded-xl bg-raise border border-line tnum" />
               {outstanding > 0 && (
                 <button onClick={() => setPay(p => ({ ...p, amount: String(outstanding) }))}
                   className="text-dim text-sm underline whitespace-nowrap">Full balance</button>
@@ -1395,6 +1442,94 @@ export default function Folio({ boot, room, onClose, onChanged }) {
                 </li>
               ))}
             </ul>
+          </div>
+        )}
+
+        {/* Put the bill on credit (567). Shown only while something is
+            actually owed, and only to manager/gm/admin. The debt MOVES —
+            the folio clears and a named account picks it up — so the
+            same money never sits in two places. */}
+        {outstanding > 0.009 && is(staff.role, MANAGEMENT) && (
+          <div className="mt-4 rounded-2xl border border-line bg-surface p-4">
+            {!creditOpen ? (
+              <>
+                <div className="text-dim mb-1">Guest leaving without paying?</div>
+                <p className="text-dim text-sm">
+                  Put the bill on a named account. The debt comes off this bill and
+                  goes where Credit and Recovery can chase it.
+                </p>
+                <button onClick={openCredit}
+                  className="mt-3 h-11 w-full rounded-xl border border-amber text-amber font-semibold">
+                  Put {naira(outstanding)} on credit
+                </button>
+              </>
+            ) : (
+              <>
+                <div className="font-semibold mb-2">Put this bill on credit</div>
+
+                <label className="block text-dim text-sm">How much</label>
+                <div className="flex items-center gap-3 mt-1">
+                  <input type="number" inputMode="decimal" value={creditDraft?.amount || ''}
+                    onChange={e => setCreditDraft(d => ({ ...d, amount: e.target.value }))}
+                    className="h-12 flex-1 min-w-0 px-3 rounded-xl bg-raise border border-line tnum" />
+                  <button onClick={() => setCreditDraft(d => ({ ...d, amount: String(Number(outstanding.toFixed(2))) }))}
+                    className="text-dim text-sm underline whitespace-nowrap">Whole bill</button>
+                </div>
+
+                <label className="block text-dim text-sm mt-3">Whose account</label>
+                {creditDraft?.customerId ? (
+                  <div className="mt-1 flex items-center gap-3">
+                    <span className="flex-1 min-w-0 font-semibold break-words">
+                      {(accounts || []).find(a => a.id === creditDraft.customerId)?.name}
+                    </span>
+                    <button onClick={() => setCreditDraft(d => ({ ...d, customerId: '' }))}
+                      className="text-dim text-sm underline shrink-0">Change</button>
+                  </div>
+                ) : (
+                  <>
+                    <input value={accountSearch} onChange={e => setAccountSearch(e.target.value)}
+                      placeholder="Search existing accounts"
+                      className="mt-1 h-11 w-full px-3 rounded-xl bg-raise border border-line placeholder:text-dim" />
+                    {accountSearch.trim().length >= 2 && (
+                      <ul className="mt-1 max-h-40 overflow-y-auto divide-y divide-line/60">
+                        {(accounts || [])
+                          .filter(a => a.name.toLowerCase().includes(accountSearch.trim().toLowerCase()))
+                          .slice(0, 8)
+                          .map(a => (
+                            <li key={a.id}>
+                              <button onClick={() => { setCreditDraft(d => ({ ...d, customerId: a.id })); setAccountSearch('') }}
+                                className="w-full py-2 text-left break-words">{a.name}</button>
+                            </li>
+                          ))}
+                        {accounts !== null
+                          && !(accounts || []).some(a => a.name.toLowerCase().includes(accountSearch.trim().toLowerCase())) && (
+                          <li className="py-2 text-dim text-sm">No account matches that.</li>
+                        )}
+                      </ul>
+                    )}
+                    <p className="text-dim text-xs mt-2">Or open a new account in this name:</p>
+                    <input value={creditDraft?.name || ''}
+                      onChange={e => setCreditDraft(d => ({ ...d, name: e.target.value }))}
+                      className="mt-1 h-11 w-full px-3 rounded-xl bg-raise border border-line" />
+                  </>
+                )}
+
+                <label className="block text-dim text-sm mt-3">Why (optional)</label>
+                <input value={creditDraft?.note || ''}
+                  onChange={e => setCreditDraft(d => ({ ...d, note: e.target.value }))}
+                  placeholder="Company settles monthly"
+                  className="mt-1 h-11 w-full px-3 rounded-xl bg-raise border border-line placeholder:text-dim" />
+
+                <div className="flex gap-2 mt-4">
+                  <button onClick={saveCredit} disabled={busy}
+                    className="flex-1 h-12 rounded-xl bg-amber text-bg font-bold disabled:opacity-40">
+                    Save
+                  </button>
+                  <button onClick={() => { setCreditOpen(false); setCreditDraft(null) }}
+                    className="flex-1 h-12 rounded-xl border border-line text-dim">Cancel</button>
+                </div>
+              </>
+            )}
           </div>
         )}
 
