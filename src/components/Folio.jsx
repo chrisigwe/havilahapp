@@ -860,7 +860,12 @@ export default function Folio({ boot, room, onClose, onChanged }) {
             figure. */}
         {showParts && (
           <div className="mt-4 rounded-2xl border border-line bg-surface p-4">
-            <span className="font-semibold">What this bill is made of</span>
+            {/* Renamed 21 October 2026: this and the charge list below
+                were both called "What this bill is made of", one above
+                the other on the same screen. This one answers where the
+                debt SITS — room, departments, credit accounts, other
+                rooms billed here. The one below is every charge. */}
+            <span className="font-semibold">What is still owed, and where</span>
             <div className="mt-2">
               {billParts.filter(p => !p.onCredit).map(part => (
                 <div key={part.key} className="flex items-baseline justify-between py-1.5">
@@ -885,10 +890,14 @@ export default function Folio({ boot, room, onClose, onChanged }) {
             </div>
             {generalPaid > 0.009 && (
               <p className="text-dim text-sm pt-3 mt-1 border-t border-line">
+                {/* "Tick charges when taking money" outlived the ticking
+                    itself by a day (21 October 2026). The front desk
+                    stopped deciding what a payment settles on the 20th;
+                    this was still telling them to do it. */}
                 {naira(generalPaid)} was paid against the bill as a whole rather than
                 any one charge, so it has gone to the room first and then the
-                oldest charges. Tick charges when taking money to say exactly
-                what it pays for.
+                oldest charges. Each department records its own share once it
+                has been handed the money.
               </p>
             )}
 
@@ -1239,6 +1248,106 @@ export default function Folio({ boot, room, onClose, onChanged }) {
               className="mt-3 w-full h-14 rounded-2xl bg-amber text-bg text-lg font-bold disabled:opacity-40">
               {busy ? 'Recording…' : `Record ${naira(payAllocated)}`}
             </button>
+
+            {/* Put the bill on credit (567). Shown only while something is
+                actually owed, and only to manager/gm/admin. The debt MOVES —
+                the folio clears and a named account picks it up — so the
+                same money never sits in two places. */}
+            {outstanding > 0.009 && is(staff.role, MANAGEMENT) && (
+              <div className="mt-4 rounded-2xl border border-line bg-surface p-4">
+                {!creditOpen ? (
+                  <>
+                    <div className="text-dim mb-1">Guest leaving without paying?</div>
+                    <p className="text-dim text-sm">
+                      Put the bill on a named account. The debt comes off this bill and
+                      goes where Credit and Recovery can chase it.
+                    </p>
+                    <button onClick={openCredit}
+                      className="mt-3 h-11 w-full rounded-xl border border-amber text-amber font-semibold">
+                      Put {naira(outstanding)} on credit
+                    </button>
+                    {/* The panel above totals the room bill AND the department
+                        credit accounts, so "Everything outstanding ₦328,900"
+                        sits a few inches from a button offering ₦228,200 and
+                        reads as a shortfall (Chris, 21 October 2026). It is
+                        not: the rest is already a debt on an account. */}
+                    {(departmentCreditTotal + billedToYouTotal) > 0.009 && (
+                      <p className="text-dim text-xs mt-2">
+                        This is the room bill. The other{' '}
+                        {naira(departmentCreditTotal + billedToYouTotal)} shown above is
+                        already owed on an account and is settled on Credit.
+                      </p>
+                    )}
+                  </>
+                ) : (
+                  <>
+                    <div className="font-semibold mb-2">Put this bill on credit</div>
+
+                    <label className="block text-dim text-sm">How much</label>
+                    <div className="flex items-center gap-3 mt-1">
+                      <input type="number" inputMode="decimal" value={creditDraft?.amount || ''}
+                        onChange={e => setCreditDraft(d => ({ ...d, amount: e.target.value }))}
+                        className="h-12 flex-1 min-w-0 px-3 rounded-xl bg-raise border border-line tnum" />
+                      <button onClick={() => setCreditDraft(d => ({ ...d, amount: String(Number(outstanding.toFixed(2))) }))}
+                        className="text-dim text-sm underline whitespace-nowrap">Whole bill</button>
+                    </div>
+
+                    <label className="block text-dim text-sm mt-3">Whose account</label>
+                    {creditDraft?.customerId ? (
+                      <div className="mt-1 flex items-center gap-3">
+                        <span className="flex-1 min-w-0 font-semibold break-words">
+                          {(accounts || []).find(a => a.id === creditDraft.customerId)?.name}
+                        </span>
+                        <button onClick={() => setCreditDraft(d => ({ ...d, customerId: '' }))}
+                          className="text-dim text-sm underline shrink-0">Change</button>
+                      </div>
+                    ) : (
+                      <>
+                        <input value={accountSearch} onChange={e => setAccountSearch(e.target.value)}
+                          placeholder="Search existing accounts"
+                          className="mt-1 h-11 w-full px-3 rounded-xl bg-raise border border-line placeholder:text-dim" />
+                        {accountSearch.trim().length >= 2 && (
+                          <ul className="mt-1 max-h-40 overflow-y-auto divide-y divide-line/60">
+                            {(accounts || [])
+                              .filter(a => a.name.toLowerCase().includes(accountSearch.trim().toLowerCase()))
+                              .slice(0, 8)
+                              .map(a => (
+                                <li key={a.id}>
+                                  <button onClick={() => { setCreditDraft(d => ({ ...d, customerId: a.id })); setAccountSearch('') }}
+                                    className="w-full py-2 text-left break-words">{a.name}</button>
+                                </li>
+                              ))}
+                            {accounts !== null
+                              && !(accounts || []).some(a => a.name.toLowerCase().includes(accountSearch.trim().toLowerCase())) && (
+                              <li className="py-2 text-dim text-sm">No account matches that.</li>
+                            )}
+                          </ul>
+                        )}
+                        <p className="text-dim text-xs mt-2">Or open a new account in this name:</p>
+                        <input value={creditDraft?.name || ''}
+                          onChange={e => setCreditDraft(d => ({ ...d, name: e.target.value }))}
+                          className="mt-1 h-11 w-full px-3 rounded-xl bg-raise border border-line" />
+                      </>
+                    )}
+
+                    <label className="block text-dim text-sm mt-3">Why (optional)</label>
+                    <input value={creditDraft?.note || ''}
+                      onChange={e => setCreditDraft(d => ({ ...d, note: e.target.value }))}
+                      placeholder="Company settles monthly"
+                      className="mt-1 h-11 w-full px-3 rounded-xl bg-raise border border-line placeholder:text-dim" />
+
+                    <div className="flex gap-2 mt-4">
+                      <button onClick={saveCredit} disabled={busy}
+                        className="flex-1 h-12 rounded-xl bg-amber text-bg font-bold disabled:opacity-40">
+                        Save
+                      </button>
+                      <button onClick={() => { setCreditOpen(false); setCreditDraft(null) }}
+                        className="flex-1 h-12 rounded-xl border border-line text-dim">Cancel</button>
+                    </div>
+                  </>
+                )}
+              </div>
+            )}
           </div>
         )}
 
@@ -1442,94 +1551,6 @@ export default function Folio({ boot, room, onClose, onChanged }) {
                 </li>
               ))}
             </ul>
-          </div>
-        )}
-
-        {/* Put the bill on credit (567). Shown only while something is
-            actually owed, and only to manager/gm/admin. The debt MOVES —
-            the folio clears and a named account picks it up — so the
-            same money never sits in two places. */}
-        {outstanding > 0.009 && is(staff.role, MANAGEMENT) && (
-          <div className="mt-4 rounded-2xl border border-line bg-surface p-4">
-            {!creditOpen ? (
-              <>
-                <div className="text-dim mb-1">Guest leaving without paying?</div>
-                <p className="text-dim text-sm">
-                  Put the bill on a named account. The debt comes off this bill and
-                  goes where Credit and Recovery can chase it.
-                </p>
-                <button onClick={openCredit}
-                  className="mt-3 h-11 w-full rounded-xl border border-amber text-amber font-semibold">
-                  Put {naira(outstanding)} on credit
-                </button>
-              </>
-            ) : (
-              <>
-                <div className="font-semibold mb-2">Put this bill on credit</div>
-
-                <label className="block text-dim text-sm">How much</label>
-                <div className="flex items-center gap-3 mt-1">
-                  <input type="number" inputMode="decimal" value={creditDraft?.amount || ''}
-                    onChange={e => setCreditDraft(d => ({ ...d, amount: e.target.value }))}
-                    className="h-12 flex-1 min-w-0 px-3 rounded-xl bg-raise border border-line tnum" />
-                  <button onClick={() => setCreditDraft(d => ({ ...d, amount: String(Number(outstanding.toFixed(2))) }))}
-                    className="text-dim text-sm underline whitespace-nowrap">Whole bill</button>
-                </div>
-
-                <label className="block text-dim text-sm mt-3">Whose account</label>
-                {creditDraft?.customerId ? (
-                  <div className="mt-1 flex items-center gap-3">
-                    <span className="flex-1 min-w-0 font-semibold break-words">
-                      {(accounts || []).find(a => a.id === creditDraft.customerId)?.name}
-                    </span>
-                    <button onClick={() => setCreditDraft(d => ({ ...d, customerId: '' }))}
-                      className="text-dim text-sm underline shrink-0">Change</button>
-                  </div>
-                ) : (
-                  <>
-                    <input value={accountSearch} onChange={e => setAccountSearch(e.target.value)}
-                      placeholder="Search existing accounts"
-                      className="mt-1 h-11 w-full px-3 rounded-xl bg-raise border border-line placeholder:text-dim" />
-                    {accountSearch.trim().length >= 2 && (
-                      <ul className="mt-1 max-h-40 overflow-y-auto divide-y divide-line/60">
-                        {(accounts || [])
-                          .filter(a => a.name.toLowerCase().includes(accountSearch.trim().toLowerCase()))
-                          .slice(0, 8)
-                          .map(a => (
-                            <li key={a.id}>
-                              <button onClick={() => { setCreditDraft(d => ({ ...d, customerId: a.id })); setAccountSearch('') }}
-                                className="w-full py-2 text-left break-words">{a.name}</button>
-                            </li>
-                          ))}
-                        {accounts !== null
-                          && !(accounts || []).some(a => a.name.toLowerCase().includes(accountSearch.trim().toLowerCase())) && (
-                          <li className="py-2 text-dim text-sm">No account matches that.</li>
-                        )}
-                      </ul>
-                    )}
-                    <p className="text-dim text-xs mt-2">Or open a new account in this name:</p>
-                    <input value={creditDraft?.name || ''}
-                      onChange={e => setCreditDraft(d => ({ ...d, name: e.target.value }))}
-                      className="mt-1 h-11 w-full px-3 rounded-xl bg-raise border border-line" />
-                  </>
-                )}
-
-                <label className="block text-dim text-sm mt-3">Why (optional)</label>
-                <input value={creditDraft?.note || ''}
-                  onChange={e => setCreditDraft(d => ({ ...d, note: e.target.value }))}
-                  placeholder="Company settles monthly"
-                  className="mt-1 h-11 w-full px-3 rounded-xl bg-raise border border-line placeholder:text-dim" />
-
-                <div className="flex gap-2 mt-4">
-                  <button onClick={saveCredit} disabled={busy}
-                    className="flex-1 h-12 rounded-xl bg-amber text-bg font-bold disabled:opacity-40">
-                    Save
-                  </button>
-                  <button onClick={() => { setCreditOpen(false); setCreditDraft(null) }}
-                    className="flex-1 h-12 rounded-xl border border-line text-dim">Cancel</button>
-                </div>
-              </>
-            )}
           </div>
         )}
 
