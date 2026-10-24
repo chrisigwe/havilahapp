@@ -79,8 +79,77 @@
             } catch (x) { done() }
           }
         }
-        window.addEventListener('error', function (e) { if (e.error) window.__havilahFatal(e.error) })
-        window.addEventListener('unhandledrejection', function (e) { window.__havilahFatal(e.reason) })
+        // A HALF-UPDATED APP, HEALED WITHOUT ANYONE HAVING TO KNOW WHY.
+        //
+        // After a deploy the old hashed .js files are gone from the
+        // server. A browser still holding the previous index.html asks
+        // for a file that no longer exists, and the module script fails
+        // to load. That failure is a RESOURCE error: it carries no
+        // .error, and it does not bubble — so the handler below only
+        // ever saw it once it listened in the capture phase. Until
+        // then nothing fired, nothing rendered, and the page sat on the
+        // background colour. That is the black screen.
+        //
+        // Now the first such failure clears the service worker and every
+        // cached file and reloads once, which is exactly what a
+        // half-arrived update needs. The flag makes it once only: if the
+        // app still cannot start, the person gets the screen with
+        // something to read and something to tap, rather than a reload
+        // loop. main.jsx clears the flag as soon as the app mounts.
+        var RECOVERY_KEY = 'hv-recovery-attempted'
+        window.__havilahRecover = function (what) {
+          var tried = false
+          try { tried = sessionStorage.getItem(RECOVERY_KEY) === '1' } catch (x) { tried = false }
+          if (tried) {
+            window.__havilahFatal(new Error(
+              'The app files could not be loaded, even after clearing.\n' + (what || '')))
+            return
+          }
+          try { sessionStorage.setItem(RECOVERY_KEY, '1') } catch (x) { /* private mode */ }
+          var done = function () { window.location.reload() }
+          try {
+            var jobs = []
+            if (navigator.serviceWorker && navigator.serviceWorker.getRegistrations) {
+              jobs.push(navigator.serviceWorker.getRegistrations().then(function (rs) {
+                return Promise.all(rs.map(function (r) { return r.unregister() }))
+              }))
+            }
+            if (window.caches) {
+              jobs.push(caches.keys().then(function (ks) {
+                return Promise.all(ks.map(function (k) { return caches.delete(k) }))
+              }))
+            }
+            Promise.all(jobs).then(done, done)
+          } catch (x) { done() }
+        }
+        // Capture phase: resource errors do not bubble, so without the
+        // third argument this never sees the one failure that matters.
+        window.addEventListener('error', function (e) {
+          if (e.error) { window.__havilahFatal(e.error); return }
+          var t = e.target
+          if (!t || !t.tagName) return
+          var src = t.src || t.href || ''
+          // OUR OWN FILES ONLY. The first version of this treated any
+          // failed resource as a half-updated app — including the Google
+          // Fonts stylesheet, which fails whenever that host is slow or
+          // blocked. A missing font would then have wiped the cache and
+          // shown a crash screen. A font that will not load is a font
+          // that will not load; the app is fine without it.
+          if (src.indexOf(location.origin + '/') !== 0) return
+          if (t.tagName === 'SCRIPT' || (t.tagName === 'LINK' && t.rel === 'stylesheet')) {
+            window.__havilahRecover(src)
+          }
+        }, true)
+        window.addEventListener('unhandledrejection', function (e) {
+          // A dynamic import of a chunk the deploy removed rejects here
+          // rather than firing a resource error.
+          var m = (e.reason && (e.reason.message || String(e.reason))) || ''
+          if (/dynamically imported module|Importing a module script failed|Failed to fetch dynamically/i.test(m)) {
+            window.__havilahRecover(m)
+            return
+          }
+          window.__havilahFatal(e.reason)
+        })
       })()
     </script>
     <script type="module" src="/src/main.jsx"></script>

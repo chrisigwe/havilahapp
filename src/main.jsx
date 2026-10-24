@@ -10,6 +10,11 @@ import { initServiceWorker } from './lib/swUpdate'
 // it anything that gets past React's own ErrorBoundary inside App.
 try {
   createRoot(document.getElementById('root')).render(<App />)
+  // The app started, so whatever the last reload cleared, it worked.
+  // Clearing this lets a FUTURE half-arrived update heal itself too;
+  // leaving it set would mean the next one went straight to the crash
+  // screen instead of trying (24 October 2026).
+  try { sessionStorage.removeItem('hv-recovery-attempted') } catch { /* private mode */ }
 } catch (e) {
   window.__havilahFatal?.(e)
 }
