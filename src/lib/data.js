@@ -774,10 +774,13 @@ export async function deactivateCustomer(customerId) {
 export async function loadRecentlyAdded(branchId, locationId = null, days = 30) {
   const since = new Date(Date.now() - days * 864e5).toISOString().slice(0, 10)
   let q = supabase.from('stock_movements')
+    // received_by is the receiver's NAME, typed into the box on the Store
+    // page — not a link to a staff row. Asking PostgREST to join it broke
+    // the whole feed on both branches (25 October 2026). recorded_by IS a
+    // staff id, and keeps its join.
     .select(`id, business_date, created_at, qty, movement_type, note,
              from_location, to_location, received_by,
-             stock_items(name),
-             staff:recorded_by(full_name), receiver:received_by(full_name)`)
+             stock_items(name), staff:recorded_by(full_name)`)
     .eq('branch_id', branchId)
     .not('to_location', 'is', null)
     .gte('business_date', since)

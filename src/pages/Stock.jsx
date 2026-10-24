@@ -310,8 +310,8 @@ function AddedFeed({ rows, err, locations, locId }) {
                     {from ? ` · from ${from}` : ''}
                   </div>
                   <div className="text-dim text-sm break-words">
-                    {r.receiver?.full_name
-                      ? `Received by ${r.receiver.full_name}`
+                    {r.received_by
+                      ? `Received by ${r.received_by}`
                       : 'Nobody named as receiving it'}
                     {r.staff?.full_name ? ` · recorded by ${r.staff.full_name}` : ''}
                   </div>
