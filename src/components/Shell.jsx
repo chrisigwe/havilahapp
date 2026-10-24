@@ -28,7 +28,7 @@ const MORE = ['mypay', 'tillchecks', 'dailysales', 'roomboard', 'credit', 'recov
 
 export default function Shell({ staff, tab, onTab, children,
                                 branches = [], viewBranch, onBranch, pendingCount = 0,
-                                alertEligible = false, recordsSales = false, hasPay = false }) {
+                                alertEligible = false, recordsSales = false }) {
   // A new screen asks its own questions. Clearing here stops a failure
   // from one tab being read as a fault on the next — the loads that
   // matter here will report again if they still cannot answer.
@@ -70,10 +70,10 @@ export default function Shell({ staff, tab, onTab, children,
   useEffect(() => { setNavDown(false) }, [tab])
   // The bar comes from tabsFor() — the single definition shared with
   // the More menu and the landing screen. See lib/tabs.js.
-  const tabs = tabsFor(staff.role, { recordsSales, canRecordSales: !!staff.can_record_sales, hasPay })
-  const countBadgeTab = countBadgeTabFor(staff.role, { recordsSales, canRecordSales: !!staff.can_record_sales, hasPay })
+  const tabs = tabsFor(staff.role, { recordsSales, canRecordSales: !!staff.can_record_sales })
+  const countBadgeTab = countBadgeTabFor(staff.role, { recordsSales, canRecordSales: !!staff.can_record_sales })
   const directTabKeys = new Set(tabs.map(([k]) => k))
-  const moreItems = moreItemsFor(staff.role, recordsSales, hasPay, !!staff.is_read_only, !!staff.can_record_sales)
+  const moreItems = moreItemsFor(staff.role, recordsSales, !!staff.is_read_only, !!staff.can_record_sales)
 
   // One-shot bounce when a tab becomes the selected one. Driven by a key
   // that changes on selection, so the animation restarts every time —

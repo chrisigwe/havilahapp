@@ -59,19 +59,21 @@ const ITEMS = [
 
 // What a role sees under More (nothing already on its bottom bar). Shared
 // with the laptop sidebar so the two can never disagree.
-export function moreItemsFor(role, recordsSales = false, hasPay = false, readOnly = false, canRecordSales = false) {
-  const onBar = new Set(tabsFor(role, { recordsSales, canRecordSales, hasPay }).map(([k]) => k))
-  // "My pay" appears only for people whose login is linked to a payroll employee.
-  // View-only accounts (the Demo login) never see pay: the database refuses
-  // them too (migration 330), this just keeps the menu honest.
+export function moreItemsFor(role, recordsSales = false, readOnly = false, canRecordSales = false) {
+  const onBar = new Set(tabsFor(role, { recordsSales, canRecordSales }).map(([k]) => k))
+  // "My pay" is shown to everyone who could have pay (Chris, 24 October
+  // 2026) — the page says when a login is not linked yet, which beats a
+  // tab that simply is not there. View-only accounts (the Demo login)
+  // still never see pay: the database refuses them too (migration 330),
+  // this just keeps the menu honest.
   const payKeys = ['payroll', 'mypay']
   return ITEMS.filter(i => i.roles.includes(role) && !onBar.has(i.key)
-    && (i.key !== 'mypay' || hasPay) && !(readOnly && payKeys.includes(i.key)))
+    && !(readOnly && payKeys.includes(i.key)))
 }
 
 export { VersionLine }
 
-export default function More({ boot, onGo, pendingCount = 0, hasPay = false }) {
+export default function More({ boot, onGo, pendingCount = 0 }) {
   // dailysales/roomboard/credit are dedicated top-level tabs for
   // auditor/front_desk/oversight roles respectively, not More-menu
   // destinations for THEM — hidden here so each doesn't appear in two
@@ -82,7 +84,7 @@ export default function More({ boot, onGo, pendingCount = 0, hasPay = false }) {
   // per-role exclusions, which is what let the auditor's Counts and
   // Variances show up in both places.
   const recordsSales = (boot.locations || []).some(l => l.is_sales_point && !l.is_store)
-  const allowed = moreItemsFor(boot.staff.role, recordsSales, hasPay, !!boot.staff.is_read_only, !!boot.staff.can_record_sales)
+  const allowed = moreItemsFor(boot.staff.role, recordsSales, !!boot.staff.is_read_only, !!boot.staff.can_record_sales)
   return (
     <div className="px-5">
       <ul className="divide-y divide-line/60">

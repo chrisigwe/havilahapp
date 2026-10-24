@@ -60,7 +60,8 @@ function AmountRow({ label, hint, app, value, onChange, gap, ok, higher, lower, 
 // never added to anything.
 export default function MatchTill({ rows = [], posTotal = 0, cashTotal = 0, creditApp = null,
                                     includes = {},
-                                    itemName = () => '', onFix, busyId = null, onRecord = null }) {
+                                    itemName = () => '', onFix, busyId = null, onRecord = null,
+                                    done = false }) {
   const [open, setOpen] = useState(false)
   const [pos, setPos] = useState('')
   const [cash, setCash] = useState('')
@@ -119,6 +120,22 @@ export default function MatchTill({ rows = [], posTotal = 0, cashTotal = 0, cred
   const exactIds = new Set(suspectRows.filter(s => s.exact).map(s => s.row.id))
 
   if (!open) {
+    // Counted already. The big amber button came back on every reload
+    // and asked a person who had just done it to do it again (Chris,
+    // 24 October 2026). It does not vanish entirely: the till checks
+    // show people legitimately counting two, three, five times on a
+    // day that would not settle, so the way back in stays — quietly.
+    if (done) {
+      return (
+        <div className="mt-3 flex items-baseline justify-between gap-3">
+          <span className="text-leaf text-sm font-semibold">
+            Counted for today.
+          </span>
+          <button onClick={() => setOpen(true)}
+            className="text-dim text-sm underline shrink-0">Count again</button>
+        </div>
+      )
+    }
     return (
       <button onClick={() => setOpen(true)}
         className="mt-3 w-full h-12 rounded-xl border border-amber text-amber font-semibold">

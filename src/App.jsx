@@ -296,7 +296,6 @@ export default function App() {
       viewBranch={boot.viewBranchId} onBranch={setViewBranch}
       pendingCount={pendingCount}
       alertEligible
-      hasPay={!!myPay?.linked}
       recordsSales={(boot.locations || []).some(l => l.is_sales_point && !l.is_store)}>
       {unfinished.length > 0 && tab !== 'count' && (
         <button onClick={() => setTab('count')}
@@ -314,7 +313,7 @@ export default function App() {
       )}
       {tab === 'sales' ? <SalesEntry boot={boot} />
         : tab === 'store' ? <Store boot={boot} />
-        : tab === 'more' ? <More boot={boot} onGo={setTab} pendingCount={pendingCount} hasPay={!!myPay?.linked} />
+        : tab === 'more' ? <More boot={boot} onGo={setTab} pendingCount={pendingCount} />
         : tab === 'dailysales' ? <DailySales boot={boot} />
         : tab === 'roomboard' ? <RoomBoard boot={boot} />
         : tab === 'staysettings' ? <StaySettings boot={boot} />

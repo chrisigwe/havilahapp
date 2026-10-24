@@ -503,6 +503,10 @@ export default function SalesEntry({ boot }) {
       tracked('Whether this till has been counted', tillCheckDone(staff.branch_id, frontDesk.id, date))
         .then(setFrontDeskClosed).catch(() => setFrontDeskClosed(null))
     } else setFrontDeskClosed(null)
+    if (locationId) {
+      tracked('Whether your till has been counted', tillCheckDone(staff.branch_id, locationId, date))
+        .then(setMyTillDone).catch(() => setMyTillDone(false))
+    } else setMyTillDone(false)
     // On failure, record the error rather than silently showing nothing:
     // a hidden section looks identical to a day with no write-offs, which
     // is how a broken query went unnoticed.
@@ -621,6 +625,12 @@ export default function SalesEntry({ boot }) {
   }
 
   const [tillSaved, setTillSaved] = useState(false)
+  // Whether THIS till has already been counted today, read from the
+  // database rather than from tillSaved — which only remembers within
+  // one session, so a reload put the big amber "Match your Total Sales
+  // for the day" button back in front of someone who had already done
+  // it (Chris, 24 October 2026).
+  const [myTillDone, setMyTillDone] = useState(false)
   // Why the tile is covered when it is covered: a till nobody has
   // counted yet, or a check that failed. Kept apart on purpose.
   const [tillCheckError, setTillCheckError] = useState(null)
@@ -1062,7 +1072,7 @@ export default function SalesEntry({ boot }) {
           </TillTile>
           <MatchTill rows={[]} posTotal={inHand.pos} cashTotal={inHand.cash}
             includes={{ handedOutPos: handedOut.pos, handedOutCash: handedOut.cash }}
-            onRecord={saveTillResult} />
+            done={myTillDone && !tillSaved} onRecord={saveTillResult} />
         </>
       )}
 
@@ -1336,6 +1346,7 @@ export default function SalesEntry({ boot }) {
         )}
 
         <MatchTill rows={today} busyId={switchingId} onFix={fixEntry} onRecord={saveTillResult}
+          done={myTillDone && !tillSaved}
           posTotal={inHand.pos} cashTotal={inHand.cash}
           includes={{ recoveredPos: recon?.customerRecoveredBy?.pos, recoveredCash: recon?.customerRecoveredBy?.cash,
                       roomPos: recon?.roomRecoveredBy?.pos, roomCash: recon?.roomRecoveredBy?.cash }}

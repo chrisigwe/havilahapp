@@ -324,8 +324,25 @@ export default function MyPay({ data, boot }) {
   const branchName = boot?.branchName || null
   if (!data) return <p className="px-5 text-dim">Loading…</p>
   if (!data.linked) {
-    return <p className="px-5 py-8 text-center text-dim">
-      Your login is not linked to a pay record yet. Ask the GM.</p>
+    // Everyone can reach this page now (Chris, 24 October 2026), so this
+    // is the first thing an unlinked person reads. It used to be a tab
+    // that simply was not there, which tells nobody anything. Say what
+    // is missing, who fixes it, and that no pay has been lost.
+    return (
+      <div className="px-5">
+        <Notice tone="note" title="Your pay is not set up yet" className="mt-4">
+          <p>
+            Your login has not been joined to a pay record, so there is nothing
+            to show here — not because you have no pay, but because the two have
+            not been connected.
+          </p>
+          <p className="mt-2">
+            The GM does it on <b>Staff accounts</b>. Once it is done, every
+            finished month appears here on its own.
+          </p>
+        </Notice>
+      </div>
+    )
   }
   if (!data.months.length) {
     return (
