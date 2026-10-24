@@ -2346,6 +2346,28 @@ export async function loadFolioCollectedAt(branchId, date, locationId) {
 // real, live room, the room's actual booking and every other real
 // charge/payment on it are completely untouched — only the one
 // erroneous payment row goes.
+// Correcting a room payment that was keyed wrong (568).
+//
+// The amount, the method and the DATE. The date is the one that was
+// invisible until 568 taught log_room_payment_change to record it —
+// a payment moved to another day shifts which day's takings it counts
+// towards, which is how ₦24,800 came to sit in September on a stay
+// that ran in October.
+//
+// A plain update: the trigger writes the before and after to the audit
+// trail with the mover's name, and RLS decides who may. Nothing is
+// recomputed here — the folio reads payments directly, so the bill
+// follows on its own.
+async function _updateRoomPayment(paymentId, { amount, method, businessDate }) {
+  const patch = {}
+  if (amount != null && amount !== '') patch.amount = Number(amount)
+  if (method) patch.method = method
+  if (businessDate) patch.business_date = businessDate
+  if (!Object.keys(patch).length) return
+  const { error } = await supabase.from('payments').update(patch).eq('id', paymentId)
+  if (error) throw error
+}
+
 async function _deleteRoomPayment(paymentId) {
   const { error } = await supabase.from('payments').delete().eq('id', paymentId)
   if (error) throw error
@@ -3397,6 +3419,7 @@ export const rejectRoomCharge = tracked('Refused a room charge', _rejectRoomChar
 export const deleteEntry = tracked('Deleted an entry', _deleteEntry)
 export const deleteStay = tracked('Deleted a stay', _deleteStay)
 export const deleteRoomPayment = tracked('Deleted a room payment', _deleteRoomPayment)
+export const updateRoomPayment = tracked('Corrected a room payment', _updateRoomPayment)
 export const deleteOrderItem = tracked('Deleted a room-charge item', _deleteOrderItem)
 export const deleteCount = tracked('Deleted a stock count', _deleteCount)
 export const deleteRepayment = tracked('Deleted a repayment', _deleteRepayment)

@@ -3,6 +3,7 @@ import { naira, tierLabel, methodLabel, lagosDaysAgo, lagosToday, friendlyStayEr
 import { loadActivity, deleteEntry, updateEntry, loadAudit,
          loadSalePayments, updateSaleWithPayments,
          loadLiveStays, updateGuestIdentity, correctStay,
+         loadRoomPayments, updateRoomPayment, deleteRoomPayment,
          findDuplicateGuests, mergeGuests, dismissDuplicatePair,
          findDuplicateCustomers, mergeCustomers } from '../lib/data'
 import { useToast } from '../components/Toast'
@@ -151,6 +152,15 @@ export default function Corrections({ boot }) {
   // here is a change to what the guest owes — it should not happen
   // behind a Save button with nothing shown.
   const [stayPreview, setStayPreview] = useState(null)
+
+  // Payments taken at the front desk, so a mis-keyed one can be put
+  // right here rather than by deleting the guest (Chris, 24 October
+  // 2026). Several at a time, because a guest keyed three times needs
+  // one correction, not three.
+  const [roomPays, setRoomPays] = useState(null)
+  const [payPicked, setPayPicked] = useState(() => new Set())
+  const [payEdit, setPayEdit] = useState(null)
+  const [payWipe, setPayWipe] = useState(null)
 
   // Reset the department chip on branch switch. Holding the previous
   // branch's location id makes loadActivity query for a department
@@ -359,7 +369,14 @@ export default function Corrections({ boot }) {
     loadLiveStays(staff.branch_id).then(setLiveStays).catch(e => toast(e.message, 'error'))
   }, [seesGuests, staff.branch_id, toast])
 
+  const refreshRoomPays = useCallback(() => {
+    if (!seesGuests) return
+    tracked('Payments at the front desk', loadRoomPayments(staff.branch_id, 14))
+      .then(setRoomPays).catch(() => setRoomPays([]))
+  }, [seesGuests, staff.branch_id])
+
   useEffect(() => { if (view === 'guests') refreshGuests() }, [view, refreshGuests])
+  useEffect(() => { if (view === 'guests') refreshRoomPays() }, [view, refreshRoomPays])
 
   const refreshDupes = useCallback(() => {
     if (!canMerge) return
@@ -403,6 +420,37 @@ export default function Corrections({ boot }) {
   const stayMoved = (g) => !!g && (g.checkIn !== g.origCheckIn
     || g.scheduledOut !== g.origScheduledOut
     || (g.time || '') !== (g.origTime || ''))
+
+  async function savePayEdit() {
+    setBusy(true)
+    try {
+      await updateRoomPayment(payEdit.id, {
+        amount: payEdit.amount, method: payEdit.method, businessDate: payEdit.date,
+      })
+      toast('Payment corrected', 'success')
+      setPayEdit(null); refreshRoomPays()
+    } catch (e) { toast(friendlyStayError(e) || e.message, 'error') }
+    setBusy(false)
+  }
+
+  // One at a time on the wire, deliberately. Each delete fires its own
+  // trigger and writes its own audit line, so the record shows three
+  // payments removed rather than one vague action.
+  async function wipePicked() {
+    setBusy(true)
+    const ids = [...payPicked]
+    let done = 0
+    try {
+      for (const id of ids) { await deleteRoomPayment(id); done += 1 }
+      toast(`${done} payment${done === 1 ? '' : 's'} deleted`, 'success')
+    } catch (e) {
+      toast(done
+        ? `${done} deleted, then it stopped: ${friendlyStayError(e) || e.message}`
+        : (friendlyStayError(e) || e.message), 'error')
+    }
+    setPayWipe(null); setPayPicked(new Set()); refreshRoomPays()
+    setBusy(false)
+  }
 
   async function saveGuestEdit() {
     const g = guestEdit
@@ -536,6 +584,86 @@ export default function Corrections({ boot }) {
               </li>
             ))}
           </ul>
+          {/* PAYMENTS AT THE FRONT DESK (Chris, 24 October 2026).
+              The point of this tab is fixing a mistake without deleting
+              a guest who has already checked in — and a mis-keyed
+              payment was the one thing here with no way to put right.
+              Several at once, because a guest keyed three times needs
+              one correction, not three. */}
+          {isEditor && (
+            <section className="mt-6">
+              <div className="flex items-baseline justify-between gap-3">
+                <h3 className="font-semibold">Payments at the front desk</h3>
+                <span className="text-dim text-sm shrink-0">last 14 days</span>
+              </div>
+              {roomPays === null && <p className="text-dim py-3">Loading…</p>}
+              {roomPays !== null && !roomPays.length && (
+                <p className="py-6 text-center text-dim">No payments taken in the last 14 days.</p>
+              )}
+
+              {!!payPicked.size && (
+                <div className="mt-2 flex items-center gap-2">
+                  <span className="text-dim text-sm flex-1 min-w-0">
+                    {payPicked.size} selected
+                  </span>
+                  <button onClick={() => setPayPicked(new Set())}
+                    className="shrink-0 h-10 px-3 text-dim text-sm underline">Clear</button>
+                  {canDeleteAny && (
+                    <button onClick={() => setPayWipe([...payPicked])}
+                      className="shrink-0 h-10 px-4 rounded-xl border border-clay text-clay font-semibold text-sm">
+                      Delete {payPicked.size}
+                    </button>
+                  )}
+                </div>
+              )}
+
+              <ul className="mt-2 divide-y divide-line/60 rounded-2xl border border-line bg-surface px-4">
+                {(roomPays || []).map(p2 => {
+                  const on = payPicked.has(p2.id)
+                  return (
+                    <li key={p2.id} className="py-3 flex items-start gap-3">
+                      <input type="checkbox" checked={on} className="mt-1.5 shrink-0"
+                        onChange={() => setPayPicked(cur => {
+                          const next = new Set(cur)
+                          if (next.has(p2.id)) next.delete(p2.id); else next.add(p2.id)
+                          return next
+                        })} />
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-baseline gap-3">
+                          <span className="flex-1 min-w-0 font-semibold break-words">
+                            {p2.stays?.guests?.full_name || 'Guest'}
+                            {p2.stays?.rooms?.room_number ? ` · Room ${p2.stays.rooms.room_number}` : ''}
+                          </span>
+                          <span className="tnum font-bold shrink-0">{naira(p2.amount)}</span>
+                        </div>
+                        <div className="text-dim text-sm tnum">
+                          {methodLabel[p2.method] || p2.method} · {p2.business_date}
+                          {p2.staff?.full_name ? ` · ${p2.staff.full_name}` : ''}
+                        </div>
+                        {p2.remark && (
+                          <div className="text-dim text-xs break-words">{p2.remark}</div>
+                        )}
+                      </div>
+                      <button
+                        onClick={() => setPayEdit({
+                          id: p2.id, amount: String(p2.amount), method: p2.method,
+                          date: p2.business_date, guest: p2.stays?.guests?.full_name || 'Guest',
+                          room: p2.stays?.rooms?.room_number, orig: Number(p2.amount),
+                        })}
+                        className="shrink-0 h-10 px-4 rounded-xl border border-amber text-amber font-semibold text-sm">
+                        Edit
+                      </button>
+                    </li>
+                  )
+                })}
+              </ul>
+              <p className="text-dim text-xs mt-2">
+                Every change and deletion here is recorded with your name — the amount,
+                the method and the day, before and after.
+              </p>
+            </section>
+          )}
+
           {canMerge && !!dupes?.length && (
             <Notice tone="warn" title="Possible duplicate guests" className="mt-4">
               <p className="mb-3">
@@ -1144,6 +1272,80 @@ export default function Corrections({ boot }) {
               : stayMoved(guestEdit) && !stayPreview ? 'Check what this changes'
               : 'Save correction'}
           </button>
+        </Sheet>
+      )}
+
+      {payEdit && (
+        <Sheet onClose={() => setPayEdit(null)}>
+          <h3 className="text-xl font-bold">Correct this payment</h3>
+          <p className="text-dim text-sm mt-1 mb-4">
+            {payEdit.guest}{payEdit.room ? ` · Room ${payEdit.room}` : ''}. The guest's
+            bill follows this straight away.
+          </p>
+
+          <div className="text-dim text-sm mb-1">Amount</div>
+          <input type="number" inputMode="decimal" value={payEdit.amount}
+            onChange={e => setPayEdit(d => ({ ...d, amount: e.target.value }))}
+            className="h-12 w-full px-3 rounded-xl bg-raise border border-line tnum" />
+
+          <div className="text-dim text-sm mt-3 mb-1">Paid by</div>
+          <div className="flex gap-2">
+            {['pos', 'cash', 'transfer'].map(m => (
+              <button key={m} onClick={() => setPayEdit(d => ({ ...d, method: m }))}
+                className={`flex-1 h-12 rounded-xl border font-semibold ${payEdit.method === m
+                  ? 'bg-raise border-amber text-amber' : 'border-line text-dim'}`}>
+                {methodLabel[m] || m}
+              </button>
+            ))}
+          </div>
+
+          <div className="text-dim text-sm mt-3 mb-1">Day it was taken</div>
+          <input type="date" value={payEdit.date} max={lagosToday()}
+            onChange={e => setPayEdit(d => ({ ...d, date: e.target.value }))}
+            className="h-12 px-3 rounded-xl bg-raise border border-line tnum" />
+          <p className="text-dim text-xs mt-1">
+            Moving this moves the money to that day's takings, and off the day it
+            is on now.
+          </p>
+
+          <button onClick={savePayEdit}
+            disabled={busy || !(Number(payEdit.amount) > 0) || !payEdit.date}
+            className="mt-5 h-12 w-full rounded-xl bg-amber text-bg font-bold disabled:opacity-40">
+            {busy ? 'Saving…' : 'Save correction'}
+          </button>
+        </Sheet>
+      )}
+
+      {payWipe && (
+        <Sheet onClose={() => setPayWipe(null)}>
+          <h2 className="text-2xl font-bold">
+            Delete {payWipe.length} payment{payWipe.length === 1 ? '' : 's'}?
+          </h2>
+          <div className="mt-3 space-y-1">
+            {(roomPays || []).filter(p3 => payWipe.includes(p3.id)).map(p3 => (
+              <div key={p3.id} className="flex justify-between gap-3 text-sm">
+                <span className="text-dim min-w-0 break-words">
+                  {p3.stays?.guests?.full_name || 'Guest'} · {p3.business_date}
+                </span>
+                <span className="tnum shrink-0">{naira(p3.amount)}</span>
+              </div>
+            ))}
+            <div className="flex justify-between gap-3 pt-2 mt-1 border-t border-line font-bold">
+              <span>Comes off the guests' bills</span>
+              <span className="tnum shrink-0">
+                {naira((roomPays || []).filter(p3 => payWipe.includes(p3.id))
+                  .reduce((t, p3) => t + Number(p3.amount || 0), 0))}
+              </span>
+            </div>
+          </div>
+          <p className="text-clay mt-3">
+            This cannot be undone. Each guest will owe that much again.
+          </p>
+          <button onClick={wipePicked} disabled={busy}
+            className="mt-6 w-full h-14 rounded-2xl bg-clay text-bg text-lg font-bold disabled:opacity-40">
+            {busy ? 'Deleting…' : `Delete ${payWipe.length}`}
+          </button>
+          <button onClick={() => setPayWipe(null)} className="mt-3 w-full h-12 text-dim">Cancel</button>
         </Sheet>
       )}
 
