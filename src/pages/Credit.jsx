@@ -10,6 +10,7 @@ import { EDITOR, OPENS_ON_ALL, OVERSIGHT, SUPERVISOR, is } from '../lib/roles'
 import { accountStatementPdf, savePdf } from '../lib/pdfSheet'
 import Notice from '../components/Notice'
 import { tracked } from '../lib/loadfail'
+import CreditChain from '../components/CreditChain'
 
 
 
@@ -972,6 +973,15 @@ export default function Credit({ boot }) {
               )
             })()}
           </div>
+          {/* What was taken, and how each of it came back (570).
+              Kept off the printed statement, which is the formal
+              account; this is the working view — the one that answers
+              "has he paid for the Desperados yet". */}
+          <div className="px-5 pb-5 print:hidden">
+            <h3 className="font-semibold mb-1">What was taken, and how it came back</h3>
+            <CreditChain branchId={staff.branch_id} customerId={open.customer.customer_id} />
+          </div>
+
           {isAdmin && (
             <div className="px-5 pb-5 print:hidden">
               <button onClick={() => setConfirmDel(open.customer)}

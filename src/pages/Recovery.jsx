@@ -5,6 +5,7 @@ import { useToast } from '../components/Toast'
 import RoomChargeTracker from '../components/RoomChargeTracker'
 import { OPENS_ON_ALL, OVERSIGHT, SUPERVISOR, is } from '../lib/roles'
 import { tracked } from '../lib/loadfail'
+import CreditChain from '../components/CreditChain'
 
 // Deliberately excludes storekeeper — an explicit choice, not an
 // oversight, matching how storekeeper's write access has been pulled
@@ -49,6 +50,12 @@ export default function Recovery({ boot }) {
   // front-desk person with Reception in their own location list could
   // still miss it just by having a different chip selected.
   const hasReceptionAccess = seesAllDepartments || (locations || []).some(l => /reception/i.test(l.name))
+  // Whether Reception's own figure belongs on screen right now: the
+  // whole branch, or Reception itself. Not a permission — that is
+  // hasReceptionAccess above — just whose money is being looked at.
+  const receptionInView = locId === 'all'
+    || /reception/i.test((locations || []).find(l => l.id === locId)?.name || '')
+  const [chainFor, setChainFor] = useState(null)   // customer name whose chain is open
   const [roomPayments, setRoomPayments] = useState(null)
   const canDeleteRoomPayment = is(staff.role, SUPERVISOR)
   const canDeleteRepayment = is(staff.role, SUPERVISOR)
@@ -165,6 +172,13 @@ export default function Recovery({ boot }) {
   const roomByMethod = {}
   for (const p of roomRows) roomByMethod[p.method] = (roomByMethod[p.method] || 0) + Number(p.amount)
 
+  // v_debt_recovery carries the customer's NAME but not their id, and
+  // the chain needs the id. Balances already have both, and customers
+  // are unique per branch, so the name is a safe key here — the same
+  // assumption owedBy below has always made (570).
+  const custIdByName = {}
+  for (const b of (balances || [])) if (b.customer_id) custIdByName[b.name] = b.customer_id
+
   // Outstanding per customer, by name — customers are unique per branch,
   // so the name is a safe key here.
   const owedBy = {}
@@ -271,6 +285,21 @@ export default function Recovery({ boot }) {
                   <span className="tnum text-dim shrink-0">{naira(r.amount)}</span>
                 </div>
               ))}
+              {/* This page said money arrived; it could never say what
+                  the money was for (570). One tap now answers it. */}
+              {custIdByName[c.name] && (
+                <div className="mt-2 pt-2 border-t border-line/60">
+                  <button type="button"
+                    onClick={() => setChainFor(x => x === c.name ? null : c.name)}
+                    className="text-amber text-sm font-semibold">
+                    {chainFor === c.name ? 'Hide what was taken' : 'What was taken ›'}
+                  </button>
+                  {chainFor === c.name && (
+                    <CreditChain className="mt-2" branchId={staff.branch_id}
+                      customerId={custIdByName[c.name]} />
+                  )}
+                </div>
+              )}
               <div className="mt-2 pt-2 border-t border-line/60 space-y-0.5">
                 {c.owedThen != null && (
                   <div className="flex justify-between text-sm">
@@ -392,7 +421,20 @@ export default function Recovery({ boot }) {
       </>
       )}
 
-      {hasReceptionAccess && (
+      {/* Reception's own room payments, branch-wide — every guest, every
+          department's share included. Under a department chip that read
+          as though it were THEIR money: the Restaurant was shown Sir
+          Ben's whole ₦62,300 when its share was ₦48,500 (Chris, 21
+          October 2026). It now appears only where it is true — on
+          Reception, or across the whole branch. A department's own
+          share is the "Money received for room charges" section above,
+          which names who was handed it.
+
+          The permission is still role-based, not chip-based: a
+          front-desk person does not lose access by having another chip
+          selected, they just have to be looking at Reception or All for
+          a figure that is Reception's. */}
+      {hasReceptionAccess && receptionInView && (
         <>
           <div className="rounded-2xl border border-leaf bg-surface p-4 my-2">
             <div className="text-dim text-sm">

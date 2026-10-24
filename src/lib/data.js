@@ -2279,6 +2279,21 @@ async function _splitPaymentToDepartment(paymentId, amount, locationId) {
   if (error) throw error
 }
 
+// What was taken, when, and how it was recovered (570).
+//
+// Nothing records which sales a repayment paid off — credit_repayments
+// only moves a balance. The function rebuilds the chain at read time by
+// running repayments against that customer's credit sales oldest first,
+// grouped the same way the balance itself is kept, so the two can never
+// disagree.
+export async function loadCreditChain(branchId, customerId, days = 120) {
+  const { data, error } = await supabase.rpc('credit_chain', {
+    p_branch: branchId, p_customer: customerId || null, p_days: days,
+  })
+  if (error) throw error
+  return data || []
+}
+
 // A guest's bill put on credit, against a named account (567).
 //
 // Chris, 21 October 2026. A guest who leaves owing was only ever an
