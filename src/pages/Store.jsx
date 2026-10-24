@@ -17,7 +17,12 @@ export default function Store({ boot }) {
   }, [boot.staff.branch_id])
   const locations = allLocations
   const store = locations.find(l => l.is_store)
-  const departments = locations.filter(l => !l.is_store)
+  // Places that actually hold goods (572). Reception is a sales point —
+  // it takes room payments — but nothing sits on a shelf there, and
+  // offering it as a destination is how five plates of groundnut came to
+  // be converted at the front desk. holds_stock is a column rather than
+  // a name match, so adding another such place later needs no code.
+  const departments = locations.filter(l => !l.is_store && l.holds_stock !== false)
   const [date, setDate] = useState(lagosToday())
   const [receiver, setReceiver] = useState('')
   const toast = useToast()

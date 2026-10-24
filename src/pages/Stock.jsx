@@ -114,9 +114,15 @@ export default function Stock({ boot }) {
           {seesAll ? 'Everywhere' : 'My areas'}
         </LocChip>
         {/* Everywhere, then the Store, then the departments in their usual order */}
-        {[...locations.filter(l => l.is_store), ...locations.filter(l => !l.is_store)].map(l => (
-          <LocChip key={l.id} active={locId === l.id} onClick={() => setLocId(l.id)}>{l.name}</LocChip>
-        ))}
+        {/* A place that no longer holds stock disappears from here — but
+            NOT while it still has something on the book. Hiding a
+            leftover figure is not the same as correcting it (572). */}
+        {[...locations.filter(l => l.is_store), ...locations.filter(l => !l.is_store)]
+          .filter(l => l.holds_stock !== false
+            || all.some(r => (stockMap[`${r.item.id}:${l.id}`] ?? 0) !== 0))
+          .map(l => (
+            <LocChip key={l.id} active={locId === l.id} onClick={() => setLocId(l.id)}>{l.name}</LocChip>
+          ))}
       </div>
 
       {/* What is actually on the page, before the page. It was a bare
