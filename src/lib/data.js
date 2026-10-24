@@ -332,6 +332,30 @@ async function _deleteEntry(entry) {
   }
 }
 
+// Putting a movement in the right department (571).
+//
+// updateEntry changes the quantity and the cost and nothing else, so
+// stock keyed into the wrong place could only be deleted and re-entered
+// — losing who recorded it and when. Reception sat at −5 "A Plate of
+// Groundnut" because a conversion on 18 October was recorded there
+// instead of where the groundnut actually is.
+//
+// A function rather than a column update: a movement created BY a sale
+// must not be moved (the goods would end up somewhere the sale never
+// happened), both ends must be at the same branch, and stock cannot come
+// from and go to the same place. log_movement_change writes the before
+// and after once 571 is in.
+export async function correctMovementPlace(movementId, { from, to, date } = {}) {
+  const { data, error } = await supabase.rpc('correct_movement_place', {
+    p_movement: movementId,
+    p_from: from === undefined ? null : from,
+    p_to: to === undefined ? null : to,
+    p_date: date || null,
+  })
+  if (error) throw error
+  return data
+}
+
 export async function updateEntry(entry, { qty, unitPrice }) {
   // Stock movements only. The sale branch that used to be here collapsed
   // every payment into ONE row of the first method found (or 'cash') — so

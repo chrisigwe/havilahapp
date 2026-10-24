@@ -3,7 +3,7 @@ import { naira, tierLabel, methodLabel, lagosDaysAgo, lagosToday, friendlyStayEr
 import { loadActivity, deleteEntry, updateEntry, loadAudit,
          loadSalePayments, updateSaleWithPayments,
          loadLiveStays, updateGuestIdentity, correctStay,
-         loadRoomPayments, updateRoomPayment, deleteRoomPayment,
+         loadRoomPayments, updateRoomPayment, deleteRoomPayment, correctMovementPlace,
          findDuplicateGuests, mergeGuests, dismissDuplicatePair,
          findDuplicateCustomers, mergeCustomers } from '../lib/data'
 import { useToast } from '../components/Toast'
@@ -331,6 +331,11 @@ export default function Corrections({ boot }) {
         base.wasSplit = pays.length > 1
       } catch (e) { toast(e.message, 'error') }
     }
+    if (base.row?.kind !== 'sale') {
+      base.fromLoc = base.row.from_location || ''
+      base.toLoc = base.row.to_location || ''
+      base.moveDate = base.row.business_date || ''
+    }
     setEdit(base)
   }
 
@@ -358,6 +363,16 @@ export default function Corrections({ boot }) {
           businessDate: edit.date && edit.date !== edit.row.business_date ? edit.date : null })
       } else {
         await updateEntry({ ...edit.row, branch_id: staff.branch_id }, { qty, unitPrice })
+        // 571: where the goods went, and when. Separate from the
+        // quantity because it is a different kind of mistake and the
+        // database checks it differently.
+        if (isEditor && (edit.fromLoc !== (edit.row.from_location || '')
+                      || edit.toLoc !== (edit.row.to_location || '')
+                      || edit.moveDate !== edit.row.business_date)) {
+          await correctMovementPlace(edit.row.id, {
+            from: edit.fromLoc || null, to: edit.toLoc || null, date: edit.moveDate,
+          })
+        }
       }
       toast('Entry updated', 'success'); setEdit(null); refresh()
     } catch (e) { toast('Not updated: ' + e.message, 'error') }
@@ -1022,6 +1037,51 @@ export default function Corrections({ boot }) {
               price — the two that change money — were typed over in
               silence, so a mistyped correction looked exactly like a
               correct one (18 October 2026). */}
+          {/* WHERE THE GOODS WENT (571). Stock keyed into the wrong
+              department could only be deleted and re-entered before
+              this, which lost who recorded it and when. Reception sat
+              at −5 "A Plate of Groundnut" because a conversion was
+              recorded there instead of where the groundnut lives. */}
+          {isEditor && edit.row.kind !== 'sale' && (
+            <div className="mt-6 rounded-2xl border border-line bg-surface p-4">
+              <p className="font-semibold">Where the goods went</p>
+              <p className="text-dim text-sm mt-0.5">
+                Change this if it was put in the wrong department. The stock
+                figures follow immediately — both places.
+              </p>
+
+              <label className="block mt-3 text-dim text-sm">Out of</label>
+              <select value={edit.fromLoc || ''}
+                onChange={e => setEdit({ ...edit, fromLoc: e.target.value })}
+                className={`mt-1 h-12 w-full px-3 rounded-xl bg-raise border ${
+                  (edit.fromLoc || '') !== (edit.row.from_location || '')
+                    ? 'border-amber' : 'border-line'}`}>
+                <option value="">Nowhere — it came from outside</option>
+                {(allLocations || locations || []).map(l => (
+                  <option key={l.id} value={l.id}>{l.name}</option>
+                ))}
+              </select>
+
+              <label className="block mt-3 text-dim text-sm">Into</label>
+              <select value={edit.toLoc || ''}
+                onChange={e => setEdit({ ...edit, toLoc: e.target.value })}
+                className={`mt-1 h-12 w-full px-3 rounded-xl bg-raise border ${
+                  (edit.toLoc || '') !== (edit.row.to_location || '')
+                    ? 'border-amber' : 'border-line'}`}>
+                <option value="">Nowhere — it left the business</option>
+                {(allLocations || locations || []).map(l => (
+                  <option key={l.id} value={l.id}>{l.name}</option>
+                ))}
+              </select>
+
+              <label className="block mt-3 text-dim text-sm">Day it happened</label>
+              <input type="date" value={edit.moveDate || ''} max={lagosToday()}
+                onChange={e => setEdit({ ...edit, moveDate: e.target.value })}
+                className={`mt-1 h-12 px-3 rounded-xl bg-raise border tnum ${
+                  (edit.moveDate || '') !== edit.row.business_date ? 'border-amber' : 'border-line'}`} />
+            </div>
+          )}
+
           <label className="block mt-6 text-dim">Quantity</label>
           <input type="number" inputMode="decimal" value={edit.qty}
             onChange={e => setEdit({ ...edit, qty: e.target.value })}
