@@ -17,17 +17,29 @@ export default function Store({ boot }) {
   }, [boot.staff.branch_id])
   const locations = allLocations
   const store = locations.find(l => l.is_store)
-  // Places that actually hold goods (572). Reception is a sales point —
-  // it takes room payments — but nothing sits on a shelf there, and
-  // offering it as a destination is how five plates of groundnut came to
-  // be converted at the front desk. holds_stock is a column rather than
-  // a name match, so adding another such place later needs no code.
-  const departments = locations.filter(l => !l.is_store && l.holds_stock !== false)
+  // TWO lists, because "holds stock" and "receives nothing" are not the
+  // same thing (25 October 2026).
+  //
+  // holds_stock says a place keeps SALE stock on a shelf. Reception does
+  // not — nothing sits there to be sold, and offering it as a
+  // destination is how five plates of groundnut came to be converted at
+  // the front desk. But Reception does receive SUPPLIES: exercise books
+  // went Store → Reception on 29 September and again on 17 October.
+  //
+  // Filtering one list for both would have quietly stopped the front
+  // desk being given a notebook. Sale stock uses `departments`;
+  // disbursing supplies uses `allDepartments`.
+  const allDepartments = locations.filter(l => !l.is_store)
+  const departments = allDepartments.filter(l => l.holds_stock !== false)
   const [date, setDate] = useState(lagosToday())
   const [receiver, setReceiver] = useState('')
   const toast = useToast()
 
   const [mode, setMode] = useState('receive')       // receive | disburse | move | convert
+  // Where this mode may send things. Below `mode` deliberately: it
+  // reads it, and a const read above its own declaration crashes the
+  // whole page at render — check-tdz.mjs caught this one.
+  const destinations = (kind === 'supplies' && mode === 'disburse') ? allDepartments : departments
   const [stockMap, setStockMap] = useState({})
   const [popular, setPopular] = useState({})
   const [picking, setPicking] = useState(false)
@@ -58,7 +70,10 @@ export default function Store({ boot }) {
   // doesn't exist on the branch now being viewed.
   useEffect(() => {
     const valid = (id) => departments.some(d => d.id === id)
-    if (!valid(toDept)) setToDept(departments[0]?.id)
+    // toDept is checked against destinations: in supplies-disburse it is
+    // allowed to be a place that keeps no sale stock, and resetting it
+    // here would throw the choice away the moment it was made.
+    if (!destinations.some(d => d.id === toDept)) setToDept(destinations[0]?.id)
     if (!valid(fromDept)) setFromDept(departments[1]?.id || departments[0]?.id)
     if (!valid(convertLoc)) setConvertLoc(departments[0]?.id)
   }, [staff.branch_id])
@@ -116,7 +131,7 @@ export default function Store({ boot }) {
     }
     setBusy(true)
     try {
-      const dept = departments.find(d => d.id === toDept)
+      const dept = allDepartments.find(d => d.id === toDept)
       const sup = kind === 'supplies'
       if (sup && mode === 'disburse') {
         if (!receiver.trim()) { toast('Say who is receiving it', 'error'); setBusy(false); return }
@@ -134,7 +149,7 @@ export default function Store({ boot }) {
       const toLoc = mode === 'receive' ? store.id : toDept
       const noteWhat = sup && mode === 'disburse' ? `supplies to ${dept?.name}`
         : mode === 'receive' ? (sup ? 'supplies received into store' : 'received into store')
-        : mode === 'move' ? `moved from ${departments.find(d => d.id === fromDept)?.name} to ${dept?.name}`
+        : mode === 'move' ? `moved from ${allDepartments.find(d => d.id === fromDept)?.name} to ${dept?.name}`
         : `${issues ? 'issued to' : 'to'} ${dept?.name}`
       const rows = lines.map(l => ({
         branch_id: staff.branch_id,
@@ -257,24 +272,26 @@ export default function Store({ boot }) {
         {mode === 'move' && 'Stock moving directly between two departments — never touches the store.'}
         {mode === 'convert' && 'One item becomes a different item — e.g. bottles of groundnut repacked into plates.'}
       </p>
-      {mode === 'disburse' && kind === 'stock' && departments.find(d => d.id === toDept)?.consumes_on_issue && (
+      {mode === 'disburse' && kind === 'stock' && allDepartments.find(d => d.id === toDept)?.consumes_on_issue && (
         <p className="text-dim text-sm mt-2">
-          {departments.find(d => d.id === toDept)?.name} is a consuming department —
+          {allDepartments.find(d => d.id === toDept)?.name} is a consuming department —
           this stock is used up on issue, not held as a balance there.
         </p>
       )}
 
       {mode === 'disburse' && kind === 'supplies' && allowed && (
         <p className="text-dim text-sm mt-2">
-          Only the supplies on {departments.find(d => d.id === toDept)?.name}'s list are offered.
+          Only the supplies on {allDepartments.find(d => d.id === toDept)?.name}'s list are offered.
         </p>
       )}
 
       {mode === 'disburse' && (
         <div className="mt-4">
           <div className="text-dim mb-2">Issue to (required)</div>
+          {/* destinations, not departments: supplies go anywhere,
+              sale stock only where stock is kept (25 October 2026). */}
           <div className="flex gap-2 overflow-x-auto -mx-1 px-1 pb-1">
-            {departments.map(d => (
+            {destinations.map(d => (
               <button key={d.id} onClick={() => setToDept(d.id)}
                 className={`shrink-0 h-11 px-4 rounded-full border ${d.id === toDept
                   ? 'bg-amber text-bg border-amber font-bold' : 'border-line text-dim'}`}>
@@ -363,10 +380,10 @@ export default function Store({ boot }) {
         const active =
           mode === 'receive' ? { title: 'Received into store', empty: 'Nothing received yet.' }
           : mode === 'disburse' && toDept
-            ? { title: `Issued — ${departments.find(d => d.id === toDept)?.name || ''}`,
+            ? { title: `Issued — ${allDepartments.find(d => d.id === toDept)?.name || ''}`,
                 empty: 'Nothing issued to this department yet.' }
           : mode === 'move' && fromDept
-            ? { title: `Moved from ${departments.find(d => d.id === fromDept)?.name || ''}`,
+            ? { title: `Moved from ${allDepartments.find(d => d.id === fromDept)?.name || ''}`,
                 empty: 'Nothing moved from this department yet.' }
           : mode === 'convert' && convertLoc
             ? { title: `Conversions — ${departments.find(d => d.id === convertLoc)?.name || ''}`,
