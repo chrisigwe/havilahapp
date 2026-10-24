@@ -737,6 +737,35 @@ export async function deactivateCustomer(customerId) {
   if (error) throw error
 }
 
+// Everything that has ARRIVED anywhere, newest first (Chris, 24 October
+// 2026). The Stock page could say what is on a shelf but never how it
+// got there — so stock added to the wrong department looked exactly like
+// stock that had always been there, and the only clue was a figure going
+// below zero somewhere else.
+//
+// Every movement with a to_location: supplies received into the store,
+// transfers and issues out to departments, and the incoming half of a
+// conversion. from_location says where it came from, which is what makes
+// a wrong department obvious at a glance.
+export async function loadRecentlyAdded(branchId, locationId = null, days = 30) {
+  const since = new Date(Date.now() - days * 864e5).toISOString().slice(0, 10)
+  let q = supabase.from('stock_movements')
+    .select(`id, business_date, created_at, qty, movement_type, note,
+             from_location, to_location, received_by,
+             stock_items(name),
+             staff:recorded_by(full_name), receiver:received_by(full_name)`)
+    .eq('branch_id', branchId)
+    .not('to_location', 'is', null)
+    .gte('business_date', since)
+  if (locationId) q = q.eq('to_location', locationId)
+  const { data, error } = await q
+    .order('business_date', { ascending: false })
+    .order('created_at', { ascending: false })
+    .limit(300)
+  if (error) throw error
+  return data || []
+}
+
 // what a department has received from the store — transfers and
 // issues, newest first. Used on the Store screen's history section.
 export async function loadDepartmentHistory(branchId, locationId, days = 60) {

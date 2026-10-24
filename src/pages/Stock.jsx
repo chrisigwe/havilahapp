@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from 'react'
-import { loadStockMap } from '../lib/data'
+import { loadStockMap, loadRecentlyAdded } from '../lib/data'
 import { OPENS_ON_ALL, is } from '../lib/roles'
 import Notice from '../components/Notice'
+import { tracked } from '../lib/loadfail'
 
 export default function Stock({ boot }) {
   const { staff, locations, items, seesAll } = boot
@@ -23,6 +24,19 @@ export default function Stock({ boot }) {
   const [show, setShow] = useState('all')     // all | out | negative
   const [sort, setSort] = useState('name')    // name | lowest
   const [openItem, setOpenItem] = useState(null)
+
+  // What arrived, and where (Chris, 24 October 2026). The page could say
+  // what is on a shelf but never how it got there, so stock added to the
+  // wrong department looked identical to stock that had always been
+  // there — the only clue was a figure going below zero somewhere else.
+  const [added, setAdded] = useState(null)
+  const [addedErr, setAddedErr] = useState(null)
+  useEffect(() => {
+    if (show !== 'added') return
+    setAdded(null); setAddedErr(null)
+    tracked('What was recently added', loadRecentlyAdded(staff.branch_id, locId === 'all' ? null : locId, 30))
+      .then(setAdded).catch(e => setAddedErr(e.message || 'could not load'))
+  }, [show, locId, staff.branch_id])
 
   // Read-only for everyone. Auditors used to record PR/damage write-offs
   // here; removed in 255 — an auditor reviews write-offs and shouldn't
@@ -126,10 +140,13 @@ export default function Stock({ boot }) {
         )}
       </section>
 
-      <div className="flex gap-2 mt-3">
-        {[['all', 'All'], ['out', 'At zero'], ['negative', 'Below zero']].map(([k, label]) => (
+      {/* Scrollable rather than four equal buttons: at 320px "Below zero"
+          and "Recently added" cannot both fit on a quarter of the width,
+          and a clipped label is worse than a scroll. */}
+      <div className="flex gap-2 mt-3 overflow-x-auto -mx-1 px-1 pb-1">
+        {[['all', 'All'], ['added', 'Recently added'], ['out', 'At zero'], ['negative', 'Below zero']].map(([k, label]) => (
           <button key={k} onClick={() => setShow(k)}
-            className={`flex-1 h-10 rounded-xl border text-sm font-semibold ${show === k
+            className={`shrink-0 h-10 px-4 rounded-xl border text-sm font-semibold ${show === k
               ? (k === 'negative' ? 'bg-raise border-clay text-clay' : 'bg-raise border-amber text-amber')
               : 'border-line text-dim'}`}>
             {label}
@@ -137,6 +154,10 @@ export default function Stock({ boot }) {
         ))}
       </div>
 
+      {show === 'added' ? (
+        <AddedFeed rows={added} err={addedErr} locations={locations} locId={locId} />
+      ) : (
+      <>
       <div className="flex items-baseline justify-between mt-3">
         <p className="text-dim text-sm">
           {rows.length} {rows.length === 1 ? 'item' : 'items'}
@@ -204,6 +225,100 @@ export default function Stock({ boot }) {
       <p className="text-dim text-xs mt-6">
         These are the figures the book holds right now, not as at any past day —
         anything recorded late is already counted in them.
+      </p>
+      </>
+      )}
+    </div>
+  )
+}
+
+// How a movement reads in words. The type alone ("transfer") says
+// nothing to the person looking for a mistake; where it came FROM is
+// what makes a wrong department obvious.
+const MOVE_WORDS = {
+  restock: 'Received from a supplier',
+  transfer: 'Moved in',
+  issue: 'Issued',
+  convert: 'Made here',
+  adjustment: 'Adjusted',
+  complimentary: 'Complimentary',
+  damage: 'Damage',
+  kitchen_use: 'Kitchen use',
+  sale: 'Sale',
+}
+
+function AddedFeed({ rows, err, locations, locId }) {
+  if (err) {
+    return (
+      <Notice tone="problem" title="What was added could not be loaded" className="mt-3">
+        <p>This is not the same as nothing having been added. Tell the GM.</p>
+        <p className="text-xs mt-2 break-words">{err}</p>
+      </Notice>
+    )
+  }
+  if (rows === null) return <p className="text-dim mt-4">Loading…</p>
+  if (!rows.length) {
+    return (
+      <p className="py-8 text-center text-dim">
+        Nothing has arrived {locId === 'all' ? 'anywhere' : 'here'} in the last 30 days.
+      </p>
+    )
+  }
+  const nameOf = (id) => (locations || []).find(l => l.id === id)?.name || null
+
+  const days = []
+  const seen = new Map()
+  for (const r of rows) {
+    let d = seen.get(r.business_date)
+    if (!d) { d = { date: r.business_date, items: [] }; seen.set(r.business_date, d); days.push(d) }
+    d.items.push(r)
+  }
+
+  return (
+    <div className="mt-3">
+      <p className="text-dim text-sm">
+        Everything that arrived {locId === 'all' ? 'at any department' : 'here'} in the
+        last 30 days, newest first.
+      </p>
+      {days.map(d => (
+        <section key={d.date} className="mt-3">
+          <h3 className="text-dim text-sm">
+            {new Date(d.date + 'T12:00:00').toLocaleDateString('en-NG',
+              { weekday: 'short', day: 'numeric', month: 'short' })}
+          </h3>
+          <ul className="mt-1 divide-y divide-line/60 rounded-2xl border border-line bg-surface px-4">
+            {d.items.map(r => {
+              const to = nameOf(r.to_location)
+              const from = nameOf(r.from_location)
+              return (
+                <li key={r.id} className="py-3">
+                  <div className="flex items-baseline gap-3">
+                    <span className="flex-1 min-w-0 font-semibold break-words">
+                      {r.stock_items?.name || 'Item'}
+                    </span>
+                    <span className="tnum font-bold text-leaf shrink-0">+{r.qty}</span>
+                  </div>
+                  <div className="text-dim text-sm break-words">
+                    {MOVE_WORDS[r.movement_type] || r.movement_type}
+                    {to ? ` into ${to}` : ''}
+                    {from ? ` · from ${from}` : ''}
+                  </div>
+                  <div className="text-dim text-sm break-words">
+                    {r.receiver?.full_name
+                      ? `Received by ${r.receiver.full_name}`
+                      : 'Nobody named as receiving it'}
+                    {r.staff?.full_name ? ` · recorded by ${r.staff.full_name}` : ''}
+                  </div>
+                  {r.note && <div className="text-dim text-xs break-words mt-0.5">{r.note}</div>}
+                </li>
+              )
+            })}
+          </ul>
+        </section>
+      ))}
+      <p className="text-dim text-xs mt-6">
+        Arrived at the wrong department? Corrections → Entries can move it to the
+        right one, or delete it.
       </p>
     </div>
   )
