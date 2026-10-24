@@ -2693,7 +2693,7 @@ export async function loadRoomsSoldInMonth(branchId, date) {
 // rate/cycle fields the correction sheet has to pre-fill.
 export async function loadLiveStays(branchId) {
   const { data, error } = await supabase.from('stays')
-    .select(`id, status, check_in_date, scheduled_out, daily_rate, billing_cycle,
+    .select(`id, status, check_in_date, scheduled_out, checked_in_at, daily_rate, billing_cycle,
              guest_id, rooms(room_number, is_internal), guests!guest_id(id, full_name, phone)`)
     .eq('branch_id', branchId).in('status', ['occupied', 'reserved'])
     .order('check_in_date', { ascending: false })
@@ -2716,10 +2716,30 @@ export async function updateGuestIdentity(guestId, { fullName, phone }) {
 // it. The stays_no_date_overlap exclusion constraint still guards the
 // room, so a correction that would double-book comes back as a
 // database error rather than silently corrupting the board.
-export async function correctStayDates({ stayId, checkIn, scheduledOut }) {
-  const { error } = await supabase.from('stays')
-    .update({ check_in_date: checkIn, scheduled_out: scheduledOut }).eq('id', stayId)
+// Correcting a stay's dates and arrival time (568/569).
+//
+// This replaced a bare UPDATE on stays. The Reception tab told the clerk
+// "Moving the dates is checked against the room's other bookings — if it
+// would clash, the save is refused and nothing changes." Nothing checked
+// anything: there was no overlap trigger on the table and the update
+// went straight through. The screen had been promising a guard it did
+// not have, which is worse than having none — a clerk told the app will
+// catch a clash stops looking for one.
+//
+// correct_check_in does the checking, refuses without a reason, and
+// returns what the move does to the nights and the bill. Call it with
+// preview: true first and nothing is written.
+export async function correctStay({ stayId, checkIn, scheduledOut, time, reason, preview = false }) {
+  const { data, error } = await supabase.rpc('correct_check_in', {
+    p_stay: stayId,
+    p_date: checkIn || null,
+    p_out: scheduledOut || null,
+    p_time: time || null,
+    p_reason: reason || null,
+    p_preview: !!preview,
+  })
   if (error) throw error
+  return data
 }
 
 // Duplicate guest candidates — see migration 229. Returns PAIRS with a

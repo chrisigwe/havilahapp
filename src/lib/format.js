@@ -136,6 +136,14 @@ export function friendlyStayError(error) {
 // Clock time of an actual check-in, in Lagos time. Returns '' when
 // the stay predates the checked_in_at column so callers can simply
 // omit it rather than print a fabricated time.
+// The same instant as lagosTime, but as an <input type="time"> wants
+// it: 24-hour HH:MM, Lagos. lagosTime is for reading ("2:00 PM"); this
+// is for editing, and the two must not be confused — a time input fed
+// "2:00 PM" simply comes up empty (24 October 2026).
+export const lagosHHMM = (ts) => !ts ? '' : new Date(ts).toLocaleTimeString('en-GB', {
+  timeZone: 'Africa/Lagos', hour: '2-digit', minute: '2-digit', hour12: false,
+})
+
 export const lagosTime = (ts) => !ts ? '' : new Date(ts).toLocaleTimeString('en-NG', {
   timeZone: 'Africa/Lagos', hour: '2-digit', minute: '2-digit', hour12: true,
 })

@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { naira, tierLabel, methodLabel, lagosDaysAgo, lagosToday, friendlyStayError } from '../lib/format'
+import { naira, tierLabel, methodLabel, lagosDaysAgo, lagosToday, friendlyStayError, lagosHHMM } from '../lib/format'
 import { loadActivity, deleteEntry, updateEntry, loadAudit,
          loadSalePayments, updateSaleWithPayments,
-         loadLiveStays, updateGuestIdentity, correctStayDates,
+         loadLiveStays, updateGuestIdentity, correctStay,
          findDuplicateGuests, mergeGuests, dismissDuplicatePair,
          findDuplicateCustomers, mergeCustomers } from '../lib/data'
 import { useToast } from '../components/Toast'
@@ -146,6 +146,11 @@ export default function Corrections({ boot }) {
   const [manualCust, setManualCust] = useState(false)
   const [liveStays, setLiveStays] = useState(null)
   const [guestEdit, setGuestEdit] = useState(null)
+  // What moving the dates would do to the bill, fetched before it is
+  // written (569). Nights come off the arrival date, so a correction
+  // here is a change to what the guest owes — it should not happen
+  // behind a Save button with nothing shown.
+  const [stayPreview, setStayPreview] = useState(null)
 
   // Reset the department chip on branch switch. Holding the previous
   // branch's location id makes loadActivity query for a department
@@ -393,20 +398,40 @@ export default function Corrections({ boot }) {
   const visibleStays = (liveStays || [])
     .filter(s2 => seesInternalRooms || !s2.rooms?.is_internal)
 
+  // Whether anything about the STAY moved, as opposed to the guest's
+  // name or phone, which belong to the person rather than this visit.
+  const stayMoved = (g) => !!g && (g.checkIn !== g.origCheckIn
+    || g.scheduledOut !== g.origScheduledOut
+    || (g.time || '') !== (g.origTime || ''))
+
   async function saveGuestEdit() {
+    const g = guestEdit
+    // Dates moved and the figures have not been read yet: fetch them and
+    // stop. The second tap is the one that writes.
+    if (stayMoved(g) && !stayPreview) {
+      setBusy(true)
+      try {
+        setStayPreview(await correctStay({
+          stayId: g.stayId, checkIn: g.checkIn, scheduledOut: g.scheduledOut,
+          time: g.time, preview: true,
+        }))
+      } catch (e) { toast(friendlyStayError(e) || e.message, 'error') }
+      setBusy(false)
+      return
+    }
     setBusy(true)
     try {
-      const g = guestEdit
-      if (g.fullName.trim() !== g.origName) {
-        await updateGuestIdentity(g.guestId, { fullName: g.fullName.trim(), phone: g.phone })
-      } else if ((g.phone || '') !== (g.origPhone || '')) {
+      if (g.fullName.trim() !== g.origName || (g.phone || '') !== (g.origPhone || '')) {
         await updateGuestIdentity(g.guestId, { fullName: g.fullName.trim(), phone: g.phone })
       }
-      if (g.checkIn !== g.origCheckIn || g.scheduledOut !== g.origScheduledOut) {
-        await correctStayDates({ stayId: g.stayId, checkIn: g.checkIn, scheduledOut: g.scheduledOut })
+      if (stayMoved(g)) {
+        await correctStay({
+          stayId: g.stayId, checkIn: g.checkIn, scheduledOut: g.scheduledOut,
+          time: g.time, reason: g.reason,
+        })
       }
       toast('Correction saved', 'success')
-      setGuestEdit(null)
+      setGuestEdit(null); setStayPreview(null)
       refreshGuests()
     } catch (e) { toast(friendlyStayError(e) || e.message, 'error') }
     setBusy(false)
@@ -501,6 +526,8 @@ export default function Corrections({ boot }) {
                     phone: s2.guests?.phone || '', origPhone: s2.guests?.phone || '',
                     checkIn: s2.check_in_date, origCheckIn: s2.check_in_date,
                     scheduledOut: s2.scheduled_out, origScheduledOut: s2.scheduled_out,
+                    time: lagosHHMM(s2.checked_in_at), origTime: lagosHHMM(s2.checked_in_at),
+                    reason: '',
                     room: s2.rooms?.room_number,
                   })}
                   className="shrink-0 h-10 px-4 rounded-xl border border-amber text-amber font-semibold text-sm">
@@ -1018,7 +1045,7 @@ export default function Corrections({ boot }) {
       )}
 
       {guestEdit && (
-        <Sheet onClose={() => setGuestEdit(null)}>
+        <Sheet onClose={() => { setGuestEdit(null); setStayPreview(null) }}>
           <h3 className="text-xl font-bold">Correct guest details</h3>
           <p className="text-dim text-sm mt-1 mb-4">
             Room {guestEdit.room || '—'}. The name and phone belong to the guest
@@ -1038,23 +1065,84 @@ export default function Corrections({ boot }) {
 
           <div className="text-dim text-sm mt-3 mb-1">Check-in date</div>
           <input type="date" value={guestEdit.checkIn}
-            onChange={e => setGuestEdit(g => ({ ...g, checkIn: e.target.value }))}
+            onChange={e => { setStayPreview(null); setGuestEdit(g => ({ ...g, checkIn: e.target.value })) }}
             className="h-12 px-3 rounded-xl bg-raise border border-line tnum" />
 
           <div className="text-dim text-sm mt-3 mb-1">Scheduled check-out</div>
           <input type="date" value={guestEdit.scheduledOut} min={guestEdit.checkIn}
-            onChange={e => setGuestEdit(g => ({ ...g, scheduledOut: e.target.value }))}
+            onChange={e => { setStayPreview(null); setGuestEdit(g => ({ ...g, scheduledOut: e.target.value })) }}
             className="h-12 px-3 rounded-xl bg-raise border border-line tnum" />
 
+          <div className="text-dim text-sm mt-3 mb-1">Arrival time</div>
+          <input type="time" value={guestEdit.time || ''}
+            onChange={e => { setStayPreview(null); setGuestEdit(g => ({ ...g, time: e.target.value })) }}
+            className="h-12 px-3 rounded-xl bg-raise border border-line tnum" />
+          <p className="text-dim text-xs mt-1">
+            Only the clock time. Moving it does not change what is charged.
+          </p>
+
+          {stayMoved(guestEdit) && (
+            <>
+              <div className="text-dim text-sm mt-3 mb-1">Why</div>
+              <input value={guestEdit.reason || ''}
+                onChange={e => setGuestEdit(g => ({ ...g, reason: e.target.value }))}
+                placeholder="Keyed the wrong arrival day"
+                className="h-12 w-full px-3 rounded-xl bg-raise border border-line placeholder:text-dim" />
+              <p className="text-dim text-xs mt-1">
+                Goes on the record with your name, beside the change itself.
+              </p>
+            </>
+          )}
+
+          {/* What it does to the money, read BEFORE it is written (569).
+              Nights come off the arrival date, so moving it moves the
+              bill — and the old screen moved it silently. */}
+          {stayPreview && (
+            <Notice tone={Math.abs(Number(stayPreview.difference)) > 0.009 ? 'warn' : 'note'}
+              title={Math.abs(Number(stayPreview.difference)) > 0.009
+                ? 'This changes what the guest owes'
+                : 'This does not change the bill'}
+              className="mt-4">
+              <div className="space-y-1">
+                <div className="flex justify-between gap-3">
+                  <span>Nights</span>
+                  <span className="tnum shrink-0">
+                    {stayPreview.nights_now} → <b>{stayPreview.nights_after}</b>
+                  </span>
+                </div>
+                <div className="flex justify-between gap-3">
+                  <span>Room charge</span>
+                  <span className="tnum shrink-0">
+                    {naira(stayPreview.room_charge_now)} → <b>{naira(stayPreview.room_charge_after)}</b>
+                  </span>
+                </div>
+                {Math.abs(Number(stayPreview.difference)) > 0.009 && (
+                  <div className="flex justify-between gap-3 pt-1 border-t border-line/60">
+                    <span>Difference</span>
+                    <span className={`tnum font-bold shrink-0 ${
+                      Number(stayPreview.difference) > 0 ? 'text-clay' : 'text-leaf'}`}>
+                      {Number(stayPreview.difference) > 0 ? '+' : '−'}
+                      {naira(Math.abs(Number(stayPreview.difference)))}
+                    </span>
+                  </div>
+                )}
+              </div>
+            </Notice>
+          )}
+
           <p className="text-dim text-xs mt-3">
-            Moving the dates is checked against the room's other bookings — if it
-            would clash, the save is refused and nothing changes.
+            Moving the dates is checked against the room's other bookings. If it
+            would put this guest on top of another, the save is refused and
+            nothing changes.
           </p>
 
           <button onClick={saveGuestEdit}
-            disabled={busy || !guestEdit.fullName.trim() || !guestEdit.checkIn || !guestEdit.scheduledOut}
+            disabled={busy || !guestEdit.fullName.trim() || !guestEdit.checkIn || !guestEdit.scheduledOut
+                      || (stayMoved(guestEdit) && !!stayPreview && !guestEdit.reason?.trim())}
             className="mt-5 h-12 w-full rounded-xl bg-amber text-bg font-bold disabled:opacity-40">
-            {busy ? 'Saving…' : 'Save correction'}
+            {busy ? 'Saving…'
+              : stayMoved(guestEdit) && !stayPreview ? 'Check what this changes'
+              : 'Save correction'}
           </button>
         </Sheet>
       )}
