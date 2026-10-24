@@ -241,19 +241,32 @@ export default function Stock({ boot }) {
 // How a movement reads in words. The type alone ("transfer") says
 // nothing to the person looking for a mistake; where it came FROM is
 // what makes a wrong department obvious.
-const MOVE_WORDS = {
-  restock: 'Received from a supplier',
-  transfer: 'Moved in',
-  issue: 'Issued',
-  convert: 'Made here',
-  adjustment: 'Adjusted',
-  complimentary: 'Complimentary',
-  damage: 'Damage',
-  kitchen_use: 'Kitchen use',
-  sale: 'Sale',
+//
+// Built as a whole sentence rather than a word plus " into X", which
+// produced "Moved in into OpenBar" (25 October 2026).
+function movementPhrase(type, to, from) {
+  const at = to || 'nowhere'
+  const tail = from ? ` · from ${from}` : ''
+  switch (type) {
+    case 'restock':     return `Received into ${at}${from ? tail : ' · from a supplier'}`
+    case 'transfer':    return `Moved into ${at}${tail}`
+    case 'issue':       return `Issued to ${at}${tail}`
+    case 'convert':
+    case 'conversion':  return `Made in ${at}${tail}`
+    case 'adjustment':  return `Adjusted at ${at}${tail}`
+    case 'complimentary': return `Complimentary at ${at}${tail}`
+    case 'damage':      return `Damage at ${at}${tail}`
+    case 'kitchen_use': return `Kitchen use at ${at}${tail}`
+    case 'sale':        return `Sale at ${at}${tail}`
+    default:            return `Into ${at}${tail}`
+  }
 }
 
 function AddedFeed({ rows, err, locations, locId }) {
+  // Thirty days of arrivals is a long scroll, so each day folds (Chris,
+  // 25 October 2026). Newest open, the rest shut — the same shape
+  // Variances and Corrections use, so one habit covers all three.
+  const [openDays, setOpenDays] = useState(null)
   if (err) {
     return (
       <Notice tone="problem" title="What was added could not be loaded" className="mt-3">
@@ -280,19 +293,47 @@ function AddedFeed({ rows, err, locations, locId }) {
     d.items.push(r)
   }
 
+  const first = days[0]?.date
+  const isOpen = (d) => openDays ? openDays.has(d) : d === first
+  const toggle = (d) => setOpenDays(cur => {
+    const next = cur ? new Set(cur) : new Set(first ? [first] : [])
+    if (next.has(d)) next.delete(d); else next.add(d)
+    return next
+  })
+
   return (
     <div className="mt-3">
       <p className="text-dim text-sm">
         Everything that arrived {locId === 'all' ? 'at any department' : 'here'} in the
         last 30 days, newest first.
       </p>
-      {days.map(d => (
-        <section key={d.date} className="mt-3">
-          <h3 className="text-dim text-sm">
-            {new Date(d.date + 'T12:00:00').toLocaleDateString('en-NG',
-              { weekday: 'short', day: 'numeric', month: 'short' })}
-          </h3>
-          <ul className="mt-1 divide-y divide-line/60 rounded-2xl border border-line bg-surface px-4">
+      {days.map(d => {
+        const open = isOpen(d.date)
+        const units = d.items.reduce((t, r) => t + Number(r.qty || 0), 0)
+        return (
+        <section key={d.date} className="mt-3 rounded-2xl border border-line bg-surface">
+          <button type="button" onClick={() => toggle(d.date)} aria-expanded={open}
+            className="w-full px-4 py-3 flex items-baseline justify-between gap-3 text-left">
+            <span className="min-w-0">
+              <span className="font-semibold">
+                {new Date(d.date + 'T12:00:00').toLocaleDateString('en-NG',
+                  { weekday: 'short', day: 'numeric', month: 'short' })}
+              </span>
+              <span className="text-dim text-sm block">
+                {d.items.length} {d.items.length === 1 ? 'arrival' : 'arrivals'}
+              </span>
+            </span>
+            <span className="flex items-baseline gap-2 shrink-0">
+              <span className="tnum font-bold text-leaf">+{units}</span>
+              <svg viewBox="0 0 20 20" aria-hidden="true"
+                   className={`w-4 h-4 text-dim transition-transform ${open ? 'rotate-180' : ''}`}
+                   fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M5 8l5 5 5-5" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+            </span>
+          </button>
+          {open && (
+          <ul className="px-4 pb-1 border-t border-line divide-y divide-line/60">
             {d.items.map(r => {
               const to = nameOf(r.to_location)
               const from = nameOf(r.from_location)
@@ -305,9 +346,7 @@ function AddedFeed({ rows, err, locations, locId }) {
                     <span className="tnum font-bold text-leaf shrink-0">+{r.qty}</span>
                   </div>
                   <div className="text-dim text-sm break-words">
-                    {MOVE_WORDS[r.movement_type] || r.movement_type}
-                    {to ? ` into ${to}` : ''}
-                    {from ? ` · from ${from}` : ''}
+                    {movementPhrase(r.movement_type, to, from)}
                   </div>
                   <div className="text-dim text-sm break-words">
                     {r.received_by
@@ -320,8 +359,10 @@ function AddedFeed({ rows, err, locations, locId }) {
               )
             })}
           </ul>
+          )}
         </section>
-      ))}
+        )
+      })}
       <p className="text-dim text-xs mt-6">
         Arrived at the wrong department? Corrections → Entries can move it to the
         right one, or delete it.
