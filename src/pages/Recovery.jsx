@@ -56,6 +56,11 @@ export default function Recovery({ boot }) {
   const receptionInView = locId === 'all'
     || /reception/i.test((locations || []).find(l => l.id === locId)?.name || '')
   const [chainFor, setChainFor] = useState(null)   // customer name whose chain is open
+  // Sixty days of repayments is a long scroll, so each day folds (Chris,
+  // 25 October 2026). Newest open, the rest shut — the same shape
+  // Variances, Corrections and the Stock feed use. One set of open days
+  // serves both halves of this page; they are never shown at once.
+  const [openDays, setOpenDays] = useState(null)
   const [roomPayments, setRoomPayments] = useState(null)
   const canDeleteRoomPayment = is(staff.role, SUPERVISOR)
   const canDeleteRepayment = is(staff.role, SUPERVISOR)
@@ -163,6 +168,16 @@ export default function Recovery({ boot }) {
     }
     return [...m.entries()]
   }, [roomRows])
+
+  const firstDay = byDay[0]?.[0] || roomByDay[0]?.[0]
+  const dayOpen = (d) => openDays ? openDays.has(d) : d === firstDay
+  const toggleDay = (d) => setOpenDays(cur => {
+    const next = cur ? new Set(cur) : new Set(firstDay ? [firstDay] : [])
+    if (next.has(d)) next.delete(d); else next.add(d)
+    return next
+  })
+  const dayLabel = (d) => new Date(d + 'T12:00:00')
+    .toLocaleDateString('en-NG', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })
 
   if (!rows) return <p className="px-5 text-dim">Loading…</p>
   const total = rows.reduce((s, r) => s + Number(r.amount), 0)
@@ -370,13 +385,30 @@ export default function Recovery({ boot }) {
           locationId={locId === 'all' ? null : locId} />
       )}
 
-      {byDay.map(([day, items]) => (
-        <section key={day} className="mt-4">
-          <h3 className="text-dim text-sm">
-            {new Date(day + 'T12:00:00').toLocaleDateString('en-NG',
-              { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })}
-          </h3>
-          <ul className="divide-y divide-line/60">
+      {byDay.map(([day, items]) => {
+        const open = dayOpen(day)
+        const dayTotal = items.reduce((t, r) => t + Number(r.amount || 0), 0)
+        return (
+        <section key={day} className="mt-4 rounded-2xl border border-line bg-surface">
+          <button type="button" onClick={() => toggleDay(day)} aria-expanded={open}
+            className="w-full px-4 py-3 flex items-baseline justify-between gap-3 text-left">
+            <span className="min-w-0">
+              <span className="font-semibold">{dayLabel(day)}</span>
+              <span className="text-dim text-sm block">
+                {items.length} {items.length === 1 ? 'payment' : 'payments'}
+              </span>
+            </span>
+            <span className="flex items-baseline gap-2 shrink-0">
+              <span className="tnum font-bold text-leaf">{naira(dayTotal)}</span>
+              <svg viewBox="0 0 20 20" aria-hidden="true"
+                   className={`w-4 h-4 text-dim transition-transform ${open ? 'rotate-180' : ''}`}
+                   fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M5 8l5 5 5-5" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+            </span>
+          </button>
+          {open && (
+          <ul className="px-4 pb-1 border-t border-line divide-y divide-line/60">
             {items.map(r => (
               <li key={r.id} className="py-3">
                 <div className="flex items-baseline gap-3">
@@ -414,8 +446,10 @@ export default function Recovery({ boot }) {
               </li>
             ))}
           </ul>
+          )}
         </section>
-      ))}
+        )
+      })}
 
       {!rows.length && <p className="py-8 text-center text-dim">No payments recorded yet.</p>}
       </>
@@ -454,13 +488,30 @@ export default function Recovery({ boot }) {
             <p className="text-dim py-6 text-center">Nothing recovered at Reception on {dayFilter}.</p>
           )}
 
-          {roomByDay.map(([day, items]) => (
-            <section key={day} className="mt-4">
-              <h3 className="text-dim text-sm">
-                {new Date(day + 'T12:00:00').toLocaleDateString('en-NG',
-                  { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })}
-              </h3>
-              <ul className="divide-y divide-line/60">
+          {roomByDay.map(([day, items]) => {
+            const open = dayOpen(day)
+            const dayTotal = items.reduce((t, p) => t + Number(p.amount || 0), 0)
+            return (
+            <section key={day} className="mt-4 rounded-2xl border border-line bg-surface">
+              <button type="button" onClick={() => toggleDay(day)} aria-expanded={open}
+                className="w-full px-4 py-3 flex items-baseline justify-between gap-3 text-left">
+                <span className="min-w-0">
+                  <span className="font-semibold">{dayLabel(day)}</span>
+                  <span className="text-dim text-sm block">
+                    {items.length} {items.length === 1 ? 'payment' : 'payments'}
+                  </span>
+                </span>
+                <span className="flex items-baseline gap-2 shrink-0">
+                  <span className="tnum font-bold text-leaf">{naira(dayTotal)}</span>
+                  <svg viewBox="0 0 20 20" aria-hidden="true"
+                       className={`w-4 h-4 text-dim transition-transform ${open ? 'rotate-180' : ''}`}
+                       fill="none" stroke="currentColor" strokeWidth="2">
+                    <path d="M5 8l5 5 5-5" strokeLinecap="round" strokeLinejoin="round" />
+                  </svg>
+                </span>
+              </button>
+              {open && (
+              <ul className="px-4 pb-1 border-t border-line divide-y divide-line/60">
                 {items.map(p => (
                   <li key={p.id} className="py-3">
                     <div className="flex items-baseline gap-3">
@@ -494,8 +545,10 @@ export default function Recovery({ boot }) {
                   </li>
                 ))}
               </ul>
+              )}
             </section>
-          ))}
+            )
+          })}
 
           {roomPayments !== null && !roomPayments.length && (
             <p className="py-8 text-center text-dim">No room payments recorded yet.</p>

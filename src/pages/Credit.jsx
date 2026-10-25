@@ -143,12 +143,22 @@ export default function Credit({ boot }) {
     })
   }, [staff.branch_id, locId, isEditor])
 
+  // Opens FIRST, then fills (25 October 2026). It used to await the
+  // whole ledger before putting anything on screen, and that query has
+  // no limit — a staff account with a year of credit pulls every sale
+  // they have ever had. On a slow connection the tap simply did
+  // nothing, which reads as the app freezing. Now the statement opens
+  // immediately and says it is loading.
   async function openCustomer(c) {
+    setOpen({ customer: c, ledger: null, error: null })
     try {
       const ledger = await loadCustomerLedger(staff.branch_id, c.customer_id, locId === 'all' ? null : locId,
         isEditor ? (c.staff_id || null) : null)
-      setOpen({ customer: c, ledger })
-    } catch (e) { toast(e.message, 'error') }
+      setOpen(o => (o && o.customer.customer_id === c.customer_id) ? { ...o, ledger } : o)
+    } catch (e) {
+      setOpen(o => (o && o.customer.customer_id === c.customer_id)
+        ? { ...o, error: e.message || 'could not load' } : o)
+    }
   }
 
   useEffect(() => {
@@ -840,6 +850,17 @@ export default function Credit({ boot }) {
                 </div>
               </div>
 
+              {open.error && (
+                <p className="text-clay mt-6">
+                  This statement could not be loaded — this is not the same as
+                  there being nothing on it.
+                  <span className="block text-xs mt-1 break-words">{open.error}</span>
+                </p>
+              )}
+              {!open.ledger && !open.error && (
+                <p className="text-dim mt-6">Loading this account…</p>
+              )}
+              {open.ledger && (<>
               <h3 className="mt-6 mb-2 font-bold">Goods taken on credit</h3>
               <table className="invoice-table">
                 <thead>
@@ -925,11 +946,13 @@ export default function Credit({ boot }) {
                 Prepared from the Havilah inventory system. Please settle at the front desk
                 or with the store manager.
               </p>
+              </>)}
             </div>
           </div>
 
           <div className="p-5 border-t border-line flex gap-3 print:hidden">
-            <button onClick={() => savePdf(accountStatementPdf({
+            <button disabled={!open.ledger}
+              onClick={() => savePdf(accountStatementPdf({
               branchName: boot.branchName,
               where: locById[locId]?.name,
               customerName: open.customer.name,
@@ -947,7 +970,7 @@ export default function Credit({ boot }) {
               paidTotal: open.customer.repaid,
               balance: open.customer.balance,
             }), `Statement ${open.customer.name}`)}
-              className="flex-1 h-14 rounded-2xl border border-line font-bold">Save / share PDF</button>
+              className="flex-1 h-14 rounded-2xl border border-line font-bold disabled:opacity-40">Save / share PDF</button>
             {(() => {
               const hiddenForRole = staff.role === 'auditor'
               // Awka storekeeper (or anyone in NO_ON_BEHALF) can't

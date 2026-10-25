@@ -83,8 +83,13 @@ export default function CreditChain({ branchId, customerId, days = 120, classNam
               {/* The answer to the question both pages were missing. */}
               {left <= 0.009 ? (
                 <div className="text-leaf text-sm font-semibold">
-                  Recovered {r.cleared_on ? shortDate(r.cleared_on) : ''}
-                  {r.cleared_by ? ` · ${methodLabel[r.cleared_by] || r.cleared_by}` : ''}
+                  {/* No date means no repayment on or after the day it was
+                      taken cleared it — they were already in credit. Saying
+                      that beats printing a date that cannot be true (573). */}
+                  {r.cleared_on
+                    ? <>Recovered {shortDate(r.cleared_on)}
+                        {r.cleared_by ? ` · ${methodLabel[r.cleared_by] || r.cleared_by}` : ''}</>
+                    : 'Covered — they were already in credit'}
                 </div>
               ) : (
                 <div className="text-clay text-sm font-semibold tnum">
