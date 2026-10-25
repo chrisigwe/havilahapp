@@ -177,8 +177,8 @@ export default function Catalog({ boot, onChanged }) {
       )}
 
       {(edit || adding) && (
-        <div className="fixed inset-0 z-50 bg-bg flex flex-col">
-          <div className="p-5 flex-1 overflow-y-auto">
+        <div className="fixed inset-0 z-50 bg-bg h-[100dvh] flex flex-col">
+          <div className="p-5 flex-1 min-h-0 overflow-y-auto">
             <button onClick={() => { setEdit(null); setAdding(null) }} className="text-dim">Back</button>
             <h2 className="mt-3 text-2xl font-bold">{edit ? edit.name : 'New item'}</h2>
 

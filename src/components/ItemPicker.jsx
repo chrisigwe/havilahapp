@@ -28,7 +28,7 @@ export default function ItemPicker({ items, stockMap, locationId, popular = {}, 
           className="flex-1 h-13 px-4 rounded-xl bg-surface border border-line placeholder:text-dim" />
         <button onClick={onClose} className="text-dim px-2 py-3">Cancel</button>
       </div>
-      <div className="flex-1 overflow-y-auto">
+      <div className="flex-1 min-h-0 overflow-y-auto">
         {list.map(item => {
           const onHand = stockMap[`${item.id}:${locationId}`] ?? 0
           return (

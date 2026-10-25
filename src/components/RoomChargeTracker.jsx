@@ -313,8 +313,8 @@ export default function RoomChargeTracker({ branchId, locationId = null, refresh
         boxes are there because the slip and the cash are two different
         things and the till has to account for them separately. */}
     {receipt && (
-      <div className="fixed inset-0 z-50 bg-bg flex flex-col">
-        <div className="p-5 flex-1 overflow-y-auto">
+      <div className="fixed inset-0 z-50 bg-bg h-[100dvh] flex flex-col">
+        <div className="p-5 flex-1 min-h-0 overflow-y-auto">
           <button onClick={() => setReceipt(null)} className="text-dim">Back</button>
           <h2 className="mt-3 text-2xl font-bold">Record what you received</h2>
           <p className="text-dim mt-1">

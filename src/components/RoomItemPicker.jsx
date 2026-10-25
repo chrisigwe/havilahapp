@@ -25,14 +25,14 @@ export default function RoomItemPicker({ items, locations, stockMap, onPick, onC
   }, [items, locations, stockMap, q])
 
   return (
-    <div className="fixed inset-0 z-40 bg-bg flex flex-col">
+    <div className="fixed inset-0 z-40 bg-bg h-[100dvh] flex flex-col">
       <div className="p-4 flex gap-3 items-center border-b border-line">
         <input ref={inputRef} value={q} onChange={e => setQ(e.target.value)}
           placeholder="Search drinks, food, minimart"
           className="flex-1 h-13 px-4 rounded-xl bg-surface border border-line placeholder:text-dim" />
         <button onClick={onClose} className="text-dim px-2 py-3">Cancel</button>
       </div>
-      <div className="flex-1 overflow-y-auto">
+      <div className="flex-1 min-h-0 overflow-y-auto">
         {rows.map(({ item, here }) => (
           <div key={item.id} className="px-5 py-4 border-b border-line/60">
             <div className="font-semibold">{item.name}</div>

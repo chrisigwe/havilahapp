@@ -104,7 +104,7 @@ export default function Shell({ staff, tab, onTab, children,
             </select>
           )}
         </div>
-        <nav className="flex-1 overflow-y-auto px-3 pb-3">
+        <nav className="flex-1 min-h-0 overflow-y-auto px-3 pb-3">
           {tabs.filter(([k]) => k !== 'more').map(([k, label]) => {
             const active = tab === k
             return (

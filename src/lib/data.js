@@ -2252,7 +2252,7 @@ export async function loadGuestBalances(branchId, staffId) {
 export async function loadRoomPayments(branchId, days = 60) {
   const since = new Date(Date.now() - days * 864e5).toISOString().slice(0, 10)
   const { data, error } = await supabase.from('payments')
-    .select(`id, business_date, method, amount, is_overstay, remark, received_by,
+    .select(`id, stay_id, branch_id, business_date, method, amount, is_overstay, remark, received_by,
              staff:received_by(full_name),
              stays(check_in_date, scheduled_out, actual_out, rooms(room_number), guests!guest_id(full_name))`)
     .eq('branch_id', branchId).gte('business_date', since)
@@ -3491,6 +3491,60 @@ export const deleteEntry = tracked('Deleted an entry', _deleteEntry)
 export const deleteStay = tracked('Deleted a stay', _deleteStay)
 export const deleteRoomPayment = tracked('Deleted a room payment', _deleteRoomPayment)
 export const updateRoomPayment = tracked('Corrected a room payment', _updateRoomPayment)
+
+// One payment that was really two (Chris, 25 October 2026).
+//
+// A guest pays part on the card and part in cash and it gets keyed as a
+// single line. Correcting the method does not help: whichever one you
+// pick, one till is over and the other is short by the same amount.
+//
+// So the original row keeps the POS part and a second row carries the
+// cash. The guest's total is unchanged — that is checked here, not
+// trusted — and each part lands on the till that actually has it.
+//
+// Both rows carry a remark naming the other. The audit trail logs the
+// UPDATE to the original but not the INSERT of the new row
+// (log_room_payment_change is AFTER DELETE OR UPDATE), so without the
+// remark the cash row would read as money that appeared from nowhere.
+//
+// Any amount or day the user also changed is applied in the SAME update,
+// not a second one, so a half-finished correction cannot be left behind.
+async function _splitRoomPayment(row, { pos, cash, total, businessDate }) {
+  const p = Number(pos) || 0
+  const c = Number(cash) || 0
+  const t = Number(total)
+  if (!(t > 0)) throw new Error('Enter what the guest paid altogether.')
+  if (p < 0 || c < 0) throw new Error('An amount cannot be negative.')
+  if (Math.abs((p + c) - t) > 0.009) {
+    throw new Error('The card part and the cash part must add up to what the guest paid.')
+  }
+  const date = businessDate || row.business_date
+
+  // Only one part after all: there is nothing to split, so just correct
+  // the one row rather than leaving a zero-naira payment on the books.
+  if (p <= 0.009) { await _updateRoomPayment(row.id, { amount: c, method: 'cash', businessDate: date }); return }
+  if (c <= 0.009) { await _updateRoomPayment(row.id, { amount: p, method: 'pos', businessDate: date }); return }
+
+  const note = (txt) => [row.remark, txt].filter(Boolean).join(' · ')
+  const { error: e1 } = await supabase.from('payments')
+    .update({ method: 'pos', amount: p, business_date: date,
+              remark: note('split: cash part recorded separately') })
+    .eq('id', row.id)
+  if (e1) throw e1
+
+  const { error: e2 } = await supabase.from('payments').insert({
+    stay_id: row.stay_id, branch_id: row.branch_id, business_date: date,
+    method: 'cash', amount: c, received_by: row.received_by || null,
+    is_overstay: row.is_overstay ?? false,
+    remark: note('split: cash part of one payment'),
+  })
+  // The first half already went through. Say exactly where it stopped —
+  // "it failed" would send someone looking for an unchanged row.
+  if (e2) {
+    throw new Error(`The card part was saved as ${p}, but the cash part of ${c} could not be added: ${e2.message}`)
+  }
+}
+export const splitRoomPayment = tracked('Split a room payment', _splitRoomPayment)
 export const deleteOrderItem = tracked('Deleted a room-charge item', _deleteOrderItem)
 export const deleteCount = tracked('Deleted a stock count', _deleteCount)
 export const deleteRepayment = tracked('Deleted a repayment', _deleteRepayment)

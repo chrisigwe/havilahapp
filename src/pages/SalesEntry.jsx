@@ -2110,8 +2110,8 @@ function Allocation({ total, paying, methods, onCredit }) {
 
 function Sheet({ children, onClose }) {
   return (
-    <div className="fixed inset-0 z-50 bg-bg flex flex-col">
-      <div className="p-5 flex-1 overflow-y-auto">
+    <div className="fixed inset-0 z-50 bg-bg h-[100dvh] flex flex-col">
+      <div className="p-5 flex-1 min-h-0 overflow-y-auto">
         <button onClick={onClose} className="text-dim">Back</button>
         <div className="mt-3">{children}</div>
       </div>

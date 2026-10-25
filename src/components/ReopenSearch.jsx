@@ -25,7 +25,7 @@ export default function ReopenSearch({ boot, onPick, onClose }) {
   }, [q, staff.branch_id])
 
   return (
-    <div className="fixed inset-0 z-50 bg-bg flex flex-col">
+    <div className="fixed inset-0 z-50 bg-bg h-[100dvh] flex flex-col">
       <div className="p-5">
         <button onClick={onClose} className="text-dim">Close</button>
         <h2 className="mt-3 text-2xl font-bold">Recently checked out</h2>
@@ -34,7 +34,7 @@ export default function ReopenSearch({ boot, onPick, onClose }) {
           placeholder="Room number or guest name"
           className="mt-4 w-full h-14 px-4 rounded-xl bg-surface border border-line placeholder:text-dim" />
       </div>
-      <div className="flex-1 overflow-y-auto px-5">
+      <div className="flex-1 min-h-0 overflow-y-auto px-5">
         <ul className="divide-y divide-line/60">
           {(rows || []).map(s => (
             <li key={s.id}>

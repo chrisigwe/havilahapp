@@ -819,10 +819,20 @@ export default function Credit({ boot }) {
       })()}
 
       {open && (
-        <div className="fixed inset-0 z-50 bg-bg flex flex-col">
-          {/* overscroll-contain: reaching the end of this list must not
+        <div className="fixed inset-0 z-50 bg-bg h-[100dvh] flex flex-col">
+          {/* min-h-0 is the one that matters, and it is not cosmetic
+              (iPhone, 25 October 2026). `flex-1` is `flex: 1 1 0%`, but a
+              flex child still has min-height:auto — so a long statement
+              forces this box TALLER than the panel instead of scrolling
+              inside it. The panel is pinned to the viewport, so the
+              overflow goes off the top and the Back button becomes
+              unreachable: you can scroll down and never back up.
+              min-h-0 lets it shrink and scroll properly. Applied to every
+              panel of this shape in the app, not just this one.
+
+              overscroll-contain: reaching the end of this list must not
               hand the scroll to the page underneath. */}
-          <div className="flex-1 overflow-y-auto overscroll-contain">
+          <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain">
             <div className="p-5 print:hidden flex items-center justify-between">
               <button onClick={() => setOpen(null)} className="text-dim">Back</button>
               <button onClick={() => { setLinkTarget({ customerId: open.customer.customer_id, name: open.customer.name }); setLinking(true) }}
@@ -1060,8 +1070,8 @@ export default function Credit({ boot }) {
       )}
 
       {pay && (
-        <div className="fixed inset-0 z-[60] bg-bg flex flex-col">
-          <div className="p-5 flex-1 overflow-y-auto">
+        <div className="fixed inset-0 z-[60] bg-bg h-[100dvh] flex flex-col">
+          <div className="p-5 flex-1 min-h-0 overflow-y-auto">
             <button onClick={() => setPay(null)} className="text-dim">Back</button>
             <h2 className="mt-3 text-2xl font-bold">Record payment</h2>
 
@@ -1109,8 +1119,8 @@ export default function Credit({ boot }) {
         </div>
       )}
       {guestPay && (
-        <div className="fixed inset-0 z-[60] bg-bg flex flex-col">
-          <div className="p-5 flex-1 overflow-y-auto">
+        <div className="fixed inset-0 z-[60] bg-bg h-[100dvh] flex flex-col">
+          <div className="p-5 flex-1 min-h-0 overflow-y-auto">
             <button onClick={() => setGuestPay(null)} className="text-dim">Back</button>
             <h2 className="mt-3 text-2xl font-bold">{guestPay.guestName || 'Guest'}</h2>
             <p className="text-dim">Room {guestPay.roomNumber}</p>

@@ -3,7 +3,7 @@ import { naira, tierLabel, methodLabel, lagosDaysAgo, lagosToday, friendlyStayEr
 import { loadActivity, deleteEntry, updateEntry, loadAudit,
          loadSalePayments, updateSaleWithPayments,
          loadLiveStays, updateGuestIdentity, correctStay,
-         loadRoomPayments, updateRoomPayment, deleteRoomPayment, correctMovementPlace,
+         loadRoomPayments, updateRoomPayment, splitRoomPayment, deleteRoomPayment, correctMovementPlace,
          findDuplicateGuests, mergeGuests, dismissDuplicatePair,
          findDuplicateCustomers, mergeCustomers } from '../lib/data'
 import { useToast } from '../components/Toast'
@@ -161,6 +161,10 @@ export default function Corrections({ boot }) {
   const [payPicked, setPayPicked] = useState(() => new Set())
   const [payEdit, setPayEdit] = useState(null)
   const [payWipe, setPayWipe] = useState(null)
+  // Its own fold state, not the one the activity and audit lists share.
+  // The same calendar date appears in both, and one `openDays` would mean
+  // opening Tuesday here silently opened Tuesday over there.
+  const [payDays, setPayDays] = useState(null)
 
   // Reset the department chip on branch switch. Holding the previous
   // branch's location id makes loadActivity query for a department
@@ -436,13 +440,57 @@ export default function Corrections({ boot }) {
     || g.scheduledOut !== g.origScheduledOut
     || (g.time || '') !== (g.origTime || ''))
 
+  // Payments folded by the day they were taken (Chris, 25 October 2026:
+  // "Payments at the front desk is long, let the date be collapsable").
+  // Fourteen days of a busy front desk is a long scroll to reach the one
+  // line you came to fix.
+  const payByDay = useMemo(() => {
+    const m = new Map()
+    for (const r of (roomPays || [])) {
+      if (!m.has(r.business_date)) m.set(r.business_date, [])
+      m.get(r.business_date).push(r)
+    }
+    // Newest first. The mistake being corrected is nearly always recent.
+    return [...m.entries()].sort((a, b) => (a[0] < b[0] ? 1 : -1))
+  }, [roomPays])
+  const payFirstDay = payByDay.length ? payByDay[0][0] : null
+  // Today open, the rest shut, until someone touches one. A day holding a
+  // selected payment stays open whatever the fold says — collapsing the
+  // row you have ticked and then offering to delete it reads as deleting
+  // something you cannot see.
+  const payDayOpen = (d) => (payDays ? payDays.has(d) : d === payFirstDay)
+    || (roomPays || []).some(r => r.business_date === d && payPicked.has(r.id))
+  const togglePayDay = (d) => setPayDays(cur => {
+    const next = cur ? new Set(cur) : new Set(payFirstDay ? [payFirstDay] : [])
+    if (next.has(d)) next.delete(d); else next.add(d)
+    return next
+  })
+
+  // The two halves of a split, derived rather than stored twice. Keeping
+  // a separate "card" field in state would let the pair drift apart from
+  // the total and from each other.
+  const payTotal = Number(payEdit?.amount) || 0
+  const payCashPart = Math.max(0, Number(payEdit?.cash) || 0)
+  const payCardPart = payTotal - payCashPart
+  const payCardStr = payEdit?.cash === '' ? '' : String(payCardPart)
+  const paySplitOk = payEdit?.method !== 'split'
+    || (payEdit?.cash !== '' && payCashPart <= payTotal + 0.009)
+
   async function savePayEdit() {
     setBusy(true)
     try {
-      await updateRoomPayment(payEdit.id, {
-        amount: payEdit.amount, method: payEdit.method, businessDate: payEdit.date,
-      })
-      toast('Payment corrected', 'success')
+      if (payEdit.method === 'split') {
+        await splitRoomPayment(payEdit.row, {
+          pos: payCardPart, cash: payCashPart,
+          total: payTotal, businessDate: payEdit.date,
+        })
+      } else {
+        await updateRoomPayment(payEdit.id, {
+          amount: payEdit.amount, method: payEdit.method, businessDate: payEdit.date,
+        })
+      }
+      toast(payEdit.method === 'split' && payCashPart > 0.009 && payCardPart > 0.009
+        ? 'Payment split in two' : 'Payment corrected', 'success')
       setPayEdit(null); refreshRoomPays()
     } catch (e) { toast(friendlyStayError(e) || e.message, 'error') }
     setBusy(false)
@@ -632,8 +680,18 @@ export default function Corrections({ boot }) {
                 </div>
               )}
 
-              <ul className="mt-2 divide-y divide-line/60 rounded-2xl border border-line bg-surface px-4">
-                {(roomPays || []).map(p2 => {
+              {payByDay.map(([day, rows]) => {
+                const dayTotal = rows.reduce((t, r) => t + Number(r.amount || 0), 0)
+                const ticked = rows.filter(r => payPicked.has(r.id)).length
+                return (
+                <DayGroup key={day} label={dayLabel(day)}
+                  sub={`${rows.length} payment${rows.length === 1 ? '' : 's'} · ${naira(dayTotal)}`}
+                  right={ticked
+                    ? <span className="text-amber text-sm font-semibold">{ticked} picked</span>
+                    : null}
+                  open={payDayOpen(day)} onToggle={() => togglePayDay(day)}>
+              <ul className="divide-y divide-line/60">
+                {rows.map(p2 => {
                   const on = payPicked.has(p2.id)
                   return (
                     <li key={p2.id} className="py-3 flex items-start gap-3">
@@ -651,8 +709,9 @@ export default function Corrections({ boot }) {
                           </span>
                           <span className="tnum font-bold shrink-0">{naira(p2.amount)}</span>
                         </div>
+                        {/* No date here: the day is the heading above. */}
                         <div className="text-dim text-sm tnum">
-                          {methodLabel[p2.method] || p2.method} · {p2.business_date}
+                          {methodLabel[p2.method] || p2.method}
                           {p2.staff?.full_name ? ` · ${p2.staff.full_name}` : ''}
                         </div>
                         {p2.remark && (
@@ -664,6 +723,9 @@ export default function Corrections({ boot }) {
                           id: p2.id, amount: String(p2.amount), method: p2.method,
                           date: p2.business_date, guest: p2.stays?.guests?.full_name || 'Guest',
                           room: p2.stays?.rooms?.room_number, orig: Number(p2.amount),
+                          // Splitting writes a second row, which needs the
+                          // stay and the branch off the original.
+                          row: p2, cash: '',
                         })}
                         className="shrink-0 h-10 px-4 rounded-xl border border-amber text-amber font-semibold text-sm">
                         Edit
@@ -672,6 +734,9 @@ export default function Corrections({ boot }) {
                   )
                 })}
               </ul>
+                </DayGroup>
+                )
+              })}
               <p className="text-dim text-xs mt-2">
                 Every change and deletion here is recorded with your name — the amount,
                 the method and the day, before and after.
@@ -1348,16 +1413,69 @@ export default function Corrections({ boot }) {
             onChange={e => setPayEdit(d => ({ ...d, amount: e.target.value }))}
             className="h-12 w-full px-3 rounded-xl bg-raise border border-line tnum" />
 
+          {/* POS, Cash, Split (Chris, 25 October 2026 — Split in place of
+              Transfer). Transfer was never a way a room bill is settled:
+              the front desk takes the card or the notes, and a transfer
+              arrives as one or the other. What was missing is the guest
+              who pays part on the card and part in cash — keyed as one
+              line, it leaves one till over and the other short. */}
           <div className="text-dim text-sm mt-3 mb-1">Paid by</div>
           <div className="flex gap-2">
-            {['pos', 'cash', 'transfer'].map(m => (
+            {/* If this row was keyed as something else — an old transfer
+                row, a writeoff — it gets its own chip rather than being
+                silently dropped, so the method on screen is the method on
+                the record and leaving it alone is a real choice. */}
+            {['pos', 'cash', 'split',
+              ...(['pos', 'cash', 'split'].includes(payEdit.row?.method) ? [] : [payEdit.row.method])
+             ].map(m => (
               <button key={m} onClick={() => setPayEdit(d => ({ ...d, method: m }))}
                 className={`flex-1 h-12 rounded-xl border font-semibold ${payEdit.method === m
                   ? 'bg-raise border-amber text-amber' : 'border-line text-dim'}`}>
-                {methodLabel[m] || m}
+                {m === 'split' ? 'Split' : (methodLabel[m] || m)}
               </button>
             ))}
           </div>
+
+          {payEdit.method === 'split' && (
+            <div className="mt-3 rounded-xl border border-line bg-raise p-3">
+              <p className="text-dim text-sm mb-3">
+                Part on the card, the rest in cash. The two always add up to
+                the {naira(payTotal)} above, so type whichever one you know
+                and the other follows.
+              </p>
+              <div className="flex gap-2">
+                <label className="flex-1 min-w-0">
+                  <span className="text-dim text-sm block mb-1">On the card</span>
+                  <input type="number" inputMode="decimal" value={payCardStr}
+                    onChange={e => setPayEdit(d => ({
+                      ...d, cash: String(Math.max(0, payTotal - (Number(e.target.value) || 0))),
+                    }))}
+                    className="h-12 w-full px-3 rounded-xl bg-surface border border-line tnum" />
+                </label>
+                <label className="flex-1 min-w-0">
+                  <span className="text-dim text-sm block mb-1">In cash</span>
+                  <input type="number" inputMode="decimal" value={payEdit.cash}
+                    onChange={e => setPayEdit(d => ({ ...d, cash: e.target.value }))}
+                    className="h-12 w-full px-3 rounded-xl bg-surface border border-line tnum" />
+                </label>
+              </div>
+              {payCashPart > payTotal + 0.009 ? (
+                <p className="text-clay text-sm mt-2">
+                  That is more than the {naira(payTotal)} the guest paid.
+                </p>
+              ) : payCashPart <= 0.009 || payCardPart <= 0.009 ? (
+                <p className="text-dim text-sm mt-2">
+                  One part is nothing, so this stays a single payment
+                  — {payCashPart > 0.009 ? 'cash' : 'card'}.
+                </p>
+              ) : (
+                <p className="text-leaf text-sm mt-2 tnum">
+                  Saves as {naira(payCardPart)} on the card and {naira(payCashPart)} in
+                  cash — two lines, same {naira(payTotal)}.
+                </p>
+              )}
+            </div>
+          )}
 
           <div className="text-dim text-sm mt-3 mb-1">Day it was taken</div>
           <input type="date" value={payEdit.date} max={lagosToday()}
@@ -1369,9 +1487,11 @@ export default function Corrections({ boot }) {
           </p>
 
           <button onClick={savePayEdit}
-            disabled={busy || !(Number(payEdit.amount) > 0) || !payEdit.date}
+            disabled={busy || !(Number(payEdit.amount) > 0) || !payEdit.date || !paySplitOk}
             className="mt-5 h-12 w-full rounded-xl bg-amber text-bg font-bold disabled:opacity-40">
-            {busy ? 'Saving…' : 'Save correction'}
+            {busy ? 'Saving…'
+              : payEdit.method === 'split' && payCashPart > 0.009 && payCardPart > 0.009
+                ? 'Split this payment' : 'Save correction'}
           </button>
         </Sheet>
       )}
@@ -1440,8 +1560,8 @@ export default function Corrections({ boot }) {
 
 function Sheet({ children, onClose }) {
   return (
-    <div className="fixed inset-0 z-50 bg-bg flex flex-col">
-      <div className="p-5 flex-1 overflow-y-auto">
+    <div className="fixed inset-0 z-50 bg-bg h-[100dvh] flex flex-col">
+      <div className="p-5 flex-1 min-h-0 overflow-y-auto">
         <button onClick={onClose} className="text-dim">Back</button>
         <div className="mt-3">{children}</div>
       </div>

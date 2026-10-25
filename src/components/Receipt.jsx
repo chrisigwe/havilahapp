@@ -22,8 +22,8 @@ export default function Receipt({ lines, branchName, locById, onClose, onPrint }
   const when = lines[0]?.created_at
 
   return (
-    <div className="fixed inset-0 z-[70] bg-bg flex flex-col">
-      <div className="flex-1 overflow-y-auto">
+    <div className="fixed inset-0 z-[70] bg-bg h-[100dvh] flex flex-col">
+      <div className="flex-1 min-h-0 overflow-y-auto">
         <div className="p-5 print:hidden">
           <button onClick={onClose} className="text-dim">Back</button>
         </div>
