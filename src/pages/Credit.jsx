@@ -155,14 +155,45 @@ export default function Credit({ boot }) {
   async function openCustomer(c) {
     setOpen({ customer: c, ledger: null, error: null })
     try {
-      const ledger = await loadCustomerLedger(staff.branch_id, c.customer_id, locId === 'all' ? null : locId,
-        isEditor ? (c.staff_id || null) : null)
+      // Everything they owe at this branch, not the row you clicked
+      // (Chris, 25 October 2026). The LIST is one row per customer per
+      // department per staff member, so a person owing at MainBar and at
+      // the Restaurant appears twice — and the statement used to be
+      // filtered to the same slice. Handed to a customer, that
+      // understates the debt. A statement is the whole account.
+      //
+      // Safe to total from the lines: v_customer_balances_by_staff counts
+      // exactly what this query counts — credit sale payments and
+      // repayments, with no exclusions on either side — so the totals
+      // below agree with the balances on the list behind this panel.
+      const ledger = await loadCustomerLedger(staff.branch_id, c.customer_id, null, null)
       setOpen(o => (o && o.customer.customer_id === c.customer_id) ? { ...o, ledger } : o)
     } catch (e) {
       setOpen(o => (o && o.customer.customer_id === c.customer_id)
         ? { ...o, error: e.message || 'could not load' } : o)
     }
   }
+
+  // The statement's own arithmetic, from its own lines. open.customer
+  // carries one slice's figures and can no longer speak for the whole
+  // account now that every department is listed.
+  const stmt = useMemo(() => {
+    const rows = open?.ledger?.credit || []
+    const pays = open?.ledger?.repayments || []
+    const creditTotal = rows.reduce((t, r) => t + Number(r.credit || 0), 0)
+    const paidTotal = pays.reduce((t, r) => t + Number(r.amount || 0), 0)
+    // Goods grouped by department, each with its own subtotal, so a bar
+    // can find its part of an account that spans several of them.
+    const by = new Map()
+    for (const r of rows) {
+      const k = r.location_id || 'none'
+      if (!by.has(k)) by.set(k, { key: k, name: locById[r.location_id]?.name || 'Elsewhere', rows: [], subtotal: 0 })
+      const g = by.get(k)
+      g.rows.push(r); g.subtotal += Number(r.credit || 0)
+    }
+    const groups = [...by.values()].sort((a, b) => b.subtotal - a.subtotal)
+    return { creditTotal, paidTotal, balance: creditTotal - paidTotal, groups }
+  }, [open?.ledger, locById])
 
   useEffect(() => {
     if (!linking) return
@@ -846,7 +877,8 @@ export default function Credit({ boot }) {
               <div className="invoice-head">
                 <h1 className="text-2xl font-bold">Havilah Suite Ltd</h1>
                 <p className="text-dim">
-                  {boot.branchName || ''}{locById[locId]?.name ? ` · ${locById[locId].name}` : ''} · Statement of Account
+                  {boot.branchName || ''} · Statement of Account
+                  {stmt.groups.length > 1 ? ' · all departments' : ''}
                 </p>
               </div>
 
@@ -900,8 +932,19 @@ export default function Credit({ boot }) {
                     <th className="num">Amount</th>
                   </tr>
                 </thead>
-                <tbody>
-                  {open.ledger.credit.map(s2 => (
+                {/* One body per department, each closing with its own
+                    subtotal — a statement covering three bars that gives
+                    only a grand total cannot be checked by any one of
+                    them. A single-department account gets no subtotal
+                    row, because it would only repeat the total below. */}
+                {stmt.groups.map(g => (
+                <tbody key={g.key}>
+                  {stmt.groups.length > 1 && (
+                    <tr>
+                      <td colSpan="7" style={{ paddingTop: '0.9rem' }} className="font-bold">{g.name}</td>
+                    </tr>
+                  )}
+                  {g.rows.map(s2 => (
                     <tr key={s2.id}>
                       <td className="tnum">{s2.business_date?.slice(5)}</td>
                       <td className="hidden sm:table-cell print:table-cell">
@@ -929,6 +972,19 @@ export default function Credit({ boot }) {
                       <td className="num tnum">{naira(s2.credit)}</td>
                     </tr>
                   ))}
+                  {stmt.groups.length > 1 && (
+                    <tr>
+                      <td colSpan="2" className="num text-dim">{g.name} subtotal</td>
+                      <td className="hidden sm:table-cell print:table-cell"></td>
+                      <td className="hidden sm:table-cell print:table-cell"></td>
+                      <td className="num tnum hidden sm:table-cell print:table-cell"></td>
+                      <td className="num tnum hidden sm:table-cell print:table-cell"></td>
+                      <td className="num tnum font-semibold">{naira(g.subtotal)}</td>
+                    </tr>
+                  )}
+                </tbody>
+                ))}
+                <tbody>
                   {!open.ledger.credit.length && (
                     <tr><td colSpan="7" className="text-dim">None recorded.</td></tr>
                   )}
@@ -939,11 +995,11 @@ export default function Credit({ boot }) {
                 <tfoot>
                   <tr className="sm:hidden print:hidden">
                     <td colSpan="2" className="num font-bold">Total credit</td>
-                    <td className="num tnum font-bold">{naira(open.customer.credit_taken)}</td>
+                    <td className="num tnum font-bold">{naira(stmt.creditTotal)}</td>
                   </tr>
                   <tr className="hidden sm:table-row print:table-row">
                     <td colSpan="6" className="num font-bold">Total credit</td>
-                    <td className="num tnum font-bold">{naira(open.customer.credit_taken)}</td>
+                    <td className="num tnum font-bold">{naira(stmt.creditTotal)}</td>
                   </tr>
                 </tfoot>
               </table>
@@ -953,6 +1009,7 @@ export default function Credit({ boot }) {
                 <thead>
                   <tr>
                     <th>Date</th><th>Method</th>
+                    <th className="hidden sm:table-cell print:table-cell">Where</th>
                     <th className="hidden sm:table-cell print:table-cell">Taken by</th>
                     <th className="hidden sm:table-cell print:table-cell">Note</th>
                     <th className="num">Amount</th>
@@ -965,34 +1022,36 @@ export default function Credit({ boot }) {
                       <td>
                         {methodLabel[r.method] || r.method}
                         <span className="block text-dim text-xs mt-0.5 sm:hidden print:hidden">
-                          {[r.taken_by && `taken by ${r.taken_by}`, r.note]
+                          {[locById[r.location_id]?.name,
+                            r.taken_by && `taken by ${r.taken_by}`, r.note]
                             .filter(Boolean).join(' · ')}
                         </span>
                       </td>
+                      <td className="text-dim hidden sm:table-cell print:table-cell">{locById[r.location_id]?.name || '—'}</td>
                       <td className="text-dim hidden sm:table-cell print:table-cell">{r.taken_by || '—'}</td>
                       <td className="text-dim hidden sm:table-cell print:table-cell">{r.note || ''}</td>
                       <td className="num tnum">{naira(r.amount)}</td>
                     </tr>
                   ))}
                   {!open.ledger.repayments.length && (
-                    <tr><td colSpan="5" className="text-dim">None yet.</td></tr>
+                    <tr><td colSpan="6" className="text-dim">None yet.</td></tr>
                   )}
                 </tbody>
                 <tfoot>
                   <tr className="sm:hidden print:hidden">
                     <td colSpan="2" className="num font-bold">Total paid</td>
-                    <td className="num tnum font-bold">{naira(open.customer.repaid)}</td>
+                    <td className="num tnum font-bold">{naira(stmt.paidTotal)}</td>
                   </tr>
                   <tr className="hidden sm:table-row print:table-row">
-                    <td colSpan="4" className="num font-bold">Total paid</td>
-                    <td className="num tnum font-bold">{naira(open.customer.repaid)}</td>
+                    <td colSpan="5" className="num font-bold">Total paid</td>
+                    <td className="num tnum font-bold">{naira(stmt.paidTotal)}</td>
                   </tr>
                 </tfoot>
               </table>
 
               <div className="invoice-balance mt-6">
                 <span>Balance owing</span>
-                <span className="tnum">{naira(open.customer.balance)}</span>
+                <span className="tnum">{naira(stmt.balance)}</span>
               </div>
 
               {open.customer.balance > 0.009 && locId === 'all' && (
@@ -1039,22 +1098,25 @@ export default function Credit({ boot }) {
             <button disabled={!open.ledger}
               onClick={() => savePdf(accountStatementPdf({
               branchName: boot.branchName,
-              where: locById[locId]?.name,
+              where: stmt.groups.length > 1 ? 'All departments' : stmt.groups[0]?.name,
               customerName: open.customer.name,
-              creditRows: open.ledger.credit.map(s2 => ({
+              // Grouped the same way as the screen, so the printed copy
+              // and the one on the phone are the same document.
+              creditRows: stmt.groups.flatMap(g => g.rows).map(s2 => ({
                 date: s2.business_date?.slice(5) || '',
                 department: locById[s2.location_id]?.name || '—',
                 item: `${itemById[s2.stock_item_id]?.name || s2.description || '—'}${s2.tier && s2.tier !== 'general' ? ` (${tierLabel[s2.tier] || s2.tier})` : ''}`,
                 servedBy: s2.served_by || '',
                 qty: s2.qty, unit: s2.unit_price, amount: s2.credit,
               })),
-              creditTotal: open.customer.credit_taken,
+              creditTotal: stmt.creditTotal,
               payments: open.ledger.repayments.map(r => ({
                 date: r.paid_on?.slice(5) || '', method: methodLabel[r.method] || r.method,
+                where: locById[r.location_id]?.name || '',
                 takenBy: r.taken_by || '', note: r.note || '', amount: r.amount,
               })),
-              paidTotal: open.customer.repaid,
-              balance: open.customer.balance,
+              paidTotal: stmt.paidTotal,
+              balance: stmt.balance,
             }), `Statement ${open.customer.name}`)}
               className="flex-1 h-14 rounded-2xl border border-line font-bold disabled:opacity-40">Save / share PDF</button>
             {(() => {

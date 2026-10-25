@@ -305,12 +305,15 @@ export async function accountStatementPdf(d) {
     [{ label: 'Total credit', value: num(d.creditTotal), bold: true }],
   )
 
+  // Where a payment was taken, now that a statement can span several
+  // departments (25 October 2026). Widths re-cut from the existing ones:
+  // they total 100 and a column past that is silently clipped.
   s.heading('Payments received')
   s.table(
-    [{ label: 'Date', align: 'left', w: 12 }, { label: 'Method', align: 'left', w: 18 },
-     { label: 'Taken by', align: 'left', w: 20 },
-     { label: 'Note', align: 'left', w: 28 }, { label: 'Amount (NGN)', align: 'right', w: 22 }],
-    (d.payments || []).map(r => ({ cells: [r.date, r.method, r.takenBy || '—', r.note || '', num(r.amount)] })),
+    [{ label: 'Date', align: 'left', w: 11 }, { label: 'Method', align: 'left', w: 16 },
+     { label: 'Where', align: 'left', w: 17 }, { label: 'Taken by', align: 'left', w: 17 },
+     { label: 'Note', align: 'left', w: 19 }, { label: 'Amount (NGN)', align: 'right', w: 20 }],
+    (d.payments || []).map(r => ({ cells: [r.date, r.method, r.where || '—', r.takenBy || '—', r.note || '', num(r.amount)] })),
     [{ label: 'Total paid', value: num(d.paidTotal), bold: true }],
   )
 
