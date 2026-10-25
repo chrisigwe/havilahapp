@@ -87,7 +87,14 @@ export default function Counts({ boot }) {
   const [newType, setNewType] = useState('count')
   const [newDate, setNewDate] = useState(lagosToday())
 
-  const itemById = useMemo(() => Object.fromEntries(items.map(i => [i.id, i])), [items])
+  // Both halves of the catalogue, for the same reason as Corrections
+  // (25 October 2026): boot.items is the SALE items and supplies are
+  // kept separately, so a count line for a supply had no name to show
+  // and printed a dash. A count sheet with a dash on it cannot be
+  // checked by the person signing it.
+  const itemById = useMemo(
+    () => Object.fromEntries([...items, ...(boot.supplyItems || [])].map(i => [i.id, i])),
+    [items, boot.supplyItems])
   const locById  = useMemo(() => Object.fromEntries(allLocations.map(l => [l.id, l])), [allLocations])
 
   useEffect(() => {

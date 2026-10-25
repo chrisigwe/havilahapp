@@ -285,11 +285,26 @@ export async function loadActivity(branchId, days = 14, ownOnlyStaffId = null, l
   // your own id — it just never showed it (18 October 2026). Both joins
   // are the ones loadToday and the Store screen already use, so they
   // resolve over the same foreign keys and the same policies.
+  // stock_items(name): the name comes from the ROW, not from a list held
+  // in the browser (Chris, 25 October 2026 — "the store shows unknown
+  // items").
+  //
+  // The screen used to look every name up in boot.items, which is the
+  // SALE items: loadBranchData splits the catalogue in two and keeps
+  // supplies in boot.supplyItems. So every supply the storekeeper
+  // disbursed came back "Unknown item" — three of them to the Restaurant
+  // on 24 October alone. It reads like lost data and is only a lookup in
+  // the wrong list.
+  //
+  // Fixing the list alone would leave the other half: boot also drops
+  // is_active = false, so retiring an item would blank its whole history
+  // here. Reading the name off the row covers both, and cannot drift
+  // from however the catalogue is split in future.
   const saleCols = 'id, business_date, stock_item_id, description, location_id, tier, qty, unit_price, amount,'
-    + ' recorded_by, on_behalf_of, created_at, customers(name),'
+    + ' recorded_by, on_behalf_of, created_at, customers(name), stock_items(name),'
     + ' recorder:recorded_by(full_name), stood_in_for:on_behalf_of(full_name)'
   const moveCols = 'id, business_date, stock_item_id, movement_type, from_location, to_location, qty,'
-    + ' unit_cost, note, damage_reason, recorded_by, created_at, staff:recorded_by(full_name)'
+    + ' unit_cost, note, damage_reason, recorded_by, created_at, stock_items(name), staff:recorded_by(full_name)'
   const [sales, moves] = await Promise.all([
     // a sale recorded on someone's behalf belongs on THEIR list, not
     // the recorder's, so match either column

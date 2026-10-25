@@ -176,7 +176,20 @@ export default function Corrections({ boot }) {
         : (firstEntriesDept || staff.default_location_id || deptChips[0]?.id || 'all')))
   }, [staff.branch_id])
 
-  const itemById = useMemo(() => Object.fromEntries(items.map(i => [i.id, i])), [items])
+  // Both halves of the catalogue. boot.items is the SALE items; supplies
+  // live in boot.supplyItems, and a list built from one of them cannot
+  // name a movement from the other — which is what put "Unknown item"
+  // against the storekeeper's supply disbursements (25 October 2026).
+  // The name now comes off the row itself; this map still backs the
+  // search box, so it needs both too.
+  const itemById = useMemo(
+    () => Object.fromEntries([...items, ...(boot.supplyItems || [])].map(i => [i.id, i])),
+    [items, boot.supplyItems])
+  // The row's own name first, then the catalogue, then whatever the
+  // entry was described as. Only a row whose item has been deleted
+  // outright reaches the last one.
+  const nameOf = (r) => r?.stock_items?.name || itemById[r?.stock_item_id]?.name
+    || r?.description || 'Unknown item'
   const locById  = useMemo(() => Object.fromEntries(allLocations.map(l => [l.id, l])), [allLocations])
 
   const rowLocationId = (r) => r.kind === 'sale' ? r.location_id : (r.to_location || r.from_location)
@@ -196,7 +209,7 @@ export default function Corrections({ boot }) {
     return (rows || []).filter(r => {
       if (deptFilter !== 'all' && rowLocationId(r) !== deptFilter) return false
       if (!q) return true
-      const item = (itemById[r.stock_item_id]?.name || r.description || '').toLowerCase()
+      const item = nameOf(r).toLowerCase()
       const dept = locById[rowLocationId(r)]?.name?.toLowerCase() || ''
       const date = r.business_date || ''
       const customer = r.customers?.name?.toLowerCase() || ''
@@ -301,7 +314,7 @@ export default function Corrections({ boot }) {
   useEffect(refresh, [refresh])
 
   function describe(r) {
-    const name = itemById[r.stock_item_id]?.name || r.description || 'Unknown item'
+    const name = nameOf(r)
     if (r.kind === 'sale') {
       return { title: name,
         detail: `Sale · ${tierLabel[r.tier] || r.tier} · ${locById[r.location_id]?.name || ''}`
