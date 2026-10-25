@@ -30,7 +30,7 @@ import Counts from './pages/Counts'
 import Shell from './components/Shell'
 import ErrorBoundary from './components/ErrorBoundary'
 import InstallHint from './components/InstallHint'
-import { OVERSIGHT } from './lib/roles'
+import { OVERSIGHT, is } from './lib/roles'
 import { signOutCleanly } from './lib/push'
 import { landingTabFor } from './lib/tabs'
 import { logActivity, PAGE_NAMES } from './lib/activity'
@@ -92,9 +92,28 @@ export default function App() {
   useEffect(() => {
     if (!identity || landedRef.current) return
     landedRef.current = true
-    // Every role lands on its FIRST tab (lib/tabs.js), so the landing
-    // screen can never drift from the bar's order.
-    setTab(landingTabFor(identity.role))
+    // A notification that opens the app should open the PAGE, not the
+    // front door (Chris, 25 October 2026). Tapping "2 stock counts need
+    // verifying" used to land on the role's usual first tab, leaving the
+    // person to find the counts themselves — which is most of the reason
+    // to send the notification at all.
+    //
+    // Allow-listed, not read straight through: a link is something
+    // anyone can craft, and the pages here are the ones a notification
+    // is ever sent about. Role-gated too, so the link cannot put a
+    // barman on a page their role does not carry — the page's own data
+    // is protected by RLS regardless, this is about not showing someone
+    // an empty screen they cannot use.
+    const asked = new URLSearchParams(window.location.search).get('tab')
+    const allowed = asked === 'count' && is(identity.role, OVERSIGHT) ? 'count' : null
+    if (asked) {
+      // Cleared either way, so a later refresh does not keep dragging
+      // them back to the same page.
+      window.history.replaceState({}, '', window.location.pathname)
+    }
+    // Every other role lands on its FIRST tab (lib/tabs.js), so the
+    // landing screen can never drift from the bar's order.
+    setTab(allowed || landingTabFor(identity.role))
   }, [identity])
 
   // Housekeeping / Laundry have only Supplies and My pay — no More, no

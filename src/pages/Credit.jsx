@@ -876,37 +876,73 @@ export default function Credit({ boot }) {
                 <p className="text-dim mt-6">Loading this account…</p>
               )}
               {open.ledger && (<>
+              {/* Two shapes, one set of figures (Chris, 25 October 2026 —
+                  "each item should have who served it", and the statement
+                  overflowing on iPhone).
+
+                  Measured: six columns came to 398px of table inside a
+                  320px screen, so the statement ran off the side before a
+                  Served by column was ever added. A phone gets three
+                  columns — day, what it was, how much — with the
+                  department, the quantity and the server folded under the
+                  item. Wider screens and print get the full invoice
+                  columns, because that is what a customer is handed. */}
               <h3 className="mt-6 mb-2 font-bold">Goods taken on credit</h3>
               <table className="invoice-table">
                 <thead>
                   <tr>
-                    <th>Date</th><th>Department</th><th>Item</th>
-                    <th className="num">Qty</th><th className="num">Unit</th><th className="num">Amount</th>
+                    <th>Date</th>
+                    <th className="hidden sm:table-cell print:table-cell">Department</th>
+                    <th>Item</th>
+                    <th className="hidden sm:table-cell print:table-cell">Served by</th>
+                    <th className="num hidden sm:table-cell print:table-cell">Qty</th>
+                    <th className="num hidden sm:table-cell print:table-cell">Unit</th>
+                    <th className="num">Amount</th>
                   </tr>
                 </thead>
                 <tbody>
                   {open.ledger.credit.map(s2 => (
                     <tr key={s2.id}>
                       <td className="tnum">{s2.business_date?.slice(5)}</td>
-                      <td>{locById[s2.location_id]?.name || '—'}</td>
+                      <td className="hidden sm:table-cell print:table-cell">
+                        {locById[s2.location_id]?.name || '—'}
+                      </td>
                       <td>
                         {itemById[s2.stock_item_id]?.name || s2.description || '—'}
                         {s2.tier && s2.tier !== 'general' && (
                           <span className="text-dim"> ({tierLabel[s2.tier] || s2.tier})</span>
                         )}
+                        {/* Everything the narrow table leaves out, in one
+                            line under the item. */}
+                        <span className="block text-dim text-xs mt-0.5 sm:hidden print:hidden">
+                          {[locById[s2.location_id]?.name,
+                            `${s2.qty} × ${naira(s2.unit_price)}`,
+                            s2.served_by && `served by ${s2.served_by}`,
+                          ].filter(Boolean).join(' · ')}
+                        </span>
                       </td>
-                      <td className="num tnum">{s2.qty}</td>
-                      <td className="num tnum">{naira(s2.unit_price)}</td>
+                      {/* An em dash, never a guess, when the name is not on
+                          the record — see loadCustomerLedger. */}
+                      <td className="text-dim hidden sm:table-cell print:table-cell">{s2.served_by || '—'}</td>
+                      <td className="num tnum hidden sm:table-cell print:table-cell">{s2.qty}</td>
+                      <td className="num tnum hidden sm:table-cell print:table-cell">{naira(s2.unit_price)}</td>
                       <td className="num tnum">{naira(s2.credit)}</td>
                     </tr>
                   ))}
                   {!open.ledger.credit.length && (
-                    <tr><td colSpan="6" className="text-dim">None recorded.</td></tr>
+                    <tr><td colSpan="7" className="text-dim">None recorded.</td></tr>
                   )}
                 </tbody>
+                {/* One footer row per shape. A single row cannot span both,
+                    and a span wider than the columns on screen pushes the
+                    amount out of its own column. */}
                 <tfoot>
-                  <tr>
-                    <td colSpan="5" className="num font-bold">Total credit</td>
+                  <tr className="sm:hidden print:hidden">
+                    <td colSpan="2" className="num font-bold">Total credit</td>
+                    <td className="num tnum font-bold">{naira(open.customer.credit_taken)}</td>
+                  </tr>
+                  <tr className="hidden sm:table-row print:table-row">
+                    <td colSpan="6" className="num font-bold">Total credit</td>
                     <td className="num tnum font-bold">{naira(open.customer.credit_taken)}</td>
                   </tr>
                 </tfoot>
@@ -915,24 +951,40 @@ export default function Credit({ boot }) {
               <h3 className="mt-6 mb-2 font-bold">Payments received</h3>
               <table className="invoice-table">
                 <thead>
-                  <tr><th>Date</th><th>Method</th><th>Note</th><th className="num">Amount</th></tr>
+                  <tr>
+                    <th>Date</th><th>Method</th>
+                    <th className="hidden sm:table-cell print:table-cell">Taken by</th>
+                    <th className="hidden sm:table-cell print:table-cell">Note</th>
+                    <th className="num">Amount</th>
+                  </tr>
                 </thead>
                 <tbody>
                   {open.ledger.repayments.map(r => (
                     <tr key={r.id}>
                       <td className="tnum">{r.paid_on?.slice(5)}</td>
-                      <td>{methodLabel[r.method] || r.method}</td>
-                      <td className="text-dim">{r.note || ''}</td>
+                      <td>
+                        {methodLabel[r.method] || r.method}
+                        <span className="block text-dim text-xs mt-0.5 sm:hidden print:hidden">
+                          {[r.taken_by && `taken by ${r.taken_by}`, r.note]
+                            .filter(Boolean).join(' · ')}
+                        </span>
+                      </td>
+                      <td className="text-dim hidden sm:table-cell print:table-cell">{r.taken_by || '—'}</td>
+                      <td className="text-dim hidden sm:table-cell print:table-cell">{r.note || ''}</td>
                       <td className="num tnum">{naira(r.amount)}</td>
                     </tr>
                   ))}
                   {!open.ledger.repayments.length && (
-                    <tr><td colSpan="4" className="text-dim">None yet.</td></tr>
+                    <tr><td colSpan="5" className="text-dim">None yet.</td></tr>
                   )}
                 </tbody>
                 <tfoot>
-                  <tr>
-                    <td colSpan="3" className="num font-bold">Total paid</td>
+                  <tr className="sm:hidden print:hidden">
+                    <td colSpan="2" className="num font-bold">Total paid</td>
+                    <td className="num tnum font-bold">{naira(open.customer.repaid)}</td>
+                  </tr>
+                  <tr className="hidden sm:table-row print:table-row">
+                    <td colSpan="4" className="num font-bold">Total paid</td>
                     <td className="num tnum font-bold">{naira(open.customer.repaid)}</td>
                   </tr>
                 </tfoot>
@@ -993,12 +1045,13 @@ export default function Credit({ boot }) {
                 date: s2.business_date?.slice(5) || '',
                 department: locById[s2.location_id]?.name || '—',
                 item: `${itemById[s2.stock_item_id]?.name || s2.description || '—'}${s2.tier && s2.tier !== 'general' ? ` (${tierLabel[s2.tier] || s2.tier})` : ''}`,
+                servedBy: s2.served_by || '',
                 qty: s2.qty, unit: s2.unit_price, amount: s2.credit,
               })),
               creditTotal: open.customer.credit_taken,
               payments: open.ledger.repayments.map(r => ({
                 date: r.paid_on?.slice(5) || '', method: methodLabel[r.method] || r.method,
-                note: r.note || '', amount: r.amount,
+                takenBy: r.taken_by || '', note: r.note || '', amount: r.amount,
               })),
               paidTotal: open.customer.repaid,
               balance: open.customer.balance,

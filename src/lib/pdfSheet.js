@@ -245,7 +245,11 @@ export async function guestStatementPdf(d) {
   const rows = [{ cells: [d.checkInLabel || '', d.accommodationLabel || 'Accommodation', num(d.roomCharge)] }]
   if (Number(d.overstay) > 0) rows.push({ cells: ['', 'Over-stay charge', num(d.overstay)] })
   for (const li of d.orderLines || []) {
-    rows.push({ cells: [li.date || '', `${li.description} x ${li.qty}  ·  ${li.where}`, num(li.amount)] })
+    // Served by, on the line itself rather than a column of its own:
+    // the charge column has the room for it and a sixth narrow column
+    // would truncate the item names (Chris, 25 October 2026).
+    const served = li.servedName ? `  ·  served by ${li.servedName}` : ''
+    rows.push({ cells: [li.date || '', `${li.description} x ${li.qty}  ·  ${li.where}${served}`, num(li.amount)] })
   }
   s.table(COLS, rows, [
     { label: 'Room and over-stay', value: num(Number(d.roomCharge) + Number(d.overstay || 0)) },
@@ -287,20 +291,26 @@ export async function accountStatementPdf(d) {
   s.head({ business: 'Havilah Suite Ltd', subtitle: `${d.branchName || ''}${d.where ? ` · ${d.where}` : ''} · Statement of Account` })
   s.meta([['Account', d.customerName || 'Account', true]], [['Date', stamp()]])
 
+  // Served by / Taken by, as columns of their own (Chris, 25 October
+  // 2026). Widths re-cut from the existing ones rather than added to:
+  // they total 100 and a column past that is silently clipped.
   s.heading('Goods taken on credit')
   s.table(
-    [{ label: 'Date', align: 'left', w: 11 }, { label: 'Department', align: 'left', w: 18 },
-     { label: 'Item', align: 'left', w: 33 }, { label: 'Qty', align: 'right', w: 7 },
-     { label: 'Unit (NGN)', align: 'right', w: 15 }, { label: 'Amount (NGN)', align: 'right', w: 16 }],
-    (d.creditRows || []).map(r => ({ cells: [r.date, r.department, r.item, String(r.qty), num(r.unit), num(r.amount)] })),
+    [{ label: 'Date', align: 'left', w: 10 }, { label: 'Department', align: 'left', w: 14 },
+     { label: 'Item', align: 'left', w: 25 }, { label: 'Served by', align: 'left', w: 16 },
+     { label: 'Qty', align: 'right', w: 6 },
+     { label: 'Unit (NGN)', align: 'right', w: 13 }, { label: 'Amount (NGN)', align: 'right', w: 16 }],
+    (d.creditRows || []).map(r => ({
+      cells: [r.date, r.department, r.item, r.servedBy || '—', String(r.qty), num(r.unit), num(r.amount)] })),
     [{ label: 'Total credit', value: num(d.creditTotal), bold: true }],
   )
 
   s.heading('Payments received')
   s.table(
-    [{ label: 'Date', align: 'left', w: 14 }, { label: 'Method', align: 'left', w: 22 },
-     { label: 'Note', align: 'left', w: 42 }, { label: 'Amount (NGN)', align: 'right', w: 22 }],
-    (d.payments || []).map(r => ({ cells: [r.date, r.method, r.note || '', num(r.amount)] })),
+    [{ label: 'Date', align: 'left', w: 12 }, { label: 'Method', align: 'left', w: 18 },
+     { label: 'Taken by', align: 'left', w: 20 },
+     { label: 'Note', align: 'left', w: 28 }, { label: 'Amount (NGN)', align: 'right', w: 22 }],
+    (d.payments || []).map(r => ({ cells: [r.date, r.method, r.takenBy || '—', r.note || '', num(r.amount)] })),
     [{ label: 'Total paid', value: num(d.paidTotal), bold: true }],
   )
 

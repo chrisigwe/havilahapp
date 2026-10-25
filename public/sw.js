@@ -4,7 +4,12 @@
 // (Supabase API calls, auth) — those always go to the network so
 // nobody ever sees stale stock, sales, or balances.
 
-const SHELL_CACHE = 'havilah-shell-v1'
+// v2 on 25 October 2026, with the notification changes. The activate
+// handler below deletes every cache whose name is not this one, so
+// bumping it flushes the old shell on the next load — worth doing when
+// the worker's own behaviour changes, so no phone is left running the
+// new worker against assets cached by the old one.
+const SHELL_CACHE = 'havilah-shell-v2'
 
 // On install, pre-cache nothing heavy — the shell is hashed by Vite
 // and will be cached on first fetch. Just take over promptly.
@@ -70,6 +75,10 @@ self.addEventListener('push', (e) => {
   const count = Number(payload.count || 0)
   const title = payload.title || 'Havilah App'
   const body = payload.body || 'You have items needing attention.'
+  // Its own tag per kind of message (Chris, 25 October 2026). One shared
+  // tag meant "your count was verified" REPLACED "2 counts are waiting"
+  // on the lock screen, and the second message was never seen.
+  const tag = payload.tag || 'havilah-pending'
 
   e.waitUntil((async () => {
     // Badge the home screen icon. Supported on installed PWAs
@@ -83,11 +92,18 @@ self.addEventListener('push', (e) => {
       body,
       icon: '/icon-192.png',
       badge: '/mask-icon.svg',
-      // Same tag so repeated pushes REPLACE rather than stack up —
-      // this is a running count, not a feed of separate events.
-      tag: 'havilah-pending',
+      // Repeated pushes of the SAME kind replace rather than stack —
+      // a running count, not a feed of separate events.
+      tag,
       renotify: true,
       vibrate: [80, 60, 80],
+      // The phone's own clock for the message, so one that arrives while
+      // the screen is off is filed at the time it was sent.
+      timestamp: Date.now(),
+      // A button straight to the page, where the phone supports one
+      // (Android and desktop). iOS ignores actions and shows the body,
+      // which is why the body has to stand on its own.
+      actions: payload.action ? [{ action: 'open', title: payload.action }] : [],
       data: { url: payload.url || '/' },
     })
   })())
@@ -95,6 +111,9 @@ self.addEventListener('push', (e) => {
 
 self.addEventListener('notificationclick', (e) => {
   e.notification.close()
+  // Both the body and the action button lead to the same page: a button
+  // that did something different from tapping the message would be a
+  // trap, and there is only one thing to do with either message.
   const url = (e.notification.data && e.notification.data.url) || '/'
   e.waitUntil((async () => {
     const all = await self.clients.matchAll({ type: 'window', includeUncontrolled: true })

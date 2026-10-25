@@ -51,11 +51,55 @@ Deno.serve(async () => {
   // badge counts, so the two never disagree.
   const { data: pending } = await supabase
     .from('stock_counts')
-    .select('branch_id')
+    .select('id, branch_id, location_id, counted_by, count_date, submitted_at')
     .eq('status', 'submitted')
+    .order('submitted_at', { ascending: true })
 
   const byBranch: Record<string, number> = {}
   for (const r of pending ?? []) byBranch[r.branch_id] = (byBranch[r.branch_id] ?? 0) + 1
+
+  // Names for the detail (Chris, 25 October 2026: "add more detail").
+  // "2 stock counts waiting for verification" says there is work without
+  // saying whose, where, or how long it has sat — so it reads the same
+  // whether it is this morning's count or one from last week.
+  //
+  // Looked up separately rather than embedded in the select: an embed
+  // needs a foreign key PostgREST can see, and a wrong guess here takes
+  // the whole notification down silently for every device.
+  const locIds = [...new Set((pending ?? []).map(r => r.location_id).filter(Boolean))]
+  const staffIds = [...new Set((pending ?? []).map(r => r.counted_by).filter(Boolean))]
+  const locName: Record<string, string> = {}
+  const staffName: Record<string, string> = {}
+  if (locIds.length) {
+    const { data } = await supabase.from('stock_locations').select('id, name').in('id', locIds)
+    for (const l of data ?? []) locName[l.id] = l.name
+  }
+  if (staffIds.length) {
+    const { data } = await supabase.from('staff').select('id, full_name').in('id', staffIds)
+    for (const w of data ?? []) staffName[w.id] = w.full_name
+  }
+
+  // First names only. A phone shows roughly 40 characters of a
+  // notification before it truncates, and "Chidera" identifies the
+  // person on a seven-person shift as well as the full name does.
+  const firstName = (id: string | null) =>
+    (id && staffName[id] ? staffName[id].split(' ')[0] : '')
+
+  const today = new Date(new Date().toLocaleString('en-US', { timeZone: 'Africa/Lagos' }))
+  const daysWaiting = (iso: string | null) => {
+    if (!iso) return 0
+    return Math.max(0, Math.round((today.getTime() - new Date(iso).getTime()) / 86400000))
+  }
+  const waitPhrase = (d: number) =>
+    d <= 0 ? 'today' : d === 1 ? 'since yesterday' : `waiting ${d} days`
+
+  // One line per count: where, who, how long. Oldest first, because the
+  // oldest is the one that matters.
+  const linesFor = (branch: string) => (pending ?? [])
+    .filter(r => r.branch_id === branch)
+    .map(r => [locName[r.location_id ?? ''] || 'A department',
+               firstName(r.counted_by), waitPhrase(daysWaiting(r.submitted_at))]
+      .filter(Boolean).join(' · '))
 
   const { data: subs } = await supabase
     .from('push_subscriptions')
@@ -84,9 +128,18 @@ Deno.serve(async () => {
         { endpoint: s.endpoint, keys: { p256dh: s.p256dh, auth: s.auth } },
         JSON.stringify({
           count,
-          title: 'Havilah App',
-          body: `${count} stock count${count === 1 ? '' : 's'} waiting for verification.`,
-          url: '/',
+          // The phone already prints "Havilah App" above every
+          // notification, so a title of "Havilah App" wasted the one
+          // line people actually read. The title now says the thing.
+          title: count === 1 ? 'A stock count needs verifying'
+                             : `${count} stock counts need verifying`,
+          // Up to three named, then a count of the rest. A notification
+          // that lists seven departments is one nobody finishes reading.
+          body: linesFor(s.branch_id).slice(0, 3).join('\n')
+                + (count > 3 ? `\n+ ${count - 3} more` : ''),
+          tag: 'havilah-pending',
+          url: '/?tab=count',
+          action: 'Open counts',
         }),
       )
       sent++
@@ -128,11 +181,17 @@ Deno.serve(async () => {
         { endpoint: s.endpoint, keys: { p256dh: s.p256dh, auth: s.auth } },
         JSON.stringify({
           count: mine.length,
-          title: 'Count verified',
+          title: mine.length === 1 ? 'Your count was verified'
+                                   : `${mine.length} of your counts were verified`,
           body: mine.length === 1
-            ? 'Your stock count has been verified.'
-            : `${mine.length} of your stock counts have been verified.`,
-          url: '/',
+            ? 'Checked and accepted. Nothing further needed from you.'
+            : 'All checked and accepted. Nothing further needed from you.',
+          // Its own tag. Both messages shared 'havilah-pending', so a
+          // verification REPLACED the notification about work still
+          // waiting — the phone shows one per tag.
+          tag: 'havilah-verified',
+          url: '/?tab=count',
+          action: 'Open counts',
         }),
       )
       verifiedSent++

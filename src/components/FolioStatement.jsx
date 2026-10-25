@@ -63,6 +63,7 @@ export default function FolioStatement({ room, folio, orderLines, freeLines, pay
     orderLines: (orderLines || []).map(li => ({
       date: li.date, description: li.description, qty: li.qty,
       where: whereFrom(li),
+      servedName: li.servedName || '',
       amount: li.amount,
     })),
     freeLines: (freeLines || []).map(li => ({ date: li.date, description: li.description, qty: li.qty, amount: li.amount })),
@@ -157,6 +158,9 @@ export default function FolioStatement({ room, folio, orderLines, freeLines, pay
                     </span>
                     <span className="block text-dim text-xs mt-0.5">
                       {whereFrom(li)} · {niceDay(li.date)}
+                      {/* Who served it (Chris, 25 October 2026). A guest
+                          querying a line asks who brought it. */}
+                      {li.servedName ? ` · served by ${li.servedName}` : ''}
                     </span>
                   </span>
                   <span className="tnum font-bold shrink-0">{naira(li.amount)}</span>
@@ -211,6 +215,7 @@ export default function FolioStatement({ room, folio, orderLines, freeLines, pay
                     {li.description} <span className="text-dim">× {li.qty}</span>
                     <span className="text-dim">
                       {' · '}{whereFrom(li)}
+                      {li.servedName ? ` · served by ${li.servedName}` : ''}
                     </span>
                   </td>
                   <td className="num tnum">{naira(li.amount)}</td>

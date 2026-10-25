@@ -127,6 +127,7 @@ export default function Folio({ boot, room, onClose, onChanged }) {
 
   const orderLines = orders.flatMap(o => (o.order_items || [])
     .map(li => ({ ...li, date: o.business_date, servedBy: o.served_by,
+                  servedName: o.served?.full_name || '',
                   orderId: o.id, settlement: o.settlement,
                   approval: o.approval_status || 'approved', decisionNote: o.decision_note })))
   // Which lines the guest is actually BILLED for. This must match

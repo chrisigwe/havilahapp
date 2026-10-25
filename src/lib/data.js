@@ -507,12 +507,27 @@ export async function loadBalances(branchId, locationId, staffId) {
   return data
 }
 
+// Who served each line on a customer's statement (Chris, 25 October
+// 2026). A customer querying a line asks "who gave me this?", and until
+// now the invoice could not say — the name was on the record all along,
+// just never printed.
+//
+// on_behalf_of first, then recorded_by: a sale keyed by the storekeeper
+// on behalf of the barman was SERVED by the barman. That is the same
+// precedence credit_chain uses (570), so the statement and the chain
+// name the same person.
+//
+// The names are fetched in one separate lookup rather than embedded in
+// the select. on_behalf_of is a second staff column on the same table
+// and an embed needs a foreign key PostgREST can see; guessing one is
+// exactly what broke the Recently-added feed on both branches on
+// 24 October. A plain lookup by id cannot fail that way.
 export async function loadCustomerLedger(branchId, customerId, locationId, staffId) {
   let sq = supabase.from('sales')
-    .select('id, business_date, qty, unit_price, stock_item_id, description, location_id, tier, sale_payments(method, amount)')
+    .select('id, business_date, qty, unit_price, stock_item_id, description, location_id, tier, recorded_by, on_behalf_of, sale_payments(method, amount)')
     .eq('branch_id', branchId).eq('customer_id', customerId)
   let rq = supabase.from('credit_repayments')
-    .select('id, paid_on, method, amount, note, location_id')
+    .select('id, paid_on, method, amount, note, location_id, credit_staff_id, recorded_by')
     .eq('branch_id', branchId).eq('customer_id', customerId)
   if (locationId) { sq = sq.eq('location_id', locationId); rq = rq.eq('location_id', locationId) }
   if (staffId) {
@@ -530,7 +545,27 @@ export async function loadCustomerLedger(branchId, customerId, locationId, staff
       .filter(p => p.method === 'credit')
       .reduce((a, p) => a + Number(p.amount), 0) }))
     .filter(s => s.credit > 0)
-  return { credit, repayments: repays.data }
+
+  // One lookup for every name on the statement, both tables at once.
+  const ids = [...new Set([
+    ...credit.flatMap(r => [r.on_behalf_of, r.recorded_by]),
+    ...repays.data.flatMap(r => [r.credit_staff_id, r.recorded_by]),
+  ].filter(Boolean))]
+  let names = {}
+  if (ids.length) {
+    const { data: who } = await supabase.from('staff').select('id, full_name').in('id', ids)
+    for (const w of (who || [])) names[w.id] = w.full_name
+  }
+  // A missing name is left empty, never guessed at. A statement that
+  // prints the wrong server is worse than one that prints none.
+  const nameOf = (...maybe) => {
+    for (const id of maybe) if (id && names[id]) return names[id]
+    return ''
+  }
+  return {
+    credit: credit.map(r => ({ ...r, served_by: nameOf(r.on_behalf_of, r.recorded_by) })),
+    repayments: repays.data.map(r => ({ ...r, taken_by: nameOf(r.credit_staff_id, r.recorded_by) })),
+  }
 }
 
 async function _saveRepayment({ staff, customerId, amount, method, paidOn, note, locationId, creditStaffId }) {
@@ -1470,7 +1505,10 @@ export async function loadFolio(stayId) {
   const [{ data: orders, error: e1 }, { data: payments, error: e2 }, { data: folio, error: e3 },
          { data: stay, error: e4 }] = await Promise.all([
     supabase.from('orders')
-      .select('id, business_date, served_by, settlement, approval_status, decision_note, order_items(id, category, location_id, description, qty, unit_price, amount, order_type, damage_reason, writeoff_note, pr_meal)')
+      // served: the name, not just the id — the guest's invoice names who
+      // served each line (Chris, 25 October 2026). This embed is already
+      // proven on orders elsewhere in this file, so it is not a guess.
+      .select('id, business_date, served_by, served:served_by(full_name), settlement, approval_status, decision_note, order_items(id, category, location_id, description, qty, unit_price, amount, order_type, damage_reason, writeoff_note, pr_meal)')
       .eq('stay_id', stayId).order('business_date', { ascending: false }),
     supabase.from('payments')
       .select('id, business_date, method, amount, is_overstay, remark, location_id, applied_to, applied_location_id, received_by, collected:stock_locations!location_id(name)')
