@@ -59,6 +59,15 @@ export default function Catalog({ boot, onChanged }) {
         cost_price: edit.cost_price === '' ? null : Number(edit.cost_price),
         is_active: edit.is_active,
         is_consumable: !!edit.is_consumable,
+        // Pack settings (575). All three move together: the database
+        // refuses a size with no name, so clearing one clears the lot
+        // rather than leaving half a setting behind that nothing can
+        // save afterwards.
+        ...(Number(edit.pack_size) > 1 && String(edit.pack_label || '').trim()
+          ? { pack_label: String(edit.pack_label).trim(),
+              pack_size: Number(edit.pack_size),
+              piece_item_id: edit.piece_item_id || null }
+          : { pack_label: null, pack_size: null, piece_item_id: null }),
       }
       await saveItemPrices(edit.id, patch)
       toast('Saved', 'success'); setEdit(null); refreshAll(); onChanged?.()
@@ -217,6 +226,46 @@ export default function Catalog({ boot, onChanged }) {
 
             {edit && (
               <>
+                {/* How it arrives, and what it becomes (Chris, 25 October
+                    2026). Blank means it is received the same way it is
+                    sold, which is true of most things here. */}
+                <Field label="Received in packs? (leave blank if not)">
+                  <div className="flex gap-3">
+                    <input type="text" placeholder="crate" value={edit.pack_label ?? ''}
+                      onChange={e => setEdit(x => ({ ...x, pack_label: e.target.value }))}
+                      className="h-14 flex-1 min-w-0 px-4 rounded-xl bg-surface border border-line" />
+                    <input type="number" inputMode="numeric" placeholder="12"
+                      value={edit.pack_size ?? ''}
+                      onChange={e => setEdit(x => ({ ...x, pack_size: e.target.value }))}
+                      className="h-14 w-28 px-4 rounded-xl bg-surface border border-line tnum" />
+                  </div>
+                  <p className="text-dim text-sm mt-2">
+                    A crate of 12. Receiving 5 crates then records 60 — the Store
+                    page shows the sum before you save it.
+                  </p>
+                </Field>
+
+                {Number(edit.pack_size) > 1 && (
+                  <Field label="Does the pack itself sit on the book?">
+                    <select value={edit.piece_item_id || ''}
+                      onChange={e => setEdit(x => ({ ...x, piece_item_id: e.target.value || null }))}
+                      className="h-14 w-full px-3 rounded-xl bg-surface border border-line">
+                      <option value="">No — the {edit.pack_label || 'pack'} is only how we count it in</option>
+                      {(all || [])
+                        .filter(i => i && i.id !== edit.id && i.is_active && typeof i.name === 'string')
+                        .sort((a, b) => a.name.localeCompare(b.name))
+                        .map(i => (
+                          <option key={i.id} value={i.id}>Yes — one becomes {edit.pack_size} × {i.name}</option>
+                        ))}
+                    </select>
+                    <p className="text-dim text-sm mt-2">
+                      Only for something you stock both ways — a bottle of groundnut
+                      you hold as bottles and open into plates. Pick the piece and
+                      Convert fills the rest in for you.
+                    </p>
+                  </Field>
+                )}
+
                 <label className="mt-6 flex items-center gap-3">
                   <input type="checkbox" checked={edit.is_active} className="w-5 h-5"
                     onChange={e => setEdit(x => ({ ...x, is_active: e.target.checked }))} />

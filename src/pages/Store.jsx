@@ -108,12 +108,29 @@ export default function Store({ boot }) {
     : mode === 'move' ? fromDept
     : store?.id  // disburse always draws from the store
 
+  // Received in crates, held in bottles (Chris, 25 October 2026; 575).
+  //
+  // Only on the way IN, and only for an item whose pack is a counting
+  // unit. An item with a piece_item_id is a pack that is itself stock —
+  // a bottle of groundnut — and five of those received are five bottles,
+  // not twenty-five plates. Converting it is a separate act, on the
+  // Convert tab, when someone actually opens the bottle.
+  const packable = (item) => mode === 'receive'
+    && Number(item?.pack_size) > 1 && !item?.piece_item_id
+  // What goes on the book: packs multiply, singles do not.
+  const piecesOf = (l) => (l.inPacks && packable(l.item))
+    ? l.qty * Number(l.item.pack_size) : l.qty
+
   function addLine(item) {
     setPicking(false)
+    // Defaults to packs where the item has a pack size, because that is
+    // how the goods arrive. One tap switches it back for the odd loose
+    // bottle.
     setLines(l => l.some(x => x.item.id === item.id) ? l
-      : [...l, { item, qty: 1 }])
+      : [...l, { item, qty: 1, inPacks: Number(item?.pack_size) > 1 && !item?.piece_item_id }])
   }
   const setQty = (id, q) => setLines(l => l.map(x => x.item.id === id ? { ...x, qty: Math.max(1, q) } : x))
+  const setInPacks = (id, v) => setLines(l => l.map(x => x.item.id === id ? { ...x, inPacks: v } : x))
   const drop = (id) => setLines(l => l.filter(x => x.item.id !== id))
 
   async function save() {
@@ -157,13 +174,19 @@ export default function Store({ boot }) {
         movement_type: movementType,
         from_location: fromLoc,
         to_location: toLoc,
-        qty: l.qty,
+        qty: piecesOf(l),
         business_date: date,
         received_by: mode !== 'receive' ? (receiver.trim() || null) : null,
         occurred_at: new Date().toISOString(),
         recorded_by: staff.id,
         is_migrated: false,
-        note: noteWhat,
+        // The pack arithmetic goes in the note as well as the figure, so
+        // a count that disagrees later can be read back to what was
+        // actually carried in — "60 bottles" alone cannot tell you
+        // whether five crates or six were delivered.
+        note: (l.inPacks && packable(l.item))
+          ? `${noteWhat} — ${l.qty} ${l.item.pack_label}${l.qty === 1 ? '' : 's'} × ${Number(l.item.pack_size)}`
+          : noteWhat,
       }))
       try {
         const { error } = await supabase.from('stock_movements').insert(rows)
@@ -453,6 +476,28 @@ export default function Store({ boot }) {
                     {mode === 'receive' ? '' : `${avail} here`}
                   </span>
                 </div>
+                {/* The arithmetic, printed every time. A stored pack size
+                    that nobody ever sees is the thing that runs silently
+                    wrong for months — this is what makes a wrong one
+                    obvious on the first use. */}
+                {packable(l.item) && (
+                  <div className="mt-2 flex items-center gap-2 flex-wrap">
+                    <div className="flex gap-1 rounded-xl border border-line overflow-hidden">
+                      {[true, false].map(v => (
+                        <button key={String(v)} onClick={() => setInPacks(l.item.id, v)}
+                          className={`h-10 px-3 text-sm font-semibold ${l.inPacks === v
+                            ? 'bg-raise text-amber' : 'text-dim'}`}>
+                          {v ? `${l.item.pack_label}s` : 'singles'}
+                        </button>
+                      ))}
+                    </div>
+                    <span className="text-sm tnum text-leaf font-semibold">
+                      {l.inPacks
+                        ? `${l.qty} × ${Number(l.item.pack_size)} = ${piecesOf(l)} into the store`
+                        : `${l.qty} into the store`}
+                    </span>
+                  </div>
+                )}
               </li>
             )
           })}
@@ -504,7 +549,18 @@ export default function Store({ boot }) {
                 <button onClick={() => setConvertFrom(c => ({ ...c, qty: Math.max(1, (c.qty || 1) - 1) }))}
                   className="h-11 w-11 rounded-xl bg-raise border border-line text-xl font-bold">−</button>
                 <input type="number" inputMode="numeric" value={convertFrom.qty ?? 1}
-                  onChange={e => setConvertFrom(c => ({ ...c, qty: Math.max(1, Number(e.target.value)) }))}
+                  onChange={e => setConvertFrom(c => {
+                    const qty = Math.max(1, Number(e.target.value))
+                    // Two bottles is ten plates. Only follows along while
+                    // the other side still matches the recorded ratio, so
+                    // a hand-typed figure is never overwritten.
+                    const per = Number(c.item?.pack_size) || 0
+                    if (per > 1 && c.item?.piece_item_id
+                        && convertTo && Number(convertTo.qty) === (c.qty || 1) * per) {
+                      setConvertTo(t => ({ ...t, qty: qty * per }))
+                    }
+                    return { ...c, qty }
+                  })}
                   className="h-11 w-16 px-2 rounded-xl bg-raise border border-line tnum text-center" />
                 <button onClick={() => setConvertFrom(c => ({ ...c, qty: (c.qty || 1) + 1 }))}
                   className="h-11 w-11 rounded-xl bg-raise border border-line text-xl font-bold">+</button>
@@ -562,8 +618,19 @@ export default function Store({ boot }) {
         <ItemPicker items={items} stockMap={stockMap} locationId={convertLoc}
           popular={popular}
           onPick={item => {
-            if (convertPicking === 'from') setConvertFrom({ item, qty: 1 })
-            else setConvertTo({ item, qty: 1 })
+            if (convertPicking === 'from') {
+              setConvertFrom({ item, qty: 1 })
+              // If this item is recorded as breaking down into another —
+              // a bottle of groundnut into plates (575) — fill the other
+              // side in rather than making someone retype a ratio they
+              // already told the app once. Still shown, still editable:
+              // the day a bottle yields four plates instead of five, the
+              // person doing it is the one who should say so.
+              const piece = item?.piece_item_id
+                ? [...(boot.items || []), ...(boot.supplyItems || [])]
+                    .find(i => i.id === item.piece_item_id) : null
+              if (piece) setConvertTo({ item: piece, qty: Number(item.pack_size) || 1 })
+            } else setConvertTo({ item, qty: 1 })
             setConvertPicking(null)
           }}
           onClose={() => setConvertPicking(null)} />
