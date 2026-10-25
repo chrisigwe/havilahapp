@@ -294,15 +294,15 @@ export async function accountStatementPdf(d) {
   // Served by / Taken by, as columns of their own (Chris, 25 October
   // 2026). Widths re-cut from the existing ones rather than added to:
   // they total 100 and a column past that is silently clipped.
-  s.heading('Goods taken on credit')
+  s.heading('Still owed')
   s.table(
     [{ label: 'Date', align: 'left', w: 10 }, { label: 'Department', align: 'left', w: 14 },
      { label: 'Item', align: 'left', w: 25 }, { label: 'Served by', align: 'left', w: 16 },
      { label: 'Qty', align: 'right', w: 6 },
-     { label: 'Unit (NGN)', align: 'right', w: 13 }, { label: 'Amount (NGN)', align: 'right', w: 16 }],
+     { label: 'Charged (NGN)', align: 'right', w: 13 }, { label: 'Still owing (NGN)', align: 'right', w: 16 }],
     (d.creditRows || []).map(r => ({
       cells: [r.date, r.department, r.item, r.servedBy || '—', String(r.qty), num(r.unit), num(r.amount)] })),
-    [{ label: 'Total credit', value: num(d.creditTotal), bold: true }],
+    [{ label: 'Total still owed', value: num(d.creditTotal), bold: true }],
   )
 
   // Where a payment was taken, now that a statement can span several
@@ -314,12 +314,14 @@ export async function accountStatementPdf(d) {
      { label: 'Where', align: 'left', w: 17 }, { label: 'Taken by', align: 'left', w: 17 },
      { label: 'Note', align: 'left', w: 19 }, { label: 'Amount (NGN)', align: 'right', w: 20 }],
     (d.payments || []).map(r => ({ cells: [r.date, r.method, r.where || '—', r.takenBy || '—', r.note || '', num(r.amount)] })),
-    [{ label: 'Total paid', value: num(d.paidTotal), bold: true }],
+    [{ label: 'Paid to date', value: num(d.paidTotal), bold: true }],
   )
 
   s.balance('Balance owing', money(d.balance))
   s.gap(4)
-  s.note(d.footer || 'Prepared from the Havilah inventory system. Please settle at the front desk or with the store manager.')
+  s.note(d.footer || 'Only unpaid items are listed; anything already settled is left off. '
+    + 'Money paid is applied to the oldest item still owing first. '
+    + 'Please settle at the front desk or with the store manager.')
   return s.finish()
 }
 

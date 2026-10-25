@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useToast } from '../components/Toast'
 import { lagosToday, methodLabel, naira, startingDept, tierLabel } from '../lib/format'
 import RoomChargeTracker from '../components/RoomChargeTracker'
-import { checkRepeatPayment, deactivateCustomer, deleteCustomer, linkCustomerToGuest, loadBalances, loadCreditForMonth, loadCreditOnDate, loadCustomerLedger, loadFolio, loadGuestBalances, loadReservedValue, loadStaffForLocation, loadUnlinkedCustomerBalances, moveWorkaroundToRoom, recordStayPayment, saveRepayment, searchSimilarGuests } from '../lib/data'
+import { checkRepeatPayment, deactivateCustomer, deleteCustomer, linkCustomerToGuest, loadBalances, loadCreditForMonth, loadCreditOnDate, loadCustomerLedger, loadCreditChain, loadFolio, loadGuestBalances, loadReservedValue, loadStaffForLocation, loadUnlinkedCustomerBalances, moveWorkaroundToRoom, recordStayPayment, saveRepayment, searchSimilarGuests } from '../lib/data'
 import { enqueue, flush, isConnectionError } from '../lib/outbox'
 import PaymentMethodPicker, { paymentParts, paymentAllocated } from '../components/PaymentMethodPicker'
 import FolioStatement from '../components/FolioStatement'
@@ -153,7 +153,7 @@ export default function Credit({ boot }) {
   // nothing, which reads as the app freezing. Now the statement opens
   // immediately and says it is loading.
   async function openCustomer(c) {
-    setOpen({ customer: c, ledger: null, error: null })
+    setOpen({ customer: c, ledger: null, chain: null, error: null })
     try {
       // Everything they owe at this branch, not the row you clicked
       // (Chris, 25 October 2026). The LIST is one row per customer per
@@ -166,34 +166,59 @@ export default function Credit({ boot }) {
       // exactly what this query counts — credit sale payments and
       // repayments, with no exclusions on either side — so the totals
       // below agree with the balances on the list behind this panel.
-      const ledger = await loadCustomerLedger(staff.branch_id, c.customer_id, null, null)
-      setOpen(o => (o && o.customer.customer_id === c.customer_id) ? { ...o, ledger } : o)
+      // Two loads, two jobs. The chain says what is STILL OWED, item by
+      // item; the ledger supplies the payments received. 4000 days, not
+      // the default 120: the oldest credit on the books is 20 May 2026,
+      // and a debt that falls outside the window would simply vanish
+      // from a statement whose whole purpose is to show what is unpaid.
+      const [ledger, chain] = await Promise.all([
+        loadCustomerLedger(staff.branch_id, c.customer_id, null, null),
+        loadCreditChain(staff.branch_id, c.customer_id, 4000),
+      ])
+      setOpen(o => (o && o.customer.customer_id === c.customer_id) ? { ...o, ledger, chain } : o)
     } catch (e) {
       setOpen(o => (o && o.customer.customer_id === c.customer_id)
         ? { ...o, error: e.message || 'could not load' } : o)
     }
   }
 
-  // The statement's own arithmetic, from its own lines. open.customer
-  // carries one slice's figures and can no longer speak for the whole
-  // account now that every department is listed.
+  // What is still owed, item by item (Chris, 25 October 2026 — "the
+  // statement should have unsettled debt").
+  //
+  // A statement used to list everything ever taken and everything ever
+  // paid. For a regular customer that is pages of settled business with
+  // the one figure that matters buried at the end. What a person should
+  // be handed is what they still owe.
+  //
+  // credit_chain does this calculation already, and it is the same one
+  // behind the panel lower down this page — so the two agree by
+  // construction rather than being two sums of the same thing. It
+  // applies money to the oldest item first, which is how it is settled
+  // at the till anyway (570).
+  //
+  // Safe to total from these lines: the chain leaves out staff meals and
+  // PR damage, and there are none on any customer account, so its total
+  // equals the balance on the list behind this panel.
   const stmt = useMemo(() => {
-    const rows = open?.ledger?.credit || []
+    const chain = open?.chain || []
+    const owing = chain.filter(r => Number(r.still_owed || 0) > 0.009)
+    const totalOwed = owing.reduce((t, r) => t + Number(r.still_owed || 0), 0)
     const pays = open?.ledger?.repayments || []
-    const creditTotal = rows.reduce((t, r) => t + Number(r.credit || 0), 0)
     const paidTotal = pays.reduce((t, r) => t + Number(r.amount || 0), 0)
-    // Goods grouped by department, each with its own subtotal, so a bar
-    // can find its part of an account that spans several of them.
     const by = new Map()
-    for (const r of rows) {
-      const k = r.location_id || 'none'
-      if (!by.has(k)) by.set(k, { key: k, name: locById[r.location_id]?.name || 'Elsewhere', rows: [], subtotal: 0 })
+    for (const r of owing) {
+      const k = r.dept || 'none'
+      if (!by.has(k)) by.set(k, { key: k, name: r.dept || 'Elsewhere', rows: [], subtotal: 0 })
       const g = by.get(k)
-      g.rows.push(r); g.subtotal += Number(r.credit || 0)
+      g.rows.push(r); g.subtotal += Number(r.still_owed || 0)
     }
     const groups = [...by.values()].sort((a, b) => b.subtotal - a.subtotal)
-    return { creditTotal, paidTotal, balance: creditTotal - paidTotal, groups }
-  }, [open?.ledger, locById])
+    // The most recent payments only. The point of showing any is that a
+    // customer sees their money acknowledged, not that they re-read a
+    // year of history.
+    const recent = pays.slice(0, 10)
+    return { owing, totalOwed, paidTotal, groups, recent, morePays: Math.max(0, pays.length - recent.length) }
+  }, [open?.chain, open?.ledger])
 
   useEffect(() => {
     if (!linking) return
@@ -919,7 +944,10 @@ export default function Credit({ boot }) {
                   department, the quantity and the server folded under the
                   item. Wider screens and print get the full invoice
                   columns, because that is what a customer is handed. */}
-              <h3 className="mt-6 mb-2 font-bold">Goods taken on credit</h3>
+              <h3 className="mt-6 mb-2 font-bold">Still owed</h3>
+              <p className="text-dim text-sm mb-2">
+                Only what is unpaid. Anything already settled is not listed.
+              </p>
               <table className="invoice-table">
                 <thead>
                   <tr>
@@ -928,8 +956,8 @@ export default function Credit({ boot }) {
                     <th>Item</th>
                     <th className="hidden sm:table-cell print:table-cell">Served by</th>
                     <th className="num hidden sm:table-cell print:table-cell">Qty</th>
-                    <th className="num hidden sm:table-cell print:table-cell">Unit</th>
-                    <th className="num">Amount</th>
+                    <th className="num hidden sm:table-cell print:table-cell">Charged</th>
+                    <th className="num">Still owing</th>
                   </tr>
                 </thead>
                 {/* One body per department, each closing with its own
@@ -944,34 +972,38 @@ export default function Credit({ boot }) {
                       <td colSpan="7" style={{ paddingTop: '0.9rem' }} className="font-bold">{g.name}</td>
                     </tr>
                   )}
-                  {g.rows.map(s2 => (
-                    <tr key={s2.id}>
-                      <td className="tnum">{s2.business_date?.slice(5)}</td>
-                      <td className="hidden sm:table-cell print:table-cell">
-                        {locById[s2.location_id]?.name || '—'}
-                      </td>
+                  {g.rows.map(r => {
+                    const left = Number(r.still_owed || 0)
+                    const part = Number(r.recovered || 0) > 0.009
+                    return (
+                    <tr key={r.sale_id}>
+                      <td className="tnum">{String(r.taken_on || '').slice(5)}</td>
+                      <td className="hidden sm:table-cell print:table-cell">{r.dept || '—'}</td>
                       <td>
-                        {itemById[s2.stock_item_id]?.name || s2.description || '—'}
-                        {s2.tier && s2.tier !== 'general' && (
-                          <span className="text-dim"> ({tierLabel[s2.tier] || s2.tier})</span>
-                        )}
+                        {r.item || '—'}
                         {/* Everything the narrow table leaves out, in one
                             line under the item. */}
                         <span className="block text-dim text-xs mt-0.5 sm:hidden print:hidden">
-                          {[locById[s2.location_id]?.name,
-                            `${s2.qty} × ${naira(s2.unit_price)}`,
-                            s2.served_by && `served by ${s2.served_by}`,
+                          {[r.dept, r.qty ? `${r.qty} × ${naira(r.unit_price)}` : null,
+                            r.staff && `served by ${r.staff}`,
                           ].filter(Boolean).join(' · ')}
                         </span>
+                        {/* A line paid down but not cleared says so on both
+                            shapes: "still owing 3,500" against a 3,900 item
+                            otherwise reads as an error to whoever checks it. */}
+                        {part && (
+                          <span className="block text-dim text-xs tnum">
+                            {naira(r.recovered)} of {naira(r.amount)} already paid
+                          </span>
+                        )}
                       </td>
-                      {/* An em dash, never a guess, when the name is not on
-                          the record — see loadCustomerLedger. */}
-                      <td className="text-dim hidden sm:table-cell print:table-cell">{s2.served_by || '—'}</td>
-                      <td className="num tnum hidden sm:table-cell print:table-cell">{s2.qty}</td>
-                      <td className="num tnum hidden sm:table-cell print:table-cell">{naira(s2.unit_price)}</td>
-                      <td className="num tnum">{naira(s2.credit)}</td>
+                      <td className="text-dim hidden sm:table-cell print:table-cell">{r.staff || '—'}</td>
+                      <td className="num tnum hidden sm:table-cell print:table-cell">{r.qty}</td>
+                      <td className="num tnum hidden sm:table-cell print:table-cell">{naira(r.amount)}</td>
+                      <td className="num tnum font-semibold">{naira(left)}</td>
                     </tr>
-                  ))}
+                    )
+                  })}
                   {stmt.groups.length > 1 && (
                     <tr>
                       <td colSpan="2" className="num text-dim">{g.name} subtotal</td>
@@ -985,26 +1017,30 @@ export default function Credit({ boot }) {
                 </tbody>
                 ))}
                 <tbody>
-                  {!open.ledger.credit.length && (
-                    <tr><td colSpan="7" className="text-dim">None recorded.</td></tr>
+                  {!stmt.owing.length && (
+                    <tr><td colSpan="7" className="text-dim">Nothing outstanding. This account is settled.</td></tr>
                   )}
                 </tbody>
-                {/* One footer row per shape. A single row cannot span both,
-                    and a span wider than the columns on screen pushes the
-                    amount out of its own column. */}
                 <tfoot>
                   <tr className="sm:hidden print:hidden">
-                    <td colSpan="2" className="num font-bold">Total credit</td>
-                    <td className="num tnum font-bold">{naira(stmt.creditTotal)}</td>
+                    <td colSpan="2" className="num font-bold">Total still owed</td>
+                    <td className="num tnum font-bold">{naira(stmt.totalOwed)}</td>
                   </tr>
                   <tr className="hidden sm:table-row print:table-row">
-                    <td colSpan="6" className="num font-bold">Total credit</td>
-                    <td className="num tnum font-bold">{naira(stmt.creditTotal)}</td>
+                    <td colSpan="6" className="num font-bold">Total still owed</td>
+                    <td className="num tnum font-bold">{naira(stmt.totalOwed)}</td>
                   </tr>
                 </tfoot>
               </table>
 
-              <h3 className="mt-6 mb-2 font-bold">Payments received</h3>
+              <p className="text-dim text-sm mt-2">
+                Money paid is applied to the oldest item still owing first, which is
+                how it is settled at the till. A payment is not tied to one item.
+              </p>
+
+              <h3 className="mt-6 mb-2 font-bold">
+                {stmt.morePays ? 'Recent payments' : 'Payments received'}
+              </h3>
               <table className="invoice-table">
                 <thead>
                   <tr>
@@ -1016,7 +1052,7 @@ export default function Credit({ boot }) {
                   </tr>
                 </thead>
                 <tbody>
-                  {open.ledger.repayments.map(r => (
+                  {stmt.recent.map(r => (
                     <tr key={r.id}>
                       <td className="tnum">{r.paid_on?.slice(5)}</td>
                       <td>
@@ -1033,25 +1069,35 @@ export default function Credit({ boot }) {
                       <td className="num tnum">{naira(r.amount)}</td>
                     </tr>
                   ))}
-                  {!open.ledger.repayments.length && (
+                  {!stmt.recent.length && (
                     <tr><td colSpan="6" className="text-dim">None yet.</td></tr>
                   )}
                 </tbody>
                 <tfoot>
+                  {/* Paid in full, across the whole account — not the sum
+                      of the ten rows above it, which would be a different
+                      number and a confusing one. */}
                   <tr className="sm:hidden print:hidden">
-                    <td colSpan="2" className="num font-bold">Total paid</td>
+                    <td colSpan="2" className="num font-bold">Paid to date</td>
                     <td className="num tnum font-bold">{naira(stmt.paidTotal)}</td>
                   </tr>
                   <tr className="hidden sm:table-row print:table-row">
-                    <td colSpan="5" className="num font-bold">Total paid</td>
+                    <td colSpan="5" className="num font-bold">Paid to date</td>
                     <td className="num tnum font-bold">{naira(stmt.paidTotal)}</td>
                   </tr>
                 </tfoot>
               </table>
+              {stmt.morePays > 0 && (
+                <p className="text-dim text-sm mt-2">
+                  The {stmt.recent.length} most recent payments are listed.
+                  {' '}{stmt.morePays} earlier payment{stmt.morePays === 1 ? ' is' : 's are'} included in the
+                  total but not shown.
+                </p>
+              )}
 
               <div className="invoice-balance mt-6">
-                <span>Balance owing</span>
-                <span className="tnum">{naira(stmt.balance)}</span>
+                <span>{stmt.totalOwed > 0.009 ? 'Balance owing' : 'Balance'}</span>
+                <span className="tnum">{naira(stmt.totalOwed)}</span>
               </div>
 
               {open.customer.balance > 0.009 && locId === 'all' && (
@@ -1102,21 +1148,25 @@ export default function Credit({ boot }) {
               customerName: open.customer.name,
               // Grouped the same way as the screen, so the printed copy
               // and the one on the phone are the same document.
-              creditRows: stmt.groups.flatMap(g => g.rows).map(s2 => ({
-                date: s2.business_date?.slice(5) || '',
-                department: locById[s2.location_id]?.name || '—',
-                item: `${itemById[s2.stock_item_id]?.name || s2.description || '—'}${s2.tier && s2.tier !== 'general' ? ` (${tierLabel[s2.tier] || s2.tier})` : ''}`,
-                servedBy: s2.served_by || '',
-                qty: s2.qty, unit: s2.unit_price, amount: s2.credit,
+              creditRows: stmt.groups.flatMap(g => g.rows).map(r => ({
+                date: String(r.taken_on || '').slice(5),
+                department: r.dept || '—',
+                // A part-paid line carries its own arithmetic, so a
+                // printed "still owing" smaller than the charge cannot
+                // read as a mistake.
+                item: `${r.item || '—'}${Number(r.recovered || 0) > 0.009
+                  ? ` (${naira(r.recovered)} of ${naira(r.amount)} already paid)` : ''}`,
+                servedBy: r.staff || '',
+                qty: r.qty, unit: r.amount, amount: r.still_owed,
               })),
-              creditTotal: stmt.creditTotal,
-              payments: open.ledger.repayments.map(r => ({
+              creditTotal: stmt.totalOwed,
+              payments: stmt.recent.map(r => ({
                 date: r.paid_on?.slice(5) || '', method: methodLabel[r.method] || r.method,
                 where: locById[r.location_id]?.name || '',
                 takenBy: r.taken_by || '', note: r.note || '', amount: r.amount,
               })),
               paidTotal: stmt.paidTotal,
-              balance: stmt.balance,
+              balance: stmt.totalOwed,
             }), `Statement ${open.customer.name}`)}
               className="flex-1 h-14 rounded-2xl border border-line font-bold disabled:opacity-40">Save / share PDF</button>
             {(() => {
