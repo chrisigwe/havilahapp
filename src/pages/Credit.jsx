@@ -953,6 +953,24 @@ export default function Credit({ boot }) {
               </p>
               </>)}
             </div>
+
+            {/* What was taken, and how each of it came back (570).
+                Kept off the printed statement, which is the formal
+                account; this is the working view — the one that answers
+                "has he paid for the Desperados yet". */}
+            <div className="px-5 pb-5 print:hidden">
+              <h3 className="font-semibold mb-1">What was taken, and how it came back</h3>
+              <CreditChain branchId={staff.branch_id} customerId={open.customer.customer_id} />
+            </div>
+
+            {isAdmin && (
+              <div className="px-5 pb-5 print:hidden">
+                <button onClick={() => setConfirmDel(open.customer)}
+                  className="w-full h-12 rounded-xl border border-clay text-clay font-semibold">
+                  Delete customer
+                </button>
+              </div>
+            )}
           </div>
 
           <div className="p-5 border-t border-line flex gap-3 print:hidden">
@@ -1001,23 +1019,6 @@ export default function Credit({ boot }) {
               )
             })()}
           </div>
-          {/* What was taken, and how each of it came back (570).
-              Kept off the printed statement, which is the formal
-              account; this is the working view — the one that answers
-              "has he paid for the Desperados yet". */}
-          <div className="px-5 pb-5 print:hidden">
-            <h3 className="font-semibold mb-1">What was taken, and how it came back</h3>
-            <CreditChain branchId={staff.branch_id} customerId={open.customer.customer_id} />
-          </div>
-
-          {isAdmin && (
-            <div className="px-5 pb-5 print:hidden">
-              <button onClick={() => setConfirmDel(open.customer)}
-                className="w-full h-12 rounded-xl border border-clay text-clay font-semibold">
-                Delete customer
-              </button>
-            </div>
-          )}
         </div>
       )}
 
