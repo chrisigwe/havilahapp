@@ -848,7 +848,7 @@ export async function loadRecentlyAdded(branchId, locationId = null, days = 30) 
 export async function loadDepartmentHistory(branchId, locationId, days = 60) {
   const since = new Date(Date.now() - days * 864e5).toISOString().slice(0, 10)
   const { data, error } = await supabase.from('stock_movements')
-    .select(`business_date, qty, received_by, movement_type, created_at,
+    .select(`business_date, qty, received_by, movement_type, created_at, note, stock_item_id,
              stock_items(name), staff:recorded_by(full_name)`)
     .eq('branch_id', branchId).eq('to_location', locationId)
     .in('movement_type', ['transfer', 'issue'])
@@ -864,7 +864,10 @@ export async function loadDepartmentHistory(branchId, locationId, days = 60) {
 export async function loadReceiveHistory(branchId, storeId, days = 60) {
   const since = new Date(Date.now() - days * 864e5).toISOString().slice(0, 10)
   const { data, error } = await supabase.from('stock_movements')
-    .select(`business_date, qty, received_by, created_at,
+    // note carries the pack arithmetic a receive was keyed with — "5
+    // crates × 12" — so the history can show what was actually carried
+    // in, not only the 60 it became (575).
+    .select(`business_date, qty, received_by, created_at, note, stock_item_id,
              stock_items(name), staff:recorded_by(full_name)`)
     .eq('branch_id', branchId).eq('to_location', storeId)
     .eq('movement_type', 'restock')
@@ -882,7 +885,7 @@ export async function loadReceiveHistory(branchId, storeId, days = 60) {
 export async function loadMoveHistory(branchId, fromLocationId, days = 60) {
   const since = new Date(Date.now() - days * 864e5).toISOString().slice(0, 10)
   const { data, error } = await supabase.from('stock_movements')
-    .select(`business_date, qty, received_by, created_at, from_location, to_location,
+    .select(`business_date, qty, received_by, created_at, from_location, to_location, note, stock_item_id,
              stock_items(name), staff:recorded_by(full_name)`)
     .eq('branch_id', branchId).eq('from_location', fromLocationId)
     .eq('movement_type', 'transfer')
@@ -901,7 +904,7 @@ export async function loadMoveHistory(branchId, fromLocationId, days = 60) {
 export async function loadConvertHistory(branchId, locationId, days = 60) {
   const since = new Date(Date.now() - days * 864e5).toISOString().slice(0, 10)
   const { data, error } = await supabase.from('stock_movements')
-    .select(`business_date, qty, note, created_at,
+    .select(`business_date, qty, note, created_at, stock_item_id,
              stock_items(name), staff:recorded_by(full_name)`)
     .eq('branch_id', branchId).eq('to_location', locationId)
     .eq('movement_type', 'conversion')

@@ -54,6 +54,11 @@ export default function Store({ boot }) {
   const [busy, setBusy] = useState(false)
   const [history, setHistory] = useState(null)
   const [showHistory, setShowHistory] = useState(false)
+  // Which days are open. null = untouched, so the newest day shows and
+  // the rest stay shut. Reset whenever the history itself changes, or a
+  // date left open under Receive would stay open under Convert, which is
+  // a different list entirely.
+  const [openHistoryDays, setOpenHistoryDays] = useState(null)
 
   // convert: one item becomes a different item, at a fixed ratio you
   // type each time (e.g. 2 bottles -> 10 plates) rather than a
@@ -89,6 +94,7 @@ export default function Store({ boot }) {
   // issue (to a dept), move (from a dept), convert (at a dept)
   const reloadHistory = useCallback((clearFirst = true) => {
     if (clearFirst) setHistory(null)
+    setOpenHistoryDays(null)
     let p
     if (mode === 'receive' && store?.id) p = loadReceiveHistory(staff.branch_id, store.id)
     else if (mode === 'disburse' && toDept) p = loadDepartmentHistory(staff.branch_id, toDept)
@@ -248,9 +254,41 @@ export default function Store({ boot }) {
     ? [['receive', 'Receive (IN)'], ['disburse', 'Issue (OUT)']]
     : [['receive', 'Receive (IN)'], ['disburse', 'Issue (OUT)'],
        ['move', 'Move Between Depts'], ['convert', 'Convert']]
-  const supplyNames = new Set((boot.supplyItems || []).map(i => i.name))
+  // Sale stock and supplies are two tabs, and a row belongs to one of
+  // them by its item's ID. It used to be matched by NAME, which would
+  // have sent an item's whole history to the other tab the day someone
+  // renamed it, and collided outright on two items sharing a name
+  // across the two lists (25 October 2026).
+  const supplyIds = useMemo(
+    () => new Set((boot.supplyItems || []).map(i => i.id)), [boot.supplyItems])
   const shownHistory = history && history.filter(h =>
-    (kind === 'supplies') === supplyNames.has(h.stock_items?.name))
+    (kind === 'supplies') === supplyIds.has(h.stock_item_id))
+
+  // ── History, folded by the day it happened ────────────────────────
+  // Sixty days of a working store is a long scroll to reach one entry.
+  const historyByDay = useMemo(() => {
+    const m = new Map()
+    for (const h of (shownHistory || [])) {
+      if (!m.has(h.business_date)) m.set(h.business_date, [])
+      m.get(h.business_date).push(h)
+    }
+    return [...m.entries()].sort((a, b) => (a[0] < b[0] ? 1 : -1))
+  }, [shownHistory])
+  const firstHistoryDay = historyByDay.length ? historyByDay[0][0] : null
+  const histDayOpen = (d) => openHistoryDays ? openHistoryDays.has(d) : d === firstHistoryDay
+  const toggleHistoryDay = (d) => setOpenHistoryDays(cur => {
+    const next = cur ? new Set(cur) : new Set(firstHistoryDay ? [firstHistoryDay] : [])
+    if (next.has(d)) next.delete(d); else next.add(d)
+    return next
+  })
+
+  // The pack a receive was keyed in, pulled back out of its own note.
+  // Only the suffix save() writes, so anything else in a note is left
+  // alone and an older row simply has none.
+  const packNote = (h) => {
+    const m = /—\s*(\d+\s+\S+\s+×\s+\d+)\s*$/.exec(h?.note || '')
+    return m ? m[1] : ''
+  }
 
   const offToday = date !== lagosToday()
   const dayLong = (d) => new Date(d + 'T12:00:00')
@@ -421,32 +459,73 @@ export default function Store({ boot }) {
               <span className="text-dim text-sm">{showHistory ? 'Hide' : 'Show'}</span>
             </button>
             {showHistory && (
-              <ul className="divide-y divide-line/60 rounded-2xl border border-line bg-surface px-4 mb-2">
-                {(shownHistory || []).map((h, i) => (
-                  <li key={i} className="py-3">
-                    <div className="flex items-center gap-3">
-                      <span className="flex-1 min-w-0 truncate font-semibold">
-                        {h.stock_items?.name || '—'}
-                      </span>
-                      <span className="tnum text-dim text-sm">{h.business_date}</span>
-                    </div>
-                    <div className="text-dim text-sm mt-0.5">
-                      {mode === 'convert'
-                        ? (h.note || `${h.qty} produced`)
-                        : mode === 'receive'
-                        ? `${h.qty} received${h.received_by ? ` from ${h.received_by}` : ''}`
-                        : mode === 'move'
-                        ? `${h.qty} moved${h.received_by ? ` · received by ${h.received_by}` : ''}`
-                        : `${h.qty} received${h.received_by ? ` by ${h.received_by}` : ''}`}
-                      {h.staff?.full_name ? ` · by ${h.staff.full_name}` : ''}
-                    </div>
-                  </li>
-                ))}
-                {history === null && <li className="py-6 text-dim text-center">Loading…</li>}
-                {shownHistory && !shownHistory.length && (
-                  <li className="py-6 text-dim text-center">{active.empty}</li>
+              <div className="mb-2">
+                {history === null && (
+                  <p className="py-6 text-dim text-center rounded-2xl border border-line bg-surface">Loading…</p>
                 )}
-              </ul>
+                {shownHistory && !shownHistory.length && (
+                  <p className="py-6 text-dim text-center rounded-2xl border border-line bg-surface">{active.empty}</p>
+                )}
+                {historyByDay.map(([day, rows]) => {
+                  const open = histDayOpen(day)
+                  const total = rows.reduce((t, r) => t + Number(r.qty || 0), 0)
+                  return (
+                    <section key={day} className="mt-2 rounded-2xl border border-line bg-surface">
+                      <button type="button" onClick={() => toggleHistoryDay(day)} aria-expanded={open}
+                        className="w-full px-4 py-3 flex items-baseline justify-between gap-3 text-left">
+                        <span className="min-w-0">
+                          <span className="font-semibold">{dayLong(day)}</span>
+                          <span className="text-dim text-sm block tnum">
+                            {rows.length} entr{rows.length === 1 ? 'y' : 'ies'} · {total} in total
+                          </span>
+                        </span>
+                        <svg viewBox="0 0 20 20" aria-hidden="true"
+                          className={`w-4 h-4 shrink-0 text-dim transition-transform ${open ? 'rotate-180' : ''}`}
+                          fill="none" stroke="currentColor" strokeWidth="2">
+                          <path d="M5 8l5 5 5-5" strokeLinecap="round" strokeLinejoin="round" />
+                        </svg>
+                      </button>
+                      {open && (
+                        <ul className="divide-y divide-line/60 border-t border-line px-4">
+                          {rows.map((h, i) => {
+                            const pack = packNote(h)
+                            return (
+                              <li key={i} className="py-3">
+                                <div className="flex items-baseline gap-3">
+                                  <span className="flex-1 min-w-0 font-semibold break-words">
+                                    {h.stock_items?.name || '—'}
+                                  </span>
+                                  <span className="tnum font-semibold shrink-0">{h.qty}</span>
+                                </div>
+                                {/* No date on the row: the day is the heading above. */}
+                                <div className="text-dim text-sm mt-0.5 break-words">
+                                  {mode === 'convert'
+                                    ? (h.note || `${h.qty} produced`)
+                                    : mode === 'receive'
+                                    ? `received${h.received_by ? ` from ${h.received_by}` : ''}`
+                                    : mode === 'move'
+                                    // Where it WENT. A list of what left a
+                                    // department that cannot say where to is
+                                    // half a record (25 October 2026).
+                                    ? `moved to ${allDepartments.find(d => d.id === h.to_location)?.name || 'somewhere'}${h.received_by ? ` · received by ${h.received_by}` : ''}`
+                                    : `received${h.received_by ? ` by ${h.received_by}` : ''}`}
+                                  {h.staff?.full_name ? ` · by ${h.staff.full_name}` : ''}
+                                </div>
+                                {/* What was actually carried in, where it was
+                                    keyed in packs — "60" alone cannot tell you
+                                    whether five crates came or six. */}
+                                {pack && (
+                                  <div className="text-leaf text-sm tnum font-semibold">{pack}</div>
+                                )}
+                              </li>
+                            )
+                          })}
+                        </ul>
+                      )}
+                    </section>
+                  )
+                })}
+              </div>
             )}
           </div>
         )
