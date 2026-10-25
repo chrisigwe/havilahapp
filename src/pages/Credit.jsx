@@ -11,6 +11,7 @@ import { accountStatementPdf, savePdf } from '../lib/pdfSheet'
 import Notice from '../components/Notice'
 import { tracked } from '../lib/loadfail'
 import CreditChain from '../components/CreditChain'
+import { useScrollLock } from '../lib/scrollLock'
 
 
 
@@ -79,6 +80,8 @@ export default function Credit({ boot }) {
   const [statementBusy, setStatementBusy] = useState(false)
   const toast = useToast()
   const [open, setOpen] = useState(null)       // { customer, ledger }
+  // Whichever full-screen panel is up, the page behind it stops moving.
+  useScrollLock(!!open)
   const [linking, setLinking] = useState(false)
   // The customer being linked. Previously the link sheet read
   // open.customer directly, so it could only be reached from inside
@@ -817,7 +820,9 @@ export default function Credit({ boot }) {
 
       {open && (
         <div className="fixed inset-0 z-50 bg-bg flex flex-col">
-          <div className="flex-1 overflow-y-auto">
+          {/* overscroll-contain: reaching the end of this list must not
+              hand the scroll to the page underneath. */}
+          <div className="flex-1 overflow-y-auto overscroll-contain">
             <div className="p-5 print:hidden flex items-center justify-between">
               <button onClick={() => setOpen(null)} className="text-dim">Back</button>
               <button onClick={() => { setLinkTarget({ customerId: open.customer.customer_id, name: open.customer.name }); setLinking(true) }}
