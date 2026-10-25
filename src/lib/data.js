@@ -1168,7 +1168,7 @@ export async function loadFreeRooms(branchId, checkIn, scheduledOut) {
       .select('room_id, status, check_in_date, scheduled_out')
       .eq('branch_id', branchId).in('status', ['reserved', 'occupied']),
     supabase.from('rooms')
-      .select('id, room_number, rate_standard, rate_alternate, rate_short, out_of_service, room_categories(name)')
+      .select('id, room_number, rate_standard, rate_alternate, rate_short, rate_special, out_of_service, room_categories(name)')
       .eq('branch_id', branchId).eq('is_active', true),
   ])
   if (e1) throw e1
@@ -1192,16 +1192,23 @@ export async function loadFreeRooms(branchId, checkIn, scheduledOut) {
 
 export async function loadBranchStaySettings(branchId) {
   const { data, error } = await supabase.from('branches')
-    .select('allowed_cycles, label_rate_standard, label_rate_alternate, label_rate_short, overstay_fee')
+    .select('allowed_cycles, label_rate_standard, label_rate_alternate, label_rate_short, label_rate_special, overstay_fee')
     .eq('id', branchId).maybeSingle()
   if (error) throw error
   return {
     allowedCycles: data?.allowed_cycles || null,
     overstayDefault: data?.overstay_fee != null ? Number(data.overstay_fee) : null,
+    // The first three always exist and fall back to a default name.
+    // The fourth is different ON PURPOSE (574): a branch that has not
+    // named its special rate is not offering one, so the key is absent
+    // rather than present with a default. Every screen builds its rate
+    // list from this object, so leaving the key out is what keeps the
+    // rate off Awka's screens without a branch test anywhere in the UI.
     rateLabels: {
       standard: data?.label_rate_standard || 'Standard',
       alternate: data?.label_rate_alternate || 'Discounted',
       short: data?.label_rate_short || 'Short-time',
+      ...(data?.label_rate_special ? { special: data.label_rate_special } : {}),
     },
   }
 }
@@ -1988,7 +1995,7 @@ async function _deleteStay(stayId) {
 
 export async function loadRoomsForSettings(branchId) {
   const { data, error } = await supabase.from('rooms')
-    .select('id, room_number, rate_standard, rate_alternate, rate_short, is_active, room_categories(name)')
+    .select('id, room_number, rate_standard, rate_alternate, rate_short, rate_special, is_active, room_categories(name)')
     .eq('branch_id', branchId)
   if (error) throw error
   return (data || []).sort((a, b) =>

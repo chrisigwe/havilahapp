@@ -21,7 +21,10 @@ function displayNameOf(emp) {
   return first.charAt(0).toUpperCase() + first.slice(1).toLowerCase()
 }
 
-const RATE_FIELDS = { standard: 'rate_standard', alternate: 'rate_alternate', short: 'rate_short' }
+const RATE_FIELDS = {
+  standard: 'rate_standard', alternate: 'rate_alternate',
+  short: 'rate_short', special: 'rate_special',
+}
 
 // Named StaySettings (not Settings) — this app's own More menu is a
 // settings surface in the broader sense already; this page is
@@ -121,6 +124,10 @@ export default function StaySettings({ boot }) {
   if (rooms === null) return <p className="px-5 text-dim">Loading…</p>
 
   const labels = branchSettings?.rateLabels || { standard: 'Standard', alternate: 'Discounted', short: 'Short-time' }
+  // The rates THIS branch offers, in order. A branch that has not named
+  // its fourth rate has no 'special' key, so it gets three boxes exactly
+  // as before (574).
+  const rateKeys = Object.keys(labels).filter(k => RATE_FIELDS[k])
 
   function edit(roomId, key, value) {
     setDrafts(d => ({ ...d, [roomId]: { ...d[roomId], [key]: value } }))
@@ -131,8 +138,11 @@ export default function StaySettings({ boot }) {
     if (!draft) return
     setBusy(true)
     const patch = {}
-    for (const [key, field] of Object.entries(RATE_FIELDS)) {
-      if (draft[key] !== undefined && draft[key] !== '') patch[field] = Number(draft[key])
+    // Only the rates this branch offers. Iterating every known field
+    // would write a 0 into a rate the branch has not named, which is how
+    // a column nobody asked for starts appearing in reports.
+    for (const key of rateKeys) {
+      if (draft[key] !== undefined && draft[key] !== '') patch[RATE_FIELDS[key]] = Number(draft[key])
     }
     try {
       await updateRoomRates(room.id, patch)
@@ -367,16 +377,18 @@ export default function StaySettings({ boot }) {
                   <span className="text-dim text-sm">{room.room_categories?.name}</span>
                   {!room.is_active && <span className="text-clay text-sm">inactive</span>}
                 </div>
-                {/* One column on a phone, three on a laptop. Three
-                    naira boxes side by side left about 70px each at
-                    320px, which is not enough for a rate and its label
-                    (20 October 2026). */}
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                  {Object.entries(RATE_FIELDS).map(([key, field]) => (
+                {/* One column on a phone. Three naira boxes side by side
+                    left about 70px each at 320px, which is not enough for
+                    a rate and its label (20 October 2026) — and a branch
+                    offering four rates would be worse, so the wider
+                    layouts step 2 then 4 rather than jumping straight to
+                    a row of four. */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                  {rateKeys.map(key => (
                     <div key={key} className="flex items-center gap-3 sm:block">
                       <div className="text-dim text-sm mb-1 flex-1 sm:flex-none">{labels[key]}</div>
                       <input type="number" inputMode="decimal" min="0"
-                        value={draft[key] ?? room[field] ?? 0}
+                        value={draft[key] ?? room[RATE_FIELDS[key]] ?? 0}
                         onChange={e => edit(room.id, key, e.target.value)}
                         className="h-11 w-32 sm:w-full px-2 rounded-xl bg-raise border border-line tnum text-sm" />
                     </div>

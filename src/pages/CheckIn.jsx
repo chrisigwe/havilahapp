@@ -7,7 +7,17 @@ import { useToast } from '../components/Toast'
 import Notice from '../components/Notice'
 import { tracked } from '../lib/loadfail'
 
-const RATE_FIELDS = { standard: 'rate_standard', alternate: 'rate_alternate', short: 'rate_short' }
+const RATE_FIELDS = {
+  standard: 'rate_standard', alternate: 'rate_alternate',
+  short: 'rate_short', special: 'rate_special',
+}
+
+// Branch labels already end in the word "Rate" at Nnewi — "Season Rate",
+// "Off-Season Rate". The screen used to append its own, so the summary
+// read "Season Rate rate, ₦20,000 × 2 nights" and the warning read "not
+// the room's usual season rate rate". The label is the name of the rate;
+// this just stops a second "rate" being stuck on the end of one.
+const rateName = (label = '') => String(label).replace(/\s*rate\s*$/i, '').trim() || label
 
 export default function CheckIn({ boot, onDone }) {
   const { staff } = boot
@@ -114,6 +124,15 @@ export default function CheckIn({ boot, onDone }) {
 
   const room = (rooms || []).find(r => r.id === roomId) || null
   const listRate = room ? Number(room[RATE_FIELDS[rateType]] ?? 0) : 0
+  // A branch that has not named its fourth rate does not have the key at
+  // all (loadBranchStaySettings), so if someone is left on a rate their
+  // branch does not offer — an old session, a branch switch — put them
+  // back on the first one rather than checking in on a rate that is not
+  // there.
+  const rateMissing = !rateLabels[rateType]
+  useEffect(() => {
+    if (rateMissing) { setRateType(Object.keys(rateLabels)[0] || 'standard'); setRateOverride('') }
+  }, [rateMissing])
   const rate = rateOverride === '' ? listRate : Number(rateOverride)
   const nights = checkIn && scheduledOut ? nightsBetween(checkIn, scheduledOut) : 0
   const valid = name.trim() && roomId && checkIn && scheduledOut && rate >= 0
@@ -323,13 +342,24 @@ export default function CheckIn({ boot, onDone }) {
         <div className="mt-4 rounded-xl bg-surface border border-line px-4 py-3">
           <div className="flex items-baseline justify-between gap-3">
             <span className="text-dim tnum">
-              {rateLabels[rateType]} rate, {naira(rate)} × {nights} night{nights > 1 ? 's' : ''}
+              {rateName(rateLabels[rateType])} rate, {naira(rate)} × {nights} night{nights > 1 ? 's' : ''}
             </span>
             <span className="text-xl font-bold tnum">{naira(nights * rate)}</span>
           </div>
-          {rate !== listRate && (
+          {/* A room with no figure for this rate yet is not the same as a
+              guest being given an unusual price, and saying "not the usual
+              rate (₦0)" for it sends the front desk looking for a mistake
+              that is not there (574). */}
+          {rate !== listRate && listRate === 0 && (
+            <p className="text-dim text-sm mt-2">
+              No {rateName(rateLabels[rateType]).toLowerCase()} rate is set for this room yet.
+              A GM can set it under Stay settings; what you type here is what
+              this guest pays.
+            </p>
+          )}
+          {rate !== listRate && listRate > 0 && (
             <p className="text-clay text-sm mt-2">
-              This is not the room's usual {rateLabels[rateType].toLowerCase()} rate ({naira(listRate)}).
+              This is not the room's usual {rateName(rateLabels[rateType]).toLowerCase()} rate ({naira(listRate)}).
               Is that what was agreed?
             </p>
           )}
