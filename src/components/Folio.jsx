@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { naira, lagosToday, lagosDaysAgo, lagosTime, partPaidNote, roomChargeDept, seesStayTimes, cyclesFor, friendlyStayError, addDays } from '../lib/format'
+import { naira, lagosToday, lagosDaysAgo, lagosTime, nightsBetween, partPaidNote, roomChargeDept, seesStayTimes, cyclesFor, friendlyStayError, addDays } from '../lib/format'
 import { billedToLabel, checkOutStay, loadCustomers, recordStayCredit, checkRepeatPayment, deleteOrderItem, deleteStay, extendStayTo, loadBranchStaySettings, loadFolio, moveRoomChargeDate, recordStayPayment, reopenStay, saveRepayment, searchSimilarGuests, updateOrderItem, updateOverstayFee, updateStayBillTo, updateStayDetails } from '../lib/data'
 import { useToast } from '../components/Toast'
 import PaymentMethodPicker, { paymentParts, paymentAllocated } from './PaymentMethodPicker'
@@ -618,10 +618,21 @@ export default function Folio({ boot, room, onClose, onChanged }) {
   // reopened to fix a charge, that quietly moved the departure date and
   // charged the nights in between — it caught four stays in two days. If
   // the stay remembers when it really left, ask instead of assuming.
+  // Always ask which day they left (Chris, 26 October 2026: "staff forgot
+  // to check out a guest, and it added an extra night").
+  //
+  // Until now the date was only ever asked for on a stay that had been
+  // REOPENED; every other check-out went straight through on today's
+  // date. So a guest who left on Friday and was checked out on Monday was
+  // billed for the weekend, and the only way to put it right was to check
+  // out wrongly, undo it, and check out again — which is the one path
+  // that showed the date field. That is why the undo-and-redo habit
+  // exists, and it is a workaround for this.
+  //
+  // Defaulting to today keeps the common case one extra tap, and the
+  // sheet below shows what the chosen day bills before anything is saved.
   function doCheckOut() {
-    const was = stay?.pre_reopen_actual_out
-    if (was && was !== lagosToday()) { setCheckoutDate(was); return }
-    finishCheckOut(lagosToday())
+    setCheckoutDate(stay?.pre_reopen_actual_out || lagosToday())
   }
 
   async function finishCheckOut(onDate) {
@@ -1673,19 +1684,42 @@ export default function Folio({ boot, room, onClose, onChanged }) {
           <p className="text-dim mt-2">
             {room.guest_name || 'Guest'} · Room {room.room_number}
           </p>
-          <p className="text-amber text-sm mt-3">
-            This stay was reopened. Before that it was checked out on{' '}
-            <b>{stay.pre_reopen_actual_out}</b>. Keep that date unless the
-            guest really stayed on — a later date charges the nights in
-            between.
-          </p>
 
-          <label className="block mt-6 text-dim">Departure date</label>
-          <input type="date" value={checkoutDate} max={lagosToday()}
+          {stay?.pre_reopen_actual_out ? (
+            <p className="text-amber text-sm mt-3">
+              This stay was reopened. Before that it was checked out on{' '}
+              <b>{stay.pre_reopen_actual_out}</b>. Keep that date unless the
+              guest really stayed on — a later date charges the nights in
+              between.
+            </p>
+          ) : (
+            <p className="text-dim text-sm mt-3">
+              Today unless they left earlier. If nobody checked them out on the
+              day, put the day they actually left — the nights in between are
+              charged otherwise.
+            </p>
+          )}
+
+          <label className="block mt-6 text-dim" htmlFor="departure-date">Departure date</label>
+          <input id="departure-date" type="date" value={checkoutDate} max={lagosToday()}
+            min={checkIn || undefined}
             onChange={e => setCheckoutDate(e.target.value)}
             className="mt-2 h-14 w-full px-4 rounded-xl bg-surface border border-line tnum" />
 
-          {checkoutDate !== stay.pre_reopen_actual_out && (
+          {/* Nights, not naira. What the stay finally comes to is the
+              folio's arithmetic, and a second figure worked out here could
+              disagree with it. Nights cannot. */}
+          {checkIn && checkoutDate && (
+            <p className="text-dim text-sm mt-3 tnum">
+              Leaving on this day bills{' '}
+              <b className="text-ink">{nightsBetween(checkIn, checkoutDate)} night{nightsBetween(checkIn, checkoutDate) === 1 ? '' : 's'}</b>
+              {checkoutDate !== lagosToday() && (
+                <> — today&rsquo;s date would bill {nightsBetween(checkIn, lagosToday())}.</>
+              )}
+            </p>
+          )}
+
+          {stay?.pre_reopen_actual_out && checkoutDate !== stay.pre_reopen_actual_out && (
             <p className="text-clay text-sm mt-3">
               Not the date it had before — this will change what the room
               charge comes to.
