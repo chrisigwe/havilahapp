@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react'
 import { loadRoomsForSettings, loadBranchStaySettings, updateRoomRates,
+         loadReservationsOnRoom,
          updateBranchOverstayDefault, loadStaffOfMonth, postStaffOfMonth,
          deleteStaffOfMonth } from '../lib/data'
 import { loadAwardPayroll, loadDraftPeriods, loadEmployees, setAwardPayroll } from '../lib/payroll'
-import { lagosToday } from '../lib/format'
+import { naira, lagosToday } from '../lib/format'
 import { useToast } from '../components/Toast'
 import { SUPERVISOR, is } from '../lib/roles'
 import Notice from '../components/Notice'
@@ -43,6 +44,8 @@ export default function StaySettings({ boot }) {
   const [drafts, setDrafts] = useState({})
   const [fee, setFee] = useState('')
   const [busy, setBusy] = useState(false)
+  // Reservations found on a room after its rate was changed, by room id.
+  const [booked, setBooked] = useState({})
 
   // GM/admin only (migration 256). Room rates joined over-stay and Staff
   // of the Month as GM authority, matching item prices in Catalog — which
@@ -149,6 +152,13 @@ export default function StaySettings({ boot }) {
       setDrafts(d => { const n = { ...d }; delete n[room.id]; return n })
       toast(`Room ${room.room_number} updated`, 'success')
       loadRoomsForSettings(staff.branch_id).then(setRooms)
+      // A rate change does not reach a booking already made — each stay
+      // keeps the rate it was created with. Say so, here, with the
+      // bookings named, rather than leaving it to be discovered in a
+      // balance weeks later (26 October 2026).
+      loadReservationsOnRoom(room.id)
+        .then(rs => setBooked(b => ({ ...b, [room.id]: rs })))
+        .catch(() => {})
     } catch (e) { toast('Not saved: ' + e.message, 'error') }
     setBusy(false)
   }
@@ -394,6 +404,33 @@ export default function StaySettings({ boot }) {
                     </div>
                   ))}
                 </div>
+                {/* Named, with the rate each one is actually holding, so the
+                    next step is obvious rather than a vague warning. */}
+                {!!(booked[room.id] || []).length && (
+                  <Notice tone="warn" title="Bookings already made on this room" className="mt-3">
+                    <p className="mb-2">
+                      A booking keeps the rate it was made at — that is what stops
+                      older stays re-pricing themselves when you change a rate here.
+                      These were made before this change and still hold their old rate.
+                      Correct each one on its own folio: Rooms, then the room, then Edit.
+                    </p>
+                    <ul className="divide-y divide-line/60">
+                      {booked[room.id].map(b => (
+                        <li key={b.id} className="py-2 flex items-baseline gap-3">
+                          <span className="flex-1 min-w-0 break-words">
+                            {b.guests?.full_name || 'Guest'}
+                            <span className="text-dim text-sm block tnum">
+                              arriving {b.check_in_date}
+                              {labels[b.rate_applied] ? ` · ${labels[b.rate_applied]}` : ''}
+                            </span>
+                          </span>
+                          <span className="tnum font-semibold shrink-0">{naira(b.daily_rate)}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </Notice>
+                )}
+
                 {dirty && (
                   <div className="flex gap-3 mt-3">
                     <button onClick={() => saveRoom(room)} disabled={busy}

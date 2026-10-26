@@ -2025,6 +2025,30 @@ export async function updateRoomRates(roomId, patch) {
   if (error) throw error
 }
 
+// Bookings already made on a room, with the rate each one captured
+// (Chris, 26 October 2026).
+//
+// A stay stores its own daily rate at the moment it is created, and that
+// is deliberate: without it, changing a room's rate today would silently
+// re-price every booking ever made on it. The cost of that rule is that
+// changing a rate does NOT reach a reservation already on the books, and
+// nothing said so — two rooms were reserved one evening and the rate
+// raised the next morning, and the gap only surfaced when the balances
+// looked wrong.
+//
+// Reserved only. An occupied or checked-out stay is a guest already in
+// the building whose rate was agreed when they arrived; re-opening that
+// question is a different act from correcting a booking nobody has
+// turned up for yet.
+export async function loadReservationsOnRoom(roomId) {
+  const { data, error } = await supabase.from('stays')
+    .select('id, check_in_date, scheduled_out, daily_rate, rate_applied, guests!guest_id(full_name)')
+    .eq('room_id', roomId).eq('status', 'reserved')
+    .order('check_in_date')
+  if (error) throw error
+  return data || []
+}
+
 export async function updateBranchOverstayDefault(branchId, amount) {
   const { error } = await supabase.from('branches')
     .update({ overstay_fee: amount }).eq('id', branchId)
