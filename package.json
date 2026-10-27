@@ -7,7 +7,7 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "check": "node tools/check-guards.mjs && node tools/check-tdz.mjs && node tools/check-silent-failures.mjs && node tools/nights.test.mjs"
+    "check": "node tools/check-guards.mjs && node tools/check-tdz.mjs && node tools/check-jsx-names.mjs && node tools/check-silent-failures.mjs && node tools/nights.test.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.45.0",

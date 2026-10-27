@@ -1220,10 +1220,13 @@ export async function loadUpcomingReservations(branchId, days = null) {
 // to block at least through today, even though its stored
 // scheduled_out says otherwise — this app-side check can compare
 // against "today" dynamically; a database constraint can't.
-export async function loadFreeRooms(branchId, checkIn, scheduledOut) {
+// exceptStayId: when moving a guest who is ALREADY in a room, their own
+// stay is what blocks their current room — counting it would hide every
+// room they could move to, including the one they are leaving (576).
+export async function loadFreeRooms(branchId, checkIn, scheduledOut, exceptStayId = null) {
   const [{ data: liveStays, error: e1 }, { data: rooms, error: e2 }] = await Promise.all([
     supabase.from('stays')
-      .select('room_id, status, check_in_date, scheduled_out')
+      .select('id, room_id, status, check_in_date, scheduled_out')
       .eq('branch_id', branchId).in('status', ['reserved', 'occupied']),
     supabase.from('rooms')
       .select('id, room_number, rate_standard, rate_alternate, rate_short, rate_special, out_of_service, room_categories(name)')
@@ -1236,6 +1239,7 @@ export async function loadFreeRooms(branchId, checkIn, scheduledOut) {
   const reqStart = new Date(checkIn), reqEnd = new Date(scheduledOut)
   const blockedRoomIds = new Set()
   for (const s of liveStays || []) {
+    if (exceptStayId && s.id === exceptStayId) continue
     const start = new Date(s.check_in_date)
     let end = new Date(s.scheduled_out)
     if (s.status === 'occupied' && end <= today) end = new Date(today.getTime() + 864e5)   // still blocks at least through today
@@ -3648,6 +3652,43 @@ export const chargeBasketToRoom = tracked('Charged items to a room', _chargeBask
 export const chargeWriteoffToRoom = tracked('Charged a PR/staff order to a room', _chargeWriteoffToRoom)
 export const recordStayPayment = tracked('Recorded a room payment', _recordStayPayment)
 export const recordDepartmentReceipt = tracked('Recorded money received from the front desk', _recordDepartmentReceipt)
+// Moving a guest to another room, mid-stay (576).
+//
+// The money is worked out in the database, not here: the screen shows
+// what it will be, and move_stay_room computes it again from the rooms'
+// own rates before writing. A figure posted from a phone is never what
+// lands on a bill.
+async function _moveStayRoom({ stayId, toRoomId, movedOn, kind, reason, adjustOverride, outOfService }) {
+  const { data, error } = await supabase.rpc('move_stay_room', {
+    p_stay: stayId, p_to_room: toRoomId, p_on: movedOn, p_kind: kind,
+    p_reason: reason || null,
+    p_adjust_override: (adjustOverride === '' || adjustOverride == null) ? null : Number(adjustOverride),
+    p_out_of_service: !!outOfService,
+  })
+  if (error) throw error
+  return data
+}
+export const moveStayRoom = tracked('Moved a guest to another room', _moveStayRoom)
+
+// What a stay's bill is carrying from room moves, for the folio and the
+// statement. Read as rows rather than a total so each one can be
+// explained on the guest's bill.
+export async function loadStayMoves(stayId) {
+  if (!stayId) return []
+  const { data, error } = await supabase.from('stay_room_moves')
+    // rooms!from_room, spelled out. stay_room_moves has TWO foreign keys
+    // into rooms, and an embed that does not say which one is ambiguous —
+    // the same shape of mistake that took the Recently-added feed down on
+    // both branches on 24 October. "from" and "to" are also poor aliases
+    // to hand a query parser.
+    .select(`id, moved_on, kind, reason, nights_affected, rate_difference, adjustment,
+             from_r:rooms!from_room(room_number), to_r:rooms!to_room(room_number),
+             staff:recorded_by(full_name)`)
+    .eq('stay_id', stayId).order('moved_on')
+  if (error) throw error
+  return data || []
+}
+
 export const checkOutStay = tracked('Checked a guest out', _checkOutStay)
 export const recordTillCheck = tracked('Entered Total Sales at close', _recordTillCheck)
 export const approveRoomCharge = tracked('Approved a room charge', _approveRoomCharge)

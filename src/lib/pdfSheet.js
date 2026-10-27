@@ -244,6 +244,12 @@ export async function guestStatementPdf(d) {
 
   const rows = [{ cells: [d.checkInLabel || '', d.accommodationLabel || 'Accommodation', num(d.roomCharge)] }]
   if (Number(d.overstay) > 0) rows.push({ cells: ['', 'Over-stay charge', num(d.overstay)] })
+  // Room changes sit with the room charge, not among the bar lines —
+  // they are accommodation, and a negative one is a refund (576).
+  for (const mv of d.moveLines || []) {
+    rows.push({ cells: [mv.date || '', mv.label,
+      mv.amount < 0 ? `- ${num(-mv.amount)}` : num(mv.amount)] })
+  }
   for (const li of d.orderLines || []) {
     // Served by, on the line itself rather than a column of its own:
     // the charge column has the room for it and a sixth narrow column

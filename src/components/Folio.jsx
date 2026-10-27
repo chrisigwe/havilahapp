@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { naira, lagosToday, lagosDaysAgo, lagosTime, nightsBetween, partPaidNote, roomChargeDept, seesStayTimes, cyclesFor, friendlyStayError, addDays } from '../lib/format'
-import { billedToLabel, checkOutStay, loadCustomers, recordStayCredit, checkRepeatPayment, deleteOrderItem, deleteStay, extendStayTo, loadBranchStaySettings, loadFolio, moveRoomChargeDate, recordStayPayment, reopenStay, saveRepayment, searchSimilarGuests, updateOrderItem, updateOverstayFee, updateStayBillTo, updateStayDetails } from '../lib/data'
+import { billedToLabel, checkOutStay, loadFreeRooms, loadStayMoves, moveStayRoom, loadCustomers, recordStayCredit, checkRepeatPayment, deleteOrderItem, deleteStay, extendStayTo, loadBranchStaySettings, loadFolio, moveRoomChargeDate, recordStayPayment, reopenStay, saveRepayment, searchSimilarGuests, updateOrderItem, updateOverstayFee, updateStayBillTo, updateStayDetails } from '../lib/data'
 import { useToast } from '../components/Toast'
 import PaymentMethodPicker, { paymentParts, paymentAllocated } from './PaymentMethodPicker'
 import FolioStatement from './FolioStatement'
@@ -48,6 +48,18 @@ export default function Folio({ boot, room, onClose, onChanged }) {
   // date it originally left on, so the person can confirm rather than
   // today's date being stamped on silently (migration 459).
   const [checkoutDate, setCheckoutDate] = useState(null)
+  // Moving a guest to another room, mid-stay (576). `moving` holds the
+  // open sheet; `moves` is what this bill already carries from earlier
+  // moves, so the folio can show it alongside the other charges.
+  const [moving, setMoving] = useState(null)
+  const [freeRooms, setFreeRooms] = useState(null)
+  const [moves, setMoves] = useState([])
+  const [movesKey, setMovesKey] = useState(0)
+  useEffect(() => {
+    if (!room?.stay_id) { setMoves([]); return }
+    tracked('Room moves on this stay', loadStayMoves(room.stay_id))
+      .then(setMoves).catch(() => setMoves([]))
+  }, [room?.stay_id, movesKey])
   // Money that went through ANOTHER department's POS/cash (e.g. a MainBar bill
   // charged to the room, then paid on the bar's terminal). Empty = Reception.
   // Which PART of the bill a payment clears — the room, one department, or
@@ -633,6 +645,39 @@ export default function Folio({ boot, room, onClose, onChanged }) {
   // sheet below shows what the chosen day bills before anything is saved.
   function doCheckOut() {
     setCheckoutDate(stay?.pre_reopen_actual_out || lagosToday())
+  }
+
+  // Which rooms this guest could move into. The database constraint
+  // guards a stay's WHOLE date range, so a room free only for the nights
+  // remaining would be refused at the moment of saving — better to not
+  // offer it. Their own stay is excluded, or it would block every room
+  // they are already in.
+  async function openMove() {
+    const end = scheduledOut || room.scheduled_out
+    setMoving({ toRoomId: '', on: lagosToday(), kind: 'fault', reason: '',
+                override: '', outOfService: false })
+    setFreeRooms(null)
+    try {
+      const rs = await loadFreeRooms(staff.branch_id, checkIn, end, room.stay_id)
+      setFreeRooms(rs.filter(r => r.id !== room.room_id))
+    } catch (e) { setFreeRooms([]); toast(friendlyStayError(e) || e.message, 'error') }
+  }
+
+  async function saveMove() {
+    setBusy(true)
+    try {
+      const res = await moveStayRoom({
+        stayId: room.stay_id, toRoomId: moving.toRoomId, movedOn: moving.on,
+        kind: moving.kind, reason: moving.reason,
+        adjustOverride: moving.override, outOfService: moving.outOfService,
+      })
+      const adj = Number(res?.adjustment || 0)
+      toast(adj > 0.009 ? `Moved to Room ${res.to} · ${naira(adj)} added`
+            : adj < -0.009 ? `Moved to Room ${res.to} · ${naira(-adj)} refunded`
+            : `Moved to Room ${res.to} · no change to the bill`, 'success')
+      setMoving(null); setMovesKey(k => k + 1); refresh(); onChanged?.()
+    } catch (e) { toast(friendlyStayError(e) || e.message, 'error') }
+    setBusy(false)
   }
 
   async function finishCheckOut(onDate) {
@@ -1566,8 +1611,47 @@ export default function Folio({ boot, room, onClose, onChanged }) {
           </div>
         )}
 
+        {/* What earlier moves put on this bill. Without this the total
+            carries money with nothing on screen explaining it. */}
+        {!!moves.length && (
+          <div className="mt-6">
+            <h3 className="font-semibold mb-2">Room changes</h3>
+            <ul className="divide-y divide-line/60 rounded-2xl border border-line bg-surface px-4">
+              {moves.map(mv => {
+                const a = Number(mv.adjustment || 0)
+                return (
+                  <li key={mv.id} className="py-3 flex items-baseline gap-3">
+                    <span className="flex-1 min-w-0">
+                      <span className="font-semibold break-words block">
+                        Room {mv.from_r?.room_number || '?'} → Room {mv.to_r?.room_number || '?'}
+                      </span>
+                      <span className="text-dim text-sm block tnum">
+                        {mv.moved_on}
+                        {mv.nights_affected ? ` · ${mv.nights_affected} night${mv.nights_affected === 1 ? '' : 's'}` : ''}
+                        {mv.staff?.full_name ? ` · ${mv.staff.full_name}` : ''}
+                      </span>
+                      {mv.reason && <span className="text-dim text-xs block break-words">{mv.reason}</span>}
+                    </span>
+                    <span className={`tnum font-semibold shrink-0 ${
+                      a > 0.009 ? 'text-clay' : a < -0.009 ? 'text-leaf' : 'text-dim'}`}>
+                      {a > 0.009 ? naira(a) : a < -0.009 ? `− ${naira(-a)}` : 'no charge'}
+                    </span>
+                  </li>
+                )
+              })}
+            </ul>
+          </div>
+        )}
+
         {live && (
           <div className="mt-6">
+            {/* Moving comes before checking out: it is the thing you do to
+                a guest who is staying, and burying it under More would
+                mean a plumbing fault at 11pm turns into a deletion. */}
+            <button onClick={openMove} disabled={busy}
+              className="w-full h-14 rounded-2xl border border-line text-ink font-semibold mb-3 disabled:opacity-40">
+              Move to another room
+            </button>
             {outstanding > 0 && (
               <p className="text-clay text-sm mb-2">{naira(outstanding)} is still outstanding on this room.</p>
             )}
@@ -1671,12 +1755,137 @@ export default function Folio({ boot, room, onClose, onChanged }) {
       )}
 
       {printing && (
-        <FolioStatement room={room} folio={folio} orderLines={billableLines}
+        <FolioStatement room={room} folio={folio} orderLines={billableLines} moves={moves}
           freeLines={freeLines} payments={payments} checkedInAt={showTimes ? stay?.checked_in_at : null}
           departmentCredit={departmentCredit} billedToYou={billedToYou}
           allLocations={allLocations || locations}
           branchName={boot.branchName} onClose={() => setPrinting(false)} />
       )}
+
+      {/* MOVING A GUEST (576). The arithmetic is shown before anything is
+          saved, the same principle as the crate receiving: a figure
+          nobody reads is the one that runs wrong for months. */}
+      {moving && (() => {
+        const toRoom = (freeRooms || []).find(r => r.id === moving.toRoomId)
+        const rateField = { standard: 'rate_standard', alternate: 'rate_alternate',
+                            short: 'rate_short', special: 'rate_special' }[stay?.rate_applied] || 'rate_standard'
+        const newRate = toRoom ? Number(toRoom[rateField] || 0) : null
+        const oldRate = Number(folio?.daily_rate ?? room.daily_rate ?? 0)
+        const end = scheduledOut || room.scheduled_out
+        const nights = (moving.on && end)
+          ? Math.max(0, Math.round((new Date(end) - new Date(moving.on)) / 864e5)) : 0
+        const diff = moving.kind === 'fault' ? 0 : (newRate == null ? 0 : newRate - oldRate)
+        const adjust = moving.override !== '' ? Number(moving.override) || 0 : nights * diff
+        const ready = !!moving.toRoomId && !!moving.on
+          && (moving.override === '' || !!moving.reason.trim())
+        return (
+        <div className="fixed inset-0 z-[60] bg-bg h-[100dvh] overflow-y-auto overscroll-contain p-5">
+          <button onClick={() => setMoving(null)} className="text-dim">Back</button>
+          <h3 className="mt-3 text-2xl font-bold">Move to another room</h3>
+          <p className="text-dim text-sm mt-1 mb-4">
+            {room.guest_name || 'Guest'} · in Room {room.room_number} since {checkIn}.
+            The bill, the payments and anything charged from the bars move with them.
+          </p>
+
+          <div className="text-dim text-sm mb-1">Why</div>
+          <div className="flex gap-2">
+            {[['fault', 'A fault'], ['upgrade', 'Upgrade'], ['downgrade', 'Downgrade'], ['other', 'Other']].map(([k, label]) => (
+              <button key={k} onClick={() => setMoving(m => ({ ...m, kind: k }))}
+                className={`flex-1 h-12 rounded-xl border text-sm font-semibold ${moving.kind === k
+                  ? 'bg-raise border-amber text-amber' : 'border-line text-dim'}`}>
+                {label}
+              </button>
+            ))}
+          </div>
+          {moving.kind === 'fault' && (
+            <p className="text-dim text-sm mt-2">
+              Our fault, our cost — the guest pays exactly what they agreed, whichever
+              room they end up in.
+            </p>
+          )}
+
+          <div className="text-dim text-sm mt-4 mb-1">New room</div>
+          {freeRooms === null && <p className="text-dim text-sm">Finding free rooms…</p>}
+          {freeRooms?.length === 0 && (
+            <p className="text-clay text-sm">
+              No other room is free for the whole of this stay ({checkIn} to {end}).
+              A room free only for the nights left cannot be used — the booking covers
+              the whole stay.
+            </p>
+          )}
+          {!!freeRooms?.length && (
+            <select value={moving.toRoomId}
+              onChange={e => setMoving(m => ({ ...m, toRoomId: e.target.value }))}
+              className="h-12 w-full px-3 rounded-xl bg-raise border border-line">
+              <option value="">Pick a room</option>
+              {freeRooms.map(r => (
+                <option key={r.id} value={r.id}>
+                  Room {r.room_number}
+                  {r.room_categories?.name ? ` · ${r.room_categories.name}` : ''}
+                  {` · ${naira(Number(r[rateField] || 0))}`}
+                </option>
+              ))}
+            </select>
+          )}
+
+          <div className="text-dim text-sm mt-4 mb-1">Day they moved</div>
+          <input type="date" value={moving.on} min={checkIn} max={lagosToday()}
+            onChange={e => setMoving(m => ({ ...m, on: e.target.value }))}
+            className="h-12 px-3 rounded-xl bg-raise border border-line tnum" />
+
+          {/* What it does to the bill, in full, before it is done. */}
+          {toRoom && (
+            <div className="mt-4 rounded-xl border border-line bg-raise p-3">
+              <div className="text-dim text-sm tnum">
+                Room {room.room_number} {naira(oldRate)} → Room {toRoom.room_number} {naira(newRate)}
+                {' · '}{nights} night{nights === 1 ? '' : 's'} left
+              </div>
+              <div className={`mt-1 font-semibold tnum ${
+                adjust > 0.009 ? 'text-clay' : adjust < -0.009 ? 'text-leaf' : 'text-dim'}`}>
+                {adjust > 0.009 ? `${nights} × ${naira(diff)} = ${naira(adjust)} added to the bill`
+                  : adjust < -0.009 ? `${nights} × ${naira(-diff)} = ${naira(-adjust)} refunded`
+                  : 'No change to the bill'}
+              </div>
+              <div className="text-dim text-sm mt-1 tnum">
+                Outstanding would become {naira(Number(outstanding || 0) + adjust)}.
+              </div>
+            </div>
+          )}
+
+          <div className="text-dim text-sm mt-4 mb-1">
+            Different amount? (leave blank for the figure above)
+          </div>
+          <input type="number" inputMode="decimal" value={moving.override}
+            onChange={e => setMoving(m => ({ ...m, override: e.target.value }))}
+            placeholder="blank"
+            className="h-12 w-full px-3 rounded-xl bg-raise border border-line tnum" />
+
+          <div className="text-dim text-sm mt-4 mb-1">
+            Note{moving.override !== '' ? ' — required, because the amount was changed' : ''}
+          </div>
+          <input type="text" value={moving.reason}
+            onChange={e => setMoving(m => ({ ...m, reason: e.target.value }))}
+            placeholder="Blocked drain in 204"
+            className="h-12 w-full px-3 rounded-xl bg-raise border border-line" />
+
+          <label className="mt-4 flex items-center gap-3">
+            <input type="checkbox" checked={moving.outOfService} className="w-5 h-5"
+              onChange={e => setMoving(m => ({ ...m, outOfService: e.target.checked }))} />
+            <span className="text-sm">
+              Take Room {room.room_number} out of service — it stops being offered until
+              someone puts it back
+            </span>
+          </label>
+
+          <button onClick={saveMove} disabled={busy || !ready}
+            className="mt-5 h-12 w-full rounded-xl bg-amber text-bg font-bold disabled:opacity-40">
+            {busy ? 'Moving…'
+              : toRoom ? `Move to Room ${toRoom.room_number}` : 'Move'}
+          </button>
+          <div className="h-8" />
+        </div>
+        )
+      })()}
 
       {checkoutDate && (
         <div className="fixed inset-0 z-[60] bg-bg flex flex-col justify-center px-6">

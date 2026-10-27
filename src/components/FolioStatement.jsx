@@ -17,7 +17,7 @@ const niceDay = (d) => {
     : t.toLocaleDateString('en-NG', { weekday: 'short', day: 'numeric', month: 'short' })
 }
 
-export default function FolioStatement({ room, folio, orderLines, freeLines, payments, branchName, departmentCredit, billedToYou, checkedInAt, allLocations, onClose }) {
+export default function FolioStatement({ room, folio, orderLines, freeLines, payments, moves = [], branchName, departmentCredit, billedToYou, checkedInAt, allLocations, onClose }) {
   // Which department a line came from, by name. It used to be read off
   // category alone, so every bar printed as "Bar" — a guest querying a
   // drink could not tell MainBar from OpenBar. The line's own department
@@ -60,6 +60,12 @@ export default function FolioStatement({ room, folio, orderLines, freeLines, pay
     checkInLabel: `${room.check_in_date}${checkedInAt ? ` ${lagosTime(checkedInAt)}` : ''}`,
     accommodationLabel: `Accommodation — ${room.room_number} · ${folio?.nights} night${folio?.nights > 1 ? 's' : ''} @ ${naira(folio?.daily_rate)}`,
     roomCharge, overstay, orderTotal, totalDue, paid, balance,
+    moveLines: (moves || []).filter(mv => Math.abs(Number(mv.adjustment || 0)) > 0.009).map(mv => ({
+      date: mv.moved_on,
+      label: `Moved to Room ${mv.to_r?.room_number || '?'} from Room ${mv.from_r?.room_number || '?'}`
+        + (mv.nights_affected ? ` · ${mv.nights_affected} night${mv.nights_affected === 1 ? '' : 's'}` : ''),
+      amount: Number(mv.adjustment),
+    })),
     orderLines: (orderLines || []).map(li => ({
       date: li.date, description: li.description, qty: li.qty,
       where: whereFrom(li),
@@ -150,6 +156,25 @@ export default function FolioStatement({ room, folio, orderLines, freeLines, pay
                   <span className="tnum font-bold shrink-0">{naira(overstay)}</span>
                 </div>
               )}
+              {/* A room change the guest paid for, or was refunded. It has
+                  to be on the bill in words, or the total carries money
+                  nothing accounts for (576). */}
+              {moves.filter(mv => Math.abs(Number(mv.adjustment || 0)) > 0.009).map(mv => (
+                <div key={mv.id} className="py-3 flex items-baseline gap-3 border-b border-line/60">
+                  <span className="flex-1 min-w-0">
+                    <span className="block font-semibold leading-tight break-words">
+                      Moved to Room {mv.to_r?.room_number || '?'}
+                    </span>
+                    <span className="block text-dim text-xs mt-0.5">
+                      from Room {mv.from_r?.room_number || '?'} · {niceDay(mv.moved_on)}
+                      {mv.nights_affected ? ` · ${mv.nights_affected} night${mv.nights_affected === 1 ? '' : 's'}` : ''}
+                    </span>
+                  </span>
+                  <span className="tnum font-bold shrink-0">
+                    {Number(mv.adjustment) < 0 ? `− ${naira(-Number(mv.adjustment))}` : naira(mv.adjustment)}
+                  </span>
+                </div>
+              ))}
               {orderLines.map(li => (
                 <div key={li.id} className="py-3 flex items-baseline gap-3 border-b border-line/60 last:border-0">
                   <span className="flex-1 min-w-0">
@@ -208,6 +233,21 @@ export default function FolioStatement({ room, folio, orderLines, freeLines, pay
               {overstay > 0 && (
                 <tr><td></td><td>Over-stay charge</td><td className="num tnum">{naira(overstay)}</td></tr>
               )}
+              {moves.filter(mv => Math.abs(Number(mv.adjustment || 0)) > 0.009).map(mv => (
+                <tr key={mv.id}>
+                  <td>{mv.moved_on}</td>
+                  <td>
+                    <strong>Moved to Room {mv.to_r?.room_number || '?'}</strong>
+                    {' '}from Room {mv.from_r?.room_number || '?'}
+                    <span className="text-dim">
+                      {mv.nights_affected ? ` · ${mv.nights_affected} night${mv.nights_affected === 1 ? '' : 's'} × ${naira(Math.abs(Number(mv.rate_difference || 0)))}` : ''}
+                    </span>
+                  </td>
+                  <td className="num tnum">
+                    {Number(mv.adjustment) < 0 ? `− ${naira(-Number(mv.adjustment))}` : naira(mv.adjustment)}
+                  </td>
+                </tr>
+              ))}
               {orderLines.map(li => (
                 <tr key={li.id}>
                   <td>{li.date}</td>

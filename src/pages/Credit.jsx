@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useToast } from '../components/Toast'
 import { lagosToday, methodLabel, naira, startingDept, tierLabel } from '../lib/format'
 import RoomChargeTracker from '../components/RoomChargeTracker'
-import { checkRepeatPayment, checkRepeatRepayment, deactivateCustomer, deleteCustomer, linkCustomerToGuest, loadBalances, loadCreditForMonth, loadCreditOnDate, loadCustomerLedger, loadCreditChain, loadFolio, loadGuestBalances, loadReservedValue, loadStaffForLocation, loadUnlinkedCustomerBalances, moveWorkaroundToRoom, recordStayPayment, saveRepayment, searchSimilarGuests } from '../lib/data'
+import { checkRepeatPayment, checkRepeatRepayment, deactivateCustomer, deleteCustomer, linkCustomerToGuest, loadBalances, loadCreditForMonth, loadCreditOnDate, loadCustomerLedger, loadCreditChain, loadFolio, loadStayMoves, loadGuestBalances, loadReservedValue, loadStaffForLocation, loadUnlinkedCustomerBalances, moveWorkaroundToRoom, recordStayPayment, saveRepayment, searchSimilarGuests } from '../lib/data'
 import { enqueue, flush, isConnectionError } from '../lib/outbox'
 import PaymentMethodPicker, { paymentParts, paymentAllocated } from '../components/PaymentMethodPicker'
 import FolioStatement from '../components/FolioStatement'
@@ -349,12 +349,19 @@ export default function Credit({ boot }) {
   async function printGuestStatement() {
     setStatementBusy(true)
     try {
-      const { orders, payments, folio, departmentCredit, billedToYou } = await loadFolio(guestPay.stayId)
+      // moves alongside the folio (576): the folio's total now carries any
+      // room change, so a statement printed without the move line would
+      // show a total that does not add up from the lines above it. The
+      // same fault the credit statements had on 25 October.
+      const [{ orders, payments, folio, departmentCredit, billedToYou }, moves] = await Promise.all([
+        loadFolio(guestPay.stayId),
+        loadStayMoves(guestPay.stayId).catch(() => []),
+      ])
       const orderLines = orders.flatMap(o => (o.order_items || []).map(li => ({ ...li, date: o.business_date })))
       setGuestStatement({
         room: { room_number: guestPay.roomNumber, guest_name: guestPay.guestName,
                 check_in_date: folio?.check_in_date, scheduled_out: folio?.scheduled_out },
-        folio, orderLines, payments, departmentCredit, billedToYou,
+        folio, orderLines, payments, moves, departmentCredit, billedToYou,
       })
     } catch (e) { toast('Could not load statement: ' + e.message, 'error') }
     setStatementBusy(false)
@@ -1476,6 +1483,7 @@ export default function Credit({ boot }) {
 
       {guestStatement && (
         <FolioStatement room={guestStatement.room} folio={guestStatement.folio}
+          moves={guestStatement.moves}
           orderLines={guestStatement.orderLines} payments={guestStatement.payments}
           departmentCredit={guestStatement.departmentCredit} billedToYou={guestStatement.billedToYou}
           branchName={boot.branchName} onClose={() => setGuestStatement(null)} />
