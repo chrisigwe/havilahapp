@@ -254,7 +254,11 @@ export default function Shell({ staff, tab, onTab, children,
           blur rather than being animated out from under the thumb. */}
       {(
         <div className="lg:hidden hv-large-title px-5 pt-1 pb-2">
-          <h1 className="text-[2rem] leading-tight font-extrabold tracking-tight truncate">
+          {/* 1.6rem, down from 2rem (Chris, 27 October 2026). Still
+              clearly the page's title and still the largest thing on the
+              screen, without taking a third of a phone's first view
+              before any content starts. */}
+          <h1 className="text-[1.6rem] leading-tight font-extrabold tracking-tight truncate">
             {pageTitle}
           </h1>
           <p className="text-dim text-sm truncate">{staff.full_name}</p>

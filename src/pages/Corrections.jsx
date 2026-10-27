@@ -165,6 +165,22 @@ export default function Corrections({ boot }) {
   // The same calendar date appears in both, and one `openDays` would mean
   // opening Tuesday here silently opened Tuesday over there.
   const [payDays, setPayDays] = useState(null)
+  // How far back the list reaches (Chris, 27 October 2026).
+  //
+  // It was fixed at 14 days, which meant an entry older than that could
+  // not be corrected in the app at all — a duplicated sale from
+  // 12 September had to go to the database, where delete_sale rightly
+  // refuses because there is no signed-in person to hold responsible.
+  // An app that cannot reach a mistake forces the correction somewhere
+  // that keeps no record of who made it.
+  //
+  // Fourteen days stays the default: that is the everyday job, and a
+  // longer list is slower and harder to read. The longer reaches are for
+  // a manager going back for something specific. Who may actually CHANGE
+  // an old entry is unaffected — the database decides that, and for
+  // anyone but a manager, GM or admin it is still only their own recent
+  // work.
+  const [days, setDays] = useState(14)
 
   // Reset the department chip on branch switch. Holding the previous
   // branch's location id makes loadActivity query for a department
@@ -302,7 +318,7 @@ export default function Corrections({ boot }) {
 
   const refresh = useCallback(() => {
     if (canEdit) {
-      loadActivity(staff.branch_id, 14, ownOnly ? staff.id : null, deptFilter !== 'all' ? deptFilter : null)
+      loadActivity(staff.branch_id, days, ownOnly ? staff.id : null, deptFilter !== 'all' ? deptFilter : null)
         .then(setRows).catch(e => toast(e.message, 'error'))
     }
     // Auditors are not editors, so they are ownOnly — but the change
@@ -310,7 +326,7 @@ export default function Corrections({ boot }) {
     // history view (they can't edit) and it would never be fetched.
     if (!ownOnly || staff.role === 'auditor')
       tracked('The corrections record', loadAudit(staff.branch_id)).then(setAudit).catch(() => setAudit([]))
-  }, [staff.branch_id, canEdit, ownOnly, staff.id, deptFilter])
+  }, [staff.branch_id, canEdit, ownOnly, staff.id, deptFilter, days])
   useEffect(refresh, [refresh])
 
   function describe(r) {
@@ -660,6 +676,18 @@ export default function Corrections({ boot }) {
               </li>
             ))}
           </ul>
+          {isEditor && (
+            <div className="mt-4 flex items-center gap-2 flex-wrap">
+              <span className="text-dim text-sm">Showing</span>
+              {[[14, 'last 14 days'], [60, 'last 60 days'], [180, 'last 6 months']].map(([d, label]) => (
+                <button key={d} onClick={() => setDays(d)}
+                  className={`h-9 px-3 rounded-xl border text-sm font-semibold ${days === d
+                    ? 'bg-raise border-amber text-amber' : 'border-line text-dim'}`}>
+                  {label}
+                </button>
+              ))}
+            </div>
+          )}
           {/* PAYMENTS AT THE FRONT DESK (Chris, 24 October 2026).
               The point of this tab is fixing a mistake without deleting
               a guest who has already checked in — and a mis-keyed
