@@ -156,6 +156,46 @@ export async function loadToday(branchId, date, locationId) {
   return data
 }
 
+// The same basket, keyed twice (Chris, 27 October 2026).
+//
+// A Gala for the Supervisor was recorded at 17:02 and again at 17:02 on
+// 12 September — nobody sells, records, sells and records inside one
+// minute. A doubled sale is the mirror of a doubled recovery: one
+// overstates what a person owes, the other wipes it out.
+//
+// Only for sales on a NAMED account. A bar sells the same beer to two
+// different people a minute apart all evening, so matching an anonymous
+// cash line would cry wolf every night; tied to one customer it does
+// not. Checked against the live data: at two minutes this would have
+// fired once in seven weeks, on the Gala.
+//
+// Same customer, same item, same quantity, same price. A second round
+// at a different price or quantity is a different sale and passes
+// without comment.
+export async function checkRepeatSale({ branchId, customerId, lines }) {
+  if (!branchId || !customerId || !lines?.length) return null
+  const since = new Date(Date.now() - 2 * 60 * 1000).toISOString()
+  const { data, error } = await supabase.from('sales')
+    .select('id, stock_item_id, description, qty, unit_price, occurred_at, stock_items(name)')
+    .eq('branch_id', branchId).eq('customer_id', customerId)
+    .gte('occurred_at', since)
+  if (error) return null                   // never block a sale over this
+  const recent = data || []
+  if (!recent.length) return null
+  for (const l of lines) {
+    const hit = recent.find(r =>
+      (l.item?.id ? r.stock_item_id === l.item.id
+                  : (r.description || '') === (l.description || ''))
+      && Math.abs(Number(r.qty) - Number(l.qty)) < 0.0001
+      && Math.abs(Number(r.unit_price) - Number(l.unitPrice)) < 0.009)
+    if (hit) {
+      return { item: l.item?.name || hit.stock_items?.name || l.description || 'that item',
+               qty: Number(hit.qty), amount: Number(hit.qty) * Number(hit.unit_price) }
+    }
+  }
+  return null
+}
+
 // Records a basket: one sales row per line, with the basket's payment
 // split allocated across those lines in order.
 async function _saveBasket({ staff, locationId, lines, payments, date, customerId, backdateReason, receiptId, onBehalfOf }) {
@@ -1606,6 +1646,44 @@ export async function loadFolio(stayId) {
 // not approximately — two genuine payments of the same round figure
 // within fifteen minutes are rare, and the person is asked rather than
 // stopped, so a real second payment costs one tap.
+// The same guard, for money recovered against a customer's credit
+// (Chris, 27 October 2026). Joseph collected the same debt from Oga Obi
+// twice, and nothing said a word.
+//
+// checkRepeatPayment below covers ROOM payments only — it reads the
+// payments table by stay. A credit repayment is a different table
+// entirely, and had no guard at all.
+//
+// Wider than 15 minutes on purpose: a room bill is settled in one sitting
+// at a desk, but a debt is collected at a bar, written down, and keyed
+// later — the second entry can land the next day. Same customer, same
+// amount, within three days is the shape of a debt recovered twice.
+// It warns; it never blocks. A customer really can pay the same round
+// figure twice in a week, and refusing that would send staff looking for
+// a way around the app.
+export async function checkRepeatRepayment(branchId, customerId, amount) {
+  const want = Math.round(Number(amount) * 100) / 100
+  if (!branchId || !customerId || !(want > 0)) return null
+  const since = new Date(Date.now() - 3 * 864e5).toISOString().slice(0, 10)
+  const { data, error } = await supabase.from('credit_repayments')
+    .select('id, amount, paid_on, method, credit_staff_id, recorded_by')
+    .eq('branch_id', branchId).eq('customer_id', customerId)
+    .gte('paid_on', since)
+    .order('paid_on', { ascending: false })
+  if (error) return null                   // never block a payment over this
+  const hit = (data || []).find(r => Math.abs(Number(r.amount) - want) < 0.009)
+  if (!hit) return null
+
+  let who = ''
+  const whoId = hit.credit_staff_id || hit.recorded_by
+  if (whoId) {
+    const { data: st } = await supabase.from('staff')
+      .select('full_name').eq('id', whoId).maybeSingle()
+    who = st?.full_name || ''
+  }
+  return { amount: Number(hit.amount), paidOn: hit.paid_on, method: hit.method, who }
+}
+
 export async function checkRepeatPayment(stayId, amount) {
   const want = Math.round(Number(amount) * 100) / 100
   if (!stayId || !(want > 0)) return null

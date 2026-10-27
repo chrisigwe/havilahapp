@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { lagosDaysAgo, lagosToday, methodLabel, naira, paymentSummary, roomChargeDept, startingDept, tierLabel, whoRecorded } from '../lib/format'
-import { loadStockMap, loadPopular, loadToday, saveBasket, saveWriteoff,
+import { checkRepeatSale, loadStockMap, loadPopular, loadToday, saveBasket, saveWriteoff,
          loadDailyFinancials, loadCustomers, createCustomer,
          loadOpeningDate, loadBalances, loadReceipt,
          loadStaffForLocation, loadReceptionActivity, loadReceptionDashboard, deleteEntry,
@@ -300,6 +300,10 @@ export default function SalesEntry({ boot }) {
   const [picking, setPicking] = useState(false)
   const [tuning, setTuning] = useState(null)        // line being adjusted
   const [paying, setPaying] = useState(null)        // payment step
+  // An identical line on the same account within the last two minutes,
+  // held up for confirmation.
+  const [repeatSale, setRepeatSale] = useState(null)
+  useEffect(() => { if (!paying) setRepeatSale(null) }, [paying])
   const [writeoff, setWriteoff] = useState(null)    // separate PR/damage flow
   const [busy, setBusy] = useState(false)
   const [receipt, setReceipt] = useState(null)
@@ -740,7 +744,9 @@ export default function SalesEntry({ boot }) {
       && Number(r.unit_price) === Number(b.unitPrice)))
   }
 
-  async function commit() {
+  // confirmed travels as an argument, not in state: a state update does
+  // not resume the call it interrupted.
+  async function commit(confirmed = false) {
     if (!canRecordHere) {
       toast('View only — you can record only at your own departments', 'error')
       return
@@ -782,6 +788,15 @@ export default function SalesEntry({ boot }) {
       }
       setBusy(false)
       return
+    }
+    // The same thing, on the same account, a moment ago? Asked before
+    // anything is written, and only for a named customer (see
+    // checkRepeatSale).
+    if (!confirmed && paying.customerId) {
+      const prior = await checkRepeatSale({
+        branchId: staff.branch_id, customerId: paying.customerId, lines: basket,
+      })
+      if (prior) { setRepeatSale(prior); return }
     }
     setBusy(true)
     try {
@@ -1732,13 +1747,44 @@ export default function SalesEntry({ boot }) {
             </div>
           )}
 
-          <button onClick={commit} disabled={busy || (needsReason && !backdateReason.trim())}
-            className={`w-full h-16 rounded-2xl bg-amber text-bg text-xl font-bold disabled:opacity-40 ${
-              needsReason ? 'mt-3' : 'mt-8'}`}>
-            {busy ? 'Saving…'
-              : paying.roomStay ? `Charge to Room ${paying.roomStay.room}`
-                : offToday ? `Save sale · ${dayShort(date)}` : 'Save sale'}
-          </button>
+          {/* Asked in the payment sheet itself, not on a sheet of its own.
+              A question that covers the screen takes the person away from
+              the fields the answer may depend on — and if saving then
+              refuses for another reason, they are standing somewhere with
+              nothing to fix it with. */}
+          {repeatSale && (
+            <Notice tone="warn" title="Already recorded?" className="mt-6">
+              <p>
+                {repeatSale.qty} × {repeatSale.item} was put on this same account
+                less than two minutes ago, for {naira(repeatSale.amount)}.
+              </p>
+              <p className="mt-2">
+                If they have bought it again, go ahead. If this is the same sale
+                being keyed twice, stop — it adds to what they owe twice over.
+              </p>
+            </Notice>
+          )}
+
+          {repeatSale ? (
+            <div className="mt-4 flex flex-col gap-3">
+              <button onClick={() => { setRepeatSale(null); commit(true) }} disabled={busy}
+                className="w-full h-14 rounded-2xl border border-clay text-clay font-bold disabled:opacity-40">
+                They bought it again — record it
+              </button>
+              <button onClick={() => setRepeatSale(null)} disabled={busy}
+                className="w-full h-14 rounded-2xl bg-amber text-bg font-bold disabled:opacity-40">
+                Stop, let me check
+              </button>
+            </div>
+          ) : (
+            <button onClick={() => commit()} disabled={busy || (needsReason && !backdateReason.trim())}
+              className={`w-full h-16 rounded-2xl bg-amber text-bg text-xl font-bold disabled:opacity-40 ${
+                needsReason ? 'mt-3' : 'mt-8'}`}>
+              {busy ? 'Saving…'
+                : paying.roomStay ? `Charge to Room ${paying.roomStay.room}`
+                  : offToday ? `Save sale · ${dayShort(date)}` : 'Save sale'}
+            </button>
+          )}
         </Sheet>
       )}
 

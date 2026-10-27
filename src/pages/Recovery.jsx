@@ -146,6 +146,27 @@ export default function Recovery({ boot }) {
     return [...m.entries()]
   }, [rows])
 
+  // The same debt recovered twice (Chris, 27 October 2026: Joseph
+  // collected from Oga Obi twice over the same item).
+  //
+  // Nothing here can know a customer did not genuinely pay the same
+  // round figure twice, so this accuses nobody — it marks the shape and
+  // leaves the judgement to whoever reads it. Same customer, same
+  // amount, same day is the shape; a real second payment of an
+  // identical amount on an identical day is rare enough to be worth a
+  // second look anyway.
+  const repeatIds = useMemo(() => {
+    const seen = new Map()
+    for (const r of (rows || [])) {
+      const k = `${r.customer_name}|${Number(r.amount)}|${r.paid_on}`
+      if (!seen.has(k)) seen.set(k, [])
+      seen.get(k).push(r.id)
+    }
+    const out = new Set()
+    for (const ids of seen.values()) if (ids.length > 1) ids.forEach(id => out.add(id))
+    return out
+  }, [rows])
+
   // Room payments the chosen day — or all of them when no day is
   // chosen.
   //
@@ -413,6 +434,11 @@ export default function Recovery({ boot }) {
               <li key={r.id} className="py-3">
                 <div className="flex items-baseline gap-3">
                   <span className="flex-1 min-w-0 truncate font-semibold">{r.customer_name}</span>
+                  {repeatIds.has(r.id) && (
+                    <span className="shrink-0 px-2 py-0.5 rounded-full border border-clay text-clay text-xs font-semibold">
+                      same amount twice
+                    </span>
+                  )}
                   <span className="tnum font-bold text-leaf">{naira(r.amount)}</span>
                   {canEdit && (
                     <button onClick={() => openEdit(r)} className="text-dim text-sm underline">Edit</button>

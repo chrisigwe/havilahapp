@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useToast } from '../components/Toast'
 import { lagosToday, methodLabel, naira, startingDept, tierLabel } from '../lib/format'
 import RoomChargeTracker from '../components/RoomChargeTracker'
-import { checkRepeatPayment, deactivateCustomer, deleteCustomer, linkCustomerToGuest, loadBalances, loadCreditForMonth, loadCreditOnDate, loadCustomerLedger, loadCreditChain, loadFolio, loadGuestBalances, loadReservedValue, loadStaffForLocation, loadUnlinkedCustomerBalances, moveWorkaroundToRoom, recordStayPayment, saveRepayment, searchSimilarGuests } from '../lib/data'
+import { checkRepeatPayment, checkRepeatRepayment, deactivateCustomer, deleteCustomer, linkCustomerToGuest, loadBalances, loadCreditForMonth, loadCreditOnDate, loadCustomerLedger, loadCreditChain, loadFolio, loadGuestBalances, loadReservedValue, loadStaffForLocation, loadUnlinkedCustomerBalances, moveWorkaroundToRoom, recordStayPayment, saveRepayment, searchSimilarGuests } from '../lib/data'
 import { enqueue, flush, isConnectionError } from '../lib/outbox'
 import PaymentMethodPicker, { paymentParts, paymentAllocated } from '../components/PaymentMethodPicker'
 import FolioStatement from '../components/FolioStatement'
@@ -105,6 +105,12 @@ export default function Credit({ boot }) {
   const [movingToRoom, setMovingToRoom] = useState(null)   // { customerId, locationId, amount }
   const [moveBusy, setMoveBusy] = useState(false)
   const [pay, setPay] = useState(null)
+  // The customer whose debt is split between two staff, while we ask
+  // which of them the money settles.
+  const [payWho, setPayWho] = useState(null)
+  // A payment of the same amount, for the same customer, in the last
+  // three days — shown for confirmation before this one is saved.
+  const [repeat, setRepeat] = useState(null)
   const [busy, setBusy] = useState(false)
   // Shape only — neither touches what is loaded, so neither can change
   // a figure. Search filters the rows already in hand; sort reorders them.
@@ -270,7 +276,15 @@ export default function Credit({ boot }) {
     setMoveBusy(false)
   }
 
-  async function submitPayment() {
+  // confirmed: the person has seen the "this may already be paid" warning
+  // and said it is a separate payment. Passed as an argument rather than
+  // parked in state — a state update does not resume the function that
+  // was interrupted, so the confirmation has to travel with the retry.
+  async function submitPayment(confirmed = false) {
+    if (!confirmed) {
+      const prior = await checkRepeatRepayment(staff.branch_id, pay.customerId, pay.amount)
+      if (prior) { setRepeat(prior); return }
+    }
     setBusy(true)
     const base = {
       staffLite: { id: staff.id, branch_id: staff.branch_id },
@@ -356,20 +370,50 @@ export default function Credit({ boot }) {
   const inScope = rows.filter(r =>
     (!locId || locId === 'all' || r.location_id === locId)
     && (!staffFilter || r.staff_id === staffFilter))
-  // All departments: rows come one per customer PER department, so combine
-  // them — otherwise someone owing at two counters appears twice, as two
-  // half-truths. Combined BEFORE the owing filter, so an overpayment at one
-  // department correctly reduces what they owe overall.
-  const combined = locId !== 'all' ? inScope : Object.values(inScope.reduce((acc, r) => {
+  // One line per person, always (Chris, 27 October 2026: "why is the
+  // Credit page duplicating customer records?").
+  //
+  // It was not duplicating anything. The view behind this list is one row
+  // per customer PER DEPARTMENT PER STAFF MEMBER, and only the all-
+  // departments view combined them — so inside a single department, a
+  // customer two different people had given credit to appeared twice.
+  // Measured on 27 October: 54 rows for 31 actual people, and not one
+  // duplicated customer record in the database.
+  //
+  // The split is not noise: credit stays with whoever gave it, and a
+  // repayment is credited back to that person. So the slices are KEPT,
+  // on `parts`, and the payment step asks which one it settles when
+  // there is more than one. Combining without that would have credited
+  // the money to whoever happened to be recording it.
+  //
+  // Combined BEFORE the owing filter, so an overpayment at one counter
+  // correctly reduces what the person owes overall.
+  const combined = Object.values(inScope.reduce((acc, r) => {
     const a = acc[r.customer_id] || (acc[r.customer_id] = {
       ...r, credit_taken: 0, repaid: 0, balance: 0,
-      location_id: null, staff_id: null, staff_name: null, deptIds: [] })
+      location_id: null, staff_id: null, staff_name: null, deptIds: [], parts: [] })
     a.credit_taken += Number(r.credit_taken); a.repaid += Number(r.repaid); a.balance += Number(r.balance)
     if (r.first_credit_date && (!a.first_credit_date || r.first_credit_date < a.first_credit_date)) a.first_credit_date = r.first_credit_date
     if (r.last_credit_date && (!a.last_credit_date || r.last_credit_date > a.last_credit_date)) a.last_credit_date = r.last_credit_date
     if (Number(r.balance) > 0.009 && !a.deptIds.includes(r.location_id)) a.deptIds.push(r.location_id)
+    if (Number(r.balance) > 0.009) {
+      a.parts.push({ location_id: r.location_id, staff_id: r.staff_id,
+                     staff_name: r.staff_name, balance: Number(r.balance),
+                     last_credit_date: r.last_credit_date })
+    }
     return acc
-  }, {})).sort((x, y) => String(y.last_credit_date || '').localeCompare(String(x.last_credit_date || '')))
+  }, {})).map(a => {
+    // A single slice keeps its own department and staff, so everything
+    // downstream — the payment button, the on-behalf rule — behaves
+    // exactly as it did before for the ordinary case.
+    if (a.parts.length === 1) {
+      return { ...a, location_id: a.parts[0].location_id,
+               staff_id: a.parts[0].staff_id, staff_name: a.parts[0].staff_name }
+    }
+    // Oldest first: the order money is applied in everywhere else.
+    return { ...a, parts: [...a.parts].sort((x, y) =>
+      String(x.last_credit_date || '').localeCompare(String(y.last_credit_date || ''))) }
+  }).sort((x, y) => String(y.last_credit_date || '').localeCompare(String(x.last_credit_date || '')))
   const owing = combined.filter(r => Number(r.balance) > 0.009)
   const total = owing.reduce((s, r) => s + Number(r.balance), 0)
 
@@ -711,6 +755,12 @@ export default function Credit({ boot }) {
                       .toLocaleDateString('en-NG', { day: 'numeric', month: 'short' })}</span>
                   )}
                   {c.staff_name && <span className="text-dim"> · by {c.staff_name}</span>}
+                  {/* Two people gave this person credit. One line, both
+                      named — which is what the two rows were really
+                      saying, without reading as the same customer twice. */}
+                  {c.parts?.length > 1 && (
+                    <span className="text-dim"> · by {c.parts.map(p2 => p2.staff_name || 'someone').join(' and ')}</span>
+                  )}
                 </div>
               </div>
               <span className="shrink-0 text-right">
@@ -1182,13 +1232,22 @@ export default function Credit({ boot }) {
               // A repayment must be credited to one department; in the all
               // view it would otherwise fall back to the literal 'all'.
               const hidden = hiddenForRole || wouldBeOnBehalf || locId === 'all'
+              // More than one person gave this customer credit. Which
+              // debt the money settles is a real question with a wrong
+              // answer available — crediting it to whoever is holding
+              // the phone — so it is asked rather than assumed.
+              const split = (open.customer.parts || []).length > 1
+              const startPay = (part) => setPay({
+                customerId: open.customer.customer_id,
+                amount: part ? part.balance : open.customer.balance,
+                method: methods.find(m => m !== 'credit') || 'cash',
+                paidOn: lagosToday(), note: '',
+                balance: Number(part ? part.balance : open.customer.balance),
+                locationId: (part ? part.location_id : open.customer.location_id) || locId,
+                creditStaffId: (part ? part.staff_id : open.customer.staff_id) || staff.id,
+              })
               return (
-                <button onClick={() => setPay({ customerId: open.customer.customer_id,
-                  amount: open.customer.balance, method: methods.find(m => m !== 'credit') || 'cash',
-                  paidOn: lagosToday(), note: '',
-                  balance: Number(open.customer.balance),
-                  locationId: open.customer.location_id || locId,
-                  creditStaffId: open.customer.staff_id || staff.id })}
+                <button onClick={() => (split ? setPayWho(open.customer) : startPay(null))}
                   className={`flex-1 h-14 rounded-2xl bg-amber text-bg font-bold ${
                     hidden ? 'hidden' : ''}`}>Record payment</button>
               )
@@ -1234,6 +1293,91 @@ export default function Credit({ boot }) {
         </div>
       )}
 
+      {/* Which debt does this money settle? Asked only when more than one
+          person gave this customer credit — otherwise nothing changes. */}
+      {/* The warning Joseph never got. It states what it found and makes
+          both answers equally easy — a dialog that only offers "go on"
+          is not a check. */}
+      {repeat && (
+        <div className="fixed inset-0 z-[70] bg-bg h-[100dvh] flex flex-col justify-center px-6">
+          <h2 className="text-2xl font-bold text-clay">This may already be paid</h2>
+          <p className="text-dim mt-3">
+            {naira(repeat.amount)} was already recorded against this customer on{' '}
+            <b className="text-ink">{repeat.paidOn}</b>
+            {repeat.who ? <> by <b className="text-ink">{repeat.who}</b></> : null}
+            {repeat.method ? ` · ${methodLabel[repeat.method] || repeat.method}` : ''}.
+          </p>
+          <p className="text-dim mt-3">
+            If this is a second, separate payment of the same amount, go ahead.
+            If it is the same money being entered again, stop — recording it
+            twice takes the debt down twice and the customer is owed the difference.
+          </p>
+          <button
+            onClick={() => { setRepeat(null); submitPayment(true) }}
+            className="mt-8 w-full h-14 rounded-2xl border border-clay text-clay font-bold">
+            It is a separate payment — record it
+          </button>
+          <button onClick={() => { setRepeat(null); setPay(null) }}
+            className="mt-3 w-full h-14 rounded-2xl bg-amber text-bg font-bold">
+            Stop, let me check
+          </button>
+        </div>
+      )}
+
+      {payWho && (
+        <div className="fixed inset-0 z-[60] bg-bg h-[100dvh] flex flex-col">
+          <div className="p-5 flex-1 min-h-0 overflow-y-auto overscroll-contain">
+            <button onClick={() => setPayWho(null)} className="text-dim">Back</button>
+            <h2 className="mt-3 text-2xl font-bold">Whose credit is being paid?</h2>
+            <p className="text-dim mt-2">
+              {payWho.name} owes {naira(payWho.balance)} in all. Two people gave it,
+              and a repayment goes back to whoever gave the credit — so pick the
+              one this money settles. Paying the other is a second entry.
+            </p>
+            <ul className="mt-5 divide-y divide-line/60 rounded-2xl border border-line bg-surface px-4">
+              {(payWho.parts || []).map((part, i) => {
+                // The same rule the single-slice button uses: someone who
+                // may not act on another's behalf cannot collect a debt
+                // that belongs to them.
+                const blocked = NO_ON_BEHALF.has(staff.id)
+                  && part.staff_id && part.staff_id !== staff.id
+                return (
+                  <li key={i} className="py-3">
+                    <button
+                      disabled={blocked}
+                      onClick={() => {
+                        setPay({ customerId: payWho.customer_id, amount: part.balance,
+                          method: methods.find(m => m !== 'credit') || 'cash',
+                          paidOn: lagosToday(), note: '', balance: Number(part.balance),
+                          locationId: part.location_id || locId,
+                          creditStaffId: part.staff_id || staff.id })
+                        setPayWho(null)
+                      }}
+                      className="w-full flex items-baseline gap-3 text-left disabled:opacity-40">
+                      <span className="flex-1 min-w-0">
+                        <span className="font-semibold break-words block">
+                          {part.staff_name || 'Not recorded'}
+                        </span>
+                        <span className="text-dim text-sm block">
+                          {locById[part.location_id]?.name || '—'}
+                          {i === 0 ? ' · the older debt' : ''}
+                        </span>
+                        {blocked && (
+                          <span className="text-clay text-sm block">
+                            Only they can collect this one.
+                          </span>
+                        )}
+                      </span>
+                      <span className="tnum font-bold shrink-0 text-clay">{naira(part.balance)}</span>
+                    </button>
+                  </li>
+                )
+              })}
+            </ul>
+          </div>
+        </div>
+      )}
+
       {pay && (
         <div className="fixed inset-0 z-[60] bg-bg h-[100dvh] flex flex-col">
           <div className="p-5 flex-1 min-h-0 overflow-y-auto">
@@ -1274,7 +1418,7 @@ export default function Credit({ boot }) {
             {(() => {
               const canSave = pay.split ? paymentAllocated(pay, pay.amount) > 0 : Number(pay.amount) > 0
               return (
-                <button onClick={submitPayment} disabled={busy || !canSave}
+                <button onClick={() => submitPayment()} disabled={busy || !canSave}
                   className="w-full h-16 rounded-2xl bg-amber text-bg text-xl font-bold disabled:opacity-40">
                   {busy ? 'Saving…' : 'Save payment'}
                 </button>
