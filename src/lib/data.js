@@ -3670,6 +3670,21 @@ async function _moveStayRoom({ stayId, toRoomId, movedOn, kind, reason, adjustOv
 }
 export const moveStayRoom = tracked('Moved a guest to another room', _moveStayRoom)
 
+// Taking the last room change back (577).
+//
+// One correction rather than four editable fields: the wrong room, the
+// wrong day, the wrong reason and the wrong amount all have the same
+// remedy — undo it and do it again. Fewer ways to get the correction
+// itself wrong.
+async function _undoLastRoomMove(stayId, reason) {
+  const { data, error } = await supabase.rpc('undo_last_room_move', {
+    p_stay: stayId, p_reason: reason || null,
+  })
+  if (error) throw error
+  return data
+}
+export const undoLastRoomMove = tracked('Took back a room change', _undoLastRoomMove)
+
 // What a stay's bill is carrying from room moves, for the folio and the
 // statement. Read as rows rather than a total so each one can be
 // explained on the guest's bill.
@@ -3683,7 +3698,8 @@ export async function loadStayMoves(stayId) {
     // to hand a query parser.
     .select(`id, moved_on, kind, reason, nights_affected, rate_difference, adjustment,
              from_r:rooms!from_room(room_number), to_r:rooms!to_room(room_number),
-             staff:recorded_by(full_name)`)
+             staff:recorded_by(full_name), undone_at, undo_reason,
+             undoer:undone_by(full_name)`)
     .eq('stay_id', stayId).order('moved_on')
   if (error) throw error
   return data || []

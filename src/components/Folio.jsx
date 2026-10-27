@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { naira, lagosToday, lagosDaysAgo, lagosTime, nightsBetween, partPaidNote, roomChargeDept, seesStayTimes, cyclesFor, friendlyStayError, addDays } from '../lib/format'
-import { billedToLabel, checkOutStay, loadFreeRooms, loadStayMoves, moveStayRoom, loadCustomers, recordStayCredit, checkRepeatPayment, deleteOrderItem, deleteStay, extendStayTo, loadBranchStaySettings, loadFolio, moveRoomChargeDate, recordStayPayment, reopenStay, saveRepayment, searchSimilarGuests, updateOrderItem, updateOverstayFee, updateStayBillTo, updateStayDetails } from '../lib/data'
+import { billedToLabel, checkOutStay, loadFreeRooms, loadStayMoves, moveStayRoom, undoLastRoomMove, loadCustomers, recordStayCredit, checkRepeatPayment, deleteOrderItem, deleteStay, extendStayTo, loadBranchStaySettings, loadFolio, moveRoomChargeDate, recordStayPayment, reopenStay, saveRepayment, searchSimilarGuests, updateOrderItem, updateOverstayFee, updateStayBillTo, updateStayDetails } from '../lib/data'
 import { useToast } from '../components/Toast'
 import PaymentMethodPicker, { paymentParts, paymentAllocated } from './PaymentMethodPicker'
 import FolioStatement from './FolioStatement'
@@ -52,6 +52,9 @@ export default function Folio({ boot, room, onClose, onChanged }) {
   // open sheet; `moves` is what this bill already carries from earlier
   // moves, so the folio can show it alongside the other charges.
   const [moving, setMoving] = useState(null)
+  const [undoing, setUndoing] = useState(null)   // the move pending confirmation
+  // Making a move is front-desk work; reversing a charge is a manager's.
+  const canManage = is(staff.role, MANAGEMENT)
   const [freeRooms, setFreeRooms] = useState(null)
   const [moves, setMoves] = useState([])
   const [movesKey, setMovesKey] = useState(0)
@@ -661,6 +664,20 @@ export default function Folio({ boot, room, onClose, onChanged }) {
       const rs = await loadFreeRooms(staff.branch_id, checkIn, end, room.stay_id)
       setFreeRooms(rs.filter(r => r.id !== room.room_id))
     } catch (e) { setFreeRooms([]); toast(friendlyStayError(e) || e.message, 'error') }
+  }
+
+  async function doUndoMove() {
+    setBusy(true)
+    try {
+      const res = await undoLastRoomMove(room.stay_id, undoing.reason)
+      const removed = Number(res?.charge_removed || 0)
+      toast(`Back in Room ${res.back_in}`
+        + (Math.abs(removed) > 0.009
+            ? ` · ${removed > 0 ? naira(removed) + ' taken off' : naira(-removed) + ' put back'}`
+            : ''), 'success')
+      setUndoing(null); setMovesKey(k => k + 1); refresh(); onChanged?.()
+    } catch (e) { toast(friendlyStayError(e) || e.message, 'error') }
+    setBusy(false)
   }
 
   async function saveMove() {
@@ -1619,23 +1636,62 @@ export default function Folio({ boot, room, onClose, onChanged }) {
             <ul className="divide-y divide-line/60 rounded-2xl border border-line bg-surface px-4">
               {moves.map(mv => {
                 const a = Number(mv.adjustment || 0)
+                const undone = !!mv.undone_at
+                // Only the LAST live move can be taken back: moves
+                // compose, so removing one from the middle would leave
+                // the guest in a room no sequence of moves arrives at.
+                const isLast = !undone
+                  && mv.id === [...moves].reverse().find(x => !x.undone_at)?.id
+                // The move covered nights up to here. If the stay's
+                // dates have changed since, the frozen amount no longer
+                // matches the stay — see below.
+                const impliedEnd = mv.moved_on && mv.nights_affected != null
+                  ? addDays(mv.moved_on, mv.nights_affected) : null
+                const nowEnd = room.actual_out || scheduledOut || room.scheduled_out
+                const stale = !undone && impliedEnd && nowEnd && impliedEnd !== nowEnd
                 return (
-                  <li key={mv.id} className="py-3 flex items-baseline gap-3">
-                    <span className="flex-1 min-w-0">
-                      <span className="font-semibold break-words block">
-                        Room {mv.from_r?.room_number || '?'} → Room {mv.to_r?.room_number || '?'}
+                  <li key={mv.id} className="py-3">
+                    <div className="flex items-baseline gap-3">
+                      <span className={`flex-1 min-w-0 ${undone ? 'opacity-50' : ''}`}>
+                        <span className="font-semibold break-words block">
+                          Room {mv.from_r?.room_number || '?'} → Room {mv.to_r?.room_number || '?'}
+                          {undone && <span className="text-dim font-normal"> · taken back</span>}
+                        </span>
+                        <span className="text-dim text-sm block tnum">
+                          {mv.moved_on}
+                          {mv.nights_affected ? ` · ${mv.nights_affected} night${mv.nights_affected === 1 ? '' : 's'}` : ''}
+                          {mv.staff?.full_name ? ` · ${mv.staff.full_name}` : ''}
+                        </span>
+                        {mv.reason && <span className="text-dim text-xs block break-words">{mv.reason}</span>}
+                        {undone && mv.undo_reason && (
+                          <span className="text-dim text-xs block break-words">
+                            taken back by {mv.undoer?.full_name || 'someone'} — {mv.undo_reason}
+                          </span>
+                        )}
                       </span>
-                      <span className="text-dim text-sm block tnum">
-                        {mv.moved_on}
-                        {mv.nights_affected ? ` · ${mv.nights_affected} night${mv.nights_affected === 1 ? '' : 's'}` : ''}
-                        {mv.staff?.full_name ? ` · ${mv.staff.full_name}` : ''}
+                      <span className={`tnum font-semibold shrink-0 ${undone ? 'text-dim line-through'
+                        : a > 0.009 ? 'text-clay' : a < -0.009 ? 'text-leaf' : 'text-dim'}`}>
+                        {a > 0.009 ? naira(a) : a < -0.009 ? `− ${naira(-a)}` : 'no charge'}
                       </span>
-                      {mv.reason && <span className="text-dim text-xs block break-words">{mv.reason}</span>}
-                    </span>
-                    <span className={`tnum font-semibold shrink-0 ${
-                      a > 0.009 ? 'text-clay' : a < -0.009 ? 'text-leaf' : 'text-dim'}`}>
-                      {a > 0.009 ? naira(a) : a < -0.009 ? `− ${naira(-a)}` : 'no charge'}
-                    </span>
+                    </div>
+                    {/* The stay's dates moved after this charge was
+                        frozen, so the nights it paid for are no longer
+                        the nights they are staying. Said, not silently
+                        recomputed — the whole point of freezing it is
+                        that money does not move on its own. */}
+                    {stale && (
+                      <p className="text-clay text-sm mt-1">
+                        This covered {mv.nights_affected} night{mv.nights_affected === 1 ? '' : 's'} to {impliedEnd},
+                        but the stay now runs to {nowEnd}. Check the amount is still right —
+                        take it back and make it again if it is not.
+                      </p>
+                    )}
+                    {isLast && canManage && (
+                      <button onClick={() => setUndoing({ move: mv, reason: '' })} disabled={busy}
+                        className="mt-2 h-9 px-3 rounded-lg border border-clay text-clay text-sm font-semibold disabled:opacity-40">
+                        Take this back
+                      </button>
+                    )}
                   </li>
                 )
               })}
@@ -1886,6 +1942,40 @@ export default function Folio({ boot, room, onClose, onChanged }) {
         </div>
         )
       })()}
+
+      {undoing && (
+        <div className="fixed inset-0 z-[60] bg-bg flex flex-col justify-center px-6">
+          <h2 className="text-2xl font-bold">Take this room change back?</h2>
+          <p className="text-dim mt-3">
+            Room {undoing.move.from_r?.room_number || '?'} → Room {undoing.move.to_r?.room_number || '?'}
+            {' '}on {undoing.move.moved_on}.
+          </p>
+          <p className="text-dim mt-3 tnum">
+            {Number(undoing.move.adjustment) > 0.009
+              ? `${naira(undoing.move.adjustment)} comes off the bill, and the guest goes back to Room ${undoing.move.from_r?.room_number || '?'}.`
+              : Number(undoing.move.adjustment) < -0.009
+                ? `${naira(-Number(undoing.move.adjustment))} goes back onto the bill, and the guest goes back to Room ${undoing.move.from_r?.room_number || '?'}.`
+                : `The bill does not change. The guest goes back to Room ${undoing.move.from_r?.room_number || '?'}.`}
+          </p>
+          <p className="text-dim text-sm mt-3">
+            The change stays on the record, marked as taken back, with your name on it.
+            {' '}If the room was taken out of service it stays out — put it back from the
+            Rooms board when it is actually fixed.
+          </p>
+
+          <label className="block mt-5 text-dim text-sm" htmlFor="undo-reason">Why</label>
+          <input id="undo-reason" type="text" value={undoing.reason}
+            onChange={e => setUndoing(u => ({ ...u, reason: e.target.value }))}
+            placeholder="Wrong room picked"
+            className="mt-2 h-12 w-full px-3 rounded-xl bg-surface border border-line" />
+
+          <button onClick={doUndoMove} disabled={busy}
+            className="mt-6 w-full h-14 rounded-2xl border border-clay text-clay font-bold disabled:opacity-40">
+            {busy ? 'Taking it back…' : 'Take it back'}
+          </button>
+          <button onClick={() => setUndoing(null)} className="mt-3 w-full h-12 text-dim">Cancel</button>
+        </div>
+      )}
 
       {checkoutDate && (
         <div className="fixed inset-0 z-[60] bg-bg flex flex-col justify-center px-6">

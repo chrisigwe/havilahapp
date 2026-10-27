@@ -60,7 +60,9 @@ export default function FolioStatement({ room, folio, orderLines, freeLines, pay
     checkInLabel: `${room.check_in_date}${checkedInAt ? ` ${lagosTime(checkedInAt)}` : ''}`,
     accommodationLabel: `Accommodation — ${room.room_number} · ${folio?.nights} night${folio?.nights > 1 ? 's' : ''} @ ${naira(folio?.daily_rate)}`,
     roomCharge, overstay, orderTotal, totalDue, paid, balance,
-    moveLines: (moves || []).filter(mv => Math.abs(Number(mv.adjustment || 0)) > 0.009).map(mv => ({
+    // A taken-back move is off the bill, so it is off the statement. It
+    // stays visible to staff on the folio, never to the guest.
+    moveLines: (moves || []).filter(mv => !mv.undone_at && Math.abs(Number(mv.adjustment || 0)) > 0.009).map(mv => ({
       date: mv.moved_on,
       label: `Moved to Room ${mv.to_r?.room_number || '?'} from Room ${mv.from_r?.room_number || '?'}`
         + (mv.nights_affected ? ` · ${mv.nights_affected} night${mv.nights_affected === 1 ? '' : 's'}` : ''),
@@ -159,7 +161,7 @@ export default function FolioStatement({ room, folio, orderLines, freeLines, pay
               {/* A room change the guest paid for, or was refunded. It has
                   to be on the bill in words, or the total carries money
                   nothing accounts for (576). */}
-              {moves.filter(mv => Math.abs(Number(mv.adjustment || 0)) > 0.009).map(mv => (
+              {moves.filter(mv => !mv.undone_at && Math.abs(Number(mv.adjustment || 0)) > 0.009).map(mv => (
                 <div key={mv.id} className="py-3 flex items-baseline gap-3 border-b border-line/60">
                   <span className="flex-1 min-w-0">
                     <span className="block font-semibold leading-tight break-words">
@@ -233,7 +235,7 @@ export default function FolioStatement({ room, folio, orderLines, freeLines, pay
               {overstay > 0 && (
                 <tr><td></td><td>Over-stay charge</td><td className="num tnum">{naira(overstay)}</td></tr>
               )}
-              {moves.filter(mv => Math.abs(Number(mv.adjustment || 0)) > 0.009).map(mv => (
+              {moves.filter(mv => !mv.undone_at && Math.abs(Number(mv.adjustment || 0)) > 0.009).map(mv => (
                 <tr key={mv.id}>
                   <td>{mv.moved_on}</td>
                   <td>
