@@ -15,6 +15,20 @@ export default function NotificationSetup({ staff, alertEligible }) {
     // 'denied' means the browser will not ask again — nagging is
     // pointless, so hide rather than show a button that cannot work.
     if (perm === 'denied') { setState('hide'); return }
+    // "Not now" used to live in component state, so it came back on the
+    // next page and the next reload — a prompt that never goes away is
+    // the definition of clutter (Chris, 27 October 2026). Remembered for
+    // 30 days instead.
+    //
+    // try/catch around every read and write: this throws in a private
+    // window and on a device with site data blocked, and a setup prompt
+    // must never be the thing that takes a page down.
+    let snoozed = false
+    try {
+      const until = Number(localStorage.getItem('hv-push-snooze') || 0)
+      snoozed = until > Date.now()
+    } catch { /* no storage — just offer it */ }
+    if (snoozed) { setState('hide'); return }
     isPushEnabled().then(on => setState(on ? 'hide' : 'offer')).catch(() => setState('offer'))
   }, [alertEligible])
 
@@ -38,7 +52,12 @@ export default function NotificationSetup({ staff, alertEligible }) {
         className="shrink-0 h-9 px-3 rounded-lg bg-amber text-bg font-bold text-sm disabled:opacity-40">
         {busy ? '…' : 'Turn on'}
       </button>
-      <button onClick={() => setState('hide')} className="shrink-0 text-dim text-sm">
+      <button
+        onClick={() => {
+          try { localStorage.setItem('hv-push-snooze', String(Date.now() + 30 * 864e5)) } catch { /* ignore */ }
+          setState('hide')
+        }}
+        className="shrink-0 text-dim text-sm">
         Not now
       </button>
     </div>
