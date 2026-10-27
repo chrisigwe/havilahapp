@@ -45,14 +45,62 @@ export default function Shell({ staff, tab, onTab, children,
   // someone has not scrolled anywhere. Small movements are ignored, or
   // the bar would flicker on every thumb tremor.
   const [navDown, setNavDown] = useState(false)
+  // The big page title at the top of a screen shrinks into the bar as you
+  // scroll, and comes back at the top — WhatsApp's Chats screen, which is
+  // how Chris asked for it (26 October 2026).
+  //
+  // Written as a CSS custom property rather than React state. A state
+  // update per scroll frame re-renders the whole shell and every page
+  // under it, which is exactly the jank this is supposed to avoid; a
+  // property on one element lets the compositor do the work. It rides in
+  // the scroll handler the tab bar already runs, so there is still only
+  // one listener.
+  //
+  // On the SHELL, not on the bar. The large title sits below the bar as
+  // its sibling, and a custom property inherits down the tree, never
+  // sideways — set on the bar it reached the compact title and nothing
+  // else, so the large one simply never faded. Caught by measuring it
+  // rather than by reading it back.
+  const shellRef = useRef(null)
+  const barRef = useRef(null)
+  const TITLE_RUN = 52   // px of scroll the handover takes
+
+  // The bar's real height, published so whatever pins beneath it lands
+  // flush. Measured rather than assumed: the bar grows when a branch
+  // picker is present, and a hard-coded offset would leave a gap on one
+  // account and an overlap on another.
+  useEffect(() => {
+    const measure = () => {
+      const h = barRef.current?.getBoundingClientRect().height
+      // Hidden on a laptop (lg:hidden), where the height is 0 and
+      // nothing should pin to it.
+      shellRef.current?.style.setProperty('--hv-bar', h ? `${Math.round(h)}px` : '0px')
+    }
+    measure()
+    const ro = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(measure) : null
+    if (ro && barRef.current) ro.observe(barRef.current)
+    window.addEventListener('resize', measure)
+    return () => { ro?.disconnect(); window.removeEventListener('resize', measure) }
+  }, [])
   useEffect(() => {
     let last = window.scrollY
     let frame = 0
+    const paint = (y) => {
+      const el = shellRef.current
+      if (!el) return
+      const t = Math.min(1, Math.max(0, y / TITLE_RUN))
+      el.style.setProperty('--hv-t', t.toFixed(3))
+    }
+    paint(window.scrollY)
     const onScroll = () => {
       if (frame) return
       frame = requestAnimationFrame(() => {
         frame = 0
         const y = window.scrollY
+        // Before the movement guard below: the title tracks the scroll
+        // continuously, while the tab bar only reacts to a deliberate
+        // push in one direction.
+        paint(y)
         const dy = y - last
         if (Math.abs(dy) < 6) return
         last = y
@@ -67,13 +115,26 @@ export default function Shell({ staff, tab, onTab, children,
     }
   }, [])
   // A tab change scrolls to a new page; the bar must be there when it does.
-  useEffect(() => { setNavDown(false) }, [tab])
+  useEffect(() => {
+    setNavDown(false)
+    shellRef.current?.style.setProperty('--hv-t', '0')
+  }, [tab])
   // The bar comes from tabsFor() — the single definition shared with
   // the More menu and the landing screen. See lib/tabs.js.
   const tabs = tabsFor(staff.role, { recordsSales, canRecordSales: !!staff.can_record_sales })
   const countBadgeTab = countBadgeTabFor(staff.role, { recordsSales, canRecordSales: !!staff.can_record_sales })
   const directTabKeys = new Set(tabs.map(([k]) => k))
   const moreItems = moreItemsFor(staff.role, recordsSales, !!staff.is_read_only, !!staff.can_record_sales)
+  // The name of the screen you are on, from the same two lists the bar
+  // and the More menu are built from — so a tab renamed in one place is
+  // renamed in the title too.
+  // Falls back to the tab's own key rather than to nothing (27 October
+  // 2026). An empty title rendered no large title and an empty compact
+  // one, so the whole bar read as missing — which is what Android showed.
+  // A page the two lists do not name is a gap worth seeing, not hiding.
+  const pageTitle = tabs.find(([k]) => k === tab)?.[1]
+    || moreItems.find(i => i.key === tab)?.label
+    || (tab ? tab.charAt(0).toUpperCase() + tab.slice(1) : 'Havilah')
 
   // One-shot bounce when a tab becomes the selected one. Driven by a key
   // that changes on selection, so the animation restarts every time —
@@ -84,7 +145,7 @@ export default function Shell({ staff, tab, onTab, children,
     if (lastTab.current !== tab) { lastTab.current = tab; setPopKey(n => n + 1) }
   }, [tab])
   return (
-    <div className="min-h-dvh pb-24 lg:pb-8">
+    <div ref={shellRef} className="min-h-dvh pb-24 lg:pb-8">
       {/* Laptop and desktop: the tabs live in a left sidebar instead of the
           floating bar. Same tabs, same More items, same badges — taken from
           the same lists, so the two layouts cannot drift apart. */}
@@ -153,32 +214,61 @@ export default function Shell({ staff, tab, onTab, children,
         </div>
       </aside>
 
-      <header className="lg:hidden px-5 pt-5 pb-3 flex items-center justify-between gap-3">
-        <div className="flex items-center gap-2 min-w-0">
-          <Logo className="w-5 h-5 shrink-0" />
-          <span className="font-bold text-lg shrink-0">Havilah</span>
-          <span className="text-dim text-sm truncate">· {staff.full_name}</span>
-        </div>
-        <div className="flex items-center gap-3 shrink-0">
-          {branches.length > 1 && (
-            <select value={viewBranch || ''} onChange={e => onBranch(e.target.value)}
-              className="h-9 px-2 rounded-lg bg-surface border border-line text-sm">
-              {branches.map(b => (
-                <option key={b.id} value={b.id}>{b.slug.toUpperCase()}</option>
-              ))}
-            </select>
-          )}
-          <button onClick={() => setConfirmingSignOut(true)}
-            className="h-9 px-3 rounded-lg border border-line text-dim text-sm">
-            Sign out
-          </button>
+      {/* The bar stays; the page title below it is what moves. Both the
+          logo and the branch picker keep their places, so nothing a
+          thumb is used to reaching moves around while scrolling. */}
+      <header ref={barRef} className="lg:hidden hv-nav hv-nav--parted px-5 pt-4 pb-3">
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex items-baseline gap-2 min-w-0">
+            <Logo className="w-5 h-5 shrink-0 self-center" />
+            {/* Two labels in one place: the app's name at the top of a
+                page, the page's name once you have scrolled. One is
+                always fully faded, so they never read as two titles. */}
+            <span className="relative min-w-0 flex-1 h-6 overflow-hidden">
+              <span className="hv-bar-brand absolute inset-0 font-bold text-lg truncate">
+                Havilah
+              </span>
+              <span className="hv-nav-title absolute inset-0 font-bold text-lg truncate">
+                {pageTitle}
+              </span>
+            </span>
+          </div>
+          <div className="flex items-center gap-3 shrink-0">
+            {branches.length > 1 && (
+              <select value={viewBranch || ''} onChange={e => onBranch(e.target.value)}
+                className="h-9 px-2 rounded-lg bg-surface border border-line text-sm">
+                {branches.map(b => (
+                  <option key={b.id} value={b.id}>{b.slug.toUpperCase()}</option>
+                ))}
+              </select>
+            )}
+            <button onClick={() => setConfirmingSignOut(true)}
+              className="h-9 px-3 rounded-lg border border-line text-dim text-sm">
+              Sign out
+            </button>
+          </div>
         </div>
       </header>
+
+      {/* The large title, in the flow, so it scrolls up and under the
+          blur rather than being animated out from under the thumb. */}
+      {(
+        <div className="lg:hidden hv-large-title px-5 pt-1 pb-2">
+          <h1 className="text-[2rem] leading-tight font-extrabold tracking-tight truncate">
+            {pageTitle}
+          </h1>
+          <p className="text-dim text-sm truncate">{staff.full_name}</p>
+        </div>
+      )}
       <div className="lg:pl-60">
       <div className={`mx-auto lg:pt-6 ${NARROW.includes(tab) ? 'lg:max-w-3xl' : 'lg:max-w-6xl'}`}>
       <PendingBanner />
       <UpdateBanner />
-      <StaffOfMonthBanner branchId={staff.branch_id} />
+      {/* Pinned under the bar on a phone (Chris, 27 October 2026), static
+          on a laptop where there is no bar to pin under. */}
+      <div className="hv-under-nav lg:static">
+        <StaffOfMonthBanner branchId={staff.branch_id} />
+      </div>
       {['front_desk', 'manager', 'gm', 'admin'].includes(staff.role) && (
         <ReservationBanner branchId={staff.branch_id} tab={tab} onTab={onTab} />
       )}

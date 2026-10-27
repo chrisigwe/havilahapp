@@ -190,3 +190,81 @@ input[type="datetime-local"]::-webkit-calendar-picker-indicator:hover { opacity:
   .print-only .invoice-print { font-size: 8.5pt; }
   .print-only .invoice-table th, .print-only .invoice-table td { padding: 2pt 3pt; }
 }
+
+/* ── The page title that shrinks as you scroll ────────────────────────
+   Chris, 26 October 2026, asking for WhatsApp's iOS Chats screen. The
+   request came as React Native; this app is a web PWA, so it is built
+   from a sticky bar and one scroll-driven custom property instead.
+
+   --hv-t runs 0 to 1 over the first 52px of the page. Shell writes it
+   inside the scroll handler it already runs for the tab bar, so there
+   is one listener for both, rAF-throttled, and React never re-renders
+   while a finger is moving.
+
+   No transition on anything --hv-t drives: the large title tracks the
+   scroll exactly, the way it does on iOS. A transition here would lag
+   the finger, which is the jank it looks like it would prevent. */
+.hv-nav {
+  position: sticky;
+  top: 0;
+  z-index: 30;
+  /* Translucent, so the list is visible sliding underneath. The solid
+     fallback matters: Firefox on Android still ships without
+     backdrop-filter, and without it this bar would be see-through with
+     text crossing text. */
+  background: var(--color-bg);
+  border-bottom: 1px solid transparent;
+}
+@supports ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .hv-nav {
+    /* The literal is --color-bg #101613 spelled out, for Safari before
+       16.2, which has backdrop-filter but not color-mix. Without it that
+       whole declaration is dropped and the bar renders fully opaque.
+       Keep the two in step if the token ever changes. */
+    background: rgba(16, 22, 19, 0.86);
+    background: color-mix(in srgb, var(--color-bg) 86%, transparent);
+    -webkit-backdrop-filter: blur(18px) saturate(150%);
+    backdrop-filter: blur(18px) saturate(150%);
+  }
+}
+/* The hairline arrives only once something has scrolled under the bar.
+   At the top of a page there is nothing to divide. */
+.hv-nav--parted {
+  border-bottom-color: color-mix(in srgb, var(--color-line) calc(var(--hv-t, 0) * 100%), transparent);
+}
+/* The compact title fades in as the large one goes. */
+.hv-nav-title {
+  opacity: var(--hv-t, 0);
+  transform: translateY(calc((1 - var(--hv-t, 0)) * 7px));
+}
+/* The large title scrolls away in the flow and is NOT faded (Chris,
+   27 October 2026: hard to see on iPhone).
+   
+   It used to fade out as --hv-t rose, which meant any resting scroll
+   position left it part-way through the fade — and iOS parks a page a
+   little way down more often than Android does, as the URL bar
+   collapses. So the title a page exists to announce was routinely shown
+   at half strength. iOS does not fade it either: it simply scrolls up
+   and under the bar, which the blur above already handles.
+   
+   Only the small title in the bar fades, and only in. */
+.hv-large-title {
+  opacity: 1;
+}
+/* Just the app name in the bar, which gives way to the page name. */
+.hv-bar-brand {
+  opacity: calc(1 - var(--hv-t, 0));
+}
+/* Staff of the month rides under the bar rather than scrolling off.
+   --hv-bar is the measured height of the bar, written by Shell: a fixed
+   guess here would leave a gap or an overlap the first time the bar's
+   contents change. */
+.hv-under-nav {
+  position: sticky;
+  top: var(--hv-bar, 64px);
+  z-index: 20;
+}
+/* Someone who has asked for less movement gets the fade only. */
+@media (prefers-reduced-motion: reduce) {
+  .hv-nav-title { transform: none; }
+}
