@@ -225,6 +225,29 @@ export default function RoomBoard({ boot }) {
   }
   const doubled = [...liveByRoom.values()].filter(list => list.length > 1)
 
+  // EVERY BOOKING ON A ROOM MUST BE REACHABLE (28 October 2026).
+  //
+  // byRoom keeps ONE row per room. That is right for a booking sitting
+  // behind a guest, but when a room carries two FUTURE bookings both
+  // rank the same, the tie is broken by whichever row the view returned
+  // first, and the loser vanishes — card, name and folio with it.
+  //
+  // Eleven surveyors were booked into Awka for 29 October. Ten of those
+  // rooms already held a PSN booking for 2 November, so ten folios could
+  // not be opened to take the deposit, and which one you could reach was
+  // luck. Room 207, the only one booked once, worked fine.
+  //
+  // So every reservation on a room is listed on its card, soonest first,
+  // each one opening its own folio.
+  const bookingsByRoom = new Map()
+  for (const r of visible) {
+    if (r.status !== 'reserved' || !r.stay_id) continue
+    bookingsByRoom.set(r.room_id, [...(bookingsByRoom.get(r.room_id) || []), r])
+  }
+  for (const list of bookingsByRoom.values()) {
+    list.sort((a, b) => String(a.check_in_date).localeCompare(String(b.check_in_date)))
+  }
+
   const tally = rooms.reduce((acc, r) => {
     const s = stateOf(r, paidThrough); acc[s] = (acc[s] || 0) + 1; return acc
   }, {})
@@ -498,6 +521,7 @@ export default function RoomBoard({ boot }) {
         {shown.map(room => {
           const stateKey = stateOf(room, paidThrough)
           const s = STATE[stateKey]
+          const books = bookingsByRoom.get(room.room_id) || []
           return (
             <div key={room.room_id}
               onClick={() => room.stay_id && setOpenStay(room)}
@@ -596,15 +620,26 @@ export default function RoomBoard({ boot }) {
                     {/* A room booked for a later date is free until then,
                         and "free for 17 nights" is the question actually
                         asked when someone walks up to the desk. */}
-                    {room.status === 'reserved' && room.guest_name ? (
+                    {books.length ? (
                       <>
-                        <p className={`text-xs font-semibold mt-0.5 tnum ${freeTone(nightsFree(room))}`}>
-                          Free for {nightsFree(room)} night{nightsFree(room) === 1 ? '' : 's'}
-                          {nightsFree(room) <= 2 && ' only'}
+                        <p className={`text-xs font-semibold mt-0.5 tnum ${freeTone(nightsFree(books[0]))}`}>
+                          Free for {nightsFree(books[0])} night{nightsFree(books[0]) === 1 ? '' : 's'}
+                          {nightsFree(books[0]) <= 2 && ' only'}
                         </p>
-                        <p className={`text-xs font-semibold mt-0.5 truncate ${bookedTone(nightsFree(room))}`}>
-                          Booked: {room.guest_name} from {shortDate(room.check_in_date)}
-                        </p>
+                        {books.map(b => (
+                          <button key={b.stay_id} type="button"
+                            onClick={(e) => { e.stopPropagation(); setOpenStay(b) }}
+                            className="mt-1 block w-full text-left active:opacity-70">
+                            <span className={`block text-xs font-semibold truncate ${bookedTone(nightsFree(b))}`}>
+                              Booked: {b.guest_name} from {shortDate(b.check_in_date)}
+                            </span>
+                            <span className="block text-xs tnum text-dim">
+                              {Number(b.outstanding) > 0.009
+                                ? `${naira(b.outstanding)} due · tap to take payment`
+                                : 'Paid · tap to open'}
+                            </span>
+                          </button>
+                        ))}
                       </>
                     ) : (
                       <NextBooking room={room} reservations={reservations} />
