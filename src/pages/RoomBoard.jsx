@@ -91,6 +91,32 @@ const bookedTone = n => n <= 2 ? 'text-clay' : n <= 7 ? 'text-amber' : 'text-dim
 // "Booked: Name from 12 Oct" on a room that has a reservation OTHER than the
 // stay the card is already showing (vacant room with a later booking, or an
 // occupied room someone has reserved for after the current guest leaves).
+// EVERY BOOKING ON A CARD MUST BE TAPPABLE (28 October 2026).
+//
+// A booking named only in text cannot be paid. The eleven surveyor rooms
+// for 29 October proved it twice over: first the losing booking vanished
+// from the board entirely, and then — once it was drawn — the rooms with
+// a guest still in them tonight showed it through NextBooking, which is
+// a paragraph. Same dead end, different branch of the same card.
+//
+// So both branches render this, and each line opens its own folio.
+function BookingLines({ books, onOpen }) {
+  return books.map(b => (
+    <button key={b.stay_id} type="button"
+      onClick={(e) => { e.stopPropagation(); onOpen(b) }}
+      className="mt-1 block w-full text-left active:opacity-70">
+      <span className={`block text-xs font-semibold truncate ${bookedTone(nightsFree(b))}`}>
+        Booked: {b.guest_name} from {shortDate(b.check_in_date)}
+      </span>
+      <span className="block text-xs tnum text-dim">
+        {Number(b.outstanding) > 0.009
+          ? `${naira(b.outstanding)} due · tap to take payment`
+          : 'Paid · tap to open'}
+      </span>
+    </button>
+  ))
+}
+
 function NextBooking({ room, reservations }) {
   const next = reservations.find(r => r.roomId === room.room_id && r.stayId !== room.stay_id)
   if (!next) return null
@@ -612,7 +638,9 @@ export default function RoomBoard({ boot }) {
                     {room.bill_to && (
                       <p className="text-amber text-xs font-semibold mt-0.5 truncate">→ {room.bill_to}</p>
                     )}
-                    <NextBooking room={room} reservations={reservations} />
+                    {books.length
+                      ? <BookingLines books={books} onOpen={setOpenStay} />
+                      : <NextBooking room={room} reservations={reservations} />}
                   </>
                 ) : (
                   <>
@@ -626,20 +654,7 @@ export default function RoomBoard({ boot }) {
                           Free for {nightsFree(books[0])} night{nightsFree(books[0]) === 1 ? '' : 's'}
                           {nightsFree(books[0]) <= 2 && ' only'}
                         </p>
-                        {books.map(b => (
-                          <button key={b.stay_id} type="button"
-                            onClick={(e) => { e.stopPropagation(); setOpenStay(b) }}
-                            className="mt-1 block w-full text-left active:opacity-70">
-                            <span className={`block text-xs font-semibold truncate ${bookedTone(nightsFree(b))}`}>
-                              Booked: {b.guest_name} from {shortDate(b.check_in_date)}
-                            </span>
-                            <span className="block text-xs tnum text-dim">
-                              {Number(b.outstanding) > 0.009
-                                ? `${naira(b.outstanding)} due · tap to take payment`
-                                : 'Paid · tap to open'}
-                            </span>
-                          </button>
-                        ))}
+                        <BookingLines books={books} onOpen={setOpenStay} />
                       </>
                     ) : (
                       <NextBooking room={room} reservations={reservations} />
