@@ -574,6 +574,13 @@ export default function SalesEntry({ boot }) {
   }, [isReception, showYesterday, staff.branch_id, locationId])
   useEffect(refresh, [refresh])
 
+  // Nnewi prices a restaurant order by what came out of the kitchen
+  // store; Awka still types a price per plate until its catalogue has
+  // selling prices on every item (579).
+  const priceFromStock = !!boot.restaurantPriceFromStock
+  const stockValueOf = (used) => (used || []).reduce(
+    (t, u) => t + Number(u.qty || 0) * Number(u.item?.selling_price || 0), 0)
+
   const priceFor = (item, tier) =>
     tier === 'lounge' ? Number(item.lounge_price ?? item.selling_price)
     : tier === 'staff' ? Number(item.staff_price ?? item.selling_price)
@@ -1893,14 +1900,41 @@ export default function SalesEntry({ boot }) {
             <button onClick={() => setRestaurantOrder(r => ({ ...r, qty: r.qty + 1 }))}
               className="h-14 w-14 rounded-xl bg-surface border border-line text-2xl">+</button>
           </Row>
-          <Row label="Price per plate">
-            <input type="number" inputMode="decimal" value={restaurantOrder.unitPrice}
-              onChange={e => setRestaurantOrder(r => ({ ...r, unitPrice: e.target.value }))}
-              placeholder="0" className="h-12 w-36 px-3 rounded-xl bg-surface border border-line tnum" />
-          </Row>
+          {!priceFromStock && (
+            <Row label="Price per plate">
+              <input type="number" inputMode="decimal" value={restaurantOrder.unitPrice}
+                onChange={e => setRestaurantOrder(r => ({ ...r, unitPrice: e.target.value }))}
+                placeholder="0" className="h-12 w-36 px-3 rounded-xl bg-surface border border-line tnum" />
+            </Row>
+          )}
 
           {/* Stock used with this order — comes off Restaurant's stock and is
               tied to this order, for accountability. Never changes the price. */}
+          {priceFromStock && (
+            <div className="mt-4 rounded-xl border border-line bg-surface px-4 py-3">
+              <div className="flex items-baseline justify-between gap-3">
+                <span className="text-dim">Order total &mdash; from the stock used</span>
+                <span className="tnum text-2xl font-bold text-amber">
+                  {naira(stockValueOf(restaurantOrder.used) * restaurantOrder.qty)}
+                </span>
+              </div>
+              <p className="text-dim text-xs mt-1">
+                List what <strong>one plate</strong> takes. The app multiplies it by the
+                quantity, so {restaurantOrder.qty}
+                {restaurantOrder.qty === 1 ? ' plate takes' : ' plates take'} what is
+                listed below{restaurantOrder.qty === 1 ? '' : ' ' + restaurantOrder.qty + ' times over'}.
+              </p>
+              {restaurantOrder.qty > 1 && stockValueOf(restaurantOrder.used) > 0 && (
+                <p className="text-dim text-xs mt-1 tnum">
+                  {naira(stockValueOf(restaurantOrder.used))} a plate &times; {restaurantOrder.qty}
+                  {' '}&mdash; {(restaurantOrder.used || []).map(u =>
+                    `${u.item?.name} ${Number(u.qty || 0) * restaurantOrder.qty}`).join(', ')}
+                  {' '}leaves the store.
+                </p>
+              )}
+            </div>
+          )}
+
           <StockUsedField used={restaurantOrder.used || []}
             setUsed={fn => setRestaurantOrder(r => ({ ...r, used: fn(r.used || []) }))}
             items={items} stockMap={stockMap}
@@ -2041,11 +2075,27 @@ export default function SalesEntry({ boot }) {
             onClick={async () => {
               const desc = restaurantOrder.description.trim()
               const qty = restaurantOrder.qty
-              const unitPrice = Number(restaurantOrder.unitPrice) || 0
+              // Priced from stock, PER PLATE (Chris, 29 October 2026). The
+              // stock listed is what one plate takes; the quantity
+              // multiplies both the money and what leaves the store.
+              //
+              // It used to read the list as covering the whole order and
+              // divide by the plates. The kitchen does not think that way
+              // — it knows what one plate takes — and listing a plate
+              // three times over was the step that got skipped.
+              const stockValue = stockValueOf(restaurantOrder.used)
+              const unitPrice = priceFromStock
+                ? Math.round(stockValue * 100) / 100
+                : Number(restaurantOrder.unitPrice) || 0
               // Only STANDARD is a paid order. Staff meals are a
               // benefit — free, and excluded from sales (migration 289) —
               // so they save straight away like PR, with no payment step.
-              const usedNow = restaurantOrder.used || []
+              // What actually leaves the store. Multiplied here and nowhere
+              // else, so the over-use warning, the save and the deduction
+              // all see the same figure.
+              const usedNow = priceFromStock
+                ? (restaurantOrder.used || []).map(u => ({ ...u, qty: Number(u.qty || 0) * qty }))
+                : (restaurantOrder.used || [])
               const restLoc = (boot.allLocations || []).find(l => /restaurant/i.test(l.name))
               // A standard order or a staff meal must say what came out of the
               // kitchen store; the button is disabled until it does, and this is
@@ -2094,7 +2144,10 @@ export default function SalesEntry({ boot }) {
               }
               setWriteoffBusy(false)
             }}
-            disabled={writeoffBusy || !restaurantOrder.description.trim() || !Number(restaurantOrder.unitPrice)
+            disabled={writeoffBusy || !restaurantOrder.description.trim()
+              || !(priceFromStock
+                    ? stockValueOf(restaurantOrder.used) > 0
+                    : Number(restaurantOrder.unitPrice))
               || (!(restaurantOrder.used || []).length
                   && (restaurantOrder.orderType !== 'pr_damage' || !restaurantOrder.noStock))}
             className="mt-8 w-full h-16 rounded-2xl bg-amber text-bg text-xl font-bold disabled:opacity-40">
