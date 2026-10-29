@@ -523,7 +523,15 @@ export default function Recovery({ boot }) {
             <p className="text-dim py-6 text-center">Nothing recovered at Reception on {dayFilter}.</p>
           )}
 
-          {roomByDay.map(([day, items]) => {
+          {/* Folded the same way as the list above (579) — this one runs
+              sixty days, so it grows month rows just as fast. */}
+          <FoldedDays groups={roomByDay} today={lagosToday()}
+            summary={(items) => (
+              <span className="tnum font-bold text-leaf">
+                {naira(items.reduce((t, p) => t + Number(p.amount || 0), 0))}
+              </span>
+            )}
+            renderDay={(day, items) => {
             const open = dayOpen(day)
             const dayTotal = items.reduce((t, p) => t + Number(p.amount || 0), 0)
             return (
@@ -583,7 +591,7 @@ export default function Recovery({ boot }) {
               )}
             </section>
             )
-          })}
+          }} />
 
           {roomPayments !== null && !roomPayments.length && (
             <p className="py-8 text-center text-dim">No room payments recorded yet.</p>

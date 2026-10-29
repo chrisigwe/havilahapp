@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useToast } from '../components/Toast'
 import { lagosDaysAgo, lagosToday } from '../lib/format'
+import FoldedDays from '../components/FoldedDays'
 import { loadDepartmentSupplies, loadStockMap, loadPopular, loadDepartmentHistory,
          loadReceiveHistory, loadMoveHistory, loadConvertHistory } from '../lib/data'
 import { supabase } from '../lib/supabase'
@@ -466,7 +467,14 @@ export default function Store({ boot }) {
                 {shownHistory && !shownHistory.length && (
                   <p className="py-6 text-dim text-center rounded-2xl border border-line bg-surface">{active.empty}</p>
                 )}
-                {historyByDay.map(([day, rows]) => {
+                {/* Finished months and years fold away (579). */}
+                <FoldedDays groups={historyByDay} today={lagosToday()}
+                  summary={(items) => (
+                    <span className="tnum font-bold">
+                      {items.reduce((t, r) => t + Number(r.qty || 0), 0)}
+                    </span>
+                  )}
+                  renderDay={(day, rows) => {
                   const open = histDayOpen(day)
                   const total = rows.reduce((t, r) => t + Number(r.qty || 0), 0)
                   return (
@@ -524,7 +532,7 @@ export default function Store({ boot }) {
                       )}
                     </section>
                   )
-                })}
+                }} />
               </div>
             )}
           </div>
