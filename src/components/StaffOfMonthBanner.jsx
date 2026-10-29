@@ -7,9 +7,10 @@ import { tracked } from '../lib/loadfail'
 // Fetches once per mount for the current branch (the banner doesn't
 // need to live-update mid-session, and re-fetches naturally on a
 // branch switch since Shell re-renders with a new branchId then);
-// disappears entirely once posted_at is more than 7 days old, per the
-// explicit "up for only a week" rule — the underlying row stays in
-// the table as history, this just stops rendering it.
+// disappears once the post is older than SOM_DAYS (three, from 29
+// October 2026 — it was a week) counted from the day it went up and
+// from nothing else. The underlying row stays in the table as history;
+// this just stops rendering it.
 export default function StaffOfMonthBanner({ branchId }) {
   const [entry, setEntry] = useState(null)
   useEffect(() => {

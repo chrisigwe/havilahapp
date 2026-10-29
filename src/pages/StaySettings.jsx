@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { loadRoomsForSettings, loadBranchStaySettings, updateRoomRates,
          loadReservationsOnRoom,
-         updateBranchOverstayDefault, loadStaffOfMonth, postStaffOfMonth,
+         updateBranchOverstayDefault, loadStaffOfMonth, postStaffOfMonth, SOM_DAYS,
          deleteStaffOfMonth } from '../lib/data'
 import { loadAwardPayroll, loadDraftPeriods, loadEmployees, setAwardPayroll } from '../lib/payroll'
 import { naira, lagosToday } from '../lib/format'
@@ -93,7 +93,11 @@ export default function StaySettings({ boot }) {
       // Pre-fill the salary link ONLY for a same-day correction, which updates
       // that post in place. Any other post is a new row, so it starts blank
       // rather than offering last month's winner.
-      if (e && e.posted_at === lagosToday()) {
+      // Pre-fill for the post that is still on the wall, not just one
+      // made today: editing it keeps the same row and the same prize,
+      // so the salary link must come with it or a correction on day two
+      // would look unlinked and be paid twice (29 October 2026).
+      if (e && e.isActive) {
         loadAwardPayroll(e.id).then(l => {
           setSomLinked(!!l); setSomEmployeeId(l?.employeeId || ''); setSomPeriodId(l?.periodId || '')
         }).catch(() => {})
@@ -271,7 +275,12 @@ export default function StaySettings({ boot }) {
           </p>
           {somEntry?.isActive && (
             <p className="text-leaf text-sm mb-1">
-              Currently live · {7 - somEntry.daysSince} day{7 - somEntry.daysSince === 1 ? '' : 's'} left
+              Currently live · {somEntry.daysLeft} day{somEntry.daysLeft === 1 ? '' : 's'} left
+              <span className="block text-dim">
+                Editing this, or adding a photo, does not give it longer — the
+                {' '}{SOM_DAYS} days run from the day it went up. Naming a different
+                winner starts a new post.
+              </span>
             </p>
           )}
           {somEntry && !somEntry.isActive && (

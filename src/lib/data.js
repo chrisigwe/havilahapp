@@ -2927,6 +2927,10 @@ export async function setReviewHandled(branchId, key, handled) {
 // treats them as expired, not deleted. Prize amount is editable per
 // post (not a standing branch setting) so a past post keeps showing
 // whatever was actually paid at the time, even if the amount changes later.
+// How long a Staff of the Month post stays on the wall, from the day it
+// was posted. One number, used by the loader, the editor and the banner.
+export const SOM_DAYS = 3
+
 export async function loadStaffOfMonth(branchId) {
   const { data, error } = await supabase.from('staff_of_month')
     .select('id, staff_name, photo_url, posted_at, prize_amount')
@@ -2935,14 +2939,25 @@ export async function loadStaffOfMonth(branchId) {
     .limit(1).maybeSingle()
   if (error) throw error
   if (!data) return null
+  // Three days, counted from the day it was POSTED and from nothing
+  // else (Chris, 29 October 2026). Editing the name, the prize or the
+  // photo must not buy the post another day on the wall.
   const daysSince = Math.round((new Date(lagosToday()) - new Date(data.posted_at)) / 864e5)
-  return { ...data, isActive: daysSince >= 0 && daysSince < 7, daysSince }
+  return { ...data, isActive: daysSince >= 0 && daysSince < SOM_DAYS, daysSince,
+           daysLeft: Math.max(0, SOM_DAYS - daysSince) }
 }
 
-// Uploads a new photo if one was given, then either updates today's
-// post in place (a same-day correction — e.g. a typo, doesn't reset
-// the week) or creates a fresh row, which is what actually restarts
-// the 7-day countdown — that's what "posting" a new winner means.
+// Uploads a new photo if one was given, then either edits the post that
+// is already on the wall or creates a fresh one.
+//
+// WHAT RESTARTS THE THREE DAYS (29 October 2026). Only naming a
+// different winner. It used to be "was it posted today?", which meant
+// adding a photo on day two inserted a new row and quietly bought the
+// same person three more days — the post would never come down while
+// anyone kept tidying it. Now a live post belongs to its winner: any
+// change to that person's post edits it in place and the countdown runs
+// from when they were first put up. A different name is a different
+// winner, and that is a new post with its own three days.
 // Scoped to branchId throughout, so each branch's own latest post is
 // what gets found and updated, never the other branch's.
 export async function postStaffOfMonth({ branchId, staffId, staffName, prizeAmount, photoFile, removePhoto, currentPhotoUrl }) {
@@ -2959,14 +2974,19 @@ export async function postStaffOfMonth({ branchId, staffId, staffName, prizeAmou
 
   const today = lagosToday()
   const { data: existing, error: e1 } = await supabase.from('staff_of_month')
-    .select('id, posted_at').eq('branch_id', branchId)
+    .select('id, posted_at, staff_name').eq('branch_id', branchId)
     .order('posted_at', { ascending: false }).order('created_at', { ascending: false })
     .limit(1).maybeSingle()
   if (e1) throw e1
 
   // Returns the post's id: the prize is linked to payroll by it, so a
   // same-day correction can replace the prize instead of doubling it.
-  if (existing && existing.posted_at === today) {
+  const liveDays = existing
+    ? Math.round((new Date(today) - new Date(existing.posted_at)) / 864e5) : null
+  const stillUp = existing && liveDays >= 0 && liveDays < SOM_DAYS
+  const sameWinner = existing && (existing.staff_name || '') === staffName
+
+  if (stillUp && sameWinner) {
     const { error } = await supabase.from('staff_of_month')
       .update({ staff_name: staffName, photo_url: photoUrl, prize_amount: prizeAmount }).eq('id', existing.id)
     if (error) throw error
