@@ -4,6 +4,7 @@ import { normalizeCustomerName } from './customerName'
 import { nightsInWindow } from './nights'
 import { SUPERVISOR } from './roles'
 import { tracked } from './activity'
+import { noteLoadFailure } from './loadfail'
 
 export async function loadBranches() {
   const { data, error } = await supabase.from('branches')
@@ -42,9 +43,23 @@ export async function loadBranchData(staff, viewBranchId) {
     supabase.from('branch_payment_methods').select('method').eq('branch_id', b),
     supabase.from('stock_items').select('*').eq('branch_id', b).eq('is_active', true).order('name'),
     supabase.from('staff_locations').select('location_id').eq('staff_id', staff.id),
-    supabase.from('branches').select('name, slug, room_charge_approval_limit').eq('id', b).maybeSingle(),
+    supabase.from('branches')
+      .select('name, slug, room_charge_approval_limit, restaurant_price_from_stock')
+      .eq('id', b).maybeSingle(),
   ])
   for (const r of [locs, tiers, methods, items]) if (r.error) throw r.error
+
+  // The branch row was the one read here whose error nobody checked, so
+  // a failure — a missing column, a permissions change — left
+  // branchRow.data null and TWO settings silently off: the restaurant
+  // pricing rule and the room-charge approval limit, which decides when
+  // a charge needs a manager (29 October 2026).
+  //
+  // Not fatal: the app still works on its defaults, and failing boot
+  // outright would lock everyone out over one optional row. But it must
+  // SAY so, on the banner that already exists for exactly this, rather
+  // than quietly behaving as though the settings were switched off.
+  if (branchRow?.error) noteLoadFailure('Branch settings', branchRow.error)
 
   // Departments this person works. Storekeepers and managers see all;
   // so does anyone with no assignment yet. The store itself is only
@@ -91,6 +106,11 @@ export async function loadBranchData(staff, viewBranchId) {
     // are not polling every 15s for something that cannot happen — and
     // setting a number brings the whole feature back with no code change.
     roomChargeApprovalLimit: branchRow?.data?.room_charge_approval_limit ?? null,
+    // A restaurant order priced by the stock that went into it, instead
+    // of a figure typed per plate (Chris, 29 October 2026). On for Nnewi,
+    // off for Awka until their catalogue carries selling prices — one
+    // column, so turning Awka on later is an update and not a deploy.
+    restaurantPriceFromStock: !!branchRow?.data?.restaurant_price_from_stock,
     viewBranchId: b,
     seesAll,
     allLocations: locs.data,
