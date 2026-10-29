@@ -100,18 +100,20 @@ const bookedTone = n => n <= 2 ? 'text-clay' : n <= 7 ? 'text-amber' : 'text-dim
 // a paragraph. Same dead end, different branch of the same card.
 //
 // So both branches render this, and each line opens its own folio.
-function BookingLines({ books, onOpen }) {
-  return books.map(b => (
+function StayLines({ rows, onOpen }) {
+  return rows.map(b => (
     <button key={b.stay_id} type="button"
       onClick={(e) => { e.stopPropagation(); onOpen(b) }}
       className="mt-1 block w-full text-left active:opacity-70">
       <span className={`block text-xs font-semibold truncate ${bookedTone(nightsFree(b))}`}>
-        Booked: {b.guest_name} from {shortDate(b.check_in_date)}
+        {b.status === 'reserved'
+          ? `Booked: ${b.guest_name} from ${shortDate(b.check_in_date)}`
+          : `Still in: ${b.guest_name} · out ${shortDate(b.scheduled_out)}`}
       </span>
       <span className="block text-xs tnum text-dim">
         {Number(b.outstanding) > 0.009
           ? `${naira(b.outstanding)} due · tap to take payment`
-          : 'Paid · tap to open'}
+          : 'Settled · tap to open'}
       </span>
     </button>
   ))
@@ -227,6 +229,28 @@ export default function RoomBoard({ boot }) {
     if (!held || rank < held.rank) byRoom.set(r.room_id, { row: r, rank })
   }
   const rooms = [...byRoom.values()].map(h => h.row)
+
+  // WHAT THE CARD SAYS IS NOT WHAT CAN BE OPENED (29 October 2026).
+  //
+  // byRoom keeps one row per room, and whatever it drops becomes
+  // unreachable. That has now bitten in both directions: a booking
+  // behind another booking, and today the reverse — reserved_due (2)
+  // outranks leaving (3), so the surveyor arriving this afternoon took
+  // the card from the guest still checking out of the same room, and
+  // 101, 103 and 104 could not be checked out at all.
+  //
+  // Rank decides what the card SAYS. It must never decide what a finger
+  // can reach. So every other stay on the room is listed beneath it.
+  const othersByRoom = new Map()
+  for (const r of visible) {
+    if (!r.stay_id) continue
+    const kept = byRoom.get(r.room_id)
+    if (kept && kept.row.stay_id === r.stay_id) continue
+    othersByRoom.set(r.room_id, [...(othersByRoom.get(r.room_id) || []), r])
+  }
+  for (const list of othersByRoom.values()) {
+    list.sort((a, b) => String(a.check_in_date).localeCompare(String(b.check_in_date)))
+  }
 
   // TWO GUESTS IN ONE ROOM (20 October 2026).
   //
@@ -548,6 +572,7 @@ export default function RoomBoard({ boot }) {
           const stateKey = stateOf(room, paidThrough)
           const s = STATE[stateKey]
           const books = bookingsByRoom.get(room.room_id) || []
+          const others = othersByRoom.get(room.room_id) || []
           return (
             <div key={room.room_id}
               onClick={() => room.stay_id && setOpenStay(room)}
@@ -638,8 +663,8 @@ export default function RoomBoard({ boot }) {
                     {room.bill_to && (
                       <p className="text-amber text-xs font-semibold mt-0.5 truncate">→ {room.bill_to}</p>
                     )}
-                    {books.length
-                      ? <BookingLines books={books} onOpen={setOpenStay} />
+                    {others.length
+                      ? <StayLines rows={others} onOpen={setOpenStay} />
                       : <NextBooking room={room} reservations={reservations} />}
                   </>
                 ) : (
@@ -654,7 +679,7 @@ export default function RoomBoard({ boot }) {
                           Free for {nightsFree(books[0])} night{nightsFree(books[0]) === 1 ? '' : 's'}
                           {nightsFree(books[0]) <= 2 && ' only'}
                         </p>
-                        <BookingLines books={books} onOpen={setOpenStay} />
+                        <StayLines rows={books} onOpen={setOpenStay} />
                       </>
                     ) : (
                       <NextBooking room={room} reservations={reservations} />
