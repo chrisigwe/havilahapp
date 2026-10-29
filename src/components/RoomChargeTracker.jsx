@@ -27,7 +27,12 @@ export default function RoomChargeTracker({ branchId, locationId = null, refresh
   const recovered = mode === 'recovered'
   const [lines, setLines] = useState(null)
   const [showDone, setShowDone] = useState(false)
-  const [open, setOpen] = useState(mode === 'recovered')
+  // Closed until someone opens it, in both modes (Chris, 29 October
+  // 2026). The recovered list used to start open because it is the
+  // Recovery page's own subject — but sixty days of settled guests is a
+  // long read standing between the person and what they came for, and
+  // what they came for is the money still OUT.
+  const [open, setOpen] = useState(false)
   // Recording what the front desk handed over (564).
   const [receipt, setReceipt] = useState(null)   // { stayId, guest, room, items, owed, pos, cash }
   const [busy, setBusy] = useState(false)
