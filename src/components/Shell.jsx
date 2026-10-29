@@ -269,8 +269,12 @@ export default function Shell({ staff, tab, onTab, children,
       <PendingBanner />
       <UpdateBanner />
       {/* Pinned under the bar on a phone (Chris, 27 October 2026), static
-          on a laptop where there is no bar to pin under. */}
-      <div className="hv-under-nav lg:static">
+          on a laptop where there is no bar to pin under.
+          bg-bg because the banner's own amber is 15% opaque: pinned over
+          a scrolling page, the reservations banner underneath read
+          straight through it and the two printed over each other
+          (29 October 2026). The tint needs something solid behind it. */}
+      <div className="hv-under-nav lg:static bg-bg">
         <StaffOfMonthBanner branchId={staff.branch_id} />
       </div>
       {['front_desk', 'manager', 'gm', 'admin'].includes(staff.role) && (
