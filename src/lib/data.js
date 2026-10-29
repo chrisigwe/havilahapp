@@ -2569,6 +2569,67 @@ export async function settleBilledToStays({ payerStayId, amount, method, date, n
   return data
 }
 
+// The day room nights became Reception's own sales (578).
+export const NIGHTS_AS_SALES_FROM = '2026-11-01'
+
+// Folds the night figures into a day's financials. Lives here, not on a
+// page, because DailySales and SalesEntry both draw the same Gross sales
+// tile — the last time a total was recomputed on one of them the two
+// screens disagreed, and nobody could say which was right.
+//
+// Total Sales only. The night's value is not money that moved today, so
+// Received and the till are left alone; otherwise "Match your till" would
+// be reconciling against revenue nobody handed over. Late money IS cash
+// in today, so it goes where the day's other recoveries go.
+export function withRoomNights(f, nights, recovered) {
+  const n = Number(nights?.total || 0)
+  const rec = Number(recovered?.total || 0)
+  if (!(n > 0.009) && !(rec > 0.009)) return f
+  return {
+    ...f,
+    roomNights: nights || null,
+    roomNightsRecovered: recovered || null,
+    grossSales: Number(f.grossSales || 0) + n,
+    debtRecovered: Number(f.debtRecovered || 0) + rec,
+    totalMoneyIn: Number(f.totalMoneyIn || 0) + rec,
+  }
+}
+
+// ROOM NIGHTS AS RECEPTION'S OWN SALES, from 1 November 2026 (578).
+//
+// Until now a room night was counted nowhere. get_daily_financials only
+// ever sees room money through payment_items joined to order_items, so
+// the department half of a folio reached the department and the night
+// itself reached nobody — ₦3.1m at Awka and ₦1.6m at Nnewi in nine days
+// of October alone.
+//
+// The night's value, spread evenly over the nights of the stay, capped
+// by money received by noon the next day. That cut-off is not invented
+// here: it is the one get_daily_financials already applies to goods
+// charged to a room, so a night behaves like every other department's
+// credit instead of being the one thing that rewrites a closed day.
+//
+// Total Sales only. The spread is not money that moved today, so the
+// till figures keep counting exactly what was physically handed over.
+export async function loadReceptionRoomSales(branchId, date) {
+  const { data, error } = await supabase.rpc('reception_room_sales', {
+    p_branch: branchId, p_date: date,
+  })
+  if (error) throw error
+  return { total: Number(data?.total || 0), rows: data?.rows || [] }
+}
+
+// The counterpart: room money that arrived today but bought no night,
+// because the nights it was owed for had already closed. Without it,
+// late money would simply vanish from the day.
+export async function loadRoomDebtRecovered(branchId, date) {
+  const { data, error } = await supabase.rpc('room_debt_recovered', {
+    p_branch: branchId, p_date: date,
+  })
+  if (error) throw error
+  return { total: Number(data?.total || 0), rows: data?.rows || [] }
+}
+
 // Room-rate debt recovered (565). Chris, 20 October 2026: a guest who
 // checked out owing for the ROOM and pays weeks later is recovering a
 // debt, and nothing said so. get_daily_financials only ever counted the

@@ -2,7 +2,7 @@ import RoomChargeTracker from '../components/RoomChargeTracker'
 import StockUsedReport from '../components/StockUsedReport'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { naira, lagosToday, lagosDaysAgo, tierLabel, methodLabel, roomChargeDept, whoRecorded, paymentSummary } from '../lib/format'
-import { findDuplicateCustomers, findDuplicateGuests, loadDailyFinancials, loadReceptionActivity, loadReceptionDashboard, loadRoomBillHandover, loadRoomCharges, loadRoomsSoldInMonth, loadStayDebtRecovered, loadToday, loadWriteoffsOnDate } from '../lib/data'
+import { findDuplicateCustomers, findDuplicateGuests, loadDailyFinancials, loadReceptionActivity, loadReceptionDashboard, loadRoomBillHandover, loadRoomCharges, loadRoomsSoldInMonth, loadStayDebtRecovered, loadReceptionRoomSales, loadRoomDebtRecovered, withRoomNights, NIGHTS_AS_SALES_FROM, loadToday, loadWriteoffsOnDate } from '../lib/data'
 import { useToast } from '../components/Toast'
 import ReceptionDashboard from '../components/ReceptionDashboard'
 import WriteoffBreakdown from '../components/WriteoffBreakdown'
@@ -164,12 +164,22 @@ export default function DailySales({ boot }) {
       loadRoomBillHandover(staff.branch_id, date).catch(() => []),
       // Whole branch only — see withStayDebt. Null on failure so a
       // database that has not had 565 run yet still shows the day.
-      locId === 'all'
+      // From 1 November this is replaced by nights-as-sales and its own
+      // recovery. Adding both would count the same naira twice.
+      (locId === 'all' && date < NIGHTS_AS_SALES_FROM)
         ? loadStayDebtRecovered(staff.branch_id, date).catch(() => null)
         : Promise.resolve(null),
-    ]).then(([f, hand, stayDebt]) => setSummary(withStayDebt(withRoomBillMoney(f,
+      (date >= NIGHTS_AS_SALES_FROM && (locId === 'all' || isReception))
+        ? loadReceptionRoomSales(staff.branch_id, date).catch(() => null)
+        : Promise.resolve(null),
+      (date >= NIGHTS_AS_SALES_FROM && (locId === 'all' || isReception))
+        ? loadRoomDebtRecovered(staff.branch_id, date).catch(() => null)
+        : Promise.resolve(null),
+    ]).then(([f, hand, stayDebt, nights, roomRec]) =>
+      setSummary(withRoomNights(withStayDebt(withRoomBillMoney(f,
         locId === 'all' ? hand
-          : hand.filter(h => roomChargeDept(h, allLocations) === locId)), stayDebt)))
+          : hand.filter(h => roomChargeDept(h, allLocations) === locId)), stayDebt),
+        nights, roomRec)))
       .catch(e => toast(e.message, 'error'))
     loadToday(staff.branch_id, date, loc).then(setRows).catch(e => toast(e.message, 'error'))
     if (showsRoomCharges) {
@@ -395,6 +405,15 @@ export default function DailySales({ boot }) {
           <div className="text-dim text-sm">Gross sales — value of goods sold</div>
           <div className="tnum text-3xl font-bold text-amber">{naira(summary.grossSales)}</div>
           <div className="mt-3 space-y-1 text-sm">
+            {summary.roomNights && summary.roomNights.total > 0.009 && (
+              <div className="flex justify-between gap-3">
+                <span className="text-dim min-w-0">
+                  Room nights &mdash; {summary.roomNights.rows?.length || 0} room
+                  {(summary.roomNights.rows?.length || 0) === 1 ? '' : 's'} slept and paid for
+                </span>
+                <span className="tnum shrink-0 text-amber">{naira(summary.roomNights.total)}</span>
+              </div>
+            )}
             <div className="flex justify-between gap-3">
               <span className="text-dim min-w-0">Received (POS + Cash)</span>
               <span className="tnum shrink-0">{naira(summary.received)}</span>

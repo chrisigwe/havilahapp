@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { lagosDaysAgo, lagosToday, methodLabel, naira, paymentSummary, roomChargeDept, startingDept, tierLabel, whoRecorded } from '../lib/format'
 import { checkRepeatSale, loadStockMap, loadPopular, loadToday, saveBasket, saveWriteoff,
          loadDailyFinancials, loadCustomers, createCustomer,
+         loadReceptionRoomSales, loadRoomDebtRecovered, withRoomNights, NIGHTS_AS_SALES_FROM,
          loadOpeningDate, loadBalances, loadReceipt,
          loadStaffForLocation, loadReceptionActivity, loadReceptionDashboard, deleteEntry,
          loadRoomCharges, loadRoomBillHandover, deleteOrderItem, saveRestaurantWriteoff, loadRoomsSoldInMonth,
@@ -518,9 +519,21 @@ export default function SalesEntry({ boot }) {
       .then(r => setWriteoffs({ ...r, error: null }))
       .catch(e => setWriteoffs({ pr: [], damage: [], food: [], prCost: 0, damageCost: 0,
                                  foodValue: 0, error: e.message || 'could not load' }))
-    loadDailyFinancials(staff.branch_id, date, locationId).then(r => {
+    // Reception's own sales include the nights slept and paid for, from
+    // 1 November (578) — the same figure DailySales shows, through the
+    // same helper, so the two screens cannot drift apart.
+    loadDailyFinancials(staff.branch_id, date, locationId).then(async f => {
+      const useNights = isReception && date >= NIGHTS_AS_SALES_FROM
+      const [nights, roomRec] = useNights
+        ? await Promise.all([
+            loadReceptionRoomSales(staff.branch_id, date).catch(() => null),
+            loadRoomDebtRecovered(staff.branch_id, date).catch(() => null),
+          ])
+        : [null, null]
+      const r = withRoomNights(f, nights, roomRec)
       setSummary({ byMethod: r.byMethod, nonRevenue: r.nonRevenue })
-      setRecon({ grossSales: r.grossSales, received: r.received, creditRaised: r.creditRaised,
+      setRecon({ roomNights: r.roomNights,
+                 grossSales: r.grossSales, received: r.received, creditRaised: r.creditRaised,
                  debtRecovered: r.debtRecovered, recoveredBy: r.recoveredBy, totalMoneyIn: r.totalMoneyIn,
                  unqualifiedCredit: r.unqualifiedCredit,
                  recoveredFromCustomers: r.recoveredFromCustomers, recoveredFromRooms: r.recoveredFromRooms,
@@ -550,7 +563,7 @@ export default function SalesEntry({ boot }) {
         setCustomers(cs.map(c => ({ ...c, balance: byId[c.id] || 0 })))
       })
       .catch(() => setCustomers([]))
-  }, [staff.branch_id, date, locationId])
+  }, [staff.branch_id, date, locationId, isReception])
 
   // Lazy — only fetched when actually asked for, not on every load.
   useEffect(() => {
@@ -1278,6 +1291,10 @@ export default function SalesEntry({ boot }) {
             <div className="text-dim text-sm">Gross sales — value of goods sold</div>
             <div className="tnum text-3xl font-bold text-amber">{naira(recon.grossSales)}</div>
             <div className="mt-3 space-y-1 text-sm">
+              {recon.roomNights && recon.roomNights.total > 0.009 && (
+                <Line label={`Room nights — ${recon.roomNights.rows?.length || 0} slept and paid for`}
+                      value={recon.roomNights.total} />
+              )}
               <Line label="Received at sale (POS + Cash)" value={recon.received} />
               <Line label={recon.unqualifiedCredit > 0 ? 'Credit raised — counted as sales' : 'Credit raised'}
                 value={recon.creditRaised}
