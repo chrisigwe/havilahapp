@@ -3103,10 +3103,34 @@ export async function mergeCustomers(survivorId, duplicateIds) {
 // balances that go missing at checkout: the front desk settles the
 // room, and money sitting on a named account at a bar or the minimart
 // is never surfaced because nothing ties it to the guest.
+// Marks an account as one that will never belong to a guest, or puts it
+// back. Reversible on purpose: hiding a balance from the warning that
+// exists to catch money walking out is not a one-way door.
+export async function setCustomerNeverAGuest(customerId, value) {
+  const { error } = await supabase.from('customers')
+    .update({ never_a_guest: !!value }).eq('id', customerId)
+  if (error) throw error
+}
+
+export async function loadCustomerNeverAGuest(customerId) {
+  if (!customerId) return false
+  const { data, error } = await supabase.from('customers')
+    .select('never_a_guest').eq('id', customerId).maybeSingle()
+  if (error) throw error
+  return !!data?.never_a_guest
+}
+
 export async function loadUnlinkedCustomerBalances(branchId) {
   const { data: custs, error } = await supabase.from('customers')
     .select('id, name, phone')
     .eq('branch_id', branchId).eq('is_active', true).is('linked_guest_id', null)
+    // Accounts that will never belong to a guest — staff tabs, outside
+    // customers — are out (579). They cannot be linked, so they sat in
+    // this warning for ever; seven of the ten on Chris's screen were
+    // staff. A warning that can never be cleared stops being read, and
+    // the three rows that mattered were ₦118,000 that will not appear
+    // on anybody's folio at check-out.
+    .eq('never_a_guest', false)
   if (error) throw error
   if (!custs?.length) return []
 

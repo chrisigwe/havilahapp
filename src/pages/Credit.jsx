@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useToast } from '../components/Toast'
 import { lagosToday, methodLabel, naira, startingDept, tierLabel } from '../lib/format'
 import RoomChargeTracker from '../components/RoomChargeTracker'
-import { checkRepeatPayment, checkRepeatRepayment, deactivateCustomer, deleteCustomer, linkCustomerToGuest, loadBalances, loadCreditForMonth, loadCreditOnDate, loadCustomerLedger, loadCreditChain, loadFolio, loadStayMoves, loadGuestBalances, loadReservedValue, loadStaffForLocation, loadUnlinkedCustomerBalances, moveWorkaroundToRoom, recordStayPayment, saveRepayment, searchSimilarGuests } from '../lib/data'
+import { checkRepeatPayment, checkRepeatRepayment, deactivateCustomer, deleteCustomer, linkCustomerToGuest, loadBalances, loadCreditForMonth, loadCreditOnDate, loadCustomerLedger, loadCreditChain, loadFolio, loadStayMoves, loadGuestBalances, loadReservedValue, loadStaffForLocation, loadUnlinkedCustomerBalances, loadCustomerNeverAGuest, setCustomerNeverAGuest, moveWorkaroundToRoom, recordStayPayment, saveRepayment, searchSimilarGuests } from '../lib/data'
 import { enqueue, flush, isConnectionError } from '../lib/outbox'
 import PaymentMethodPicker, { paymentParts, paymentAllocated } from '../components/PaymentMethodPicker'
 import FolioStatement from '../components/FolioStatement'
@@ -83,6 +83,8 @@ export default function Credit({ boot }) {
   // Whichever full-screen panel is up, the page behind it stops moving.
   useScrollLock(!!open)
   const [linking, setLinking] = useState(false)
+  // Whether the open statement's account is marked as never a guest (579).
+  const [openNotGuest, setOpenNotGuest] = useState(false)
   // The customer being linked. Previously the link sheet read
   // open.customer directly, so it could only be reached from inside
   // a statement — unreachable from Reception, which has no customer
@@ -160,6 +162,8 @@ export default function Credit({ boot }) {
   // immediately and says it is loading.
   async function openCustomer(c) {
     setOpen({ customer: c, ledger: null, chain: null, error: null })
+    setOpenNotGuest(false)
+    loadCustomerNeverAGuest(c.customer_id).then(setOpenNotGuest).catch(() => setOpenNotGuest(false))
     try {
       // Everything they owe at this branch, not the row you clicked
       // (Chris, 25 October 2026). The LIST is one row per customer per
@@ -907,7 +911,9 @@ export default function Credit({ boot }) {
                 title="Department accounts not linked to a guest">
                 <p className="mb-3">
                   These balances will not show on any guest&#39;s folio at checkout.
-                  Link one to the guest it belongs to, if it belongs to a guest.
+                  Link one to the guest it belongs to. If it is a staff tab or somebody
+                  who never stays here, mark it <strong>Not a guest</strong> and it will
+                  stop appearing — this list is only worth reading when it is short.
                 </p>
                 {unlinked.map(c => (
                   <div key={c.id} className="flex items-center gap-3 py-2 border-t border-line/60 first:border-0">
@@ -922,6 +928,21 @@ export default function Credit({ boot }) {
                       onClick={() => { setLinkTarget({ customerId: c.id, name: c.name }); setLinking(true) }}
                       className="shrink-0 h-9 px-3 rounded-lg border border-amber text-amber text-sm font-semibold">
                       Link
+                    </button>
+                    <button
+                      onClick={async () => {
+                        if (!window.confirm(
+                            `Mark "${c.name}" as never a guest?\n\n`
+                            + `${naira(c.balance)} stays owing and still shows on the Credit page — `
+                            + 'it only stops appearing in this warning. Undo it from the account\u2019s statement.')) return
+                        try {
+                          await setCustomerNeverAGuest(c.id, true)
+                          toast(`${c.name} will not be asked about again`, 'success')
+                          refreshUnlinked()
+                        } catch (e) { toast(e.message, 'error') }
+                      }}
+                      className="shrink-0 h-9 px-3 rounded-lg border border-line text-dim text-sm font-semibold">
+                      Not a guest
                     </button>
                   </div>
                 ))}
@@ -948,10 +969,25 @@ export default function Credit({ boot }) {
           <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain">
             <div className="p-5 print:hidden flex items-center justify-between">
               <button onClick={() => setOpen(null)} className="text-dim">Back</button>
-              <button onClick={() => { setLinkTarget({ customerId: open.customer.customer_id, name: open.customer.name }); setLinking(true) }}
-                className="text-amber text-sm font-semibold">
-                Link to a guest
-              </button>
+              <div className="flex items-center gap-4">
+                {openNotGuest && (
+                  <button onClick={async () => {
+                      try {
+                        await setCustomerNeverAGuest(open.customer.customer_id, false)
+                        setOpenNotGuest(false)
+                        toast('Back in the unlinked list', 'success')
+                        refreshUnlinked()
+                      } catch (e) { toast(e.message, 'error') }
+                    }}
+                    className="text-dim text-sm font-semibold underline">
+                    Marked not a guest &middot; undo
+                  </button>
+                )}
+                <button onClick={() => { setLinkTarget({ customerId: open.customer.customer_id, name: open.customer.name }); setLinking(true) }}
+                  className="text-amber text-sm font-semibold">
+                  Link to a guest
+                </button>
+              </div>
             </div>
 
             <div id="statement-area" className="invoice-print px-5 pb-6">
