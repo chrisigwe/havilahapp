@@ -2543,6 +2543,32 @@ export async function recordStayCredit({ stayId, amount, customerId, customerNam
   return data
 }
 
+// GROUP SETTLEMENT (578). One payment on the payer's folio, spread
+// across every room billed to them — oldest booking first, whole rooms,
+// the remainder on the last one reached.
+//
+// One RPC, not a loop of writes from here: eleven rooms settled by a
+// loop that fails on the seventh leaves four rooms paid, four not, and
+// nothing on screen saying which. Inside the function it is one
+// transaction — every room or none.
+//
+// It refuses to take more than the rooms owe. A single room accepts an
+// overpayment because a deposit against later nights is normal; a group
+// payment cannot, because the surplus would have no room to land on and
+// would simply not be recorded. Money taken and not recorded is the one
+// outcome worth refusing outright.
+export async function settleBilledToStays({ payerStayId, amount, method, date, note }) {
+  const { data, error } = await supabase.rpc('settle_billed_to_stays', {
+    p_payer_stay: payerStayId,
+    p_amount: Number(amount),
+    p_method: method,
+    p_date: date || null,
+    p_note: note || null,
+  })
+  if (error) throw error
+  return data
+}
+
 // Room-rate debt recovered (565). Chris, 20 October 2026: a guest who
 // checked out owing for the ROOM and pays weeks later is recovering a
 // debt, and nothing said so. get_daily_financials only ever counted the

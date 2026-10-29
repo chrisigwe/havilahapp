@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { naira, lagosToday, lagosDaysAgo, lagosTime, nightsBetween, partPaidNote, roomChargeDept, seesStayTimes, cyclesFor, friendlyStayError, addDays } from '../lib/format'
-import { billedToLabel, checkOutStay, loadFreeRooms, loadStayMoves, moveStayRoom, undoLastRoomMove, loadCustomers, recordStayCredit, checkRepeatPayment, deleteOrderItem, deleteStay, extendStayTo, loadBranchStaySettings, loadFolio, moveRoomChargeDate, recordStayPayment, reopenStay, saveRepayment, searchSimilarGuests, updateOrderItem, updateOverstayFee, updateStayBillTo, updateStayDetails } from '../lib/data'
+import { billedToLabel, checkOutStay, loadFreeRooms, loadStayMoves, moveStayRoom, undoLastRoomMove, loadCustomers, recordStayCredit, checkRepeatPayment, deleteOrderItem, deleteStay, extendStayTo, loadBranchStaySettings, loadFolio, moveRoomChargeDate, recordStayPayment, reopenStay, saveRepayment, searchSimilarGuests, settleBilledToStays, updateOrderItem, updateOverstayFee, updateStayBillTo, updateStayDetails } from '../lib/data'
 import { useToast } from '../components/Toast'
 import PaymentMethodPicker, { paymentParts, paymentAllocated } from './PaymentMethodPicker'
 import FolioStatement from './FolioStatement'
@@ -37,6 +37,9 @@ export default function Folio({ boot, room, onClose, onChanged }) {
   // stays outstanding, which is what happens today and is safe.
   const [creditOpen, setCreditOpen] = useState(false)
   const [creditDraft, setCreditDraft] = useState(null)
+  // Settling every room billed to this guest in one payment (578).
+  const [groupOpen, setGroupOpen] = useState(false)
+  const [groupDraft, setGroupDraft] = useState(null)
   const [accounts, setAccounts] = useState(null)
   const [accountSearch, setAccountSearch] = useState('')
   // Correcting the date of a charge already on the folio — GM/admin only
@@ -473,6 +476,45 @@ export default function Folio({ boot, room, onClose, onChanged }) {
     }
   }
 
+  // Oldest booking first, matching the function's own ORDER BY exactly —
+  // billedToYou arrives newest-first, so it must be re-sorted or the
+  // preview would promise one room and the database pay another.
+  const groupRooms = (billedToYou || [])
+    .filter(b => Number(b.outstanding) > 0.009)
+    .slice()
+    .sort((a, b) => String(a.check_in_date || '').localeCompare(String(b.check_in_date || ''))
+      || String(a.room_number || '').localeCompare(String(b.room_number || '')))
+
+  const groupSpread = (() => {
+    let pot = Math.round(Number(groupDraft?.amount || 0) * 100) / 100
+    const out = []
+    for (const b of groupRooms) {
+      if (pot <= 0.009) break
+      const take = Math.min(pot, Math.round(Number(b.outstanding) * 100) / 100)
+      pot = Math.round((pot - take) * 100) / 100
+      out.push({ ...b, take })
+    }
+    return out
+  })()
+
+  async function saveGroup() {
+    const amt = Number(groupDraft?.amount)
+    if (!(amt > 0)) { toast('Enter how much was paid.', 'error'); return }
+    setBusy(true)
+    try {
+      const r = await settleBilledToStays({
+        payerStayId: room.stay_id, amount: amt,
+        method: groupDraft.method, date: groupDraft.date || lagosToday(),
+        note: groupDraft.note?.trim() || null,
+      })
+      const n = (r?.rooms || []).length
+      toast(`${naira(r.applied)} settled across ${n} room${n === 1 ? '' : 's'}`
+        + (Number(r.still_owed) > 0.009 ? ` · ${naira(r.still_owed)} still owing` : ''), 'success')
+      setGroupOpen(false); setGroupDraft(null); refresh(); onChanged?.()
+    } catch (e) { toast(friendlyStayError(e), 'error') }
+    setBusy(false)
+  }
+
   async function saveCredit() {
     const amt = Number(creditDraft?.amount)
     if (!(amt > 0)) { toast('Enter how much is going on credit.', 'error'); return }
@@ -854,11 +896,24 @@ export default function Folio({ boot, room, onClose, onChanged }) {
                 {billedToLabel(b) || naira(b.outstanding)}
               </p>
             ))}
-            {billedToYouTotal > 0 && (
-              <p className="text-dim text-xs mt-1">
-                Amounts owing are included above. Settle them on that guest's own folio — this
-                room's payment doesn't clear them.
-              </p>
+            {billedToYouTotal > 0.009 && (
+              <>
+                <button
+                  onClick={() => {
+                    setGroupDraft({
+                      amount: String(Math.round(billedToYouTotal * 100) / 100),
+                      method: 'pos', date: lagosToday(), note: '',
+                    })
+                    setGroupOpen(true)
+                  }}
+                  className="mt-2 w-full h-11 rounded-xl border border-clay text-clay font-semibold">
+                  Settle these rooms · {naira(billedToYouTotal)}
+                </button>
+                <p className="text-dim text-xs mt-1">
+                  One payment, spread across the rooms above, oldest booking first.
+                  This room's own bill is separate and is paid below.
+                </p>
+              </>
             )}
           </div>
         )}
@@ -1741,6 +1796,80 @@ export default function Folio({ boot, room, onClose, onChanged }) {
           )
         })()}
       </div>
+
+      {groupOpen && groupDraft && (
+        <div className="fixed inset-0 z-[60] bg-bg overflow-y-auto p-5">
+          <button onClick={() => { setGroupOpen(false); setGroupDraft(null) }}
+            className="text-dim">Back</button>
+          <h2 className="mt-3 text-2xl font-bold">Settle rooms billed here</h2>
+          <p className="text-dim text-sm mt-1">
+            {groupRooms.length} room{groupRooms.length === 1 ? '' : 's'} owing {naira(billedToYouTotal)}.
+          </p>
+
+          <label className="block mt-4 text-dim">How much was paid</label>
+          <input type="number" inputMode="decimal" value={groupDraft.amount}
+            onChange={e => setGroupDraft(d => ({ ...d, amount: e.target.value }))}
+            className="w-full h-12 px-3 rounded-xl bg-raise border border-line tnum text-lg" />
+
+          <label className="block mt-4 text-dim">How</label>
+          <div className="flex gap-2 mt-1">
+            {payMethods.map(m => (
+              <button key={m} onClick={() => setGroupDraft(d => ({ ...d, method: m }))}
+                className={`flex-1 h-12 rounded-xl border font-semibold uppercase ${
+                  groupDraft.method === m ? 'bg-amber text-bg border-amber' : 'border-line text-dim'}`}>
+                {m}
+              </button>
+            ))}
+          </div>
+
+          <label className="block mt-4 text-dim">Date</label>
+          <input type="date" value={groupDraft.date}
+            onChange={e => setGroupDraft(d => ({ ...d, date: e.target.value }))}
+            className="w-full h-12 px-3 rounded-xl bg-raise border border-line" />
+
+          <label className="block mt-4 text-dim">Note (optional)</label>
+          <input value={groupDraft.note}
+            onChange={e => setGroupDraft(d => ({ ...d, note: e.target.value }))}
+            placeholder="Who paid, and for what"
+            className="w-full h-12 px-3 rounded-xl bg-raise border border-line" />
+
+          {/* Shown before anything is written. A group payment touches
+              rooms the person cannot see from here, so what it is about
+              to do is put in front of them first. */}
+          <div className="mt-5 rounded-xl border border-line overflow-hidden">
+            <p className="px-3 py-2 bg-raise font-semibold text-sm">What this pays</p>
+            {groupSpread.length ? groupSpread.map(b => (
+              <div key={b.stay_id} className="px-3 py-2 flex justify-between gap-3 border-t border-line">
+                <span className="text-sm truncate">
+                  Room {b.room_number || '—'} · {b.guest_name}
+                  {b.take < Math.round(Number(b.outstanding) * 100) / 100 && (
+                    <span className="text-dim"> · part of {naira(b.outstanding)}</span>
+                  )}
+                </span>
+                <span className="tnum text-sm font-semibold shrink-0">{naira(b.take)}</span>
+              </div>
+            )) : (
+              <p className="px-3 py-2 text-dim text-sm border-t border-line">
+                Enter an amount to see which rooms it pays.
+              </p>
+            )}
+          </div>
+
+          {Number(groupDraft.amount) > billedToYouTotal + 0.009 && (
+            <p className="text-clay text-sm mt-3 font-semibold">
+              That is more than the {naira(billedToYouTotal)} these rooms owe. Reduce it, and put
+              anything extra on a room's own bill where it can be seen.
+            </p>
+          )}
+
+          <button onClick={saveGroup}
+            disabled={busy || !(Number(groupDraft.amount) > 0)
+              || Number(groupDraft.amount) > billedToYouTotal + 0.009}
+            className="mt-6 w-full h-14 rounded-2xl bg-amber text-bg text-lg font-bold disabled:opacity-40">
+            {busy ? 'Saving…' : `Record ${naira(Number(groupDraft.amount) || 0)}`}
+          </button>
+        </div>
+      )}
 
       {editing && (
         <div className="fixed inset-0 z-[60] bg-bg overflow-y-auto p-5">
