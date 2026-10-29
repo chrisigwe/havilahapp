@@ -127,6 +127,16 @@ export function friendlyStayError(error) {
   if (error.code === '23514' && msg.includes('stay_dates_ordered')) {
     return 'The check-out date cannot be before the check-in date.'
   }
+  // 23P01 is the exclusion constraint stays_no_date_overlap. It had no
+  // translation, so it reached the desk as raw Postgres — "conflicting
+  // key value violates exclusion constraint" — which says nothing to
+  // someone holding a key card (29 October 2026). It fires on a
+  // same-day turnover and on extending a stay into a booking behind it,
+  // which is exactly what a busy morning does.
+  if (error.code === '23P01' || msg.includes('stays_no_date_overlap')) {
+    return 'Those dates clash with another booking on that room. '
+      + 'Check the dates, or pick a room that is free for the whole stay.'
+  }
   if (error.code === '42501' || msg.includes('row-level security')) {
     return 'You do not have permission to do that for this branch.'
   }

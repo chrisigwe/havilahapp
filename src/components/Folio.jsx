@@ -894,7 +894,7 @@ export default function Folio({ boot, room, onClose, onChanged }) {
                     toast(`Leaving date moved to ${dShort(paidThroughDate)}`, 'success')
                     refresh()
                     onChanged?.()
-                  } catch (e) { toast(e.message, 'error') }
+                  } catch (e) { toast(friendlyStayError(e), 'error') }
                   setBusy(false)
                 }}
                 className="flex-1 h-12 rounded-xl bg-amber text-bg font-bold disabled:opacity-40">
