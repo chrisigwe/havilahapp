@@ -3,6 +3,7 @@ import { lagosToday, methodLabel, naira, startingDept } from '../lib/format'
 import { deleteRepayment, deleteRoomPayment, loadBalances, loadBalancesAsAt, loadRecovery, loadRoomPayments, updateRepayment } from '../lib/data'
 import { useToast } from '../components/Toast'
 import RoomChargeTracker from '../components/RoomChargeTracker'
+import FoldedDays from '../components/FoldedDays'
 import { OPENS_ON_ALL, OVERSIGHT, SUPERVISOR, is } from '../lib/roles'
 import { tracked } from '../lib/loadfail'
 import CreditChain from '../components/CreditChain'
@@ -406,7 +407,15 @@ export default function Recovery({ boot }) {
           locationId={locId === 'all' ? null : locId} />
       )}
 
-      {byDay.map(([day, items]) => {
+      {/* Finished months and years fold into one row each (579). The day
+          block below is unchanged — only what wraps it is new. */}
+      <FoldedDays groups={byDay} today={lagosToday()}
+        summary={(items) => (
+          <span className="tnum font-bold text-leaf">
+            {naira(items.reduce((t, r) => t + Number(r.amount || 0), 0))}
+          </span>
+        )}
+        renderDay={(day, items) => {
         const open = dayOpen(day)
         const dayTotal = items.reduce((t, r) => t + Number(r.amount || 0), 0)
         return (
@@ -475,7 +484,7 @@ export default function Recovery({ boot }) {
           )}
         </section>
         )
-      })}
+      }} />
 
       {!rows.length && <p className="py-8 text-center text-dim">No payments recorded yet.</p>}
       </>

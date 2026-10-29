@@ -7,6 +7,7 @@ import { loadActivity, deleteEntry, updateEntry, loadAudit,
          findDuplicateGuests, mergeGuests, dismissDuplicatePair,
          findDuplicateCustomers, mergeCustomers } from '../lib/data'
 import { useToast } from '../components/Toast'
+import FoldedDays from '../components/FoldedDays'
 import MergeGuestsSheet from '../components/MergeGuestsSheet'
 import MergeCustomersSheet from '../components/MergeCustomersSheet'
 import { MANAGEMENT, RECEPTION_EDIT, SUPERVISOR, is } from '../lib/roles'
@@ -721,7 +722,18 @@ export default function Corrections({ boot }) {
                 </div>
               )}
 
-              {payByDay.map(([day, rows]) => {
+              {/* Six months of payments was a hundred and eighty headings
+                  to scroll past. Finished months and years fold into one
+                  row each; the month in progress still shows its days,
+                  because that is where the corrections actually are (579). */}
+              <FoldedDays groups={payByDay} today={lagosToday()}
+                forceOpen={(items) => items.some(r => payPicked.has(r.id))}
+                summary={(items) => (
+                  <span className="tnum font-bold">
+                    {naira(items.reduce((t, r) => t + Number(r.amount || 0), 0))}
+                  </span>
+                )}
+                renderDay={(day, rows) => {
                 const dayTotal = rows.reduce((t, r) => t + Number(r.amount || 0), 0)
                 const ticked = rows.filter(r => payPicked.has(r.id)).length
                 return (
@@ -777,7 +789,7 @@ export default function Corrections({ boot }) {
               </ul>
                 </DayGroup>
                 )
-              })}
+              }} />
               <p className="text-dim text-xs mt-2">
                 Every change and deletion here is recorded with your name — the amount,
                 the method and the day, before and after.
