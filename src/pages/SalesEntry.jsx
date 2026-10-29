@@ -1893,13 +1893,6 @@ export default function SalesEntry({ boot }) {
               placeholder="e.g. Jollof Rice with Chicken"
               className="h-12 w-full px-3 rounded-xl bg-surface border border-line placeholder:text-dim" />
           </Row>
-          <Row label="Quantity">
-            <button onClick={() => setRestaurantOrder(r => ({ ...r, qty: Math.max(1, r.qty - 1) }))}
-              className="h-14 w-14 rounded-xl bg-surface border border-line text-2xl">−</button>
-            <span className="tnum text-3xl font-bold w-14 text-center">{restaurantOrder.qty}</span>
-            <button onClick={() => setRestaurantOrder(r => ({ ...r, qty: r.qty + 1 }))}
-              className="h-14 w-14 rounded-xl bg-surface border border-line text-2xl">+</button>
-          </Row>
           {!priceFromStock && (
             <Row label="Price per plate">
               <input type="number" inputMode="decimal" value={restaurantOrder.unitPrice}
@@ -1907,6 +1900,23 @@ export default function SalesEntry({ boot }) {
                 placeholder="0" className="h-12 w-36 px-3 rounded-xl bg-surface border border-line tnum" />
             </Row>
           )}
+
+          <StockUsedField used={restaurantOrder.used || []}
+            setUsed={fn => setRestaurantOrder(r => ({ ...r, used: fn(r.used || []) }))}
+            items={items} stockMap={stockMap}
+            restaurantId={(boot.allLocations || []).find(l => /restaurant/i.test(l.name))?.id} />
+
+          {/* Quantity sits BELOW the stock (Chris, 29 October 2026). The
+              list is what one plate takes, so the screen now reads in the
+              order the work happens: what was ordered, what one plate
+              takes, how many plates, what it comes to. */}
+          <Row label="Quantity">
+            <button onClick={() => setRestaurantOrder(r => ({ ...r, qty: Math.max(1, r.qty - 1) }))}
+              className="h-14 w-14 rounded-xl bg-surface border border-line text-2xl">−</button>
+            <span className="tnum text-3xl font-bold w-14 text-center">{restaurantOrder.qty}</span>
+            <button onClick={() => setRestaurantOrder(r => ({ ...r, qty: r.qty + 1 }))}
+              className="h-14 w-14 rounded-xl bg-surface border border-line text-2xl">+</button>
+          </Row>
 
           {/* Stock used with this order — comes off Restaurant's stock and is
               tied to this order, for accountability. Never changes the price. */}
@@ -1935,10 +1945,6 @@ export default function SalesEntry({ boot }) {
             </div>
           )}
 
-          <StockUsedField used={restaurantOrder.used || []}
-            setUsed={fn => setRestaurantOrder(r => ({ ...r, used: fn(r.used || []) }))}
-            items={items} stockMap={stockMap}
-            restaurantId={(boot.allLocations || []).find(l => /restaurant/i.test(l.name))?.id} />
 
           <label className="block mt-4 text-dim">Order type</label>
           <div className="mt-2 flex gap-2">
