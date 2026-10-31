@@ -581,6 +581,20 @@ export default function SalesEntry({ boot }) {
   const stockValueOf = (used) => (used || []).reduce(
     (t, u) => t + Number(u.qty || 0) * Number(u.item?.selling_price || 0), 0)
 
+  // FOOD THAT CARRIES NO PRICE (Chris, 31 October 2026).
+  //
+  // Awka's catalogue has items at zero — ingredients, and the staff and
+  // GM meals. Priced from stock, an order made only of those comes to
+  // nothing, and the save was simply refused, which stops the kitchen.
+  //
+  // Chris's rule: it is not a sale, it is PR. So it saves — but it can
+  // never save as a SALE, and the screen says why. The alternative,
+  // letting a zero total through as a standard order, would take a plate
+  // a guest actually paid for out of Restaurant's takings with nothing
+  // on screen to show it had happened.
+  const noSaleValue = (o) => !!priceFromStock && (o?.used || []).length > 0
+    && stockValueOf(o?.used) <= 0.009
+
   const priceFor = (item, tier) =>
     tier === 'lounge' ? Number(item.lounge_price ?? item.selling_price)
     : tier === 'staff' ? Number(item.staff_price ?? item.selling_price)
@@ -1928,6 +1942,14 @@ export default function SalesEntry({ boot }) {
                   {naira(stockValueOf(restaurantOrder.used) * restaurantOrder.qty)}
                 </span>
               </div>
+              {noSaleValue(restaurantOrder) && (
+                <p className="text-clay text-sm font-semibold mt-2">
+                  None of this stock carries a price, so there is nothing to sell.
+                  Save it as <strong>PR / Damage</strong> or <strong>Staff</strong>.
+                  If a guest is paying for this, stop &mdash; the item needs a price
+                  in Catalog first, or the money will not reach Restaurant.
+                </p>
+              )}
               <p className="text-dim text-xs mt-1">
                 List what <strong>one plate</strong> takes. The app multiplies it by the
                 quantity, so {restaurantOrder.qty}
@@ -1948,13 +1970,17 @@ export default function SalesEntry({ boot }) {
 
           <label className="block mt-4 text-dim">Order type</label>
           <div className="mt-2 flex gap-2">
-            {[['standard', 'Standard'], ['pr_damage', 'PR / Damage'], ['staff', 'Staff']].map(([k, label]) => (
-              <button key={k} onClick={() => setRestaurantOrder(r => ({ ...r, orderType: k }))}
-                className={`flex-1 h-12 rounded-xl border font-semibold ${restaurantOrder.orderType === k
+            {[['standard', 'Standard'], ['pr_damage', 'PR / Damage'], ['staff', 'Staff']].map(([k, label]) => {
+              const barred = k === 'standard' && noSaleValue(restaurantOrder)
+              return (
+              <button key={k} disabled={barred}
+                onClick={() => setRestaurantOrder(r => ({ ...r, orderType: k }))}
+                className={`flex-1 h-12 rounded-xl border font-semibold disabled:opacity-30 ${
+                  restaurantOrder.orderType === k && !barred
                   ? 'bg-amber text-bg border-amber' : 'border-line text-dim'}`}>
                 {label}
               </button>
-            ))}
+            )})}
           </div>
 
           {restaurantOrder.orderType === 'staff' && (
@@ -2151,8 +2177,10 @@ export default function SalesEntry({ boot }) {
               setWriteoffBusy(false)
             }}
             disabled={writeoffBusy || !restaurantOrder.description.trim()
+              // Nothing to sell: saveable as PR or a staff meal, never as a sale.
+              || (noSaleValue(restaurantOrder) && restaurantOrder.orderType === 'standard')
               || !(priceFromStock
-                    ? stockValueOf(restaurantOrder.used) > 0
+                    ? (stockValueOf(restaurantOrder.used) > 0 || noSaleValue(restaurantOrder))
                     : Number(restaurantOrder.unitPrice))
               || (!(restaurantOrder.used || []).length
                   && (restaurantOrder.orderType !== 'pr_damage' || !restaurantOrder.noStock))}
