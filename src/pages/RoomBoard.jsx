@@ -228,6 +228,27 @@ export default function RoomBoard({ boot }) {
     const held = byRoom.get(r.room_id)
     if (!held || rank < held.rank) byRoom.set(r.room_id, { row: r, rank })
   }
+  // WHO THE CARD IS ABOUT (2 November 2026).
+  //
+  // reserved_due outranks occupied, which is right for an EMPTY room —
+  // an arrival due today is the thing to act on. It is wrong while the
+  // last guest is still in the bed: room 102 showed PSN, who had not
+  // walked in, and Mrs Oby Solaja, who was in the room and being served,
+  // was one grey line near the bottom.
+  //
+  // So when a room holds both, the card is about the guest who is there.
+  // The arrival is not lost — it gets its own strip, with the check-in
+  // button on it, drawn above the guest.
+  const IN_HOUSE = new Set(['occupied', 'leaving', 'overdue'])
+  for (const [roomId, held] of byRoom) {
+    if (stateOf(held.row, paidThrough) !== 'reserved_due') continue
+    const inHouse = visible.find(r => r.room_id === roomId && r.stay_id
+      && IN_HOUSE.has(stateOf(r, paidThrough)))
+    if (inHouse) {
+      byRoom.set(roomId, { row: inHouse, rank: LIVENESS[stateOf(inHouse, paidThrough)] ?? 9 })
+    }
+  }
+
   const rooms = [...byRoom.values()].map(h => h.row)
 
   // WHAT THE CARD SAYS IS NOT WHAT CAN BE OPENED (29 October 2026).
@@ -572,7 +593,11 @@ export default function RoomBoard({ boot }) {
           const stateKey = stateOf(room, paidThrough)
           const s = STATE[stateKey]
           const books = bookingsByRoom.get(room.room_id) || []
-          const others = othersByRoom.get(room.room_id) || []
+          const allOthers = othersByRoom.get(room.room_id) || []
+          // The arrival due today, when somebody else is still in the room.
+          const arriving = allOthers.find(b => b.status === 'reserved'
+            && stateOf(b, paidThrough) === 'reserved_due')
+          const others = arriving ? allOthers.filter(b => b !== arriving) : allOthers
           return (
             <div key={room.room_id}
               onClick={() => room.stay_id && setOpenStay(room)}
@@ -584,6 +609,22 @@ export default function RoomBoard({ boot }) {
                   <span className={`text-xs font-semibold ${s.text}`}>{s.label}</span>
                 </div>
                 <p className="text-dim text-xs mt-0.5 truncate">{room.category}</p>
+
+                {arriving && (
+                  <div className="mt-2 rounded-lg border border-clay bg-clay/10 px-2 py-1.5">
+                    <p className="text-clay text-xs font-bold leading-tight">
+                      {arriving.guest_name} arriving today &mdash; room needed
+                    </p>
+                    {canBook && (
+                      <button onClick={(e) => { e.stopPropagation(); checkInNow(arriving) }}
+                        disabled={oosBusy}
+                        className="mt-1.5 w-full min-h-9 px-2 py-1.5 rounded-lg bg-amber text-bg
+                                   text-xs font-bold leading-tight text-center disabled:opacity-40">
+                        Arrived &mdash; check in
+                      </button>
+                    )}
+                  </div>
+                )}
 
                 {room.out_of_service ? (
                   <>
