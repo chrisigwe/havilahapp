@@ -322,7 +322,7 @@ export default function MatchTill({ rows = [], posTotal = 0, cashTotal = 0, cred
           <button disabled={saving}
             onClick={async () => {
               setSaving(true)
-              try { await onRecord({ appPos, appCash, pos: Number(pos), cash: Number(cash) }); setSaved(true) }
+              try { await onRecord({ appPos, appCash, pos: Number(pos), cash: Number(cash), allOk }); setSaved(true) }
               catch { /* never block closing */ }
               setSaving(false)
             }}

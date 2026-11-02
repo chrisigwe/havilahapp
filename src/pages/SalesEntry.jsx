@@ -681,11 +681,22 @@ export default function SalesEntry({ boot }) {
   const [showAllToday, setShowAllToday] = useState(false)
   // Has the FRONT DESK closed this day? null while unknown.
   const [frontDeskClosed, setFrontDeskClosed] = useState(null)
+  // Counted and settled, so it closes for the day (Chris, 2 November
+  // 2026). `done` was passed as `myTillDone && !tillSaved`, which had it
+  // backwards: saving flipped tillSaved to true, done went false, and the
+  // big amber button came straight back to ask someone who had just
+  // finished to count again.
+  //
+  // Only a CLEAN count closes it. A count that did not settle leaves the
+  // prompt up, because that day is not finished — the figures still
+  // disagree and somebody has to come back to them.
+  const [tillMatched, setTillMatched] = useState(false)
   const saveTillResult = async (r) => {
     await recordTillCheck({
       branchId: staff.branch_id, locationId, date,
       appPos: r.appPos, appCash: r.appCash, pos: r.pos, cash: r.cash })
     setTillSaved(true)
+    setTillMatched(!!r.allOk)
   }
 
   async function undoLast() {
@@ -1113,7 +1124,7 @@ export default function SalesEntry({ boot }) {
               way a department's day is. Closed, Reception also reads as
               what it should have in hand and nothing else. */}
           <p className="text-dim text-sm mt-6">Closing the day</p>
-          <TillTile figures={tileFigures} note={tileNote} hidden={isMyTill && !tillSaved}
+          <TillTile figures={tileFigures} note={tileNote} hidden={isMyTill && !tillSaved && !myTillDone}
                     checkError={tillCheckError} open={detailOpen}
                     onToggle={() => setDetailOpen(o => !o)}>
             <ReceptionDashboard dashboard={receptionDashboard} headless className=""
@@ -1121,7 +1132,7 @@ export default function SalesEntry({ boot }) {
           </TillTile>
           <MatchTill rows={[]} posTotal={inHand.pos} cashTotal={inHand.cash}
             includes={{ handedOutPos: handedOut.pos, handedOutCash: handedOut.cash }}
-            done={myTillDone && !tillSaved} onRecord={saveTillResult} />
+            done={myTillDone || tillMatched} onRecord={saveTillResult} />
         </>
       )}
 
@@ -1304,7 +1315,7 @@ export default function SalesEntry({ boot }) {
         )}
 
         {summary && (
-        <TillTile figures={tileFigures} note={tileNote} hidden={isMyTill && !tillSaved}
+        <TillTile figures={tileFigures} note={tileNote} hidden={isMyTill && !tillSaved && !myTillDone}
                   checkError={tillCheckError} open={detailOpen}
                   onToggle={() => setDetailOpen(o => !o)}>
         {recon && (
@@ -1399,7 +1410,7 @@ export default function SalesEntry({ boot }) {
         )}
 
         <MatchTill rows={today} busyId={switchingId} onFix={fixEntry} onRecord={saveTillResult}
-          done={myTillDone && !tillSaved}
+          done={myTillDone || tillMatched}
           posTotal={inHand.pos} cashTotal={inHand.cash}
           includes={{ recoveredPos: recon?.customerRecoveredBy?.pos, recoveredCash: recon?.customerRecoveredBy?.cash,
                       roomPos: recon?.roomRecoveredBy?.pos, roomCash: recon?.roomRecoveredBy?.cash }}
