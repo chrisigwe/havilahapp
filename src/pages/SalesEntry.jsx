@@ -595,6 +595,14 @@ export default function SalesEntry({ boot }) {
   const noSaleValue = (o) => !!priceFromStock && (o?.used || []).length > 0
     && stockValueOf(o?.used) <= 0.009
 
+  // FREE IS FREE (Chris, 4 November 2026). A PR giveaway or a staff meal
+  // is not paid for, so it carries no price — the screen said "Order
+  // total ₦6,000" on something whose own save button reads "not paid
+  // for". The stock still leaves the store and is still valued at cost
+  // by the write-off report; only the selling price goes, and that fed
+  // nothing anybody looks at.
+  const freeOrder = (o) => o?.orderType === 'pr_damage' || o?.orderType === 'staff'
+
   const priceFor = (item, tier) =>
     tier === 'lounge' ? Number(item.lounge_price ?? item.selling_price)
     : tier === 'staff' ? Number(item.staff_price ?? item.selling_price)
@@ -1918,7 +1926,7 @@ export default function SalesEntry({ boot }) {
               placeholder="e.g. Jollof Rice with Chicken"
               className="h-12 w-full px-3 rounded-xl bg-surface border border-line placeholder:text-dim" />
           </Row>
-          {!priceFromStock && (
+          {!priceFromStock && !freeOrder(restaurantOrder) && (
             <Row label="Price per plate">
               <input type="number" inputMode="decimal" value={restaurantOrder.unitPrice}
                 onChange={e => setRestaurantOrder(r => ({ ...r, unitPrice: e.target.value }))}
@@ -1948,11 +1956,25 @@ export default function SalesEntry({ boot }) {
           {priceFromStock && (
             <div className="mt-4 rounded-xl border border-line bg-surface px-4 py-3">
               <div className="flex items-baseline justify-between gap-3">
-                <span className="text-dim">Order total &mdash; from the stock used</span>
-                <span className="tnum text-2xl font-bold text-amber">
-                  {naira(stockValueOf(restaurantOrder.used) * restaurantOrder.qty)}
+                <span className="text-dim">
+                  {freeOrder(restaurantOrder)
+                    ? 'Nothing to pay \u2014 given away'
+                    : 'Order total \u2014 from the stock used'}
+                </span>
+                <span className={`tnum text-2xl font-bold ${
+                  freeOrder(restaurantOrder) ? 'text-leaf' : 'text-amber'}`}>
+                  {naira(freeOrder(restaurantOrder)
+                    ? 0
+                    : stockValueOf(restaurantOrder.used) * restaurantOrder.qty)}
                 </span>
               </div>
+              {freeOrder(restaurantOrder) && (
+                <p className="text-dim text-xs mt-1">
+                  The stock below still leaves the kitchen store and is recorded
+                  against {restaurantOrder.orderType === 'staff' ? 'staff meals' : 'PR'}.
+                  It is simply not charged to anyone.
+                </p>
+              )}
               {noSaleValue(restaurantOrder) && (
                 <p className="text-clay text-sm font-semibold mt-2">
                   None of this stock carries a price, so there is nothing to sell.
@@ -2127,9 +2149,10 @@ export default function SalesEntry({ boot }) {
               // — it knows what one plate takes — and listing a plate
               // three times over was the step that got skipped.
               const stockValue = stockValueOf(restaurantOrder.used)
-              const unitPrice = priceFromStock
-                ? Math.round(stockValue * 100) / 100
-                : Number(restaurantOrder.unitPrice) || 0
+              const unitPrice = freeOrder(restaurantOrder) ? 0
+                : priceFromStock
+                  ? Math.round(stockValue * 100) / 100
+                  : Number(restaurantOrder.unitPrice) || 0
               // Only STANDARD is a paid order. Staff meals are a
               // benefit — free, and excluded from sales (migration 289) —
               // so they save straight away like PR, with no payment step.
@@ -2190,9 +2213,10 @@ export default function SalesEntry({ boot }) {
             disabled={writeoffBusy || !restaurantOrder.description.trim()
               // Nothing to sell: saveable as PR or a staff meal, never as a sale.
               || (noSaleValue(restaurantOrder) && restaurantOrder.orderType === 'standard')
-              || !(priceFromStock
-                    ? (stockValueOf(restaurantOrder.used) > 0 || noSaleValue(restaurantOrder))
-                    : Number(restaurantOrder.unitPrice))
+              || !(freeOrder(restaurantOrder)
+                   || (priceFromStock
+                       ? (stockValueOf(restaurantOrder.used) > 0 || noSaleValue(restaurantOrder))
+                       : Number(restaurantOrder.unitPrice)))
               || (!(restaurantOrder.used || []).length
                   && (restaurantOrder.orderType !== 'pr_damage' || !restaurantOrder.noStock))}
             className="mt-8 w-full h-16 rounded-2xl bg-amber text-bg text-xl font-bold disabled:opacity-40">
