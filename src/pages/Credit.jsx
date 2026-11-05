@@ -240,24 +240,29 @@ export default function Credit({ boot }) {
 
   const refreshUnlinked = useCallback(() => {
     if (!hasReceptionAccess) return
-    tracked('Customer accounts not linked to a guest', loadUnlinkedCustomerBalances(staff.branch_id)).then(setUnlinked).catch(() => setUnlinked([]))
-  }, [hasReceptionAccess, staff.branch_id])
+    tracked('Customer accounts not linked to a guest',
+            loadUnlinkedCustomerBalances(staff.branch_id, locId === 'all' ? null : locId,
+                                         isEditor ? staffFilter : null))
+      .then(setUnlinked).catch(() => setUnlinked([]))
+  }, [hasReceptionAccess, staff.branch_id, locId, staffFilter, isEditor])
   useEffect(refreshUnlinked, [refreshUnlinked])
 
   useEffect(() => {
     if (!dayFilter) { setDayData(null); return }
     setDayData(null)
-    loadCreditOnDate(staff.branch_id, dayFilter, locId === 'all' ? null : locId)
+    loadCreditOnDate(staff.branch_id, dayFilter, locId === 'all' ? null : locId,
+                     isEditor ? staffFilter : null)
       .then(setDayData).catch(e => toast(e.message, 'error'))
-  }, [dayFilter, staff.branch_id, locId, toast])
+  }, [dayFilter, staff.branch_id, locId, staffFilter, isEditor, toast])
 
   useEffect(() => {
     if (!monthFilter) { setMonthRows(null); return }
     const [y, m] = monthFilter.split('-').map(Number)
     setMonthRows(null)
-    tracked('Credit for the month', loadCreditForMonth(staff.branch_id, y, m, locId))
+    tracked('Credit for the month',
+            loadCreditForMonth(staff.branch_id, y, m, locId, isEditor ? staffFilter : null))
       .then(setMonthRows).catch(() => setMonthRows([]))
-  }, [monthFilter, locId, staff.branch_id])
+  }, [monthFilter, locId, staffFilter, isEditor, staff.branch_id])
 
   async function confirmLink(guest) {
     setLinkBusy(true)
