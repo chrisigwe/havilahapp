@@ -736,13 +736,24 @@ export default function SalesEntry({ boot }) {
       if (!window.confirm(`That is a big quantity:\n\n${names}\n\nIs it right?`)) return
     }
     setPaying({
-      method: methods[0], split: null,
+      // Nothing pre-selected, deliberately. This used to open on
+      // methods[0] — POS at both branches — and a sale saved without
+      // anyone touching the chips still recorded POS. Four months of
+      // takings read 75-96% POS at every bar, which is not a
+      // measurement of how guests paid but of how rarely anyone
+      // changed the default (5 November 2026). Save stays disabled
+      // until someone actually chooses.
+      method: null, split: null,
       customerId: null, newCustomer: '',
     })
   }
 
   const creditAmount = (p) =>
     p.split ? Number(p.split.credit || 0) : (p.method === 'credit' ? basketTotal : 0)
+
+  // Has somebody actually said how this was paid? Choosing Split counts
+  // — the amounts are then checked against the basket total as before.
+  const methodChosen = !!paying && (!!paying.split || !!paying.method)
 
   // Occupied rooms only — a reservation has not arrived, so there is no
   // one at the bar to charge. Internal rooms (GM Office) excluded.
@@ -856,6 +867,9 @@ export default function SalesEntry({ boot }) {
       const customerId = paying.customerId
       if (creditAmount(paying) > 0 && !customerId) {
         toast('Credit sales need a customer — pick or add one.', 'error'); setBusy(false); return
+      }
+      if (!paying.split && !paying.method) {
+        toast('Choose how they paid — POS, Cash or Credit.', 'error'); setBusy(false); return
       }
       const payments = paying.split
         ? methods.map(m => ({ method: m, amount: Number(paying.split[m] || 0) }))
@@ -1629,6 +1643,11 @@ export default function SalesEntry({ boot }) {
             </Chip>
           </Row>
 
+          {/* Held back until a method is chosen. Otherwise every sale
+              opens showing "Difference N5,000" in red before anyone has
+              done anything wrong, and forty of those a day is how you
+              teach people that red means nothing. */}
+          {methodChosen && (
           <Allocation total={basketTotal} paying={paying} methods={methods}
             onCredit={() => setPaying(p => {
               const alloc = p.split
@@ -1638,6 +1657,7 @@ export default function SalesEntry({ boot }) {
                 [m, m === p.method ? String(basketTotal) : '']))
               return { ...p, split: { ...split, credit: String(Math.max(basketTotal - alloc, 0)) } }
             })} />
+          )}
 
           {paying.split && (
             <div className="mt-3 space-y-2">
@@ -1834,10 +1854,12 @@ export default function SalesEntry({ boot }) {
               </button>
             </div>
           ) : (
-            <button onClick={() => commit()} disabled={busy || (needsReason && !backdateReason.trim())}
+            <button onClick={() => commit()}
+              disabled={busy || !methodChosen || (needsReason && !backdateReason.trim())}
               className={`w-full h-16 rounded-2xl bg-amber text-bg text-xl font-bold disabled:opacity-40 ${
                 needsReason ? 'mt-3' : 'mt-8'}`}>
               {busy ? 'Saving…'
+                : !methodChosen ? 'Choose how they paid'
                 : paying.roomStay ? `Charge to Room ${paying.roomStay.room}`
                   : offToday ? `Save sale · ${dayShort(date)}` : 'Save sale'}
             </button>
@@ -2265,7 +2287,7 @@ function Line({ label, value, tone = '' }) {
 function Allocation({ total, paying, methods, onCredit }) {
   const allocated = paying.split
     ? Object.values(paying.split).reduce((s, v) => s + Number(v || 0), 0)
-    : total
+    : paying.method ? total : 0
   const diff = Number((total - allocated).toFixed(2))
   return (
     <div className="mt-6 rounded-xl border border-line bg-surface p-4 space-y-1 text-sm">
