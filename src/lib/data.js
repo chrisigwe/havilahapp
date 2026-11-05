@@ -1484,6 +1484,22 @@ export async function linkCustomerToGuest(customerId, guestId) {
   if (error) throw error
 }
 
+// Undoes the above. Until now there was only a way to CREATE the link,
+// so a wrong one — a department account pointed at the wrong guest —
+// could only be undone by hand in the database. That happened on
+// 5 November 2026: an account named for room 208 was pointed at the
+// guest in 204, and putting it right took a preview query and a
+// migration for what should be two taps.
+//
+// Clearing the link moves nothing. The balance stays exactly where it
+// is, on the customer account; it simply stops appearing on that
+// guest's folio and goes back to being chased through Credit.
+export async function unlinkCustomerFromGuest(customerId) {
+  const { error } = await supabase.from('customers')
+    .update({ linked_guest_id: null }).eq('id', customerId)
+  if (error) throw error
+}
+
 // Converts a linked customer's balance at this one department into a
 // real room charge on their current live stay, zeroing out the
 // workaround balance — the RPC itself enforces the link exists and
