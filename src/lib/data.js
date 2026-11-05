@@ -625,6 +625,15 @@ export async function createCustomer(branchId, name, servedBy) {
 
 // staffId narrows to one person's debtors; RLS already hides other
 // people's rows from bar staff, so this is for managers filtering
+// Whose entry is this? One rule, used everywhere a person filter is
+// applied, copied from v_customer_balances_by_staff rather than
+// reinvented: a sale the storekeeper keyed on behalf of the barman was
+// SERVED by the barman. The filters below and the main balances list
+// therefore always agree about what "Ikenna's" means — which matters
+// more than any one of them being clever on its own.
+const servedByFilter = (staffId, ownColumn) =>
+  `${ownColumn}.eq.${staffId},and(${ownColumn}.is.null,recorded_by.eq.${staffId})`
+
 export async function loadBalances(branchId, locationId, staffId) {
   let q = supabase.from('v_customer_balances_by_staff')
     .select('customer_id, location_id, staff_id, staff_name, name, phone, served_by, credit_taken, repaid, balance, first_credit_date, last_credit_date')
@@ -3277,7 +3286,7 @@ export async function loadCustomerNeverAGuest(customerId) {
   return !!data?.never_a_guest
 }
 
-export async function loadUnlinkedCustomerBalances(branchId) {
+export async function loadUnlinkedCustomerBalances(branchId, locationId, staffId) {
   const { data: custs, error } = await supabase.from('customers')
     .select('id, name, phone')
     .eq('branch_id', branchId).eq('is_active', true).is('linked_guest_id', null)
@@ -3291,9 +3300,15 @@ export async function loadUnlinkedCustomerBalances(branchId) {
   if (error) throw error
   if (!custs?.length) return []
 
-  const { data: bals } = await supabase.from('v_customer_balances_by_staff')
+  // Scoped the same way the rest of the page is. The view already
+  // carries staff_id on the served rule, so this needs no second
+  // definition of whose credit a line is.
+  let bq = supabase.from('v_customer_balances_by_staff')
     .select('customer_id, location_id, balance')
     .in('customer_id', custs.map(c => c.id))
+  if (locationId) bq = bq.eq('location_id', locationId)
+  if (staffId) bq = bq.eq('staff_id', staffId)
+  const { data: bals } = await bq
 
   const byId = {}
   for (const b of (bals || [])) {
@@ -3317,7 +3332,7 @@ export async function loadUnlinkedCustomerBalances(branchId) {
 // Only the credit PORTION of a sale counts: a split sale (part cash,
 // part credit) raises only what actually went on credit, and using the
 // full sale value would overstate the day.
-export async function loadCreditOnDate(branchId, date, locationId) {
+export async function loadCreditOnDate(branchId, date, locationId, staffId) {
   let sq = supabase.from('sales')
     .select(`id, qty, location_id, description, customer_id,
              stock_items(name), customers(name), staff:recorded_by(full_name),
@@ -3325,12 +3340,14 @@ export async function loadCreditOnDate(branchId, date, locationId) {
     .eq('branch_id', branchId).eq('business_date', date)
     .not('customer_id', 'is', null)
   if (locationId) sq = sq.eq('location_id', locationId)
+  if (staffId) sq = sq.or(servedByFilter(staffId, 'on_behalf_of'))
 
   let rq = supabase.from('credit_repayments')
     .select(`id, amount, location_id, customer_id, method,
              customers(name), staff:recorded_by(full_name)`)
     .eq('branch_id', branchId).eq('paid_on', date)
   if (locationId) rq = rq.eq('location_id', locationId)
+  if (staffId) rq = rq.or(servedByFilter(staffId, 'credit_staff_id'))
 
   const [{ data: sales, error: e1 }, { data: reps, error: e2 }] =
     await Promise.all([sq, rq])
@@ -3733,10 +3750,13 @@ export async function moveRoomChargeDate(orderItemId, newDate) {
 //
 // Room charges cannot appear here — they are orders on a folio, never
 // sales with a credit payment (verified in 293).
-export async function loadCreditForMonth(branchId, year, month, locationId) {
+export async function loadCreditForMonth(branchId, year, month, locationId, staffId) {
   const { data, error } = await supabase.rpc('customer_credit_for_month', {
     p_branch: branchId, p_year: year, p_month: month,
     p_location: locationId && locationId !== 'all' ? locationId : null,
+    // null = everyone. The function defaults it, so an app build older
+    // than migration 590 still calls this successfully (590).
+    p_staff: staffId || null,
   })
   if (error) throw error
   return data || []
