@@ -216,6 +216,38 @@ export async function checkRepeatSale({ branchId, customerId, lines }) {
   return null
 }
 
+// True only for "this function does not exist" — PostgREST answers a
+// missing RPC with PGRST202, Postgres itself with SQLSTATE 42883. Kept
+// deliberately narrow: any other error from record_sale_line is a real
+// one and must not be swallowed.
+function isMissingFunction(error) {
+  return error?.code === 'PGRST202' || error?.code === '42883'
+    || /could not find the function|does not exist/i.test(error?.message || '')
+}
+
+// The pre-584 path: two separate inserts, which can leave a sale with
+// no payment if the connection dies between them. Only reached when the
+// migration has not been run yet, and deleted once both branches are on
+// 584.
+async function _saveSaleLineUnsafely(a, payRows) {
+  const { data: sale, error } = await supabase.from('sales').insert({
+    branch_id: a.p_branch, business_date: a.p_business_date,
+    occurred_at: a.p_occurred_at, stock_item_id: a.p_stock_item,
+    description: a.p_description, location_id: a.p_location, tier: a.p_tier,
+    qty: a.p_qty, unit_price: a.p_unit_price, customer_id: a.p_customer,
+    backdate_reason: a.p_backdate_reason, receipt_id: a.p_receipt,
+    on_behalf_of: a.p_on_behalf_of, recorded_by: a.p_recorded_by,
+    order_type: a.p_order_type, writeoff_note: a.p_writeoff_note,
+  }).select('id').single()
+  if (error) throw error
+  if (payRows.length) {
+    const { error: e2 } = await supabase.from('sale_payments')
+      .insert(payRows.map(r => ({ sale_id: sale.id, ...r })))
+    if (e2) throw e2
+  }
+  return sale.id
+}
+
 // Records a basket: one sales row per line, with the basket's payment
 // split allocated across those lines in order.
 async function _saveBasket({ staff, locationId, lines, payments, date, customerId, backdateReason, receiptId, onBehalfOf }) {
@@ -224,52 +256,76 @@ async function _saveBasket({ staff, locationId, lines, payments, date, customerI
     .map(p => ({ method: p.method, left: Number(p.amount) }))
   for (const line of lines) {
     const amount = Number((line.qty * line.unitPrice).toFixed(2))
-    const { data: sale, error } = await supabase.from('sales').insert({
-      branch_id: staff.branch_id,
-      business_date: date,
-      occurred_at: new Date().toISOString(),
+    // The sale and its payment split are ONE database step. They used
+    // to be two client calls — insert the sale, then insert its
+    // payments — with nothing holding them together, so a connection
+    // that dropped in the gap left a sale on the books with no payment
+    // method and no error anyone would ever see. That is exactly the
+    // reasoning behind edit_sale() in migration 257; it was applied to
+    // editing a sale and never to creating one. One such orphan was
+    // found on 5 November 2026 (Nnewi Minimart, N1,000), out of 5,880
+    // sales. record_sale_line() (migration 584) does both inserts in a
+    // single transaction and returns the new sale's id.
+    //
+    // It runs as the caller, not as a privileged definer, so every row
+    // policy that governed the two direct inserts still governs these.
+    const payRows = []
+    let owing = amount
+    for (const b of buckets) {
+      if (owing <= 0.001 || b.left <= 0.001) continue
+      const take = Math.min(owing, b.left)
+      payRows.push({ method: b.method, amount: Number(take.toFixed(2)) })
+      b.left -= take; owing -= take
+    }
+    if (owing > 0.001 && buckets.length) {
+      payRows.push({ method: buckets[0].method, amount: Number(owing.toFixed(2)) })
+    }
+
+    const args = {
+      p_branch: staff.branch_id,
+      p_business_date: date,
+      p_occurred_at: new Date().toISOString(),
       // typed restaurant orders have no catalog item (a plate of food
       // isn't a countable stock unit) — item is null, description
       // carries the typed text instead
-      stock_item_id: line.item?.id || null,
-      description: line.item ? null : (line.description || null),
+      p_stock_item: line.item?.id || null,
+      p_description: line.item ? null : (line.description || null),
       // a cross-department pick (e.g. a Restaurant item sold at OpenBar)
       // carries its own sourcing location — that's what both the
       // stock deduction AND the daily takings attribute to, so a
       // walk-in food order counts toward Restaurant's figures, not the
       // bar's, per the explicit decision on how that should work
-      location_id: line.locationId || locationId,
-      tier: line.tier,
-      qty: line.qty,
-      unit_price: line.unitPrice,
-      customer_id: customerId || null,
-      backdate_reason: backdateReason || null,
-      receipt_id: receipt,
-      on_behalf_of: onBehalfOf || null,
-      recorded_by: staff.id,
+      p_location: line.locationId || locationId,
+      p_tier: line.tier,
+      p_qty: line.qty,
+      p_unit_price: line.unitPrice,
+      p_customer: customerId || null,
+      p_backdate_reason: backdateReason || null,
+      p_receipt: receipt,
+      p_on_behalf_of: onBehalfOf || null,
+      p_recorded_by: staff.id,
       // only ever non-'standard' for a typed Staff order carried
       // through the basket — every other line (the vast majority)
       // gets the column's own default
-      order_type: line.orderType || 'standard',
-      writeoff_note: line.writeoffNote || null,
-    }).select('id').single()
-    if (error) throw error
+      p_order_type: line.orderType || 'standard',
+      p_writeoff_note: line.writeoffNote || null,
+      p_payments: payRows,
+    }
 
-    let owing = amount
-    const rows = []
-    for (const b of buckets) {
-      if (owing <= 0.001 || b.left <= 0.001) continue
-      const take = Math.min(owing, b.left)
-      rows.push({ sale_id: sale.id, method: b.method, amount: Number(take.toFixed(2)) })
-      b.left -= take; owing -= take
+    let saleId
+    const { data: rpcId, error } = await supabase.rpc('record_sale_line', args)
+    if (error) {
+      // Only when the function itself is not there yet — i.e. the app
+      // was deployed before migration 584 was run. Anything else is a
+      // real failure and must surface, not be quietly retried a second
+      // way. Without this, deploying in the wrong order would stop
+      // every till in both branches.
+      if (!isMissingFunction(error)) throw error
+      saleId = await _saveSaleLineUnsafely(args, payRows)
+    } else {
+      saleId = rpcId
     }
-    if (owing > 0.001 && buckets.length) {
-      rows.push({ sale_id: sale.id, method: buckets[0].method, amount: Number(owing.toFixed(2)) })
-    }
-    if (rows.length) {
-      const { error: e2 } = await supabase.from('sale_payments').insert(rows)
-      if (e2) throw e2
-    }
+    const sale = { id: saleId }
     // Stock used with this order (water, extra chicken ...): comes off the
     // department's stock and is tied to the order — migration 340b. Done
     // last so a failure here can never leave a half-saved sale; if it does
