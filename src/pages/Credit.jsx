@@ -835,7 +835,8 @@ export default function Credit({ boot }) {
                     onClick={() => setGuestPay({
                       stayId: g.stay_id, guestName: g.guest_name, roomNumber: g.room_number,
                       outstanding: g.outstanding, billingCycle: g.billing_cycle,
-                      amount: String(g.outstanding), method: 'pos', split: null, isOverstay: false,
+                      // Nothing pre-selected — see the note in Folio.
+                      amount: String(g.outstanding), method: null, split: null, isOverstay: false,
                     })}
                     className="flex-1 min-w-0 text-left">
                     <div className="font-semibold truncate">{g.guest_name || 'Guest'}</div>
@@ -1288,7 +1289,7 @@ export default function Credit({ boot }) {
               const startPay = (part) => setPay({
                 customerId: open.customer.customer_id,
                 amount: part ? part.balance : open.customer.balance,
-                method: methods.find(m => m !== 'credit') || 'cash',
+                method: null,
                 paidOn: lagosToday(), note: '',
                 balance: Number(part ? part.balance : open.customer.balance),
                 locationId: (part ? part.location_id : open.customer.location_id) || locId,
@@ -1395,7 +1396,7 @@ export default function Credit({ boot }) {
                       disabled={blocked}
                       onClick={() => {
                         setPay({ customerId: payWho.customer_id, amount: part.balance,
-                          method: methods.find(m => m !== 'credit') || 'cash',
+                          method: null,
                           paidOn: lagosToday(), note: '', balance: Number(part.balance),
                           locationId: part.location_id || locId,
                           creditStaffId: part.staff_id || staff.id })
@@ -1464,11 +1465,14 @@ export default function Credit({ boot }) {
               </p>
             )}
             {(() => {
-              const canSave = pay.split ? paymentAllocated(pay, pay.amount) > 0 : Number(pay.amount) > 0
+              const canSave = (pay.split ? paymentAllocated(pay, pay.amount) > 0 : Number(pay.amount) > 0)
+                && (!!pay.split || !!pay.method)
               return (
                 <button onClick={() => submitPayment()} disabled={busy || !canSave}
                   className="w-full h-16 rounded-2xl bg-amber text-bg text-xl font-bold disabled:opacity-40">
-                  {busy ? 'Saving…' : 'Save payment'}
+                  {busy ? 'Saving…'
+                    : !(pay.split || pay.method) ? 'Choose how they paid'
+                    : 'Save payment'}
                 </button>
               )
             })()}
@@ -1514,9 +1518,12 @@ export default function Credit({ boot }) {
               <p className="mb-4 text-clay">That is more than is owed. It will leave a credit balance.</p>
             )}
             <button onClick={submitGuestPayment}
-              disabled={busy || paymentAllocated(guestPay, guestPay.amount) <= 0}
+              disabled={busy || paymentAllocated(guestPay, guestPay.amount) <= 0
+                || !(guestPay.split || guestPay.method)}
               className="w-full h-16 rounded-2xl bg-amber text-bg text-xl font-bold disabled:opacity-40">
-              {busy ? 'Saving…' : 'Save payment'}
+              {busy ? 'Saving…'
+                : !(guestPay.split || guestPay.method) ? 'Choose how they paid'
+                : 'Save payment'}
             </button>
           </div>
         </div>

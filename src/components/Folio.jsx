@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { naira, lagosToday, lagosDaysAgo, lagosTime, nightsBetween, partPaidNote, roomChargeDept, seesStayTimes, cyclesFor, friendlyStayError, addDays } from '../lib/format'
-import { billedToLabel, checkOutStay, loadFreeRooms, loadStayMoves, moveStayRoom, undoLastRoomMove, loadCustomers, recordStayCredit, checkRepeatPayment, deleteOrderItem, deleteStay, extendStayTo, loadBranchStaySettings, loadFolio, moveRoomChargeDate, recordStayPayment, reopenStay, saveRepayment, searchSimilarGuests, settleBilledToStays, updateOrderItem, updateOverstayFee, updateStayBillTo, updateStayDetails } from '../lib/data'
+import { billedToLabel, checkOutStay, loadFreeRooms, loadStayMoves, moveStayRoom, undoLastRoomMove, loadCustomers, linkCustomerToGuest, recordStayCredit, checkRepeatPayment, deleteOrderItem, deleteStay, extendStayTo, loadBranchStaySettings, loadFolio, moveRoomChargeDate, recordStayPayment, reopenStay, saveRepayment, searchSimilarGuests, settleBilledToStays, unlinkCustomerFromGuest, updateOrderItem, updateOverstayFee, updateStayBillTo, updateStayDetails } from '../lib/data'
 import { useToast } from '../components/Toast'
 import PaymentMethodPicker, { paymentParts, paymentAllocated } from './PaymentMethodPicker'
 import FolioStatement from './FolioStatement'
@@ -28,7 +28,13 @@ export default function Folio({ boot, room, onClose, onChanged }) {
   // The payment DATE, not just today: a guest who checks in one day and
   // pays the next should have the payment dated when it was taken, so the
   // day's reception figures are right. Defaults to today.
-  const [pay, setPay] = useState({ amount: '', method: 'pos', split: null, date: lagosToday() })
+  // method starts null, deliberately. It used to start on 'pos', and a
+  // payment recorded without anyone touching the chips went down as POS
+  // regardless — the same fault found on the sales screen on 5 November
+  // 2026, where four months of takings read 75-96% POS at every bar and
+  // measured how rarely the default was changed rather than how guests
+  // paid. Reception handles the larger sums, so it matters more here.
+  const [pay, setPay] = useState({ amount: '', method: null, split: null, date: lagosToday() })
   // Putting the bill on credit (567). A guest who leaves owing was only
   // ever an implicit balance on a banner; this moves the debt onto a
   // named account, where Credit and Recovery already know how to chase
@@ -37,6 +43,12 @@ export default function Folio({ boot, room, onClose, onChanged }) {
   // stays outstanding, which is what happens today and is safe.
   const [creditOpen, setCreditOpen] = useState(false)
   const [creditDraft, setCreditDraft] = useState(null)
+  // Repointing or clearing a department credit account's guest link
+  // (5 November 2026). The link could only ever be CREATED in the app;
+  // undoing a wrong one meant a database migration.
+  const [linkFix, setLinkFix] = useState(null)   // { customerId, customerName }
+  const [linkQuery, setLinkQuery] = useState('')
+  const [linkResults, setLinkResults] = useState([])
   // Settling every room billed to this guest in one payment (578).
   const [groupOpen, setGroupOpen] = useState(false)
   const [groupDraft, setGroupDraft] = useState(null)
@@ -100,6 +112,14 @@ export default function Folio({ boot, room, onClose, onChanged }) {
     }, 400)
     return () => clearTimeout(t)
   }, [editing?.billTo, staff.branch_id, billToOpen])
+
+  useEffect(() => {
+    if (!linkFix) return
+    const t = setTimeout(() => {
+      searchSimilarGuests(staff.branch_id, linkQuery).then(setLinkResults).catch(() => setLinkResults([]))
+    }, 400)
+    return () => clearTimeout(t)
+  }, [linkQuery, staff.branch_id, linkFix])
 
   if (!data) return (
     <div className="fixed inset-0 z-50 bg-bg p-5">
@@ -183,6 +203,9 @@ export default function Folio({ boot, room, onClose, onChanged }) {
     li => li.settlement === 'charged_to_room' && li.approval === 'pending')
   const payParts = paymentParts(pay, pay.amount)
   const payAllocated = paymentAllocated(pay, pay.amount)
+  // Choosing Split counts: the split amounts are checked against the
+  // total separately, as they always were.
+  const payMethodChosen = !!pay.split || !!pay.method
 
   // ── What the bill is made of, department by department ──────────────
   //
@@ -663,7 +686,7 @@ export default function Folio({ boot, room, onClose, onChanged }) {
         ? `Payment recorded against ${pickedList.length} line${pickedList.length === 1 ? '' : 's'}`
         : `Payment recorded — put against ${merged.length} charge${merged.length === 1 ? '' : 's'}, oldest first`,
         'success')
-      setPay({ amount: '', method: 'pos', split: null, date: lagosToday() }); setIsOverstay(false)
+      setPay({ amount: '', method: null, split: null, date: lagosToday() }); setIsOverstay(false)
       setPicked({})
       refresh(); onChanged?.()
     } catch (e) { toast(friendlyStayError(e), 'error') }
@@ -833,6 +856,21 @@ export default function Folio({ boot, room, onClose, onChanged }) {
     setBusy(false)
   }
 
+  // Clearing or repointing the link moves no money: the balance stays on
+  // the customer account either way. All that changes is whose folio it
+  // appears on, and whether Credit chases it against a guest.
+  async function applyLinkFix(guest) {
+    setBusy(true)
+    try {
+      if (guest) await linkCustomerToGuest(linkFix.customerId, guest.id)
+      else await unlinkCustomerFromGuest(linkFix.customerId)
+      toast(guest ? `Now on ${guest.full_name}` : 'Link removed — chase it on Credit', 'success')
+      setLinkFix(null); setLinkQuery(''); setLinkResults([])
+      refresh(); onChanged?.()
+    } catch (e) { toast(friendlyStayError(e), 'error') }
+    setBusy(false)
+  }
+
   async function saveOverstay() {
     setBusy(true)
     try {
@@ -885,6 +923,19 @@ export default function Folio({ boot, room, onClose, onChanged }) {
             <p className="text-dim text-xs mt-1">
               Settled separately on Credit — paying the room balance doesn't clear this.
             </p>
+            {/* Until this existed, a department account pointed at the
+                wrong guest could only be put right in the database. */}
+            {canManage && departmentCredit.find(d => d.customerId) && (
+              <button
+                onClick={() => {
+                  const d = departmentCredit.find(x => x.customerId)
+                  setLinkFix({ customerId: d.customerId, customerName: d.customerName })
+                  setLinkQuery(''); setLinkResults([])
+                }}
+                className="mt-2 text-xs text-amber underline">
+                Not this guest? Change or remove
+              </button>
+            )}
           </div>
         )}
         {!!billedToYou?.length && (
@@ -902,7 +953,7 @@ export default function Folio({ boot, room, onClose, onChanged }) {
                   onClick={() => {
                     setGroupDraft({
                       amount: String(Math.round(billedToYouTotal * 100) / 100),
-                      method: 'pos', date: lagosToday(), note: '',
+                      method: null, date: lagosToday(), note: '',
                     })
                     setGroupOpen(true)
                   }}
@@ -1373,9 +1424,12 @@ export default function Folio({ boot, room, onClose, onChanged }) {
               <input type="checkbox" checked={isOverstay} onChange={e => setIsOverstay(e.target.checked)} />
               Over-stay payment
             </label>
-            <button onClick={submitPayment} disabled={busy || payAllocated <= 0}
+            <button onClick={submitPayment}
+              disabled={busy || payAllocated <= 0 || !payMethodChosen}
               className="mt-3 w-full h-14 rounded-2xl bg-amber text-bg text-lg font-bold disabled:opacity-40">
-              {busy ? 'Recording…' : `Record ${naira(payAllocated)}`}
+              {busy ? 'Recording…'
+                : !payMethodChosen ? 'Choose how they paid'
+                : `Record ${naira(payAllocated)}`}
             </button>
 
             {/* Put the bill on credit (567). Shown only while something is
@@ -1863,11 +1917,54 @@ export default function Folio({ boot, room, onClose, onChanged }) {
           )}
 
           <button onClick={saveGroup}
-            disabled={busy || !(Number(groupDraft.amount) > 0)
+            disabled={busy || !(Number(groupDraft.amount) > 0) || !groupDraft.method
               || Number(groupDraft.amount) > billedToYouTotal + 0.009}
             className="mt-6 w-full h-14 rounded-2xl bg-amber text-bg text-lg font-bold disabled:opacity-40">
-            {busy ? 'Saving…' : `Record ${naira(Number(groupDraft.amount) || 0)}`}
+            {busy ? 'Saving…'
+              : !groupDraft.method ? 'Choose how they paid'
+              : `Record ${naira(Number(groupDraft.amount) || 0)}`}
           </button>
+        </div>
+      )}
+
+      {linkFix && (
+        <div className="fixed inset-0 z-[60] bg-bg overflow-y-auto p-5">
+          <button onClick={() => { setLinkFix(null); setLinkQuery(''); setLinkResults([]) }}
+            className="text-dim">Back</button>
+          <h2 className="mt-3 text-2xl font-bold">Who does this account belong to?</h2>
+          <p className="text-dim mt-1">{linkFix.customerName}</p>
+          <p className="text-dim text-sm mt-3">
+            This moves no money. The balance stays on the account either way —
+            all that changes is whose folio it shows on.
+          </p>
+
+          <label className="block mt-5 text-dim">Point it at another guest</label>
+          <input value={linkQuery} onChange={e => setLinkQuery(e.target.value)}
+            placeholder="Type a guest's name"
+            className="mt-1 h-14 w-full px-4 rounded-xl bg-surface border border-line placeholder:text-dim" />
+          {!!linkResults.length && (
+            <div className="mt-2 rounded-xl border border-amber bg-surface divide-y divide-line overflow-hidden">
+              {linkResults.map(g => (
+                <button key={g.id} type="button" disabled={busy}
+                  onClick={() => applyLinkFix(g)}
+                  className="block w-full text-left px-4 py-3 disabled:opacity-40">
+                  <div className="font-semibold">{g.full_name}</div>
+                  {g.phone && <div className="text-dim text-sm">{g.phone}</div>}
+                </button>
+              ))}
+            </div>
+          )}
+
+          <div className="mt-8 pt-5 border-t border-line">
+            <button onClick={() => applyLinkFix(null)} disabled={busy}
+              className="w-full h-14 rounded-2xl border border-clay text-clay font-bold disabled:opacity-40">
+              {busy ? 'Working…' : 'Remove the link'}
+            </button>
+            <p className="text-dim text-xs mt-2">
+              The balance comes off every folio and is chased on Credit, like any
+              other account.
+            </p>
+          </div>
         </div>
       )}
 
