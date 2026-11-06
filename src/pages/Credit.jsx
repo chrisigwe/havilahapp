@@ -19,16 +19,20 @@ export default function Credit({ boot }) {
   const { staff, items, methods, allLocations, locations } = boot
   const isEditor = is(staff.role, EDITOR)
   const isAdmin = is(staff.role, SUPERVISOR)
-  // Specifically excluded from crediting a repayment to anyone else —
-  // any repayment they record is attributed to themselves regardless
-  // of whose balance the customer is on. Pinned to their staff id so
-  // a role change doesn't quietly reopen it, and matched by an
-  // equivalent database trigger (72_awka_storekeeper_no_on_behalf.sql)
-  // so this can't be worked around by hand-editing the request.
   // Crediting a repayment to someone else is GM and admin only
   // (6 November 2026) — see the note in SalesEntry. Was a single staff
   // id, which did not follow the job when the job changed hands.
   const canActForOthers = is(staff.role, SUPERVISOR)
+  // Who may record money coming IN on this page — a debt repayment or
+  // a guest's payment. Store manager, manager and auditor oversee the
+  // money rather than handle it (Chris, 6 November 2026), so they read
+  // this page and record nothing on it.
+  //
+  // Written as the three excluded roles rather than a list of allowed
+  // ones: those are exactly the roles asked for, and a role not named
+  // here keeps what it had rather than silently losing it.
+  const NO_COLLECTING = ['storekeeper', 'manager', 'auditor']
+  const canCollect = !NO_COLLECTING.includes(staff.role)
   // department chips must show EVERY department for management/audit
   // roles, explicitly — not by relying on boot.locations happening to
   // equal allLocations when nobody has assigned that person to a
@@ -293,6 +297,9 @@ export default function Credit({ boot }) {
   // parked in state — a state update does not resume the function that
   // was interrupted, so the confirmation has to travel with the retry.
   async function submitPayment(confirmed = false) {
+    // The buttons are hidden for these roles, but a hidden button is not
+    // a control. Anything that reaches here without the right role stops.
+    if (!canCollect) { toast('Recording payments is not part of your role.', 'error'); return }
     if (!confirmed) {
       const prior = await checkRepeatRepayment(staff.branch_id, pay.customerId, pay.amount)
       if (prior) { setRepeat(prior); return }
@@ -326,6 +333,7 @@ export default function Credit({ boot }) {
   }
 
   async function submitGuestPayment() {
+    if (!canCollect) { toast('Recording payments is not part of your role.', 'error'); return }
     // Same guard as the folio: a payment the attendant could not see land
     // gets entered a second time, and the screen is the one thing that
     // cannot tell them so.
@@ -828,20 +836,21 @@ export default function Credit({ boot }) {
               <div className="text-dim text-sm">Guest room balances</div>
               <div className="tnum text-2xl font-bold text-clay">{naira(gbTotal)}</div>
               <div className="text-dim text-sm mt-1">
-                across {gb.length} room{gb.length === 1 ? '' : 's'} · tap a room to take payment
+                across {gb.length} room{gb.length === 1 ? '' : 's'}
+                {canCollect ? ' · tap a room to take payment' : ''}
               </div>
             </section>
             <ul className="divide-y divide-line/60">
               {gb.map(g => (
                 <li key={g.stay_id} className="py-3 flex items-center gap-3">
-                  <button
+                  <button disabled={!canCollect}
                     onClick={() => setGuestPay({
                       stayId: g.stay_id, guestName: g.guest_name, roomNumber: g.room_number,
                       outstanding: g.outstanding, billingCycle: g.billing_cycle,
                       // Nothing pre-selected — see the note in Folio.
                       amount: String(g.outstanding), method: null, split: null, isOverstay: false,
                     })}
-                    className="flex-1 min-w-0 text-left">
+                    className="flex-1 min-w-0 text-left disabled:cursor-default">
                     <div className="font-semibold truncate">{g.guest_name || 'Guest'}</div>
                     <div className="text-dim text-sm">Room {g.room_number}</div>
                     {g.bill_to && (
@@ -1272,7 +1281,7 @@ export default function Credit({ boot }) {
             }), `Statement ${open.customer.name}`)}
               className="flex-1 h-14 rounded-2xl border border-line font-bold disabled:opacity-40">Save / share PDF</button>
             {(() => {
-              const hiddenForRole = staff.role === 'auditor'
+              const hiddenForRole = !canCollect
               // Anyone below GM/admin can't
               // record a repayment that would be credited to a
               // different staff member — the credit stays with
@@ -1391,8 +1400,8 @@ export default function Credit({ boot }) {
                 // The same rule the single-slice button uses: someone who
                 // may not act on another's behalf cannot collect a debt
                 // that belongs to them.
-                const blocked = !canActForOthers
-                  && part.staff_id && part.staff_id !== staff.id
+                const blocked = !canCollect || (!canActForOthers
+                  && part.staff_id && part.staff_id !== staff.id)
                 return (
                   <li key={i} className="py-3">
                     <button
