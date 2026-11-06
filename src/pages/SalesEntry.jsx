@@ -902,6 +902,9 @@ export default function SalesEntry({ boot }) {
         staffLite: { id: staff.id, branch_id: staff.branch_id },
         locationId, date, customerId,
         lines: basket.map(l => ({
+          // Carried into the offline queue so a resend reuses the same
+          // line id and writes nothing the second time (migration 600).
+          key: l.key,
           item: l.item ? { id: l.item.id, name: l.item.name } : null,
           description: l.description || null,
           tier: l.tier, qty: l.qty, unitPrice: l.unitPrice, locationId: l.locationId,
