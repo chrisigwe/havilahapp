@@ -80,6 +80,15 @@ export default function Corrections({ boot }) {
     || !!staff.can_fix_entry_dates
   const canEdit = isEditor || isStorekeeper || canCorrectSales
     || staff.role === 'bar' || staff.role === 'front_desk'
+  // Editing a SALE is not theirs (Chris, 6 November 2026) — the same
+  // three roles that no longer record one. It came up because the store
+  // manager could still change the 168 OpenBar sales she had keyed on
+  // behalf of Ikenna and Joseph, including who they were attributed to.
+  //
+  // Only sales. A store manager still corrects a stock movement, which
+  // is the job, and bar and front desk still fix their own recent sales.
+  const NO_SALE_EDIT = ['storekeeper', 'manager', 'auditor']
+  const canEditSales = !NO_SALE_EDIT.includes(staff.role)
   const ownOnly = !isEditor && !canCorrectSales
   // Store managers keep the all-departments chips (a filter over their
   // own rows), so an entry they made at another counter is never hidden.
@@ -354,6 +363,10 @@ export default function Corrections({ boot }) {
   }
 
   async function openEdit(r) {
+    // A hidden button is not a control.
+    if (r.kind === 'sale' && !canEditSales) {
+      toast('Sales are corrected by the GM.', 'error'); return
+    }
     const base = { row: r, qty: r.qty, date: r.business_date || '',
       price: r.kind === 'sale' ? r.unit_price : (r.unit_cost ?? ''), payments: null }
     if (r.kind === 'sale') {
@@ -1087,12 +1100,22 @@ export default function Corrections({ boot }) {
                       by {whoOf(r)}
                     </div>
                     <div className="flex gap-2 mt-2">
-                      {(isEditor || (canCorrectSales && r.kind === 'sale')
+                      {(r.kind !== 'sale' || canEditSales)
+                        && (isEditor || (canCorrectSales && r.kind === 'sale')
                         || (r.recorded_by === staff.id && r.business_date >= lagosDaysAgo(6))) && (
                         <button onClick={() => openEdit(r)}
                           className="h-10 px-4 rounded-lg border border-line text-sm font-semibold">Edit</button>
                       )}
-                      {!isEditor && r.recorded_by === staff.id && r.business_date < lagosDaysAgo(6) && (
+                      {/* Not "ask a manager" for a sale these roles may not
+                          edit — a manager cannot either. Say who can. */}
+                      {r.kind === 'sale' && !canEditSales && (
+                        <span className="text-dim text-sm self-center">
+                          Sales are corrected by the GM
+                        </span>
+                      )}
+                      {(r.kind !== 'sale' || canEditSales)
+                        && !isEditor && r.recorded_by === staff.id
+                        && r.business_date < lagosDaysAgo(6) && (
                         <span className="text-dim text-sm self-center">
                           Too old to edit yourself — ask a manager
                         </span>
