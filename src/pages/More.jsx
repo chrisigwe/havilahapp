@@ -69,9 +69,19 @@ export function moreItemsFor(role, recordsSales = false, readOnly = false, canRe
   // tab that simply is not there. View-only accounts (the Demo login)
   // still never see pay: the database refuses them too (migration 330),
   // this just keeps the menu honest.
-  const payKeys = ['payroll', 'mypay']
+  //
+  // Staff accounts, Attendance and Staff activity join it for the same
+  // reason (Chris, 6 November 2026): the Demo login signs in as a GM, so
+  // it could read every login and role, who was at the branch and when,
+  // and what each person does in the app. A demo should show the
+  // business working, not who works there.
+  //
+  // Pages that happen to name staff while being about the business —
+  // Daily sales, Variances, Credit — are deliberately left, so the demo
+  // still shows something real.
+  const HIDDEN_FROM_READ_ONLY = ['payroll', 'mypay', 'staffaccounts', 'attendance', 'activity']
   return ITEMS.filter(i => i.roles.includes(role) && !onBar.has(i.key)
-    && !(readOnly && payKeys.includes(i.key)))
+    && !(readOnly && HIDDEN_FROM_READ_ONLY.includes(i.key)))
 }
 
 export { VersionLine }
