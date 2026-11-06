@@ -18,8 +18,11 @@ const ITEMS = [
   // role already (storekeeper, bar, front_desk) — these three only
   // exist here for oversight roles, who have Daily Sales/Rooms/Credit
   // promoted to direct tabs instead.
+  // GM and admin only (6 November 2026). Was every oversight role; the
+  // store manager, manager and auditor would otherwise still reach the
+  // page from here after it came off their bar.
   { key: 'sales', label: 'Sales', hint: 'Record a sale for any department',
-    roles: OVERSIGHT_ROLES },
+    roles: ['gm', 'admin'] },
   { key: 'store', label: 'Store', hint: 'Receive stock and record transfers',
     roles: OVERSIGHT_ROLES },
   { key: 'stock', label: 'Stock', hint: 'Current stock on hand by department',

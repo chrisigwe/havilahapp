@@ -15,6 +15,21 @@ const STOCK_ROLES = ['storekeeper', 'manager', 'gm', 'admin']
 // Now: the bar comes from here; More hides anything that is on the bar;
 // and a role lands on its FIRST tab. Change a role's tabs here and all
 // three follow.
+// RECORDING SALES IS FOR THE PEOPLE WHO SERVE (Chris, 6 November 2026).
+// Store manager, manager and auditor no longer have the Sales page at
+// either branch — not on the bar and not in More. They have Daily sales,
+// which is what the job needs: the day's figures by department, for any
+// past day, read-only.
+//
+// Why: the store manager was keying 168 OpenBar sales a quarter on
+// behalf of Ikenna and Joseph, which is what made their entries
+// impossible to tell apart. Removing the page removes the need for
+// anyone to key another person's work at all.
+//
+// recordsSales and canRecordSales are still threaded through from Shell
+// and are deliberately no longer consulted here — staff.can_record_sales
+// grants nothing on its own any more. Left in place rather than ripped
+// out so the change is one decision in one file.
 export function tabsFor(role, { recordsSales = false, canRecordSales = false } = {}) {
   if (role === 'housekeeper') {
     // Housekeepers and laundry attendants hold supplies and record what they
@@ -40,7 +55,7 @@ export function tabsFor(role, { recordsSales = false, canRecordSales = false } =
     // More -> Sales -> Reception to see them. Then Rooms and Credit.
     // Counts stays in More: verifying adjusted counts is occasional, and
     // the pending badge still points them there.
-    return [['dailysales', 'Daily sales'], ['sales', 'Sales'], ['roomboard', 'Rooms'],
+    return [['dailysales', 'Daily sales'], ['roomboard', 'Rooms'],
             ['credit', 'Credit'], ['more', 'More']]
   }
   if (MANAGEMENT.includes(role)) {
@@ -56,9 +71,8 @@ export function tabsFor(role, { recordsSales = false, canRecordSales = false } =
   if (role === 'storekeeper') {
     // Receive and transfer, see what's on hand, count. Sales only if they
     // are assigned to a sales department.
-    const t = [['store', 'Store'], ['stock', 'Stock'], ['count', 'Counts']]
-    if (recordsSales) t.push(['sales', 'Sales'])
-    return [...t, ['more', 'More']]
+    return [['store', 'Store'], ['stock', 'Stock'], ['count', 'Counts'],
+            ['dailysales', 'Daily sales'], ['more', 'More']]
   }
   if (role === 'auditor') {
     // Ordered by the auditor's work: verify submitted counts (their one
@@ -69,7 +83,6 @@ export function tabsFor(role, { recordsSales = false, canRecordSales = false } =
     // An auditor GM/admin has switched on for recording (staff.can_record_sales,
     // per person, not per role) also gets the Sales page.
     return [['count', 'Counts'], ['variance', 'Variances'], ['dailysales', 'Daily sales'],
-            ...(canRecordSales ? [['sales', 'Sales']] : []),
             ['fix', 'History'], ['more', 'More']]
   }
   if (role === 'front_desk') {
