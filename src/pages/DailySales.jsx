@@ -248,8 +248,24 @@ export default function DailySales({ boot }) {
     const rec = Number(summary.recoveredFromCustomers || 0)
               + Number(summary.recoveredFromRooms || 0)
     if (!(rec > 0.009)) return undefined
-    return `Sales only. The department's own page shows ${naira(rec)} more in hand — `
-         + 'money collected today against old debt lands in the till without being a sale.'
+    return `Sales only. ${naira(rec)} of old debt was also collected today — `
+         + 'it is in the drawer but it is not a sale, so it is not counted above.'
+  })()
+
+  // What the person counting the drawer is counting against (Chris,
+  // 6 November 2026: the Awka store manager is also the cashier).
+  // Sales plus whatever came in against old debt — the same figure the
+  // department's own page shows, so the two screens can be read side by
+  // side. Only worth showing when the two differ.
+  const drawer = (() => {
+    if (!summary) return null
+    const r2 = n => Math.round(Number(n || 0) * 100) / 100
+    const by = summary.byMethod || {}
+    const rec = summary.recoveredBy || {}
+    const pos = r2(Number(by.pos || 0) + Number(rec.pos || 0))
+    const cash = r2(Number(by.cash || 0) + Number(rec.cash || 0))
+    if (pos === r2(by.pos) && cash === r2(by.cash)) return null
+    return { pos, cash }
   })()
 
   return (
@@ -524,6 +540,29 @@ export default function DailySales({ boot }) {
 
         </div>
         </TillTile>
+      )}
+
+      {/* Outside the fold, because the person counting the drawer should
+          not have to open anything to find the number they are counting
+          against. Shown only when it differs from the sales above. */}
+      {summary && drawer && (
+        <div className="mt-3 rounded-2xl border border-line bg-surface p-4">
+          <p className="font-semibold text-sm">What should be in the drawer</p>
+          <div className="grid grid-cols-2 gap-3 mt-2">
+            <div className="min-w-0">
+              <div className="text-dim text-sm">POS</div>
+              <div className="tnum font-bold truncate">{naira(drawer.pos)}</div>
+            </div>
+            <div className="min-w-0">
+              <div className="text-dim text-sm">Cash</div>
+              <div className="tnum font-bold truncate">{naira(drawer.cash)}</div>
+            </div>
+          </div>
+          <p className="text-dim text-xs mt-2">
+            The day&#39;s sales plus old debt collected today. This is what the
+            department&#39;s own page shows, and what a count is checked against.
+          </p>
+        </div>
       )}
 
       {/* Outside the fold on purpose: a warning nobody opens the detail
