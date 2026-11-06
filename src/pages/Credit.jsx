@@ -25,7 +25,10 @@ export default function Credit({ boot }) {
   // a role change doesn't quietly reopen it, and matched by an
   // equivalent database trigger (72_awka_storekeeper_no_on_behalf.sql)
   // so this can't be worked around by hand-editing the request.
-  const NO_ON_BEHALF = new Set(['a5ea88b6-80e7-4776-a491-78a509e589c6'])
+  // Crediting a repayment to someone else is GM and admin only
+  // (6 November 2026) — see the note in SalesEntry. Was a single staff
+  // id, which did not follow the job when the job changed hands.
+  const canActForOthers = is(staff.role, SUPERVISOR)
   // department chips must show EVERY department for management/audit
   // roles, explicitly — not by relying on boot.locations happening to
   // equal allLocations when nobody has assigned that person to a
@@ -1270,12 +1273,12 @@ export default function Credit({ boot }) {
               className="flex-1 h-14 rounded-2xl border border-line font-bold disabled:opacity-40">Save / share PDF</button>
             {(() => {
               const hiddenForRole = staff.role === 'auditor'
-              // Awka storekeeper (or anyone in NO_ON_BEHALF) can't
+              // Anyone below GM/admin can't
               // record a repayment that would be credited to a
               // different staff member — the credit stays with
               // whoever originally gave it, so someone else has to
               // collect it. Buttons hides rather than errors on tap.
-              const wouldBeOnBehalf = NO_ON_BEHALF.has(staff.id)
+              const wouldBeOnBehalf = !canActForOthers
                 && open.customer.staff_id
                 && open.customer.staff_id !== staff.id
               // A repayment must be credited to one department; in the all
@@ -1388,7 +1391,7 @@ export default function Credit({ boot }) {
                 // The same rule the single-slice button uses: someone who
                 // may not act on another's behalf cannot collect a debt
                 // that belongs to them.
-                const blocked = NO_ON_BEHALF.has(staff.id)
+                const blocked = !canActForOthers
                   && part.staff_id && part.staff_id !== staff.id
                 return (
                   <li key={i} className="py-3">
