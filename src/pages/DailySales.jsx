@@ -237,6 +237,21 @@ export default function DailySales({ boot }) {
     : new Date(date + 'T12:00:00').toLocaleDateString('en-NG',
         { weekday: 'long', day: 'numeric', month: 'long' })
 
+  // The other half of the same explanation (6 November 2026). This page
+  // answers "what did they sell"; a department's own page answers "what
+  // should be in the drawer", which is bigger by whatever came in
+  // against old debt. Both are right — the store manager read N64,600
+  // for Awka OpenBar here while Ikenna read N68,900 there, and neither
+  // screen named the N4,300 between them.
+  const tillGapNote = (() => {
+    if (!summary) return undefined
+    const rec = Number(summary.recoveredFromCustomers || 0)
+              + Number(summary.recoveredFromRooms || 0)
+    if (!(rec > 0.009)) return undefined
+    return `Sales only. The department's own page shows ${naira(rec)} more in hand — `
+         + 'money collected today against old debt lands in the till without being a sale.'
+  })()
+
   return (
     <div className="px-5">
       <div className="flex items-center gap-2 mt-1 mb-2">
@@ -398,7 +413,8 @@ export default function DailySales({ boot }) {
       ) : (
       <>
       {summary && (
-        <TillTile title="The day's sales" open={detailOpen} onToggle={() => setDetailOpen(o => !o)}
+        <TillTile title="The day's sales" note={tillGapNote}
+          open={detailOpen} onToggle={() => setDetailOpen(o => !o)}
           figures={['pos', 'cash', 'credit'].map(m => ({
             label: methodLabel[m] || m, value: (summary.byMethod || {})[m] || 0 }))}>
         <div>

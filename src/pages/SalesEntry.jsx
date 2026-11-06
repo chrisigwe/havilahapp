@@ -409,9 +409,16 @@ export default function SalesEntry({ boot }) {
   // sales, so nobody has to guess why the terminal reads more than the
   // entries below add up to.
   const tileNote = (() => {
+    // With the AMOUNTS, not just the fact (6 November 2026). The store
+    // manager read N64,600 for Awka OpenBar on Daily sales while Ikenna
+    // read N68,900 here, and neither screen gave them the N4,300 that
+    // explains the gap. Saying "plus old debts paid today" is true but
+    // does not let two people reconcile two numbers over the phone.
+    const fromCustomers = Number(recon?.recoveredFromCustomers || 0)
+    const fromRooms = Number(recon?.recoveredFromRooms || 0)
     const bits = [
-      Number(recon?.recoveredFromCustomers || 0) > 0 && 'old debts paid today',
-      Number(recon?.recoveredFromRooms || 0) > 0 && 'guests paying off what they charged to their rooms',
+      fromCustomers > 0 && `${naira(fromCustomers)} of old debts paid today`,
+      fromRooms > 0 && `${naira(fromRooms)} from guests paying off what they charged to their rooms`,
     ].filter(Boolean)
     if (isReception) {
       return handedOutTotal > 0
