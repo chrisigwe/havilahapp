@@ -61,12 +61,15 @@ export function tabsFor(role, { recordsSales = false, canRecordSales = false } =
   if (MANAGEMENT.includes(role)) {
     // GM and admin (managers are handled above): oversight of the whole
     // business across both branches. Daily sales first; Rooms and Credit;
-    // then Variances — where counted stock and recorded sales disagree,
-    // the most direct view of money going missing, which is the GM's to
-    // watch. Sales (approvals, close of day) stays in More: front desk
-    // and managers handle approvals day to day, the GM is the backstop.
+    // then Recovered — money actually collected against old debt, which
+    // is the daily question once Credit has told you who owes.
+    // Variances swapped out to More on 6 November 2026 at Chris's
+    // request: it is the deeper check rather than the daily one, and the
+    // badge still carries anything waiting.
+    // Sales (approvals, close of day) stays in More: front desk and
+    // managers handle approvals day to day, the GM is the backstop.
     return [['dailysales', 'Daily sales'], ['roomboard', 'Rooms'], ['credit', 'Credit'],
-            ['variance', 'Variances'], ['more', 'More']]
+            ['recovery', 'Recovered'], ['more', 'More']]
   }
   if (role === 'storekeeper') {
     // Receive and transfer, see what's on hand, count. Sales only if they
