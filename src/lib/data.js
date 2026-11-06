@@ -238,6 +238,7 @@ async function _saveSaleLineUnsafely(a, payRows) {
     backdate_reason: a.p_backdate_reason, receipt_id: a.p_receipt,
     on_behalf_of: a.p_on_behalf_of, recorded_by: a.p_recorded_by,
     order_type: a.p_order_type, writeoff_note: a.p_writeoff_note,
+    client_line_id: a.p_client_line_id || null,
   }).select('id').single()
   if (error) throw error
   if (payRows.length) {
@@ -310,10 +311,21 @@ async function _saveBasket({ staff, locationId, lines, payments, date, customerI
       p_order_type: line.orderType || 'standard',
       p_writeoff_note: line.writeoffNote || null,
       p_payments: payRows,
+      // The line's own id, made on the phone the moment the item went
+      // into the basket and unchanged through every retry. The database
+      // accepts it once (migration 600), so a second tap and a resend
+      // of something that already landed both write nothing. A genuine
+      // repeat round is a new line with a new id and is unaffected.
+      //
+      // Near-instant repeat saves had been running at about two a day
+      // for at least three weeks before this, almost all at OpenBar
+      // (6 November 2026).
+      p_client_line_id: line.key || null,
     }
 
     let saleId
-    const { data: rpcId, error } = await supabase.rpc('record_sale_line', args)
+    let created = true
+    const { data: rpcResult, error } = await supabase.rpc('record_sale_line', args)
     if (error) {
       // Only when the function itself is not there yet — i.e. the app
       // was deployed before migration 584 was run. Anything else is a
@@ -322,15 +334,25 @@ async function _saveBasket({ staff, locationId, lines, payments, date, customerI
       // every till in both branches.
       if (!isMissingFunction(error)) throw error
       saleId = await _saveSaleLineUnsafely(args, payRows)
+    } else if (rpcResult && typeof rpcResult === 'object') {
+      saleId = rpcResult.id
+      created = rpcResult.created !== false
     } else {
-      saleId = rpcId
+      // Pre-600, the function returned a bare id. Read both shapes so
+      // it does not matter whether the migration or the deploy lands
+      // first.
+      saleId = rpcResult
     }
     const sale = { id: saleId }
     // Stock used with this order (water, extra chicken ...): comes off the
     // department's stock and is tied to the order — migration 340b. Done
     // last so a failure here can never leave a half-saved sale; if it does
     // fail, say clearly that the order itself WAS saved.
-    if (line.stockUsed?.length) {
+    //
+    // Skipped when the line was already on the book: deducting the same
+    // bottle of water twice is exactly the duplicate this change exists
+    // to stop.
+    if (created && line.stockUsed?.length) {
       try { await recordStockUsed(sale.id, line.stockUsed) }
       catch (e) {
         throw partialStockError(e)
