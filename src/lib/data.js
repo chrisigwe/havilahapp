@@ -3351,7 +3351,7 @@ export async function loadUnlinkedCustomerBalances(branchId, locationId, staffId
 export async function loadCreditOnDate(branchId, date, locationId, staffId) {
   let sq = supabase.from('sales')
     .select(`id, qty, location_id, description, customer_id,
-             stock_items(name), customers(name), staff:recorded_by(full_name),
+             stock_items(name), customers(name), recorded_by, on_behalf_of,
              sale_payments(method, amount)`)
     .eq('branch_id', branchId).eq('business_date', date)
     .not('customer_id', 'is', null)
@@ -3360,7 +3360,7 @@ export async function loadCreditOnDate(branchId, date, locationId, staffId) {
 
   let rq = supabase.from('credit_repayments')
     .select(`id, amount, location_id, customer_id, method,
-             customers(name), staff:recorded_by(full_name)`)
+             customers(name), credit_staff_id, recorded_by`)
     .eq('branch_id', branchId).eq('paid_on', date)
   if (locationId) rq = rq.eq('location_id', locationId)
   if (staffId) rq = rq.or(servedByFilter(staffId, 'credit_staff_id'))
@@ -3369,6 +3369,43 @@ export async function loadCreditOnDate(branchId, date, locationId, staffId) {
     await Promise.all([sq, rq])
   if (e1) throw e1
   if (e2) throw e2
+
+  // This row used to be captioned "by <whoever keyed it>", while the
+  // person filter selects on who it was FOR. At Awka's OpenBar the
+  // store manager keys for Ikenna and Joseph — 168 sales and N495,700
+  // over four months — so every one of their credit sales appeared
+  // under the store manager's name, indistinguishable from each
+  // other's. That is what "Ikenna's entries are mixed up with
+  // Joseph's" turned out to mean (6 November 2026).
+  //
+  // Now the row names the person it was for, and says who keyed it
+  // only when that is somebody else. Same precedence as the ledger and
+  // v_customer_balances_by_staff: on_behalf_of, then recorded_by.
+  //
+  // Two names from one table, so a plain lookup by id rather than a
+  // second embed — guessing a foreign key PostgREST could not see is
+  // what broke the Recently-added feed on both branches on 24 October.
+  const ids = [...new Set([
+    ...(sales || []).flatMap(r => [r.on_behalf_of, r.recorded_by]),
+    ...(reps || []).flatMap(r => [r.credit_staff_id, r.recorded_by]),
+  ].filter(Boolean))]
+  const names = {}
+  if (ids.length) {
+    const { data: who } = await supabase.from('staff').select('id, full_name').in('id', ids)
+    for (const w of (who || [])) names[w.id] = w.full_name
+  }
+  // A missing name is left out, never guessed at.
+  const credited = (forId, byId, lead) => {
+    const forNamed = forId && names[forId]        // did the FOR id resolve?
+    const forName = forNamed || (byId && names[byId]) || ''
+    if (!forName) return ''
+    // Only say who keyed it when the name on the left really is the
+    // other person's. Without the forNamed check, an on_behalf_of id
+    // with no name behind it (a retired login) fell back to the keyer
+    // and then printed "by Ikenna · keyed by Ikenna".
+    const byName = forNamed && byId && byId !== forId ? names[byId] : ''
+    return `${lead} ${forName}` + (byName ? ` · keyed by ${byName}` : '')
+  }
 
   const taken = (sales || []).map(s => {
     const amount = (s.sale_payments || [])
@@ -3379,7 +3416,7 @@ export async function loadCreditOnDate(branchId, date, locationId, staffId) {
       customer: s.customers?.name || 'Unknown',
       item: s.stock_items?.name || s.description || 'Item',
       qty: Number(s.qty), location_id: s.location_id,
-      who: s.staff?.full_name ? `by ${s.staff.full_name}` : '',
+      who: credited(s.on_behalf_of, s.recorded_by, 'by'),
     }
   }).filter(r => r.amount > 0.009)
 
@@ -3387,7 +3424,7 @@ export async function loadCreditOnDate(branchId, date, locationId, staffId) {
     kind: 'repaid', id: r.id, amount: Number(r.amount),
     customer: r.customers?.name || 'Unknown',
     item: 'Repayment', qty: null, location_id: r.location_id,
-    who: r.staff?.full_name ? `to ${r.staff.full_name}` : '',
+    who: credited(r.credit_staff_id, r.recorded_by, 'to'),
   }))
 
   return {
