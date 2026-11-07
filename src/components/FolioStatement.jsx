@@ -214,7 +214,9 @@ export default function FolioStatement({ room, folio, orderLines, freeLines, pay
                 <span className="tnum text-leaf">{naira(paid)}</span>
               </div>
               <div className="flex justify-between gap-3 pt-2 mt-1 border-t border-line">
-                <span className="font-bold">{balance > 0.009 ? 'Balance due' : 'Balance'}</span>
+                <span className="font-bold">
+                  {balance > 0.009 ? 'Balance due' : balance < -0.009 ? 'Paid ahead' : 'Balance'}
+                </span>
                 <span className={`tnum font-bold text-lg ${
                   balance > 0.009 ? 'text-clay' : 'text-leaf'}`}>{naira(Math.abs(balance))}</span>
               </div>
@@ -350,7 +352,7 @@ export default function FolioStatement({ room, folio, orderLines, freeLines, pay
               competing rule. */}
           <div className="hidden lg:block print:block">
             <div className="invoice-balance mt-6">
-              <span>{balance > 0 ? 'Balance due' : 'Balance'}</span>
+              <span>{balance > 0.009 ? 'Balance due' : balance < -0.009 ? 'Paid ahead' : 'Balance'}</span>
               <span className="tnum">{naira(Math.abs(balance))}</span>
             </div>
           </div>

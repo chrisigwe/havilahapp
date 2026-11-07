@@ -1359,11 +1359,19 @@ export default function Folio({ boot, room, onClose, onChanged }) {
                       <span className="text-dim">Paid so far</span>
                       <span className="tnum font-bold text-leaf">{naira(folio?.total_paid ?? 0)}</span>
                     </div>
+                    {/* "Still to pay -N40,250" is not a sentence anyone
+                        should have to decode at a checkout desk (Chris,
+                        7 November 2026). Mr Alphonso paid 89 nights up
+                        front and is 47 in, so he is N40,250 ahead — which
+                        the room board already says in those words. The
+                        folio now says it the same way. */}
                     <div className="flex justify-between gap-3 pt-1 border-t border-line/60">
-                      <span className="font-bold">Still to pay</span>
+                      <span className="font-bold">
+                        {Number(folio?.outstanding ?? 0) < -0.009 ? 'Paid ahead' : 'Still to pay'}
+                      </span>
                       <span className={`tnum font-bold ${
                         Number(folio?.outstanding ?? 0) > 0.009 ? 'text-clay' : 'text-leaf'}`}>
-                        {naira(folio?.outstanding ?? 0)}
+                        {naira(Math.abs(Number(folio?.outstanding ?? 0)))}
                       </span>
                     </div>
                   </div>
