@@ -475,6 +475,8 @@ export default function Folio({ boot, room, onClose, onChanged }) {
   // real question.
   const pastDue = !!scheduledOut && scheduledOut < lagosToday()
   const owes = totalOutstanding > 0.009
+  const billedToYouOwing = (billedToYou || []).filter(b => Number(b.outstanding) > 0.009)
+  const billedToYouClear = (billedToYou || []).filter(b => !(Number(b.outstanding) > 0.009))
   // The one line under the headline figure. Only the parts that are
   // actually owed, so a plain room bill reads "Room N90,000" and
   // nothing else — the detail lives in What this bill is made of.
@@ -950,13 +952,22 @@ export default function Folio({ boot, room, onClose, onChanged }) {
             )}
           </div>
         )}
-        {!!billedToYou?.length && (
+        {/* Only rooms that still owe something belong in a red box —
+            red is this app's colour for money owed (Chris, 7 November
+            2026). Mr Anthony's room, settled since September, and the
+            PR room Sir Ben's driver had in October were both sitting
+            here looking like debts on folios that owed nothing.
+            They are not hidden: a PR room put in a guest's name
+            leaving no trace on their folio is the exact problem that
+            made this list show everything in the first place. They
+            move to a plain line further down instead. */}
+        {!!billedToYouOwing.length && (
           <div className="mt-2 px-3 py-2 rounded-xl bg-clay/10 border border-clay">
             <p className="text-clay text-sm font-semibold">Rooms billed to this guest:</p>
-            {billedToYou.map(b => (
+            {billedToYouOwing.map(b => (
               <p key={b.stay_id} className="text-clay text-sm">
                 {b.guest_name} (Room {b.room_number || '—'}){b.check_in_date ? ` · ${b.check_in_date}` : ''}:{' '}
-                {billedToLabel(b) || naira(b.outstanding)}
+                {naira(b.outstanding)}
               </p>
             ))}
             {billedToYouTotal > 0.009 && (
@@ -1866,6 +1877,22 @@ export default function Folio({ boot, room, onClose, onChanged }) {
             </div>
           )
         })()}
+
+        {!!billedToYouClear.length && (
+          <div className="mt-6 rounded-2xl border border-line bg-surface p-4">
+            <p className="text-dim text-sm font-semibold">Also billed here — nothing owing</p>
+            {billedToYouClear.map(b => (
+              <p key={b.stay_id} className="text-dim text-sm mt-1">
+                {b.guest_name} (Room {b.room_number || '—'})
+                {b.check_in_date ? ` · ${dShort(b.check_in_date)}` : ''} — {billedToLabel(b)}
+              </p>
+            ))}
+            <p className="text-dim text-xs mt-2">
+              On the record because the room was put in this guest's name. It adds
+              nothing to the bill.
+            </p>
+          </div>
+        )}
 
         {/* Managing the booking, at the foot (Chris, 7 November 2026).
             "Delete this booking" used to sit two taps below the guest's
