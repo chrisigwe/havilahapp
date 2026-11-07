@@ -471,6 +471,18 @@ export default function Folio({ boot, room, onClose, onChanged }) {
   const cycles = cyclesFor(branchSettings?.allowedCycles)
   const overstayDefault = branchSettings?.overstayDefault ?? null
   const currentOverstay = stay?.overstay_fee != null ? Number(stay.overstay_fee) : null
+  // Past their leaving date — the only time an over-stay charge is a
+  // real question.
+  const pastDue = !!scheduledOut && scheduledOut < lagosToday()
+  const owes = totalOutstanding > 0.009
+  // The one line under the headline figure. Only the parts that are
+  // actually owed, so a plain room bill reads "Room N90,000" and
+  // nothing else — the detail lives in What this bill is made of.
+  const headlineParts = [
+    outstanding > 0.009 && `Room ${naira(outstanding)}`,
+    departmentCreditTotal > 0.009 && `On Credit ${naira(departmentCreditTotal)}`,
+    billedToYouTotal > 0.009 && `Other rooms ${naira(billedToYouTotal)}`,
+  ].filter(Boolean)
   // Setting exactly the branch default is open to anyone (the trigger
   // only restricts a DIFFERENT amount or removing one) — matches
   // enforce_overstay_fee exactly, confirmed against its real body
@@ -968,17 +980,6 @@ export default function Folio({ boot, room, onClose, onChanged }) {
             )}
           </div>
         )}
-        <button onClick={openEdit} className="text-dim text-sm underline mt-1">
-          Edit rate, cycle, or dates
-        </button>
-        <button onClick={() => setPrinting(true)} className="block text-dim text-sm underline mt-1">
-          Print guest statement
-        </button>
-        {is(staff.role, SUPERVISOR) && (
-          <button onClick={() => setConfirmingDelete(true)} className="block text-clay text-sm underline mt-1">
-            Delete this booking — training records only
-          </button>
-        )}
 
         {dateIsBehind && (
           <div className="mt-4 rounded-2xl border-2 border-amber bg-amber/10 p-4">
@@ -1017,19 +1018,29 @@ export default function Folio({ boot, room, onClose, onChanged }) {
           </div>
         )}
 
-        <div className="mt-4 rounded-2xl border border-line bg-surface p-4">
-          <Row label="Room charge" value={folio?.room_charge} />
-          <Row label="Orders" value={folio?.orders_charge} />
-          {Number(folio?.overstay_charge) > 0 && <Row label="Over-stay charge" value={folio?.overstay_charge} />}
-          {departmentCreditTotal > 0 && <Row label="Other departments" value={departmentCreditTotal} />}
-          {billedToYouTotal > 0 && <Row label="Other bills (billed to you)" value={billedToYouTotal} />}
-          <Row label="Paid" value={folio?.total_paid} />
-          <div className="flex items-baseline justify-between pt-3 mt-3 border-t border-line">
-            <span className="font-semibold">{totalOutstanding < 0 ? 'Deposit remaining' : 'Outstanding'}</span>
-            <span className={`text-xl font-bold tnum ${totalOutstanding > 0 ? 'text-clay' : 'text-leaf'}`}>
-              {naira(Math.abs(totalOutstanding))}
-            </span>
+        {/* One figure, not five (Chris, 7 November 2026). This used to
+            open with Room charge, Orders, Paid and Outstanding in a
+            column, and the person had to work out which of the four
+            they came for. Only one of them answers the question the
+            folio is opened to answer. The rest moved into "What this
+            bill is made of", below, where the same Row components
+            still list every part. */}
+        <div className={`mt-4 rounded-2xl border p-4 ${owes
+          ? 'border-clay bg-clay/10' : 'border-leaf bg-leaf/10'}`}>
+          <div className="text-dim text-sm">
+            {totalOutstanding < 0 ? 'Deposit remaining' : owes ? 'Still owed' : 'Settled'}
           </div>
+          <div className={`tnum text-4xl font-bold leading-tight ${owes ? 'text-clay' : 'text-leaf'}`}>
+            {naira(Math.abs(totalOutstanding))}
+          </div>
+          {!!headlineParts.length && (
+            <div className="text-dim text-sm mt-2">{headlineParts.join(' · ')}</div>
+          )}
+          {departmentCreditTotal > 0 && (
+            <p className="text-dim text-xs mt-2">
+              The Credit part is a separate account — paying the room balance does not clear it.
+            </p>
+          )}
         </div>
 
         {/* Where the debt sits. The Outstanding figure above counts THREE
@@ -1160,7 +1171,13 @@ export default function Folio({ boot, room, onClose, onChanged }) {
         )}
 
 
-        {live && (
+        {/* Only once the guest is actually past their date (Chris,
+            7 November 2026). On every other stay it was a line saying
+            "Not set — branch default is N0", which is a question nobody
+            asked taking up room on a phone. A charge that HAS been set
+            keeps showing whatever the date, or you could set one and
+            then be unable to see or change it. */}
+        {live && (pastDue || currentOverstay != null) && (
           <div className="mt-4 rounded-2xl border border-line bg-surface p-4">
             <div className="flex items-center justify-between">
               <div className="text-dim">Over-stay charge</div>
@@ -1849,6 +1866,34 @@ export default function Folio({ boot, room, onClose, onChanged }) {
             </div>
           )
         })()}
+
+        {/* Managing the booking, at the foot (Chris, 7 November 2026).
+            "Delete this booking" used to sit two taps below the guest's
+            name, in red, among the links people use daily. It should be
+            the hardest thing on this page to hit by accident, not one
+            of the easiest. Same wording as before, grouped and last. */}
+        <p className="text-dim text-xs mt-8 mb-1 uppercase tracking-wide">Manage this booking</p>
+        <div className="rounded-2xl border border-line bg-surface px-4">
+          <button onClick={openEdit}
+            className="w-full py-4 flex items-center justify-between text-left border-b border-line">
+            <span className="text-sm">Edit rate, cycle, or dates</span>
+            <span className="text-dim">&rsaquo;</span>
+          </button>
+          <button onClick={() => setPrinting(true)}
+            className={`w-full py-4 flex items-center justify-between text-left ${
+              is(staff.role, SUPERVISOR) ? 'border-b border-line' : ''}`}>
+            <span className="text-sm">Print guest statement</span>
+            <span className="text-dim">&rsaquo;</span>
+          </button>
+          {is(staff.role, SUPERVISOR) && (
+            <button onClick={() => setConfirmingDelete(true)}
+              className="w-full py-4 flex items-center justify-between text-left">
+              <span className="text-sm text-clay">Delete this booking — training records only</span>
+              <span className="text-clay">&rsaquo;</span>
+            </button>
+          )}
+        </div>
+        <div className="h-8" />
       </div>
 
       {groupOpen && groupDraft && (
@@ -2363,12 +2408,3 @@ export default function Folio({ boot, room, onClose, onChanged }) {
   )
 }
 
-function Row({ label, value }) {
-  return (
-    <div className="flex items-baseline justify-between py-1">
-      <span className="text-dim">{label}</span>
-      <span className="tnum">{naira(value)}</span>
-
-    </div>
-  )
-}
