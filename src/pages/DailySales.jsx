@@ -82,6 +82,11 @@ export default function DailySales({ boot }) {
   const [rows, setRows] = useState(null)
   const [receptionActivity, setReceptionActivity] = useState(null)
   const [receptionDashboard, setReceptionDashboard] = useState(null)
+  // Debt paid off at the desk on the day being browsed. Its own state,
+  // not folded into `summary`, because the Reception branch returns
+  // before summary is ever loaded and nothing else on this page should
+  // start behaving differently as a side effect (7 November 2026).
+  const [receptionRecovered, setReceptionRecovered] = useState(null)
   const [roomCharges, setRoomCharges] = useState([])
   const [roomsSold, setRoomsSold] = useState(null)
   const [showYesterday, setShowYesterday] = useState(false)
@@ -125,7 +130,7 @@ export default function DailySales({ boot }) {
 
   const refresh = useCallback(() => {
     const loc = locId === 'all' ? null : locId
-    setSummary(null); setRows(null); setReceptionActivity(null); setRoomCharges([]); setReceptionDashboard(null); setRoomsSold(null)
+    setSummary(null); setRows(null); setReceptionActivity(null); setRoomCharges([]); setReceptionDashboard(null); setRoomsSold(null); setReceptionRecovered(null)
     setWriteoffs(null)
     if (isGmOrAdmin) {
       Promise.all([
@@ -144,6 +149,13 @@ export default function DailySales({ boot }) {
                                  foodValue: 0, error: e.message || 'could not load' }))
     if (isReception) {
       loadReceptionActivity(staff.branch_id, date).then(setReceptionActivity).catch(e => toast(e.message, 'error'))
+      // The payments list below sums PAYMENTS. A guest paying off an old
+      // room bill lands in the other ledger, so N40,000 collected at the
+      // desk on 6 November was in the drawer and on no figure here.
+      // Works for any past day, unlike the dashboard below.
+      loadDailyFinancials(staff.branch_id, date, loc)
+        .then(f => setReceptionRecovered(f.recoveredBy || {}))
+        .catch(() => setReceptionRecovered(null))
       // Deferred/advance are computed from CURRENT balances (v_stay_
       // folio has no historical snapshot for a past date) — only
       // meaningful, and only shown, when actually looking at today.
@@ -415,14 +427,36 @@ export default function DailySales({ boot }) {
             )}
           </div>
 
-          <div className="flex items-baseline justify-between mt-4">
-            <h2 className="text-dim">
-              {receptionActivity?.length || 0} payment{receptionActivity?.length === 1 ? '' : 's'}
-            </h2>
-            <span className="tnum font-bold">
-              {naira((receptionActivity || []).reduce((s, p) => s + Number(p.amount || 0), 0))}
-            </span>
-          </div>
+          {(() => {
+            const paid = (receptionActivity || []).reduce((s, p) => s + Number(p.amount || 0), 0)
+            const rec = Number(receptionRecovered?.pos || 0) + Number(receptionRecovered?.cash || 0)
+            return (
+              <>
+                <div className="flex items-baseline justify-between mt-4">
+                  <h2 className="text-dim">
+                    {receptionActivity?.length || 0} payment{receptionActivity?.length === 1 ? '' : 's'}
+                  </h2>
+                  <span className="tnum font-bold">{naira(paid)}</span>
+                </div>
+                {rec > 0.009 && (
+                  <div className="mt-2 rounded-2xl border border-line bg-surface p-4">
+                    <div className="flex items-baseline justify-between">
+                      <span className="text-dim text-sm">Old debt paid off at the desk</span>
+                      <span className="tnum font-bold">{naira(rec)}</span>
+                    </div>
+                    <div className="flex items-baseline justify-between pt-2 mt-2 border-t border-line">
+                      <span className="font-semibold text-sm">Collected at the desk in all</span>
+                      <span className="tnum font-bold">{naira(paid + rec)}</span>
+                    </div>
+                    <p className="text-dim text-xs mt-2">
+                      It was in the drawer that day, but it is not one of the payments
+                      above — it was counted as a sale on the day the bill was raised.
+                    </p>
+                  </div>
+                )}
+              </>
+            )
+          })()}
           <ul className="mt-2 divide-y divide-line/60">
             {(receptionActivity || []).map(p => (
               <li key={p.id} className="py-3 flex items-center gap-3">
