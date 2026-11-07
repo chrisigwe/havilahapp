@@ -421,8 +421,16 @@ export default function SalesEntry({ boot }) {
       fromRooms > 0 && `${naira(fromRooms)} from guests paying off what they charged to their rooms`,
     ].filter(Boolean)
     if (isReception) {
-      return handedOutTotal > 0
-        ? `What should be in hand. Your whole slip and drawer, less ${naira(handedOutTotal)} you collected here on the departments' behalf.`
+      const recovered = Number(recon?.recoveredBy?.pos || 0)
+                      + Number(recon?.recoveredBy?.cash || 0)
+      const parts = [
+        handedOutTotal > 0
+          && `less ${naira(handedOutTotal)} you collected here on the departments' behalf`,
+        recovered > 0.009
+          && `including ${naira(recovered)} of old debt paid off at the desk, which is money in the drawer but was counted as a sale on the day the bill was raised`,
+      ].filter(Boolean)
+      return parts.length
+        ? `What should be in hand — your whole slip and drawer, ${parts.join(', and ')}.`
         : 'What should be in hand at the front desk.'
     }
     const credit = roomUnpaidToday > 0
@@ -450,8 +458,22 @@ export default function SalesEntry({ boot }) {
   // come off because they are not Reception's to account for.
   const r2 = n => Math.round(Number(n || 0) * 100) / 100
   const inHand = isReception
-    ? { pos: r2((receptionDashboard?.pos || 0) - handedOut.pos),
-        cash: r2((receptionDashboard?.cash || 0) - handedOut.cash),
+    // Debt recovered at the desk is in the drawer too (7 November
+    // 2026). PSN's guest in 204 arrived a day early, that night went on
+    // at N40,000 against their discounted N30,000 rate, they left owing
+    // it, and it was moved onto their account rather than settled as a
+    // room payment — which would have applied the discount. Paid off on
+    // the 6th by POS at the desk, it sat in credit_repayments while
+    // Reception's figure reads only the payments table, so N40,000 of
+    // the N725,000 counted that evening was nowhere on the screen.
+    //
+    // Added to what should be IN HAND, never to sales: that N40,000 was
+    // booked as revenue on 3 November when the bill went onto the
+    // account. Counting it again here would flatter the month.
+    ? { pos: r2((receptionDashboard?.pos || 0) - handedOut.pos
+                + (recon?.recoveredBy?.pos || 0)),
+        cash: r2((receptionDashboard?.cash || 0) - handedOut.cash
+                + (recon?.recoveredBy?.cash || 0)),
         credit: null }
     // recoveredBy already carries the guests' room-bill money since 531
     // — adding handedToMe here as well would count it twice.
@@ -1167,7 +1189,9 @@ export default function SalesEntry({ boot }) {
               canSeeInternal={isGmOrAdmin} roomsSold={roomsSold} showRoomsSold={isGmOrAdmin} />
           </TillTile>
           <MatchTill rows={[]} posTotal={inHand.pos} cashTotal={inHand.cash}
-            includes={{ handedOutPos: handedOut.pos, handedOutCash: handedOut.cash }}
+            includes={{ handedOutPos: handedOut.pos, handedOutCash: handedOut.cash,
+                        recoveredPos: recon?.recoveredBy?.pos,
+                        recoveredCash: recon?.recoveredBy?.cash }}
             done={myTillDone || tillMatched} onRecord={saveTillResult} />
         </>
       )}

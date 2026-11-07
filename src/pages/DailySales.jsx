@@ -243,6 +243,17 @@ export default function DailySales({ boot }) {
   // against old debt. Both are right — the store manager read N64,600
   // for Awka OpenBar here while Ikenna read N68,900 there, and neither
   // screen named the N4,300 between them.
+  // Reception's close-of-day figures include debt paid off at the desk,
+  // so the tile says how much of the total that is — otherwise the desk
+  // counts a number it cannot reconcile to the day's room payments.
+  const receptionRecoveredNote = (() => {
+    if (!isReception || !summary) return undefined
+    const rec = Number(summary.recoveredBy?.pos || 0) + Number(summary.recoveredBy?.cash || 0)
+    if (!(rec > 0.009)) return undefined
+    return `Includes ${naira(rec)} of old debt paid off at the desk. It is in the drawer, `
+         + 'but it was counted as a sale on the day the bill was raised, not today.'
+  })()
+
   const tillGapNote = (() => {
     if (!summary) return undefined
     const rec = Number(summary.recoveredFromCustomers || 0)
@@ -335,11 +346,19 @@ export default function DailySales({ boot }) {
               Folded into the same tile every other department uses, so
               Reception's day reads as three figures here too. */}
           {receptionDashboard && (
-            <TillTile title="Close of day" open={detailOpen}
+            <TillTile title="Close of day" note={receptionRecoveredNote}
+              open={detailOpen}
               onToggle={() => setDetailOpen(o => !o)}
               figures={[
-                { label: 'POS', value: receptionDashboard.pos },
-                { label: 'Cash', value: receptionDashboard.cash },
+                // Close of day means what is in the drawer, so debt paid
+                // off at the desk counts here as well as room payments
+                // (7 November 2026). It is NOT sales: the N40,000 PSN
+                // settled on the 6th was booked as revenue on the 3rd,
+                // when the room bill went onto their account.
+                { label: 'POS', value: Number(receptionDashboard.pos || 0)
+                                     + Number(summary?.recoveredBy?.pos || 0) },
+                { label: 'Cash', value: Number(receptionDashboard.cash || 0)
+                                      + Number(summary?.recoveredBy?.cash || 0) },
                 // Clay, as it was: this is what guests owe, not money in.
                 { label: 'Credit', value: receptionDashboard.deferredTotal, tone: 'text-clay' },
               ]}>
