@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { naira, lagosToday, lagosDaysAgo, lagosTime, nightsBetween, partPaidNote, roomChargeDept, seesStayTimes, cyclesFor, friendlyStayError, addDays } from '../lib/format'
-import { billedToLabel, checkOutStay, loadFreeRooms, loadStayMoves, moveStayRoom, undoLastRoomMove, loadCustomers, linkCustomerToGuest, recordStayCredit, checkRepeatPayment, deleteOrderItem, deleteStay, extendStayTo, loadBranchStaySettings, loadFolio, moveRoomChargeDate, recordStayPayment, reopenStay, saveRepaymentByCredit, searchSimilarGuests, settleBilledToStays, unlinkCustomerFromGuest, updateOrderItem, updateOverstayFee, updateStayBillTo, updateStayDetails } from '../lib/data'
+import { billedToLabel, checkOutStay, loadFreeRooms, loadStayMoves, moveStayRoom, undoLastRoomMove, loadCustomers, linkCustomerToGuest, recordStayCredit, checkRepeatPayment, checkRepeatRepayment, deleteOrderItem, deleteStay, extendStayTo, loadBranchStaySettings, loadFolio, moveRoomChargeDate, recordStayPayment, reopenStay, saveRepaymentByCredit, searchSimilarGuests, settleBilledToStays, unlinkCustomerFromGuest, updateOrderItem, updateOverstayFee, updateStayBillTo, updateStayDetails } from '../lib/data'
 import { useToast } from '../components/Toast'
 import PaymentMethodPicker, { paymentParts, paymentAllocated } from './PaymentMethodPicker'
 import FolioStatement from './FolioStatement'
@@ -663,6 +663,30 @@ export default function Folio({ boot, room, onClose, onChanged }) {
         .reduce((t, i) => t + i.amount, 0)
       const merged = itemShare.filter(i => i.orderItemId)
       if (roomTotal > 0.009) merged.unshift({ orderItemId: null, amount: Math.round(roomTotal * 100) / 100 })
+
+      // The repeat check above deliberately skips credit-only payments,
+      // because it reads the stay's ledger and this money lives in
+      // another table. Nothing was ever put in its place, so settling a
+      // department's credit here had no duplicate guard at all.
+      //
+      // That is how Mr Michael's N3,000 went in twice on 18 October:
+      // Chidera recorded it at the bar, the desk settled the same N3,000
+      // through this screen, and nothing looked. His account ran negative
+      // from that day and the N2,500 he really owed stopped showing.
+      //
+      // Asked before anything is written, so cancelling leaves the bill
+      // exactly as it was.
+      for (const c of creditShare) {
+        const prior = await checkRepeatRepayment(staff.branch_id, c.pick.customerId, c.amount)
+        if (prior && !window.confirm(
+              `${naira(prior.amount)} was already paid off on this account on `
+              + `${dShort(prior.paidOn)}${prior.who ? ` by ${prior.who}` : ''}.\n\n`
+              + `Is this a second ${naira(c.amount)} the guest has just paid?\n\n`
+              + 'Tap Cancel if it is the same money — it is already saved.')) {
+          setBusy(false)
+          return
+        }
+      }
 
       // A department's credit lives in credit_repayments against a
       // customer account, not in payments against the stay. Writing it to
