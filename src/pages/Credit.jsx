@@ -328,7 +328,10 @@ export default function Credit({ boot }) {
     const parts = paymentParts(pay, pay.amount).filter(p => p.amount > 0)
     try {
       for (const part of parts) {
-        const args = { ...base, amount: part.amount, method: part.method }
+        // Made before the first attempt and carried into the outbox, so a
+        // retry of a payment that already landed writes nothing (621).
+        const args = { ...base, amount: part.amount, method: part.method,
+                       clientRef: crypto.randomUUID() }
         try {
           await saveRepayment({ ...args, staff })
         } catch (e) {

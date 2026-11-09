@@ -731,13 +731,39 @@ export async function loadCustomerLedger(branchId, customerId, locationId, staff
   }
 }
 
-async function _saveRepayment({ staff, customerId, amount, method, paidOn, note, locationId, creditStaffId }) {
-  const { error } = await supabase.from('credit_repayments').insert({
+// clientRef is the payment's own id, made on the phone before the first
+// attempt and unchanged through every retry (migration 621). The database
+// accepts it once, so a resend of something that already landed writes
+// nothing.
+//
+// This is the same fault sales had and migration 600 fixed. A repayment
+// queued by the outbox is retried when the signal returns - but a
+// connection can drop AFTER the row was written, the reply simply lost on
+// the way back, and the retry then wrote it again. The Tailor's N1,200
+// went in four times that way at Nnewi OpenBar on 28 October, N3,600 of
+// recovered debt that never came in. A genuine second payment of the same
+// amount carries its own ref and is unaffected.
+async function _saveRepayment({ staff, customerId, amount, method, paidOn, note, locationId, creditStaffId, clientRef }) {
+  const row = {
     branch_id: staff.branch_id, customer_id: customerId, location_id: locationId || null,
     credit_staff_id: creditStaffId || staff.id,
     amount, method, paid_on: paidOn, note: note || null, recorded_by: staff.id,
+  }
+  // Runs as the caller, not as a privileged definer, so every row policy
+  // that governed the direct insert still governs this.
+  const { error } = await supabase.rpc('record_repayment', {
+    p_branch: row.branch_id, p_customer: row.customer_id, p_location: row.location_id,
+    p_credit_staff: row.credit_staff_id, p_amount: amount, p_method: method,
+    p_paid_on: paidOn, p_note: row.note, p_recorded_by: staff.id,
+    p_client_ref: clientRef || null,
   })
-  if (error) throw error
+  if (!error) return
+  // Only when the function is not there yet - i.e. the app was deployed
+  // before migration 621 was run. Anything else is a real failure and
+  // must surface rather than be quietly retried a second way.
+  if (!isMissingFunction(error)) throw error
+  const { error: direct } = await supabase.from('credit_repayments').insert(row)
+  if (direct) throw direct
 }
 
 // A repayment taken at the front desk belongs to whoever gave the credit,
@@ -777,7 +803,7 @@ async function _saveRepaymentByCredit({ staff, customerId, amount, method, paidO
   for (const part of parts) {
     await _saveRepayment({
       staff, customerId, amount: part.amount, method, paidOn, note, locationId,
-      creditStaffId: part.staffId,
+      creditStaffId: part.staffId, clientRef: crypto.randomUUID(),
     })
   }
 }
