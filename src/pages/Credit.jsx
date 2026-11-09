@@ -19,10 +19,21 @@ export default function Credit({ boot }) {
   const { staff, items, methods, allLocations, locations } = boot
   const isEditor = is(staff.role, EDITOR)
   const isAdmin = is(staff.role, SUPERVISOR)
-  // Crediting a repayment to someone else is GM and admin only
-  // (6 November 2026) — see the note in SalesEntry. Was a single staff
-  // id, which did not follow the job when the job changed hands.
-  const canActForOthers = is(staff.role, SUPERVISOR)
+  // Collecting a debt that belongs to a COLLEAGUE is part of working a
+  // bar: Prosper takes money for a customer Chidera gave credit to, and
+  // the payment step asks whose debt it settles so the money is credited
+  // to Chidera, not to whoever is holding the phone (27 October).
+  //
+  // On 6 November I narrowed this to GM and admin while removing the
+  // three oversight roles' ability to collect at all. Only the second
+  // was asked for. The first quietly took the Record payment button away
+  // from every barman for every customer who was not their own, which is
+  // what Prosper hit on 9 November. Restored: if you may collect, you may
+  // collect for a colleague.
+  //
+  // The one person this used to exclude by staff id — the Awka store
+  // manager — is a storekeeper, so NO_COLLECTING already stops her, and
+  // migration 593 stops her in the database too.
   // Who may record money coming IN on this page — a debt repayment or
   // a guest's payment. Store manager, manager and auditor oversee the
   // money rather than handle it (Chris, 6 November 2026), so they read
@@ -1287,12 +1298,9 @@ export default function Credit({ boot }) {
               // different staff member — the credit stays with
               // whoever originally gave it, so someone else has to
               // collect it. Buttons hides rather than errors on tap.
-              const wouldBeOnBehalf = !canActForOthers
-                && open.customer.staff_id
-                && open.customer.staff_id !== staff.id
               // A repayment must be credited to one department; in the all
               // view it would otherwise fall back to the literal 'all'.
-              const hidden = hiddenForRole || wouldBeOnBehalf || locId === 'all'
+              const hidden = hiddenForRole || locId === 'all'
               // More than one person gave this customer credit. Which
               // debt the money settles is a real question with a wrong
               // answer available — crediting it to whoever is holding
@@ -1400,8 +1408,7 @@ export default function Credit({ boot }) {
                 // The same rule the single-slice button uses: someone who
                 // may not act on another's behalf cannot collect a debt
                 // that belongs to them.
-                const blocked = !canCollect || (!canActForOthers
-                  && part.staff_id && part.staff_id !== staff.id)
+                const blocked = !canCollect
                 return (
                   <li key={i} className="py-3">
                     <button
