@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { naira, lagosToday, lagosDaysAgo, lagosTime, nightsBetween, partPaidNote, roomChargeDept, seesStayTimes, cyclesFor, friendlyStayError, addDays } from '../lib/format'
-import { billedToLabel, checkOutStay, loadFreeRooms, loadStayMoves, moveStayRoom, undoLastRoomMove, loadCustomers, linkCustomerToGuest, recordStayCredit, checkRepeatPayment, deleteOrderItem, deleteStay, extendStayTo, loadBranchStaySettings, loadFolio, moveRoomChargeDate, recordStayPayment, reopenStay, saveRepayment, searchSimilarGuests, settleBilledToStays, unlinkCustomerFromGuest, updateOrderItem, updateOverstayFee, updateStayBillTo, updateStayDetails } from '../lib/data'
+import { billedToLabel, checkOutStay, loadFreeRooms, loadStayMoves, moveStayRoom, undoLastRoomMove, loadCustomers, linkCustomerToGuest, recordStayCredit, checkRepeatPayment, deleteOrderItem, deleteStay, extendStayTo, loadBranchStaySettings, loadFolio, moveRoomChargeDate, recordStayPayment, reopenStay, saveRepaymentByCredit, searchSimilarGuests, settleBilledToStays, unlinkCustomerFromGuest, updateOrderItem, updateOverstayFee, updateStayBillTo, updateStayDetails } from '../lib/data'
 import { useToast } from '../components/Toast'
 import PaymentMethodPicker, { paymentParts, paymentAllocated } from './PaymentMethodPicker'
 import FolioStatement from './FolioStatement'
@@ -669,8 +669,13 @@ export default function Folio({ boot, room, onClose, onChanged }) {
       // the stay would clear the wrong debt and leave the real one
       // standing — so it goes to the other ledger, the same way the
       // Credit page does it.
+      //
+      // Split across whoever is actually owed at that department, oldest
+      // credit first. Before this, the whole amount went in under the
+      // person at the desk, who had given no credit - which cleared
+      // nobody's slice and hid the guest from the bar's own list.
       for (const c of creditShare) {
-        await saveRepayment({
+        await saveRepaymentByCredit({
           staff, customerId: c.pick.customerId,
           amount: c.amount, method: payParts[0]?.method || 'pos',
           paidOn: pay.date || lagosToday(),
