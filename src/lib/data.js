@@ -4,6 +4,7 @@ import { normalizeCustomerName } from './customerName'
 import { nightsInWindow } from './nights'
 import { SUPERVISOR } from './roles'
 import { tracked } from './activity'
+import { splitRepaymentByCredit } from './creditsplit'
 import { noteLoadFailure } from './loadfail'
 
 export async function loadBranches() {
@@ -737,6 +738,48 @@ async function _saveRepayment({ staff, customerId, amount, method, paidOn, note,
     amount, method, paid_on: paidOn, note: note || null, recorded_by: staff.id,
   })
   if (error) throw error
+}
+
+// A repayment taken at the front desk belongs to whoever gave the credit,
+// not to whoever happened to be standing at the desk (Chris, 9 November
+// 2026).
+//
+// Mr Michael's N3,000 went in under Daniel, who never served him. It
+// cleared nobody: Chidera's N1,500 and Prosper's N1,000 still read unpaid,
+// and Daniel's new minus N3,000 dragged MainBar's column below zero, so
+// the guest disappeared from the bar's own list of who owes. Prosper
+// reported it as credit that would not show. Four accounts and N19,700
+// were sitting that way when it was found.
+//
+// So the money is split across the people actually owed at that
+// department, oldest credit first, and written as one row each. Anything
+// above the debt is a real overpayment and goes to whoever served the
+// customer there last, because that is who will serve them next - never to
+// someone who gave no credit, which is the fault this replaces.
+async function _saveRepaymentByCredit({ staff, customerId, amount, method, paidOn, note, locationId }) {
+  // No department means no slices to split across - the row is written as
+  // it always was rather than guessed at.
+  let slices = []
+  if (locationId) {
+    const { data, error } = await supabase.from('v_customer_balances_by_staff')
+      .select('staff_id, balance, first_credit_date, last_credit_date')
+      .eq('branch_id', staff.branch_id)
+      .eq('customer_id', customerId)
+      .eq('location_id', locationId)
+    if (error) throw error
+    slices = (data || []).map(r => ({
+      staffId: r.staff_id, balance: r.balance,
+      firstCreditDate: r.first_credit_date, lastCreditDate: r.last_credit_date,
+    }))
+  }
+  // The arithmetic lives in creditsplit.js, on its own and under test.
+  const parts = splitRepaymentByCredit(slices, amount, staff.id)
+  for (const part of parts) {
+    await _saveRepayment({
+      staff, customerId, amount: part.amount, method, paidOn, note, locationId,
+      creditStaffId: part.staffId,
+    })
+  }
 }
 
 // ---------- stock counts ----------
@@ -3946,6 +3989,7 @@ export const saveBasket = tracked('Recorded a sale', _saveBasket)
 export const saveWriteoff = tracked('Recorded a write-off / PR / staff item', _saveWriteoff)
 export const saveRestaurantWriteoff = tracked('Recorded a restaurant write-off', _saveRestaurantWriteoff)
 export const saveRepayment = tracked('Recorded a credit repayment', _saveRepayment)
+export const saveRepaymentByCredit = tracked('Recorded a credit repayment', _saveRepaymentByCredit)
 export const submitCount = tracked('Submitted a stock count', _submitCount)
 export const verifyCount = tracked('Verified a stock count', _verifyCount)
 export const saveMovements = tracked('Recorded a stock movement', _saveMovements)
