@@ -6,6 +6,13 @@ export const naira = (n) =>
 export const lagosToday = () =>
   new Intl.DateTimeFormat('en-CA', { timeZone: 'Africa/Lagos' }).format(new Date())
 
+// The hour in Lagos, 0-23, whatever the device's own clock is set to.
+// hourCycle 'h23' rather than hour12:false, which returns 24 at midnight
+// on some engines and would make a midnight check read as the afternoon.
+export const lagosHour = () => Number(
+  new Intl.DateTimeFormat('en-GB',
+    { timeZone: 'Africa/Lagos', hour: '2-digit', hourCycle: 'h23' }).format(new Date()))
+
 export const tierLabel = { general: 'Standard', lounge: 'Lounge', staff: 'Staff' }
 export const methodLabel = { pos: 'POS', cash: 'Cash', credit: 'Credit', transfer: 'Transfer' }
 

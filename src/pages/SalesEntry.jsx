@@ -1,5 +1,6 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
-import { lagosDaysAgo, lagosToday, methodLabel, naira, paymentSummary, roomChargeDept, startingDept, tierLabel, whoRecorded } from '../lib/format'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { dayToOpenOn } from '../lib/openingday'
+import { lagosDaysAgo, lagosHour, lagosToday, methodLabel, naira, paymentSummary, roomChargeDept, startingDept, tierLabel, whoRecorded } from '../lib/format'
 import { checkRepeatSale, loadStockMap, loadPopular, loadToday, saveBasket, saveWriteoff,
          loadDailyFinancials, loadCustomers, createCustomer,
          loadReceptionRoomSales, loadRoomDebtRecovered, withRoomNights, NIGHTS_AS_SALES_FROM,
@@ -182,6 +183,48 @@ export default function SalesEntry({ boot }) {
   // and auditors may select any department to view it (OVERSIGHT, above),
   // but may only record at departments they are assigned to. Manager, gm
   // and admin keep recording anywhere, exactly as before.
+  // WHICH DAY THE SCREEN OPENS ON (Chris, 11 November 2026).
+  //
+  // OpenBar records after service and the Restaurant records the next
+  // day. For those two the day being worked on in the morning is
+  // YESTERDAY, so opening on today meant changing the date on nearly
+  // every basket — and sometimes forgetting, which is where the
+  // wrong-date entries come from. The thirty days counted on 18 October
+  // say the same: 1,568 sales keyed the day after the one they belong
+  // to against 332 keyed the same day, over half between 09:00 and
+  // 11:00.
+  //
+  // Narrow on purpose. Only departments flagged records_after_service
+  // (migration 730), only before midday, and only while that department
+  // has still not entered yesterday's Total Sales — once the day is
+  // closed it is finished. The midday limit is what carries the
+  // Restaurant, which does no Total Sales check and would otherwise sit
+  // on yesterday all evening.
+  //
+  // Decided once per department, and never over a date the person chose:
+  // the date only moves if it is still sitting on today.
+  const autoDated = useRef(new Set())
+  useEffect(() => {
+    if (!locationId || autoDated.current.has(locationId)) return
+    const here = (boot.allLocations || []).find(l => l.id === locationId)
+    if (!here?.records_after_service || lagosHour() >= 12) {
+      autoDated.current.add(locationId); return
+    }
+    let dropped = false
+    tillCheckDone(staff.branch_id, locationId, yesterdayDate)
+      .then(done => {
+        if (dropped) return
+        autoDated.current.add(locationId)
+        // The rule itself lives in openingday.js, on its own and under test.
+        setDate(d => dayToOpenOn({
+          recordsAfterService: true, hour: lagosHour(), yesterdayChecked: done,
+          today: todayDate, yesterday: yesterdayDate, current: d,
+        }))
+      })
+      .catch(() => { autoDated.current.add(locationId) })
+    return () => { dropped = true }
+  }, [locationId, staff.branch_id, yesterdayDate, todayDate, boot.allLocations])
+
   const ownLocationIds = new Set((locations || []).map(l => l.id))
   const canRecordAt = (id) => is(staff.role, MANAGEMENT) || ownLocationIds.has(id)
   // Whose till this actually is — not who is allowed to record at it.
