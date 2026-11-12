@@ -4,7 +4,7 @@ import { lagosToday, methodLabel, naira, startingDept, tierLabel } from '../lib/
 import RoomChargeTracker from '../components/RoomChargeTracker'
 import { checkRepeatPayment, checkRepeatRepayment, deactivateCustomer, deleteCustomer, linkCustomerToGuest, loadBalances, loadCreditForMonth, loadCreditOnDate, loadCustomerLedger, loadCreditChain, loadFolio, loadStayMoves, loadGuestBalances, loadReservedValue, loadStaffForLocation, loadUnlinkedCustomerBalances, loadCustomerNeverAGuest, setCustomerNeverAGuest, moveWorkaroundToRoom, recordStayPayment, saveRepayment, searchSimilarGuests } from '../lib/data'
 import { enqueue, flush, isConnectionError } from '../lib/outbox'
-import PaymentMethodPicker, { paymentParts, paymentAllocated } from '../components/PaymentMethodPicker'
+import PaymentMethodPicker, { paymentParts, paymentAllocated, paymentReady } from '../components/PaymentMethodPicker'
 import FolioStatement from '../components/FolioStatement'
 import { EDITOR, OPENS_ON_ALL, OVERSIGHT, SUPERVISOR, is } from '../lib/roles'
 import { accountStatementPdf, savePdf } from '../lib/pdfSheet'
@@ -312,7 +312,8 @@ export default function Credit({ boot }) {
     // a control. Anything that reaches here without the right role stops.
     if (!canCollect) { toast('Recording payments is not part of your role.', 'error'); return }
     if (!confirmed) {
-      const prior = await checkRepeatRepayment(staff.branch_id, pay.customerId, pay.amount)
+      const prior = await checkRepeatRepayment(staff.branch_id, pay.customerId,
+        paymentAllocated(pay, pay.amount))
       if (prior) { setRepeat(prior); return }
     }
     setBusy(true)
@@ -1495,19 +1496,23 @@ export default function Credit({ boot }) {
               className="mt-2 h-14 w-full px-4 rounded-xl bg-surface border border-line" />
           </div>
           <div className="p-5 border-t border-line">
-            {Number(pay.amount) > Number(pay.balance ?? 0) + 0.01 && (
+            {paymentAllocated(pay, pay.amount) > Number(pay.balance ?? 0) + 0.01 && (
               <p className="mt-4 text-clay">
                 That is more than they owe. It will leave a credit balance.
               </p>
             )}
             {(() => {
-              const canSave = (pay.split ? paymentAllocated(pay, pay.amount) > 0 : Number(pay.amount) > 0)
-                && (!!pay.split || !!pay.method)
+              const target = Number(pay.amount) || 0
+              const short = pay.split
+                && Math.abs(paymentAllocated(pay, pay.amount) - target) >= 0.01
               return (
-                <button onClick={() => submitPayment()} disabled={busy || !canSave}
+                <button onClick={() => submitPayment()}
+                  disabled={busy || !paymentReady(pay, pay.amount)}
                   className="w-full h-16 rounded-2xl bg-amber text-bg text-xl font-bold disabled:opacity-40">
                   {busy ? 'Saving…'
                     : !(pay.split || pay.method) ? 'Choose how they paid'
+                    : !(target > 0) ? 'Enter the amount'
+                    : short ? `Split must add up to ${naira(target)}`
                     : 'Save payment'}
                 </button>
               )
@@ -1554,11 +1559,14 @@ export default function Credit({ boot }) {
               <p className="mb-4 text-clay">That is more than is owed. It will leave a credit balance.</p>
             )}
             <button onClick={submitGuestPayment}
-              disabled={busy || paymentAllocated(guestPay, guestPay.amount) <= 0
-                || !(guestPay.split || guestPay.method)}
+              disabled={busy || !paymentReady(guestPay, guestPay.amount)}
               className="w-full h-16 rounded-2xl bg-amber text-bg text-xl font-bold disabled:opacity-40">
               {busy ? 'Saving…'
                 : !(guestPay.split || guestPay.method) ? 'Choose how they paid'
+                : !(Number(guestPay.amount) > 0) ? 'Enter the amount'
+                : guestPay.split && Math.abs(
+                    paymentAllocated(guestPay, guestPay.amount) - Number(guestPay.amount)) >= 0.01
+                  ? `Split must add up to ${naira(Number(guestPay.amount))}`
                 : 'Save payment'}
             </button>
           </div>
