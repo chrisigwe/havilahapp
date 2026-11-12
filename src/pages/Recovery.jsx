@@ -506,21 +506,39 @@ export default function Recovery({ boot }) {
       {hasReceptionAccess && receptionInView && (
         <>
           <div className="rounded-2xl border border-leaf bg-surface p-4 my-2">
+            {/* This card is not recovered debt, and was headed as though
+                it were (Chris, 12 November 2026). It is every room charge
+                settled at the desk, by method — and two of those methods
+                are not money arriving at all: "credit" is a bill moved onto
+                an account, and a write-off is money given up. Sitting a
+                figure of that size under the word "Recovered", directly
+                below a card using the same word for debt actually coming
+                back, made both numbers hard to trust. */}
             <div className="text-dim text-sm">
-              {dayFilter ? `Recovered at Reception on ${dayFilter}` : 'Recovered at Reception, last 60 days'}
+              {dayFilter ? `Room charges settled at Reception on ${dayFilter}`
+                : 'Room charges settled at Reception, last 60 days'}
             </div>
             <div className="tnum text-2xl font-bold text-leaf">{naira(roomTotal)}</div>
-            <div className="flex gap-4 mt-2 text-sm">
+            <div className="flex flex-wrap gap-x-4 gap-y-1 mt-2 text-sm">
               {Object.entries(roomByMethod).map(([m, amt]) => (
                 <span key={m} className="text-dim">
                   {methodLabel[m] || m} <span className="tnum text-ink">{naira(amt)}</span>
                 </span>
               ))}
             </div>
+            {(roomByMethod.credit > 0.009 || roomByMethod.writeoff > 0.009) && (
+              <p className="text-dim text-xs mt-2">
+                {naira((roomByMethod.credit || 0) + (roomByMethod.writeoff || 0))} of this
+                never reached the till
+                {roomByMethod.credit > 0.009 ? ' — a bill moved onto an account' : ''}
+                {roomByMethod.credit > 0.009 && roomByMethod.writeoff > 0.009 ? ', or' : ''}
+                {roomByMethod.writeoff > 0.009 ? ' — money written off' : ''}.
+              </p>
+            )}
           </div>
 
           {dayFilter && !roomRows.length && (
-            <p className="text-dim py-6 text-center">Nothing recovered at Reception on {dayFilter}.</p>
+            <p className="text-dim py-6 text-center">No room charges settled at Reception on {dayFilter}.</p>
           )}
 
           {/* Folded the same way as the list above (579) — this one runs

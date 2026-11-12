@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useToast } from '../components/Toast'
 import { lagosToday, methodLabel, naira, startingDept, tierLabel } from '../lib/format'
+import { monthBuckets, monthLabel } from '../lib/months'
 import RoomChargeTracker from '../components/RoomChargeTracker'
 import { checkRepeatPayment, checkRepeatRepayment, deactivateCustomer, deleteCustomer, linkCustomerToGuest, loadBalances, loadCreditForMonth, loadCreditOnDate, loadCustomerLedger, loadCreditChain, loadFolio, loadStayMoves, loadGuestBalances, loadReservedValue, loadStaffForLocation, loadUnlinkedCustomerBalances, loadCustomerNeverAGuest, setCustomerNeverAGuest, moveWorkaroundToRoom, recordStayPayment, saveRepayment, searchSimilarGuests } from '../lib/data'
 import { enqueue, flush, isConnectionError } from '../lib/outbox'
@@ -136,6 +137,9 @@ export default function Credit({ boot }) {
   // a figure. Search filters the rows already in hand; sort reorders them.
   const [find, setFind] = useState('')
   const [sort, setSort] = useState('recent')   // recent | biggest | longest
+  // Which folded months are open. Absent means "use the default", which is
+  // the month being worked; an entry means the person has decided.
+  const [openMonths, setOpenMonths] = useState({})
   const itemById = useMemo(() => Object.fromEntries(items.map(i => [i.id, i])), [items])
   const locById = useMemo(() => Object.fromEntries((allLocations || []).map(l => [l.id, l])), [allLocations])
   const isReception = /reception/i.test(locById[locId]?.name || '')
@@ -492,6 +496,66 @@ export default function Credit({ boot }) {
   const takenAllTime = owing.reduce((t, r) => t + Number(r.credit_taken || 0), 0)
   const repaidAllTime = owing.reduce((t, r) => t + Number(r.repaid || 0), 0)
 
+  const debtorRow = (c) => {
+          const days = daysSince(c.last_credit_date)
+          return (
+          <li key={c.customer_id}>
+            {/* The whole row opens the statement. It always did, but
+                nothing said so — no chevron, no label — so staff asked
+                where a customer's history was. */}
+            <button onClick={() => openCustomer(c)}
+              className="w-full py-3 flex items-center gap-3 text-left">
+              <div className="flex-1 min-w-0">
+                <div className="font-semibold break-words">{c.name}</div>
+                <div className="text-dim text-sm">
+                  {naira(c.credit_taken)} taken · {naira(c.repaid)} repaid
+                </div>
+                {!!c.deptIds?.length && (
+                  <div className="text-dim text-xs">
+                    {c.deptIds.map(id => locById[id]?.name).filter(Boolean).join(', ')}
+                  </div>
+                )}
+                <div className="text-sm">
+                  {/* Days, not just a date. "3 Oct" needs working out;
+                      "15 days ago" is the thing being judged. Clay past
+                      a month — a fact about when credit was last taken,
+                      which is all this data says: nothing here records
+                      a due date, so nothing here calls it overdue. */}
+                  {days != null && (
+                    <span className={days >= 30 ? 'text-clay' : 'text-dim'}>
+                      last took credit {days === 0 ? 'today' : days === 1 ? 'yesterday' : `${days} days ago`}
+                    </span>
+                  )}
+                  {c.first_credit_date && c.first_credit_date !== c.last_credit_date && (
+                    <span className="text-dim"> · since {new Date(c.first_credit_date + 'T12:00:00')
+                      .toLocaleDateString('en-NG', { day: 'numeric', month: 'short' })}</span>
+                  )}
+                  {c.staff_name && <span className="text-dim"> · by {c.staff_name}</span>}
+                  {/* Two people gave this person credit. One line, both
+                      named — which is what the two rows were really
+                      saying, without reading as the same customer twice. */}
+                  {c.parts?.length > 1 && (
+                    <span className="text-dim"> · by {c.parts.map(p2 => p2.staff_name || 'someone').join(' and ')}</span>
+                  )}
+                </div>
+              </div>
+              <span className="shrink-0 text-right">
+                {/* An account that owes nothing says which kind of
+                    nothing. Paid ahead is not the same as square, and a
+                    negative column is the shape that hid Mr Michael. */}
+                <span className={`tnum font-bold block ${
+                  Number(c.balance) > 0.009 ? 'text-clay' : 'text-leaf'}`}>
+                  {Number(c.balance) > 0.009 ? naira(c.balance)
+                    : Number(c.balance) < -0.009 ? `${naira(-c.balance)} ahead`
+                    : 'square'}
+                </span>
+                <span className="text-dim text-xs">statement ›</span>
+              </span>
+            </button>
+          </li>
+    )
+  }
+
   return (
     <div className="px-5">
       {salesPoints.length > 1 && (
@@ -775,64 +839,91 @@ export default function Credit({ boot }) {
         </>
       )}
 
-      <ul className="mt-2 divide-y divide-line/60">
-        {shown.map(c => {
-          const days = daysSince(c.last_credit_date)
-          return (
-          <li key={c.customer_id}>
-            {/* The whole row opens the statement. It always did, but
-                nothing said so — no chevron, no label — so staff asked
-                where a customer's history was. */}
-            <button onClick={() => openCustomer(c)}
-              className="w-full py-3 flex items-center gap-3 text-left">
-              <div className="flex-1 min-w-0">
-                <div className="font-semibold break-words">{c.name}</div>
-                <div className="text-dim text-sm">
-                  {naira(c.credit_taken)} taken · {naira(c.repaid)} repaid
-                </div>
-                {!!c.deptIds?.length && (
-                  <div className="text-dim text-xs">
-                    {c.deptIds.map(id => locById[id]?.name).filter(Boolean).join(', ')}
-                  </div>
-                )}
-                <div className="text-sm">
-                  {/* Days, not just a date. "3 Oct" needs working out;
-                      "15 days ago" is the thing being judged. Clay past
-                      a month — a fact about when credit was last taken,
-                      which is all this data says: nothing here records
-                      a due date, so nothing here calls it overdue. */}
-                  {days != null && (
-                    <span className={days >= 30 ? 'text-clay' : 'text-dim'}>
-                      last took credit {days === 0 ? 'today' : days === 1 ? 'yesterday' : `${days} days ago`}
-                    </span>
-                  )}
-                  {c.first_credit_date && c.first_credit_date !== c.last_credit_date && (
-                    <span className="text-dim"> · since {new Date(c.first_credit_date + 'T12:00:00')
-                      .toLocaleDateString('en-NG', { day: 'numeric', month: 'short' })}</span>
-                  )}
-                  {c.staff_name && <span className="text-dim"> · by {c.staff_name}</span>}
-                  {/* Two people gave this person credit. One line, both
-                      named — which is what the two rows were really
-                      saying, without reading as the same customer twice. */}
-                  {c.parts?.length > 1 && (
-                    <span className="text-dim"> · by {c.parts.map(p2 => p2.staff_name || 'someone').join(' and ')}</span>
-                  )}
-                </div>
-              </div>
-              <span className="shrink-0 text-right">
-                <span className="tnum font-bold text-clay block">{naira(c.balance)}</span>
-                <span className="text-dim text-xs">statement ›</span>
+      {(() => {
+        // Months fold (Chris, 12 November 2026). A year of credit was one
+        // list to scroll; it is now one row per month carrying its total,
+        // with the month being worked open and the rest one tap away.
+        //
+        // A person sits in the month their credit STARTED, not the month
+        // they last bought, because that is the month it is deducted in —
+        // OpenBar is given a month's grace, so August's debt comes out of
+        // October's wages and needs to still read as August's.
+        const buckets = monthBuckets(shown, c => c.first_credit_date)
+
+        // Searching must never fold a match out of sight, and one month is
+        // not worth a header.
+        const folded = !needle && buckets.length > 1
+        const thisMonth = lagosToday().slice(0, 7)
+        const isOpen = k => k in openMonths ? openMonths[k] : k === thisMonth
+        const toggle = k => setOpenMonths(o => ({ ...o, [k]: !isOpen(k) }))
+
+        const head = (k, label, count, right, flag) => (
+          <button type="button" onClick={() => toggle(k)} aria-expanded={isOpen(k)}
+            className="w-full flex items-center gap-2 p-3 rounded-xl bg-raise border border-line text-left">
+            <span className="text-dim text-xs w-3 shrink-0">{isOpen(k) ? '▾' : '▸'}</span>
+            <span className="flex-1 min-w-0">
+              <span className="font-semibold block">{label}</span>
+              <span className="text-dim text-xs">
+                {count} {count === 1 ? 'person' : 'people'}
+                {flag ? <span className="text-amber"> · {flag}</span> : null}
               </span>
-            </button>
-          </li>
-        )})}
-        {!owing.length && <li className="py-8 text-center text-dim">Nobody owes anything.</li>}
-        {!!owing.length && !shown.length && (
-          <li className="py-8 text-center text-dim">
-            Nobody owing matches “{find}”. {owing.length} {owing.length === 1 ? 'debtor' : 'debtors'} in all.
-          </li>
-        )}
-      </ul>
+            </span>
+            {right}
+          </button>
+        )
+        const list = rows => (
+          <ul className="divide-y divide-line/60 pl-3 ml-2 border-l border-line">
+            {rows.map(debtorRow)}
+          </ul>
+        )
+
+        // Nobody drops off the list. An account that is square, or that has
+        // paid further than it owes, says so instead of vanishing — which is
+        // how Mr Michael's debt became invisible when a repayment landed on
+        // a barman who had given him no credit.
+        const settled = needle ? [] : combined.filter(r => Number(r.balance) <= 0.009)
+        const odd = settled.filter(r => Number(r.balance) < -0.009).length
+        const settledGroup = !!settled.length && (
+          <div className="mt-2">
+            {head('settled', 'Nothing owing now', settled.length,
+              <span className="tnum font-bold text-leaf shrink-0">
+                {odd ? '' : 'square'}
+              </span>,
+              odd ? `${odd} ${odd === 1 ? 'needs' : 'need'} a look` : null)}
+            {isOpen('settled') && list(settled)}
+          </div>
+        )
+
+        if (!folded) return (
+          <>
+            <ul className="mt-2 divide-y divide-line/60">
+              {shown.map(debtorRow)}
+              {!owing.length && <li className="py-8 text-center text-dim">Nobody owes anything.</li>}
+              {!!owing.length && !shown.length && (
+                <li className="py-8 text-center text-dim">
+                  Nobody owing matches “{find}”. {owing.length} {owing.length === 1 ? 'debtor' : 'debtors'} in all.
+                </li>
+              )}
+            </ul>
+            {settledGroup}
+          </>
+        )
+
+        return (
+          <div className="mt-2 flex flex-col gap-2">
+            {buckets.map(({ key, rows }) => (
+              <div key={key}>
+                {head(key, monthLabel(key), rows.length,
+                  <span className="tnum font-bold text-clay shrink-0">
+                    {naira(rows.reduce((t, r) => t + Number(r.balance), 0))}
+                  </span>, null)}
+                {isOpen(key) && list(rows)}
+              </div>
+            ))}
+            {settledGroup}
+          </div>
+        )
+      })()}
       </>
       )}
 
