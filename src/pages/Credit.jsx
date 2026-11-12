@@ -590,22 +590,36 @@ export default function Credit({ boot }) {
               <span className="tnum font-bold text-clay">{naira(sum(rows, 'closing'))}</span>
             </div>
             {note && <p className="text-dim text-xs mt-1">{note}</p>}
-            {rows.map(r => (
-              <div key={r.customer_id} className="py-2 border-b border-line/60">
-                <div className="flex items-baseline justify-between gap-2">
-                  <span className="truncate">{r.name}</span>
-                  <span className={`tnum font-bold shrink-0 ${
-                    Number(r.closing) > 0.009 ? 'text-clay' : 'text-leaf'}`}>
-                    {Number(r.closing) > 0.009 ? naira(r.closing) : 'settled'}
-                  </span>
-                </div>
-                <div className="text-dim text-xs">
-                  owed {naira(r.opening)} at the start
-                  {' · '}took {naira(r.taken)}
-                  {' · '}repaid {naira(r.repaid)}
-                </div>
-              </div>
-            ))}
+            {rows.map(r => {
+              // Reaching the person from here (Chris, 12 November 2026).
+              // The month view listed who owed what and stopped there, so
+              // the only way to open a debtor was to go back to Balances
+              // and find them again. The row now opens the same statement
+              // the Balances list does — every department they owe at, who
+              // gave each credit, and the payment step — rather than a
+              // second, half-informed sheet of its own.
+              const live = combined.find(c => c.customer_id === r.customer_id)
+              return (
+                <button key={r.customer_id} type="button"
+                  disabled={!live}
+                  onClick={() => live && openCustomer(live)}
+                  className="w-full text-left py-2 border-b border-line/60 disabled:opacity-60">
+                  <div className="flex items-baseline justify-between gap-2">
+                    <span className="truncate">{r.name}</span>
+                    <span className={`tnum font-bold shrink-0 ${
+                      Number(r.closing) > 0.009 ? 'text-clay' : 'text-leaf'}`}>
+                      {Number(r.closing) > 0.009 ? naira(r.closing) : 'settled'}
+                    </span>
+                  </div>
+                  <div className="text-dim text-xs">
+                    owed {naira(r.opening)} at the start
+                    {' · '}took {naira(r.taken)}
+                    {' · '}repaid {naira(r.repaid)}
+                    {!live && Number(r.closing) > 0.009 ? ' · nothing owing now' : ''}
+                  </div>
+                </button>
+              )
+            })}
           </section>
         )
 
