@@ -1,4 +1,5 @@
 import { naira, methodLabel } from '../lib/format'
+import { paymentParts, paymentAllocated, paymentReady } from '../lib/payments'
 
 // Single-method chips, with a Split option revealing per-method
 // inputs that must sum to `amount`. Extracted here because this
@@ -56,15 +57,4 @@ export default function PaymentMethodPicker({ methods, amount, value, onChange }
   )
 }
 
-// The parts array (method/amount pairs) a save function actually
-// needs, computed from the same value shape the picker edits.
-export function paymentParts(value, amount) {
-  if (value.split) {
-    return Object.entries(value.split).map(([method, amt]) => ({ method, amount: Number(amt || 0) }))
-  }
-  return [{ method: value.method, amount: Number(amount || 0) }]
-}
-
-export function paymentAllocated(value, amount) {
-  return paymentParts(value, amount).reduce((s, p) => s + p.amount, 0)
-}
+export { paymentParts, paymentAllocated, paymentReady }
