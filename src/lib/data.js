@@ -1,6 +1,7 @@
 import { supabase } from './supabase'
 import { lagosDaysAgo, lagosToday, addDays, chargeCategoryFor, nameKey } from './format'
 import { normalizeCustomerName } from './customerName'
+import { tidyName } from './names'
 import { nightsInWindow } from './nights'
 import { SUPERVISOR } from './roles'
 import { tracked } from './activity'
@@ -630,7 +631,7 @@ export async function loadCustomers(branchId) {
 
 export async function createCustomer(branchId, name, servedBy) {
   const { data, error } = await supabase.from('customers')
-    .insert({ branch_id: branchId, name: name.trim(), served_by: servedBy || null })
+    .insert({ branch_id: branchId, name: tidyName(name), served_by: servedBy || null })
     .select('id, name, served_by').single()
   if (error) {
     // the unique index caught a duplicate spelling — reuse the record
@@ -1715,16 +1716,36 @@ export async function loadPriorBalance(branchId, name, phone) {
 }
 
 export async function findOrCreateGuest(branchId, name, phone) {
+  // A merge does not delete the losing record, it RENAMES it
+  // "[merged into Mr Onyeka] Mr Onyeka". Such a record keeps its phone
+  // number and its name key, so either lookup below can land on one and
+  // attach tonight's stay to a guest who was retired months ago. Every
+  // match here has to step over them.
+  const live = q => q.not('full_name', 'ilike', '[merged into%')
+  const survivorOf = async fullName => {
+    const m = /^\[merged into (.+?)\]/i.exec(fullName || '')
+    if (!m) return null
+    const { data } = await live(supabase.from('guests')
+      .select('id').eq('branch_id', branchId).eq('full_name', m[1].trim())).limit(1)
+    return data?.[0]?.id || null
+  }
+
   const digits = (phone || '').replace(/\D/g, '')
   if (digits) {
-    const { data: existing } = await supabase.from('guests')
-      .select('id').eq('branch_id', branchId).eq('phone_norm', digits).maybeSingle()
-    if (existing?.id) return existing.id
+    const { data: byPhone } = await supabase.from('guests')
+      .select('id, full_name').eq('branch_id', branchId)
+      .eq('phone_norm', digits).maybeSingle()
+    if (byPhone?.id) {
+      const moved = await survivorOf(byPhone.full_name)
+      if (moved) return moved
+      if (!/^\[merged into/i.test(byPhone.full_name || '')) return byPhone.id
+    }
   }
+
   const key = nameKey(name)
   if (key) {
-    const { data: byName } = await supabase.from('guests')
-      .select('id, phone').eq('branch_id', branchId).eq('name_key', key)
+    const { data: byName } = await live(supabase.from('guests')
+      .select('id, phone').eq('branch_id', branchId).eq('name_key', key))
       .order('created_at').limit(1)
     if (byName?.length) {
       if (digits && !byName[0].phone) {
@@ -1733,11 +1754,20 @@ export async function findOrCreateGuest(branchId, name, phone) {
       return byName[0].id
     }
   }
+
   const { data: created, error } = await supabase.from('guests')
-    .insert({ branch_id: branchId, full_name: name.trim(), phone: phone?.trim() || null })
+    .insert({ branch_id: branchId, full_name: tidyName(name), phone: phone?.trim() || null })
     .select('id').single()
-  if (error) throw error
-  return created.id
+  if (!error) return created.id
+  // Two phones checked in under one name at the same moment, or a spelling
+  // the key says is the same person. The unique index refuses the second
+  // row; reuse the record that won rather than failing the check-in.
+  if (String(error.code) === '23505' && key) {
+    const { data: found } = await live(supabase.from('guests')
+      .select('id').eq('branch_id', branchId).eq('name_key', key)).order('created_at').limit(1)
+    if (found?.length) return found[0].id
+  }
+  throw error
 }
 
 export async function createStay({ staff, guestId, roomId, rateType, dailyRate,
