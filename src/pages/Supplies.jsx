@@ -241,7 +241,8 @@ export default function Supplies({ boot }) {
       )}
 
       {view === 'lists' && isAdmin && (
-        <Lists places={places} locId={locId} items={supplyItems} deptLists={deptLists} onChanged={refresh} />
+        <Lists places={places} locId={locId} items={supplyItems} deptLists={deptLists}
+          stockMap={stockMap} onChanged={refresh} />
       )}
 
       {/* Housekeeping and Laundry have no More tab, so the build/update
@@ -351,7 +352,7 @@ function Balances({ feed, stockMap, locId, places, items, days, setDays, canRetu
 }
 
 // GM / admin: which supplies each department may hold and use.
-function Lists({ places, locId, items, deptLists, onChanged }) {
+function Lists({ places, locId, items, deptLists, stockMap, onChanged }) {
   const toast = useToast()
   const [busyKey, setBusyKey] = useState(null)
   const depts = locId ? places.filter(p => p.id === locId) : places
@@ -371,17 +372,47 @@ function Lists({ places, locId, items, deptLists, onChanged }) {
         const set = deptLists[d.id]
         return (
           <div key={d.id} className="mb-4 rounded-2xl border border-line bg-surface px-4 py-3">
-            <p className="font-bold">{d.name} <span className="text-dim text-xs font-normal">
-              {set ? `${set.size} allowed` : 'unrestricted'}</span></p>
+            {/* Stock the department is already holding, beside the tick box
+                (Chris, 12 November 2026). OpenBar was holding 103 groundnut
+                plates it could neither see nor record, because the item was
+                on no department's list: the Store could not issue it and the
+                Supplies used page did not offer it, so the pile only grew.
+                This is the one screen where somebody would both notice that
+                and be able to fix it. */}
+            {(() => {
+              const stranded = items.filter(i =>
+                !set?.has(i.id) && Number(stockMap?.[`${i.id}:${d.id}`] || 0) > 0)
+              return (
+                <>
+                  <p className="font-bold">{d.name} <span className="text-dim text-xs font-normal">
+                    {set ? `${set.size} allowed` : 'unrestricted'}</span></p>
+                  {!!stranded.length && !!set && (
+                    <p className="text-amber text-xs mt-1">
+                      Holding {stranded.length === 1 ? 'a supply' : `${stranded.length} supplies`} that
+                      {' '}{stranded.length === 1 ? 'is' : 'are'} not ticked —
+                      {' '}{stranded.length === 1 ? 'it' : 'they'} cannot be issued here or recorded as used
+                      until {stranded.length === 1 ? 'it is' : 'they are'} ticked.
+                    </p>
+                  )}
+                </>
+              )
+            })()}
             <ul className="mt-1">
               {items.map(i => {
                 const on = !!set?.has(i.id)
+                const held = Number(stockMap?.[`${i.id}:${d.id}`] || 0)
                 return (
                   <li key={i.id}>
                     <label className="flex items-center gap-3 py-1.5 text-sm">
                       <input type="checkbox" checked={on} disabled={busyKey === d.id + i.id}
                         onChange={e => toggle(d, i, e.target.checked)} className="w-5 h-5" />
                       <span className={on ? '' : 'text-dim'}>{i.name}</span>
+                      {held > 0 && (
+                        <span className={`tnum text-xs ml-auto shrink-0 ${
+                          on ? 'text-dim' : 'text-amber font-semibold'}`}>
+                          holding {held}
+                        </span>
+                      )}
                     </label>
                   </li>
                 )
