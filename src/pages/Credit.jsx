@@ -6,6 +6,8 @@ import RoomChargeTracker from '../components/RoomChargeTracker'
 import { checkRepeatPayment, checkRepeatRepayment, deactivateCustomer, deleteCustomer, linkCustomerToGuest, loadBalances, loadCreditForMonth, loadCreditOnDate, loadCustomerLedger, loadCreditChain, loadFolio, loadStayMoves, loadGuestBalances, loadReservedValue, loadStaffForLocation, loadUnlinkedCustomerBalances, loadCustomerNeverAGuest, setCustomerNeverAGuest, moveWorkaroundToRoom, recordStayPayment, saveRepayment, searchSimilarGuests } from '../lib/data'
 import { enqueue, flush, isConnectionError } from '../lib/outbox'
 import PaymentMethodPicker, { paymentParts, paymentAllocated, paymentReady } from '../components/PaymentMethodPicker'
+import { isClosedDayRefusal, submitPendingRepayment, loadPendingRepayments,
+         approvePendingRepayment, rejectPendingRepayment } from '../lib/data'
 import FolioStatement from '../components/FolioStatement'
 import { EDITOR, OPENS_ON_ALL, OVERSIGHT, SUPERVISOR, is } from '../lib/roles'
 import { accountStatementPdf, savePdf } from '../lib/pdfSheet'
@@ -139,9 +141,21 @@ export default function Credit({ boot }) {
   // Which folded months are open. Absent means "use the default", which is
   // the month being worked; an entry means the person has decided.
   const [openMonths, setOpenMonths] = useState({})
+  // A payment the till refused because its day is closed. Held here until
+  // the person says whether to send it to the GM, rather than lost to a
+  // toast they may not read.
+  const [held, setHeld] = useState(null)
+  const [pending, setPending] = useState([])
+  const [deciding, setDeciding] = useState(null)   // { row, reason }
+  const isBoss = ['gm', 'admin'].includes(staff.role)
   const itemById = useMemo(() => Object.fromEntries(items.map(i => [i.id, i])), [items])
   const locById = useMemo(() => Object.fromEntries((allLocations || []).map(l => [l.id, l])), [allLocations])
   const isReception = /reception/i.test(locById[locId]?.name || '')
+
+  useEffect(() => {
+    if (!isBoss) return
+    loadPendingRepayments(staff.branch_id, staff.id).then(setPending).catch(() => {})
+  }, [isBoss, staff.branch_id, staff.id])
 
   const refresh = useCallback(() => {
     const requestedFor = requestKey   // snapshot at the moment this fetch was started
@@ -346,7 +360,44 @@ export default function Credit({ boot }) {
       toast('Payment recorded', 'success')
       flush()
       setPay(null); setOpen(null); refresh()
-    } catch (e) { toast('Not saved: ' + e.message, 'error') }
+    } catch (e) {
+      // Every other refusal is final and must be read. This one has a
+      // route: the GM can let it in, and nothing else can.
+      if (isClosedDayRefusal(e)) setHeld({ base, parts, message: e.message })
+      else toast('Not saved: ' + e.message, 'error')
+    }
+    setBusy(false)
+  }
+
+  async function sendToGM() {
+    if (!held) return
+    setBusy(true)
+    try {
+      for (const part of held.parts) {
+        await submitPendingRepayment({
+          ...held.base, staff, amount: part.amount, method: part.method,
+          paidOn: held.base.paidOn, clientRef: crypto.randomUUID(),
+          reason: held.message,
+        })
+      }
+      toast('Sent to the GM', 'success')
+      setHeld(null); setPay(null); setOpen(null); refresh()
+    } catch (e) { toast('Not sent: ' + e.message, 'error') }
+    setBusy(false)
+  }
+
+  async function decide(approve) {
+    const d = deciding
+    if (!d) return
+    setBusy(true)
+    try {
+      if (approve) await approvePendingRepayment(d.row.id, staff.id, d.reason || null)
+      else await rejectPendingRepayment(d.row.id, staff.id, d.reason)
+      toast(approve ? 'Approved' : 'Rejected', 'success')
+      setDeciding(null)
+      loadPendingRepayments(staff.branch_id, staff.id).then(setPending).catch(() => {})
+      refresh()
+    } catch (e) { toast(e.message, 'error') }
     setBusy(false)
   }
 
@@ -819,6 +870,48 @@ export default function Credit({ boot }) {
         </>
       ) : (
       <>
+      {/* Money somebody has taken that the books have not accepted. It sits
+          above everything, because an unapproved payment is money in a till
+          that no figure on this page includes. */}
+      {isBoss && !!pending.filter(r => r.status === 'pending').length && (
+        <section className="rounded-2xl border border-amber bg-surface p-4 mt-1">
+          <div className="text-amber font-bold">
+            {pending.filter(r => r.status === 'pending').length} payment
+            {pending.filter(r => r.status === 'pending').length === 1 ? '' : 's'} waiting for you
+          </div>
+          <p className="text-dim text-sm mt-1">
+            Taken after the day was closed. Until you decide, this money is in
+            nobody's figures.
+          </p>
+          <ul className="mt-3 divide-y divide-line/60">
+            {pending.filter(r => r.status === 'pending').map(r => (
+              <li key={r.id} className="py-3">
+                <div className="flex items-baseline justify-between gap-2">
+                  <span className="font-semibold">{r.customer || 'Unknown'}</span>
+                  <span className="tnum font-bold text-amber">{naira(r.amount)}</span>
+                </div>
+                <div className="text-dim text-sm">
+                  {r.department ? `${r.department} · ` : ''}{methodLabel[r.method] || r.method}
+                  {' · '}for {r.paid_on}, {r.days_late} days ago
+                </div>
+                <div className="text-dim text-sm">taken by {r.submitted_by || 'someone'}</div>
+                {r.note && <div className="text-dim text-sm">“{r.note}”</div>}
+                <div className="flex gap-2 mt-2">
+                  <button onClick={() => setDeciding({ row: r, reason: '', mode: 'approve' })}
+                    className="h-10 px-3 rounded-xl bg-leaf text-bg font-bold text-sm">
+                    Let it in
+                  </button>
+                  <button onClick={() => setDeciding({ row: r, reason: '', mode: 'reject' })}
+                    className="h-10 px-3 rounded-xl border border-clay text-clay font-bold text-sm">
+                    Turn it away
+                  </button>
+                </div>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+
       {/* The figure this page exists for, at the top of it and in a size
           that matches what it means. It was a small number on the right
           of a heading, the same weight as the headings above it. */}
@@ -1548,6 +1641,58 @@ export default function Credit({ boot }) {
       {/* The warning Joseph never got. It states what it found and makes
           both answers equally easy — a dialog that only offers "go on"
           is not a check. */}
+      {held && (
+        <div className="fixed inset-0 z-[70] bg-bg h-[100dvh] flex flex-col justify-center px-6">
+          <h2 className="text-2xl font-bold text-amber">That day is closed</h2>
+          <p className="text-dim mt-3">{held.message}</p>
+          <p className="text-dim mt-3">
+            The money is not lost. Send it to the GM and it waits to be let in —
+            on <b className="text-ink">{held.base.paidOn}</b>, the day it was
+            actually taken, not today.
+          </p>
+          <button onClick={sendToGM} disabled={busy}
+            className="mt-8 w-full h-14 rounded-2xl bg-amber text-bg font-bold disabled:opacity-40">
+            {busy ? 'Sending…' : 'Send it to the GM'}
+          </button>
+          <button onClick={() => setHeld(null)} disabled={busy}
+            className="mt-3 w-full h-14 rounded-2xl border border-line text-dim font-bold">
+            Not now
+          </button>
+        </div>
+      )}
+
+      {deciding && (
+        <div className="fixed inset-0 z-[70] bg-bg h-[100dvh] flex flex-col justify-center px-6">
+          <h2 className="text-2xl font-bold">
+            {deciding.mode === 'approve' ? 'Let it in' : 'Turn it away'}
+          </h2>
+          <p className="text-dim mt-3">
+            {naira(deciding.row.amount)} from <b className="text-ink">{deciding.row.customer}</b>,
+            taken by <b className="text-ink">{deciding.row.submitted_by}</b> for{' '}
+            <b className="text-ink">{deciding.row.paid_on}</b>.
+          </p>
+          <p className="text-dim mt-3">
+            {deciding.mode === 'approve'
+              ? 'It will be recorded on the day it was taken, under the person who took it, and that day will show a late entry.'
+              : 'Say why. The record stays either way — somebody said this money arrived.'}
+          </p>
+          <input value={deciding.reason}
+            onChange={e => setDeciding(d => ({ ...d, reason: e.target.value }))}
+            placeholder={deciding.mode === 'approve' ? 'Note (optional)' : 'Why it is being turned away'}
+            className="mt-4 h-12 w-full px-3 rounded-xl bg-surface border border-line" />
+          <button onClick={() => decide(deciding.mode === 'approve')}
+            disabled={busy || (deciding.mode === 'reject' && deciding.reason.trim().length < 6)}
+            className={`mt-6 w-full h-14 rounded-2xl font-bold disabled:opacity-40 ${
+              deciding.mode === 'approve' ? 'bg-leaf text-bg' : 'border border-clay text-clay'}`}>
+            {busy ? 'Saving…' : deciding.mode === 'approve' ? 'Let it in' : 'Turn it away'}
+          </button>
+          <button onClick={() => setDeciding(null)} disabled={busy}
+            className="mt-3 w-full h-14 rounded-2xl border border-line text-dim font-bold">
+            Back
+          </button>
+        </div>
+      )}
+
       {repeat && (
         <div className="fixed inset-0 z-[70] bg-bg h-[100dvh] flex flex-col justify-center px-6">
           <h2 className="text-2xl font-bold text-clay">This may already be paid</h2>

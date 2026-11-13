@@ -24,7 +24,8 @@ import { ToastHost } from './components/Toast'
 import { registerHandlers, flush } from './lib/outbox'
 import { saveBasket, saveWriteoff, saveMovements, loadBranches,
          saveRepayment, saveCountLine, loadPendingVerifications,
-         loadUnfinishedCounts, loadMyPay } from './lib/data'
+         loadUnfinishedCounts, loadMyPay,
+         isClosedDayRefusal, submitPendingRepayment } from './lib/data'
 import Credit from './pages/Credit'
 import Counts from './pages/Counts'
 import Shell from './components/Shell'
@@ -281,7 +282,25 @@ export default function App() {
         backdateReason: p.backdateReason, onBehalfOf: p.onBehalfOf,
       }),
       movements: (p) => saveMovements(p.rows),
-      repayment: (p) => saveRepayment({ ...p, staff: p.staffLite }),
+      // A queued repayment that flushes after the till closed would have
+      // been dropped with a line in the console — the outbox discards a
+      // permanent failure. Money taken at 11pm on a weak signal must not
+      // disappear because it arrived late, so a closed-day refusal is
+      // handed to the GM's queue instead, carrying its original client
+      // reference so approving it cannot write it twice.
+      repayment: async (p) => {
+        try {
+          await saveRepayment({ ...p, staff: p.staffLite })
+        } catch (e) {
+          if (!isClosedDayRefusal(e)) throw e
+          await submitPendingRepayment({
+            staff: p.staffLite, customerId: p.customerId, amount: p.amount,
+            method: p.method, paidOn: p.paidOn, note: p.note,
+            locationId: p.locationId, creditStaffId: p.creditStaffId,
+            clientRef: p.clientRef, reason: e.message,
+          })
+        }
+      },
       countLine: (p) => saveCountLine(p.countId, p.itemId, p.qty),
       writeoff: (p) => saveWriteoff({
         staff: p.staffLite, item: { id: p.itemId }, locationId: p.locationId,
