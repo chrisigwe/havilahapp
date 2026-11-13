@@ -874,13 +874,29 @@ export default function Credit({ boot }) {
         //
         // The month a debt is DEDUCTED in is a different question, and it
         // has its own view: "what each owed at the end of a month".
-        const buckets = monthBuckets(shown, c => c.last_credit_date)
+        // Staff and customers are two different jobs on one list (Chris,
+        // 13 November 2026). Nineteen of the thirty-two people owing on
+        // 12 November were staff: that money is deducted at payroll, it is
+        // never chased. The rest only arrives if somebody asks for it.
+        // Interleaved by date, neither job could be seen whole.
+        //
+        // Who counts as staff is decided by the same test the month view
+        // uses — the name carries "(staff)". Deliberately the same
+        // expression as customer_credit_for_month's `name ilike '%staff%'`:
+        // two answers to that question on one page would be worse than no
+        // split at all. If the test ever changes, change it in both.
+        const isStaff = c => /staff/i.test(c.name || '')
+        const jobs = [
+          { key: 'collect', title: 'Must be collected', caption: 'somebody has to ask',
+            rows: shown.filter(c => !isStaff(c)) },
+          { key: 'wages', title: 'Comes out of wages', caption: 'deducted at payroll',
+            rows: shown.filter(isStaff) },
+        ].filter(j => j.rows.length)
 
-        // Searching must never fold a match out of sight, and one month is
-        // not worth a header.
-        const folded = !needle && buckets.length > 1
+        // Searching must never fold or file a match out of sight.
+        const split = !needle && jobs.length > 1
         const thisMonth = lagosToday().slice(0, 7)
-        const isOpen = k => k in openMonths ? openMonths[k] : k === thisMonth
+        const isOpen = k => k in openMonths ? openMonths[k] : k.endsWith(thisMonth)
         const toggle = k => setOpenMonths(o => ({ ...o, [k]: !isOpen(k) }))
 
         const head = (k, label, count, right, flag) => (
@@ -902,6 +918,21 @@ export default function Credit({ boot }) {
             {rows.map(debtorRow)}
           </ul>
         )
+        const money = (n, cls) => (
+          <span className={`tnum font-bold shrink-0 ${cls}`}>{naira(n)}</span>
+        )
+
+        // Months inside a job. Keys are prefixed so October under "must be
+        // collected" and October under "comes out of wages" open and close
+        // on their own.
+        const monthsOf = (prefix, rows) => monthBuckets(rows, c => c.last_credit_date)
+          .map(({ key, rows: inMonth }) => (
+            <div key={prefix + key}>
+              {head(prefix + ':' + key, monthLabel(key), inMonth.length,
+                money(inMonth.reduce((t, r) => t + Number(r.balance), 0), 'text-clay'), null)}
+              {isOpen(prefix + ':' + key) && list(inMonth)}
+            </div>
+          ))
 
         // Nobody drops off the list. An account that is square, or that has
         // paid further than it owes, says so instead of vanishing — which is
@@ -920,7 +951,7 @@ export default function Credit({ boot }) {
           </div>
         )
 
-        if (!folded) return (
+        if (needle || !shown.length) return (
           <>
             <ul className="mt-2 divide-y divide-line/60">
               {shown.map(debtorRow)}
@@ -935,17 +966,31 @@ export default function Credit({ boot }) {
           </>
         )
 
-        return (
+        // One job only — a barman's debtors are all customers, and a
+        // heading over the only list is noise.
+        if (!split) return (
           <div className="mt-2 flex flex-col gap-2">
             <p className="text-dim text-xs">Grouped by when each person last took credit.</p>
-            {buckets.map(({ key, rows }) => (
-              <div key={key}>
-                {head(key, monthLabel(key), rows.length,
-                  <span className="tnum font-bold text-clay shrink-0">
-                    {naira(rows.reduce((t, r) => t + Number(r.balance), 0))}
-                  </span>, null)}
-                {isOpen(key) && list(rows)}
-              </div>
+            {monthsOf(jobs[0]?.key || 'all', shown)}
+            {settledGroup}
+          </div>
+        )
+
+        return (
+          <div className="mt-2 flex flex-col gap-3">
+            {jobs.map(j => (
+              <section key={j.key} className="rounded-2xl border border-line overflow-hidden">
+                <div className="flex items-baseline gap-2 px-3 py-2.5 bg-surface border-b border-line">
+                  <div className="flex-1 min-w-0">
+                    <div className="font-bold text-sm">{j.title}</div>
+                    <div className="text-dim text-xs">
+                      {j.rows.length} {j.rows.length === 1 ? 'person' : 'people'} · {j.caption}
+                    </div>
+                  </div>
+                  {money(j.rows.reduce((t, r) => t + Number(r.balance), 0), 'text-clay')}
+                </div>
+                <div className="p-2 flex flex-col gap-2">{monthsOf(j.key, j.rows)}</div>
+              </section>
             ))}
             {settledGroup}
           </div>
