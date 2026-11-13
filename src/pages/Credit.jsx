@@ -136,7 +136,6 @@ export default function Credit({ boot }) {
   // Shape only — neither touches what is loaded, so neither can change
   // a figure. Search filters the rows already in hand; sort reorders them.
   const [find, setFind] = useState('')
-  const [sort, setSort] = useState('recent')   // recent | biggest | longest
   // Which folded months are open. Absent means "use the default", which is
   // the month being worked; an entry means the person has decided.
   const [openMonths, setOpenMonths] = useState({})
@@ -469,15 +468,14 @@ export default function Credit({ boot }) {
   const matched = needle
     ? owing.filter(c => (c.name || '').toLowerCase().includes(needle))
     : owing
-  // Recent stays the default: it is the order the data arrives in and
-  // the order this page has always been read in. The other two are for
-  // chasing money — who owes most, and who has been owing longest.
-  const shown = sort === 'biggest'
-    ? [...matched].sort((a, b) => Number(b.balance) - Number(a.balance))
-    : sort === 'longest'
-      ? [...matched].sort((a, b) =>
-          String(a.first_credit_date || '9999-12-31').localeCompare(String(b.first_credit_date || '9999-12-31')))
-      : matched
+  // Oldest owing first, always (Chris, 13 November 2026). Recent /
+  // Biggest / Oldest was three choices where one judgement belongs: the
+  // debt that has been outstanding longest is the one to act on, and
+  // the months above it already separate the active from the dormant.
+  // A tie goes to the larger balance.
+  const shown = [...matched].sort((a, b) =>
+    String(a.first_credit_date || '9999-12-31').localeCompare(String(b.first_credit_date || '9999-12-31'))
+    || Number(b.balance) - Number(a.balance))
 
   // Days between a business date and today, counted in Lagos dates
   // rather than in milliseconds from the device clock.
@@ -489,6 +487,19 @@ export default function Credit({ boot }) {
   const oldest = owing.reduce((o, r) =>
     r.first_credit_date && (!o || r.first_credit_date < o) ? r.first_credit_date : o, null)
   const biggest = owing.reduce((m, r) => Math.max(m, Number(r.balance)), 0)
+  // How much of the total has been owed for more than a month (Chris,
+  // 13 November 2026). "Oldest since 7 Sep" names a date and says
+  // nothing about how much is sitting behind it — on 12 November that
+  // date hid ₦413,950 of ₦441,050, which is the fact worth acting on.
+  // Counted from when each debt STARTED, so a regular who has owed
+  // something since September counts even though they bought today.
+  const monthAgo = (() => {
+    const d = new Date(lagosToday() + 'T12:00:00')
+    d.setDate(d.getDate() - 30)
+    return d.toISOString().slice(0, 10)
+  })()
+  const overAMonth = owing.reduce((t, r) =>
+    r.first_credit_date && r.first_credit_date <= monthAgo ? t + Number(r.balance) : t, 0)
   const takenAllTime = owing.reduce((t, r) => t + Number(r.credit_taken || 0), 0)
   const repaidAllTime = owing.reduce((t, r) => t + Number(r.repaid || 0), 0)
 
@@ -824,6 +835,13 @@ export default function Credit({ boot }) {
           {oldest && <> · oldest since {new Date(oldest + 'T12:00:00')
             .toLocaleDateString('en-NG', { day: 'numeric', month: 'short' })}</>}
         </div>
+        {overAMonth > 0.009 && (
+          <div className="text-amber font-semibold text-sm mt-2 pt-2 border-t border-line">
+            {naira(overAMonth)} of it has been owed for over a month
+            {total > 0 && <span className="text-dim font-normal">
+              {' '}· {Math.round((overAMonth / total) * 100)}% of the total</span>}
+          </div>
+        )}
         {/* All time, and said so. These two are each customer's whole
             history at this department, not this month's — summing them
             under a monthly heading is how a figure gets quoted wrongly. */}
@@ -837,20 +855,9 @@ export default function Credit({ boot }) {
 
       {/* Only once the list is long enough to be worth searching. */}
       {owing.length > 4 && (
-        <>
-          <input value={find} onChange={e => setFind(e.target.value)}
-            placeholder="Find a name" aria-label="Find a name"
-            className="mt-3 h-11 w-full px-3 rounded-xl bg-surface border border-line" />
-          <div className="flex gap-2 mt-2">
-            {[['recent', 'Recent'], ['biggest', 'Biggest'], ['longest', 'Oldest']].map(([k, label]) => (
-              <button key={k} onClick={() => setSort(k)}
-                className={`flex-1 h-10 rounded-xl border text-sm font-semibold ${sort === k
-                  ? 'bg-raise border-amber text-amber' : 'border-line text-dim'}`}>
-                {label}
-              </button>
-            ))}
-          </div>
-        </>
+        <input value={find} onChange={e => setFind(e.target.value)}
+          placeholder="Find a name" aria-label="Find a name"
+          className="mt-3 h-11 w-full px-3 rounded-xl bg-surface border border-line" />
       )}
 
       {(() => {
@@ -867,13 +874,29 @@ export default function Credit({ boot }) {
         //
         // The month a debt is DEDUCTED in is a different question, and it
         // has its own view: "what each owed at the end of a month".
-        const buckets = monthBuckets(shown, c => c.last_credit_date)
+        // Staff and customers are two different jobs on one list (Chris,
+        // 13 November 2026). Nineteen of the thirty-two people owing on
+        // 12 November were staff: that money is deducted at payroll, it is
+        // never chased. The rest only arrives if somebody asks for it.
+        // Interleaved by date, neither job could be seen whole.
+        //
+        // Who counts as staff is decided by the same test the month view
+        // uses — the name carries "(staff)". Deliberately the same
+        // expression as customer_credit_for_month's `name ilike '%staff%'`:
+        // two answers to that question on one page would be worse than no
+        // split at all. If the test ever changes, change it in both.
+        const isStaff = c => /staff/i.test(c.name || '')
+        const jobs = [
+          { key: 'collect', title: 'Must be collected', caption: 'somebody has to ask',
+            rows: shown.filter(c => !isStaff(c)) },
+          { key: 'wages', title: 'Comes out of wages', caption: 'deducted at payroll',
+            rows: shown.filter(isStaff) },
+        ].filter(j => j.rows.length)
 
-        // Searching must never fold a match out of sight, and one month is
-        // not worth a header.
-        const folded = !needle && buckets.length > 1
+        // Searching must never fold or file a match out of sight.
+        const split = !needle && jobs.length > 1
         const thisMonth = lagosToday().slice(0, 7)
-        const isOpen = k => k in openMonths ? openMonths[k] : k === thisMonth
+        const isOpen = k => k in openMonths ? openMonths[k] : k.endsWith(thisMonth)
         const toggle = k => setOpenMonths(o => ({ ...o, [k]: !isOpen(k) }))
 
         const head = (k, label, count, right, flag) => (
@@ -895,6 +918,21 @@ export default function Credit({ boot }) {
             {rows.map(debtorRow)}
           </ul>
         )
+        const money = (n, cls) => (
+          <span className={`tnum font-bold shrink-0 ${cls}`}>{naira(n)}</span>
+        )
+
+        // Months inside a job. Keys are prefixed so October under "must be
+        // collected" and October under "comes out of wages" open and close
+        // on their own.
+        const monthsOf = (prefix, rows) => monthBuckets(rows, c => c.last_credit_date)
+          .map(({ key, rows: inMonth }) => (
+            <div key={prefix + key}>
+              {head(prefix + ':' + key, monthLabel(key), inMonth.length,
+                money(inMonth.reduce((t, r) => t + Number(r.balance), 0), 'text-clay'), null)}
+              {isOpen(prefix + ':' + key) && list(inMonth)}
+            </div>
+          ))
 
         // Nobody drops off the list. An account that is square, or that has
         // paid further than it owes, says so instead of vanishing — which is
@@ -913,7 +951,7 @@ export default function Credit({ boot }) {
           </div>
         )
 
-        if (!folded) return (
+        if (needle || !shown.length) return (
           <>
             <ul className="mt-2 divide-y divide-line/60">
               {shown.map(debtorRow)}
@@ -928,17 +966,31 @@ export default function Credit({ boot }) {
           </>
         )
 
-        return (
+        // One job only — a barman's debtors are all customers, and a
+        // heading over the only list is noise.
+        if (!split) return (
           <div className="mt-2 flex flex-col gap-2">
             <p className="text-dim text-xs">Grouped by when each person last took credit.</p>
-            {buckets.map(({ key, rows }) => (
-              <div key={key}>
-                {head(key, monthLabel(key), rows.length,
-                  <span className="tnum font-bold text-clay shrink-0">
-                    {naira(rows.reduce((t, r) => t + Number(r.balance), 0))}
-                  </span>, null)}
-                {isOpen(key) && list(rows)}
-              </div>
+            {monthsOf(jobs[0]?.key || 'all', shown)}
+            {settledGroup}
+          </div>
+        )
+
+        return (
+          <div className="mt-2 flex flex-col gap-3">
+            {jobs.map(j => (
+              <section key={j.key} className="rounded-2xl border border-line overflow-hidden">
+                <div className="flex items-baseline gap-2 px-3 py-2.5 bg-surface border-b border-line">
+                  <div className="flex-1 min-w-0">
+                    <div className="font-bold text-sm">{j.title}</div>
+                    <div className="text-dim text-xs">
+                      {j.rows.length} {j.rows.length === 1 ? 'person' : 'people'} · {j.caption}
+                    </div>
+                  </div>
+                  {money(j.rows.reduce((t, r) => t + Number(r.balance), 0), 'text-clay')}
+                </div>
+                <div className="p-2 flex flex-col gap-2">{monthsOf(j.key, j.rows)}</div>
+              </section>
             ))}
             {settledGroup}
           </div>
