@@ -3534,6 +3534,9 @@ export async function loadCreditOnDate(branchId, date, locationId, staffId) {
       .reduce((t, p) => t + Number(p.amount), 0)
     return {
       kind: 'taken', id: s.id, amount,
+      // Carried so a day's row can open the debtor (Chris, 13 November
+      // 2026). Without it the date picker is a report you cannot act on.
+      customer_id: s.customer_id,
       customer: s.customers?.name || 'Unknown',
       item: s.stock_items?.name || s.description || 'Item',
       qty: Number(s.qty), location_id: s.location_id,
@@ -3543,6 +3546,7 @@ export async function loadCreditOnDate(branchId, date, locationId, staffId) {
 
   const repaid = (reps || []).map(r => ({
     kind: 'repaid', id: r.id, amount: Number(r.amount),
+    customer_id: r.customer_id,
     customer: r.customers?.name || 'Unknown',
     item: 'Repayment', qty: null, location_id: r.location_id,
     who: credited(r.credit_staff_id, r.recorded_by, 'to'),

@@ -724,19 +724,35 @@ export default function Credit({ boot }) {
                 <span className="tnum font-bold text-lg text-clay">{naira(dayData.takenTotal || 0)}</span>
               </div>
               <ul className="divide-y divide-line/60">
-                {dayData.rows.filter(r => r.kind !== 'repaid').map(r => (
-                  <li key={r.kind + r.id} className="py-3 flex items-center gap-3">
-                    <div className="flex-1 min-w-0">
-                      <div className="font-semibold truncate">{r.customer}</div>
-                      <div className="text-dim text-sm truncate">
-                        {r.item}{r.qty ? ` × ${r.qty}` : ''}
-                        {locId === 'all' && locById[r.location_id] ? ` · ${locById[r.location_id].name}` : ''}
+                {dayData.rows.filter(r => r.kind !== 'repaid').map(r => {
+                  // A day was a report you could read and not act on: the
+                  // name was there, tapping it did nothing, and collecting
+                  // meant going back to the list and finding the person
+                  // again. The month's rows were opened on 12 November and
+                  // these were missed (Chris, 13 November 2026).
+                  const live = combined.find(c => c.customer_id === r.customer_id)
+                  return (
+                  <li key={r.kind + r.id}>
+                    <button type="button" disabled={!live}
+                      onClick={() => live && openCustomer(live)}
+                      className="w-full text-left py-3 flex items-center gap-3 disabled:opacity-60">
+                      <div className="flex-1 min-w-0">
+                        <div className="font-semibold truncate">{r.customer}</div>
+                        <div className="text-dim text-sm truncate">
+                          {r.item}{r.qty ? ` × ${r.qty}` : ''}
+                          {locId === 'all' && locById[r.location_id] ? ` · ${locById[r.location_id].name}` : ''}
+                        </div>
+                        <div className="text-dim text-sm truncate">
+                          {r.who}{live ? '' : ' · nothing owing now'}
+                        </div>
                       </div>
-                      <div className="text-dim text-sm truncate">{r.who}</div>
-                    </div>
-                    <span className="tnum font-bold shrink-0 text-clay">{naira(r.amount)}</span>
+                      <span className="shrink-0 text-right">
+                        <span className="tnum font-bold text-clay block">{naira(r.amount)}</span>
+                        {live && <span className="text-dim text-xs">statement ›</span>}
+                      </span>
+                    </button>
                   </li>
-                ))}
+                )})}
               </ul>
             </>
           )}
@@ -748,18 +764,22 @@ export default function Credit({ boot }) {
                 <span className="tnum font-bold text-lg text-leaf">{naira(dayData.repaidTotal || 0)}</span>
               </div>
               <ul className="divide-y divide-line/60">
-                {dayData.rows.filter(r => r.kind === 'repaid').map(r => (
+                {dayData.rows.filter(r => r.kind === 'repaid').map(r => {
+                  const live = combined.find(c => c.customer_id === r.customer_id)
+                  return (
                   <li key={r.kind + r.id} className="py-3 flex items-center gap-3">
-                    <div className="flex-1 min-w-0">
+                    <button type="button" disabled={!live}
+                      onClick={() => live && openCustomer(live)}
+                      className="flex-1 min-w-0 text-left disabled:opacity-60">
                       <div className="font-semibold truncate">{r.customer}</div>
                       <div className="text-dim text-sm truncate">
                         {locId === 'all' && locById[r.location_id] ? `${locById[r.location_id].name} · ` : ''}
-                        {r.who}
+                        {r.who}{live ? ' · statement ›' : ' · settled'}
                       </div>
-                    </div>
+                    </button>
                     <span className="tnum font-bold shrink-0 text-leaf">{naira(r.amount)}</span>
                   </li>
-                ))}
+                )})}
               </ul>
             </>
           )}
