@@ -767,6 +767,53 @@ async function _saveRepayment({ staff, customerId, amount, method, paidOn, note,
   if (direct) throw direct
 }
 
+// ---------- held for the GM ----------
+//
+// A repayment refused because the day is closed is not lost and not
+// silently dropped: it is held, and the GM lets it in or turns it away.
+// With no GM valve on the collect screen this queue is the ONLY route
+// late money has, so it has to be dependable rather than a corner of the
+// app nobody opens.
+
+// The trigger's own sentence, recognised rather than guessed at. Any
+// other refusal - a future date, your own account, far above the debt -
+// has no route in and must surface to the person instead.
+export function isClosedDayRefusal(err) {
+  return /is closed/i.test(String(err?.message || ''))
+}
+
+export async function submitPendingRepayment({ staff, customerId, amount, method, paidOn,
+                                               note, locationId, creditStaffId, clientRef, reason }) {
+  const { data, error } = await supabase.rpc('submit_pending_repayment', {
+    p_branch: staff.branch_id, p_customer: customerId, p_location: locationId || null,
+    p_credit_staff: creditStaffId || null, p_amount: amount, p_method: method,
+    p_paid_on: paidOn, p_note: note || null, p_client_ref: clientRef || null,
+    p_reason: reason || null, p_submitted_by: staff.id,
+  })
+  if (error) throw error
+  return data
+}
+
+export async function loadPendingRepayments(branchId, viewerId, days = 60) {
+  const { data, error } = await supabase.rpc('pending_repayments_for',
+    { p_branch: branchId, p_viewer: viewerId, p_days: days })
+  if (error) throw error
+  return data || []
+}
+
+export async function approvePendingRepayment(id, decidedBy, note) {
+  const { data, error } = await supabase.rpc('approve_pending_repayment',
+    { p_id: id, p_decided_by: decidedBy, p_note: note || null })
+  if (error) throw error
+  return data
+}
+
+export async function rejectPendingRepayment(id, decidedBy, reason) {
+  const { error } = await supabase.rpc('reject_pending_repayment',
+    { p_id: id, p_decided_by: decidedBy, p_reason: reason })
+  if (error) throw error
+}
+
 // A repayment taken at the front desk belongs to whoever gave the credit,
 // not to whoever happened to be standing at the desk (Chris, 9 November
 // 2026).
