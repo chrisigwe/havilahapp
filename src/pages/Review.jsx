@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useToast } from '../components/Toast'
-import { loadReviewFlags, setReviewHandled } from '../lib/data'
+import { loadReviewFlags, loadLateRepaymentFlags, setReviewHandled } from '../lib/data'
 import { naira, lagosTime } from '../lib/format'
 
 // "Needs a look" — the things worth asking about, in one place.
@@ -59,6 +59,10 @@ const KIND = {
     title: 'Entered days late',
     why: 'A sale recorded well after its day was missing when that day was counted, which shows up later as a stock variance nobody can explain.',
   },
+  late_repayment: {
+    title: 'Credit repaid late',
+    why: 'Money recorded two days or more after the day it came in, when Match your Total Sales was already done for that day. The rule allows two days; one is the habit worth having. Named here so a pattern has somewhere to show itself.',
+  },
 }
 
 const SEV = {
@@ -103,8 +107,11 @@ export default function Review({ boot }) {
 
   useEffect(() => {
     setFlags(null); setErr(null)
-    loadReviewFlags(boot.staff.branch_id, days)
-      .then(setFlags)
+    Promise.all([
+      loadReviewFlags(boot.staff.branch_id, days),
+      loadLateRepaymentFlags(boot.staff.branch_id, days),
+    ])
+      .then(([a, b]) => setFlags([...(a || []), ...(b || [])]))
       .catch(e => { setErr(e.message || 'could not load'); setFlags([]) })
   }, [boot.staff.branch_id, days])
 

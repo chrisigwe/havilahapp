@@ -3142,6 +3142,22 @@ export async function setRoomServiceStatus(roomId, outOfService, reason) {
 // edits, blank counts, self-verified counts, reopened stays never
 // re-dated, and so on (migration 460). The RPC decides nothing about
 // intent; it only surfaces what would otherwise sit unseen.
+// Credit repaid two days or more after its day, into a day already
+// matched. Kept beside review_flags rather than inside it: that function
+// carries ten working checks and is not worth editing to add an
+// eleventh. Returns the same row shape and shares review_handled, so
+// these tick off like any other row.
+//
+// A failure here must not take the page down — the other ten checks are
+// worth more than this one.
+export async function loadLateRepaymentFlags(branchId, days = 14) {
+  const { data, error } = await supabase.rpc('review_late_repayments', {
+    p_branch: branchId, p_days: days,
+  })
+  if (error) return []
+  return data || []
+}
+
 export async function loadReviewFlags(branchId, days = 14) {
   const { data, error } = await supabase.rpc('review_flags', {
     p_branch: branchId, p_days: days,
