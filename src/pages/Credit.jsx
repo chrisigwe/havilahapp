@@ -136,7 +136,6 @@ export default function Credit({ boot }) {
   // Shape only — neither touches what is loaded, so neither can change
   // a figure. Search filters the rows already in hand; sort reorders them.
   const [find, setFind] = useState('')
-  const [sort, setSort] = useState('recent')   // recent | biggest | longest
   // Which folded months are open. Absent means "use the default", which is
   // the month being worked; an entry means the person has decided.
   const [openMonths, setOpenMonths] = useState({})
@@ -469,15 +468,14 @@ export default function Credit({ boot }) {
   const matched = needle
     ? owing.filter(c => (c.name || '').toLowerCase().includes(needle))
     : owing
-  // Recent stays the default: it is the order the data arrives in and
-  // the order this page has always been read in. The other two are for
-  // chasing money — who owes most, and who has been owing longest.
-  const shown = sort === 'biggest'
-    ? [...matched].sort((a, b) => Number(b.balance) - Number(a.balance))
-    : sort === 'longest'
-      ? [...matched].sort((a, b) =>
-          String(a.first_credit_date || '9999-12-31').localeCompare(String(b.first_credit_date || '9999-12-31')))
-      : matched
+  // Oldest owing first, always (Chris, 13 November 2026). Recent /
+  // Biggest / Oldest was three choices where one judgement belongs: the
+  // debt that has been outstanding longest is the one to act on, and
+  // the months above it already separate the active from the dormant.
+  // A tie goes to the larger balance.
+  const shown = [...matched].sort((a, b) =>
+    String(a.first_credit_date || '9999-12-31').localeCompare(String(b.first_credit_date || '9999-12-31'))
+    || Number(b.balance) - Number(a.balance))
 
   // Days between a business date and today, counted in Lagos dates
   // rather than in milliseconds from the device clock.
@@ -489,6 +487,19 @@ export default function Credit({ boot }) {
   const oldest = owing.reduce((o, r) =>
     r.first_credit_date && (!o || r.first_credit_date < o) ? r.first_credit_date : o, null)
   const biggest = owing.reduce((m, r) => Math.max(m, Number(r.balance)), 0)
+  // How much of the total has been owed for more than a month (Chris,
+  // 13 November 2026). "Oldest since 7 Sep" names a date and says
+  // nothing about how much is sitting behind it — on 12 November that
+  // date hid ₦413,950 of ₦441,050, which is the fact worth acting on.
+  // Counted from when each debt STARTED, so a regular who has owed
+  // something since September counts even though they bought today.
+  const monthAgo = (() => {
+    const d = new Date(lagosToday() + 'T12:00:00')
+    d.setDate(d.getDate() - 30)
+    return d.toISOString().slice(0, 10)
+  })()
+  const overAMonth = owing.reduce((t, r) =>
+    r.first_credit_date && r.first_credit_date <= monthAgo ? t + Number(r.balance) : t, 0)
   const takenAllTime = owing.reduce((t, r) => t + Number(r.credit_taken || 0), 0)
   const repaidAllTime = owing.reduce((t, r) => t + Number(r.repaid || 0), 0)
 
@@ -824,6 +835,13 @@ export default function Credit({ boot }) {
           {oldest && <> · oldest since {new Date(oldest + 'T12:00:00')
             .toLocaleDateString('en-NG', { day: 'numeric', month: 'short' })}</>}
         </div>
+        {overAMonth > 0.009 && (
+          <div className="text-amber font-semibold text-sm mt-2 pt-2 border-t border-line">
+            {naira(overAMonth)} of it has been owed for over a month
+            {total > 0 && <span className="text-dim font-normal">
+              {' '}· {Math.round((overAMonth / total) * 100)}% of the total</span>}
+          </div>
+        )}
         {/* All time, and said so. These two are each customer's whole
             history at this department, not this month's — summing them
             under a monthly heading is how a figure gets quoted wrongly. */}
@@ -837,20 +855,9 @@ export default function Credit({ boot }) {
 
       {/* Only once the list is long enough to be worth searching. */}
       {owing.length > 4 && (
-        <>
-          <input value={find} onChange={e => setFind(e.target.value)}
-            placeholder="Find a name" aria-label="Find a name"
-            className="mt-3 h-11 w-full px-3 rounded-xl bg-surface border border-line" />
-          <div className="flex gap-2 mt-2">
-            {[['recent', 'Recent'], ['biggest', 'Biggest'], ['longest', 'Oldest']].map(([k, label]) => (
-              <button key={k} onClick={() => setSort(k)}
-                className={`flex-1 h-10 rounded-xl border text-sm font-semibold ${sort === k
-                  ? 'bg-raise border-amber text-amber' : 'border-line text-dim'}`}>
-                {label}
-              </button>
-            ))}
-          </div>
-        </>
+        <input value={find} onChange={e => setFind(e.target.value)}
+          placeholder="Find a name" aria-label="Find a name"
+          className="mt-3 h-11 w-full px-3 rounded-xl bg-surface border border-line" />
       )}
 
       {(() => {
