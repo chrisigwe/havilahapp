@@ -42,7 +42,7 @@ ok('a full timestamp still buckets by month', shape(monthBuckets(
    [{ n: 't', since: '2026-08-14T09:30:00Z' }], d)), [['2026-08', ['t']]])
 
 ok('label reads as a person would say it', monthLabel('2026-11'), 'November 2026')
-ok('undated says so', monthLabel(UNDATED), 'No start date recorded')
+ok('undated says so', monthLabel(UNDATED), 'No date recorded')
 ok('December does not slide into January', monthLabel('2025-12'), 'December 2025')
 ok('January does not slide into December', monthLabel('2026-01'), 'January 2026')
 

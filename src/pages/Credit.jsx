@@ -463,10 +463,6 @@ export default function Credit({ boot }) {
   const owing = combined.filter(r => Number(r.balance) > 0.009)
   const total = owing.reduce((s, r) => s + Number(r.balance), 0)
 
-  // Which of the three questions is on screen. Derived, not stored, so
-  // it cannot drift out of step with the two filters it reads.
-  const view = monthFilter ? 'month' : dayFilter ? 'day' : 'balances'
-
   // Finding one person in a list of debtors was done by scrolling.
   // Filtering on what is already loaded — no query, no spinner.
   const needle = find.trim().toLowerCase()
@@ -594,48 +590,46 @@ export default function Credit({ boot }) {
         </div>
       )}
 
-      {/* ONE switch, three views (18 October 2026).
-          This page carried a date row and a month row, each with its own
-          hint and its own way back — four rows of controls before a
-          single figure, and nothing saying that picking one abandoned
-          the other. The view is chosen here; its picker appears under
-          it, and only then.
+      {/* No mode switch (Chris, 13 November 2026). One switch with three
+          views was still three questions to choose between before seeing a
+          figure, and the page's job is one question: who is owing.
 
-          The three answer different questions and are never mixed.
-          Balances are as-of-now by nature, so a date cannot filter
-          them. A day answers "what happened that day". A month answers
-          "what does each person owe", which is what sets the payroll
-          deduction. */}
-      <div className="flex gap-2 py-2">
-        {[['balances', 'Balances'], ['day', 'A day'], ['month', 'A month']].map(([k, label]) => (
-          <button key={k}
-            onClick={() => {
-              if (k === 'balances') { setDayFilter(''); setMonthFilter(null) }
-              if (k === 'day') { setMonthFilter(null); setDayFilter(d => d || lagosToday()) }
-              if (k === 'month') { setDayFilter(''); setMonthFilter(m => m || lagosToday().slice(0, 7)) }
-            }}
-            className={`flex-1 h-11 rounded-xl border font-semibold text-sm ${view === k
-              ? 'bg-amber text-bg border-amber' : 'border-line text-dim'}`}>
-            {label}
-          </button>
-        ))}
-      </div>
-
-      {view === 'day' && (
-        <div className="flex items-center gap-2 pb-2">
+          So the page IS the balances, folded by month, and a date picker
+          breaks down a single day the way Recovered does. The month-end
+          view is kept, because it is what sets a payroll deduction, but it
+          is a line you follow rather than a mode you must first rule out. */}
+      {!monthFilter && (
+        <div className="flex items-center gap-2 py-2">
           <input type="date" value={dayFilter} max={lagosToday()}
-            onChange={e => { if (e.target.value) { setDayFilter(e.target.value); setMonthFilter(null) } }}
-            className="h-11 px-3 rounded-xl bg-surface border border-amber text-amber tnum" />
-          <span className="text-dim text-sm">What was taken and repaid that day</span>
+            onChange={e => { setDayFilter(e.target.value || ''); setMonthFilter(null) }}
+            className={`h-11 px-3 rounded-xl bg-surface border tnum ${dayFilter
+              ? 'border-amber text-amber' : 'border-line text-dim'}`} />
+          <span className="text-dim text-sm">
+            {dayFilter ? 'What was taken and repaid that day' : 'Pick a date to break down that day'}
+          </span>
         </div>
       )}
 
-      {view === 'month' && (
+      {(dayFilter || monthFilter) && (
+        <button onClick={() => { setDayFilter(''); setMonthFilter(null) }}
+          className="h-10 px-4 mb-2 rounded-xl border border-line text-dim text-sm">
+          ← Back to who is owing
+        </button>
+      )}
+
+      {!dayFilter && !monthFilter && (
+        <button onClick={() => setMonthFilter(lagosToday().slice(0, 7))}
+          className="text-dim text-sm underline underline-offset-4 decoration-line pb-1 text-left">
+          What each owed at the end of a month, for deductions
+        </button>
+      )}
+
+      {monthFilter && (
         <div className="flex items-center gap-2 pb-2">
-          <input type="month" value={monthFilter || ''} max={lagosToday().slice(0, 7)}
+          <input type="month" value={monthFilter} max={lagosToday().slice(0, 7)}
             onChange={e => { if (e.target.value) { setMonthFilter(e.target.value); setDayFilter('') } }}
             className="h-11 px-3 rounded-xl bg-surface border border-amber text-amber tnum" />
-          <span className="text-dim text-sm">What each owes, for deductions</span>
+          <span className="text-dim text-sm">What each owed at the end of that month</span>
         </div>
       )}
 
@@ -840,15 +834,20 @@ export default function Credit({ boot }) {
       )}
 
       {(() => {
-        // Months fold (Chris, 12 November 2026). A year of credit was one
-        // list to scroll; it is now one row per month carrying its total,
-        // with the month being worked open and the rest one tap away.
+        // Months fold. One row per month carrying its total, the current
+        // month open and the rest one tap away.
         //
-        // A person sits in the month their credit STARTED, not the month
-        // they last bought, because that is the month it is deducted in —
-        // OpenBar is given a month's grace, so August's debt comes out of
-        // October's wages and needs to still read as August's.
-        const buckets = monthBuckets(shown, c => c.first_credit_date)
+        // Grouped by the month a person LAST took credit, not the month
+        // they started (Chris, 13 November 2026 — "people owing on a daily
+        // basis are hidden"). Grouping by the first credit filed a customer
+        // who buys every day under whenever they opened their account, so
+        // the regulars — the ones you came to the page to see — sat inside
+        // a folded September. Last credit puts anyone still active in the
+        // open month and lets genuinely dormant debt fold away.
+        //
+        // The month a debt is DEDUCTED in is a different question, and it
+        // has its own view: "what each owed at the end of a month".
+        const buckets = monthBuckets(shown, c => c.last_credit_date)
 
         // Searching must never fold a match out of sight, and one month is
         // not worth a header.
@@ -911,6 +910,7 @@ export default function Credit({ boot }) {
 
         return (
           <div className="mt-2 flex flex-col gap-2">
+            <p className="text-dim text-xs">Grouped by when each person last took credit.</p>
             {buckets.map(({ key, rows }) => (
               <div key={key}>
                 {head(key, monthLabel(key), rows.length,

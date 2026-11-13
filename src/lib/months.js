@@ -22,7 +22,7 @@ export function monthBuckets(rows, dateOf) {
 }
 
 export function monthLabel(key) {
-  if (key === UNDATED) return 'No start date recorded'
+  if (key === UNDATED) return 'No date recorded'
   return new Date(key + '-01T12:00:00')
     .toLocaleDateString('en-NG', { month: 'long', year: 'numeric' })
 }
