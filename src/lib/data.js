@@ -779,6 +779,12 @@ async function _saveRepayment({ staff, customerId, amount, method, paidOn, note,
 // other refusal - a future date, your own account, far above the debt -
 // has no route in and must surface to the person instead.
 export function isClosedDayRefusal(err) {
+  // The error CODE decides, not the sentence. Matching on wording meant a
+  // reworded message would silently stop offering the GM — money that
+  // should have been held would simply be refused, with nothing failing
+  // loudly. The text match stays as a fallback for an app build newer
+  // than the database.
+  if (err?.code === 'CLSDY') return true
   return /is closed/i.test(String(err?.message || ''))
 }
 

@@ -11,7 +11,13 @@ import CreditChain from '../components/CreditChain'
 // Deliberately excludes storekeeper — an explicit choice, not an
 // oversight, matching how storekeeper's write access has been pulled
 // back elsewhere in this app.
-const CAN_EDIT_REPAYMENT = ['auditor', 'admin', 'manager', 'gm']
+// Changing a recorded payment is a supervisor's job (Chris, 13 November
+// 2026 — "Only GM/Admin can edit existing payments so far. Please
+// verify."). It was not: manager and auditor had the Edit link, and
+// those are exactly the roles that cannot RECORD a payment at all since
+// 6 November. A role that may not write money should not be able to
+// rewrite it. Now enforced in the database too, on UPDATE.
+const CAN_EDIT_REPAYMENT = SUPERVISOR
 
 export default function Recovery({ boot }) {
   const { staff, locations, allLocations } = boot
