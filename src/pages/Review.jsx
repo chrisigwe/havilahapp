@@ -81,7 +81,6 @@ export default function Review({ boot }) {
   const [days, setDays] = useState(7)
   const [flags, setFlags] = useState(null)
   const [err, setErr] = useState(null)
-  const [open, setOpen] = useState({})
   const [showHandled, setShowHandled] = useState(false)
   const [saving, setSaving] = useState(null)
   const toast = useToast()
@@ -115,38 +114,49 @@ export default function Review({ boot }) {
       .catch(e => { setErr(e.message || 'could not load'); setFlags([]) })
   }, [boot.staff.branch_id, days])
 
-  const groups = useMemo(() => {
-    const by = new Map()
-    for (const f of flags || []) {
-      if (!by.has(f.kind)) by.set(f.kind, [])
-      by.get(f.kind).push(f)
-    }
-    // Most serious kind first, then most rows.
-    const rank = g => Math.min(...g.map(f => f.severity === 'high' ? 0 : f.severity === 'watch' ? 1 : 2))
-    return [...by.entries()].sort((a, b) => rank(a[1]) - rank(b[1]) || b[1].length - a[1].length)
-  }, [flags])
+  // What is new since the last visit. Kept per device in localStorage:
+  // it is a convenience, not a record, and a page that cannot open
+  // because storage is blocked would be worse than one that forgets.
+  const seenKey = `havilah.review.seen.${boot.staff.branch_id}`
+  const [lastSeen] = useState(() => {
+    try { return localStorage.getItem(seenKey) || null } catch { return null }
+  })
+  useEffect(() => {
+    if (flags === null) return
+    try { localStorage.setItem(seenKey, new Date().toISOString()) } catch { /* fine */ }
+  }, [flags, seenKey])
 
-  // Counted from the rows actually returned. Each kind is capped at 25
-  // by the RPC, so a category with more says so on its own row rather
-  // than inflating a headline nobody can act on.
-  const counts = useMemo(() => {
-    const c = { high: 0, watch: 0, note: 0 }
-    for (const f of flags || []) if (!f.handled) c[f.severity] = (c[f.severity] || 0) + 1
-    return c
-  }, [flags])
+  // One list, newest first (Chris, 13 November 2026 — "I would like to
+  // see what's new, and I wouldn't want to waste much time there").
+  //
+  // The page used to group by kind behind ten collapsed headings, which
+  // is the right shape for going through one kind of thing and the wrong
+  // one for finding out what happened since yesterday. What each kind
+  // MEANS is still worth saying, so it moved to the bottom, out of the
+  // way of someone who only wants to look and leave.
+  const shown = useMemo(() => {
+    const list = (flags || []).filter(f => showHandled || !f.handled)
+    return [...list].sort((a, b) =>
+      String(b.happened || '').localeCompare(String(a.happened || '')))
+  }, [flags, showHandled])
+
+  const live = useMemo(() => (flags || []).filter(f => !f.handled), [flags])
+  const isNew = f => !!lastSeen && !!f.happened && String(f.happened) > lastSeen
+  const newCount = useMemo(() => live.filter(isNew).length, [live, lastSeen])
+  const kindsHere = useMemo(
+    () => [...new Set((flags || []).map(f => f.kind))], [flags])
 
   return (
     <div className="px-5 pb-10">
       <div className="py-3 border-b border-line mb-3">
         <h1 className="text-2xl font-bold">Needs a look</h1>
         <p className="text-dim text-sm mt-1">
-          Things worth asking about at {boot.branchName}. Nothing here means anyone
-          did wrong — most of it is ordinary correction. It is here so it is seen.
+          {live.length === 0
+            ? `Nothing waiting at ${boot.branchName}.`
+            : lastSeen
+              ? `${newCount} new since you last looked · ${live.length} waiting in all.`
+              : `${live.length} waiting at ${boot.branchName}.`}
         </p>
-        {/* Four buttons at px-4 in one unwrapping row ran off the side
-            of a phone. The toggle keeps its width; the three periods are
-            a group that drops to a second line together rather than one
-            of them hanging off the edge alone. */}
         <div className="flex flex-wrap items-center gap-2 mt-3">
           <button onClick={() => setShowHandled(v => !v)}
             className={`h-10 px-4 rounded-xl border font-semibold shrink-0 ${showHandled
@@ -168,96 +178,73 @@ export default function Review({ boot }) {
       {flags === null && <p className="text-dim py-8 text-center">Loading…</p>}
       {err && <p className="text-clay py-4">{err}</p>}
 
-      {flags !== null && !flags.length && !err && (
+      {flags !== null && !shown.length && !err && (
         <p className="text-leaf py-8 text-center">
-          Nothing to look at in the last {days} days.
+          {showHandled ? `Nothing in the last ${days} days.` : 'Nothing waiting. All clear.'}
         </p>
       )}
 
-      {!!flags?.length && (
-        <div className="flex flex-wrap gap-x-5 gap-y-1 mb-4 text-sm">
-          {counts.high > 0 && <span className="text-clay"><b className="text-lg tnum">{counts.high}</b> to look at</span>}
-          {counts.watch > 0 && <span className="text-amber"><b className="text-lg tnum">{counts.watch}</b> worth asking</span>}
-          {counts.note > 0 && <span className="text-dim"><b className="text-lg tnum">{counts.note}</b> for the record</span>}
-        </div>
-      )}
-
-      {groups.map(([kind, rows]) => {
-        const meta = KIND[kind] || { title: kind, why: '' }
-        const live = rows.filter(r => !r.handled)
-        const openCount = rows[0]?.kind_open ?? live.length
-        const doneCount = (rows[0]?.kind_total ?? rows.length) - openCount
-        const shown = showHandled ? rows : live
-        const worst = live.some(r => r.severity === 'high') ? 'high'
-          : live.some(r => r.severity === 'watch') ? 'watch' : 'note'
-        const sev = SEV[worst]
-        const isOpen = open[kind] ?? (worst === 'high')
-        return (
-          <section key={kind} className={`mt-3 rounded-2xl border ${sev.ring} bg-surface`}>
-            <button onClick={() => setOpen(o => ({ ...o, [kind]: !isOpen }))}
-              className="w-full text-left px-4 py-3 flex items-start gap-3">
-              <div className="flex-1 min-w-0">
-                <p className="font-bold">{meta.title}</p>
-                <p className={`text-sm ${sev.text}`}>
-                  {openCount} {openCount === 1 ? 'entry' : 'entries'} · {sev.label}
-                  {doneCount > 0 && <span className="text-dim"> · {doneCount} handled</span>}
-                </p>
-              </div>
-              <span className="text-dim">{isOpen ? '−' : '+'}</span>
-            </button>
-
-            {isOpen && (
-              <div className="px-4 pb-4">
-                <p className="text-dim text-sm mb-3">{meta.why}</p>
-                <ul className="divide-y divide-line/60">
-                  {shown.map((f, i) => (
-                    <li key={`${f.key}-${i}`} className={`py-2 ${f.handled ? 'opacity-45' : ''}`}>
-                      <div className="flex items-baseline gap-3">
-                        <span className="flex-1 min-w-0">
-                          <span className="font-semibold">{f.who}</span>
-                          {f.where && <span className="text-dim"> · {f.where}</span>}
-                        </span>
-                        {f.amount != null && (
-                          <span className={`tnum font-semibold shrink-0 ${
-                            f.handled ? 'text-dim' : SEV[f.severity].text}`}>
-                            {naira(Number(f.amount))}
-                          </span>
-                        )}
-                      </div>
-                      <p className="text-dim text-sm">{f.summary}</p>
-                      <div className="flex items-baseline gap-3 mt-0.5">
-                        <span className="flex-1 min-w-0 text-dim text-xs tnum truncate">
-                          {f.happened ? dt(f.happened) : ''}
-                          {f.handled && f.handled_by ? ` · handled by ${f.handled_by}` : ''}
-                        </span>
-                        <button onClick={() => mark(f, !f.handled)} disabled={saving === f.key}
-                          className={`shrink-0 h-8 px-3 rounded-lg border text-xs font-semibold
-                            disabled:opacity-40 ${f.handled
-                              ? 'border-line text-dim' : 'border-leaf text-leaf'}`}>
-                          {saving === f.key ? '…' : f.handled ? 'Put back' : 'Mark handled'}
-                        </button>
-                      </div>
-                    </li>
-                  ))}
-                  {!shown.length && (
-                    <li className="py-6 text-center text-leaf text-sm">
-                      All handled.
-                    </li>
-                  )}
-                </ul>
-                {rows[0]?.kind_total > rows.length && (
-                  <p className="text-dim text-sm mt-3">
-                    Showing the {rows.length} most recent of {rows[0].kind_total}.
-                    Narrow the days above to see fewer.
-                  </p>
+      <ul className="divide-y divide-line/60">
+        {shown.map((f, i) => {
+          const meta = KIND[f.kind] || { title: f.kind }
+          const sev = SEV[f.severity] || SEV.note
+          return (
+            <li key={`${f.key}-${i}`} className={`py-3 ${f.handled ? 'opacity-45' : ''}`}>
+              <div className="flex items-baseline gap-2">
+                <span className={`text-xs font-bold ${sev.text} shrink-0`}>
+                  {meta.title}
+                </span>
+                {isNew(f) && !f.handled && (
+                  <span className="text-[10px] font-bold text-bg bg-amber rounded px-1.5 py-0.5 shrink-0">
+                    NEW
+                  </span>
+                )}
+                <span className="flex-1" />
+                {f.amount != null && (
+                  <span className={`tnum font-bold shrink-0 ${f.handled ? 'text-dim' : sev.text}`}>
+                    {naira(Number(f.amount))}
+                  </span>
                 )}
               </div>
-            )}
-          </section>
-        )
-      })}
+              <div className="mt-0.5">
+                <span className="font-semibold">{f.who}</span>
+                {f.where && <span className="text-dim"> · {f.where}</span>}
+              </div>
+              <p className="text-dim text-sm">{f.summary}</p>
+              <div className="flex items-baseline gap-3 mt-1">
+                <span className="flex-1 min-w-0 text-dim text-xs tnum truncate">
+                  {f.happened ? dt(f.happened) : ''}
+                  {f.handled && f.handled_by ? ` · handled by ${f.handled_by}` : ''}
+                </span>
+                <button onClick={() => mark(f, !f.handled)} disabled={saving === f.key}
+                  className={`shrink-0 h-8 px-3 rounded-lg border text-xs font-semibold
+                    disabled:opacity-40 ${f.handled
+                      ? 'border-line text-dim' : 'border-leaf text-leaf'}`}>
+                  {saving === f.key ? '…' : f.handled ? 'Put back' : 'Done'}
+                </button>
+              </div>
+            </li>
+          )
+        })}
+      </ul>
 
-      {!!flags?.length && (
+      {/* What the questions mean, parked at the bottom. Worth reading
+          once, never worth scrolling past every day. */}
+      {!!kindsHere.length && (
+        <details className="mt-6">
+          <summary className="text-dim text-sm cursor-pointer">What these mean</summary>
+          <dl className="mt-3">
+            {kindsHere.map(k => (
+              <div key={k} className="mb-3">
+                <dt className="font-semibold text-sm">{(KIND[k] || { title: k }).title}</dt>
+                <dd className="text-dim text-sm">{(KIND[k] || {}).why || ''}</dd>
+              </div>
+            ))}
+          </dl>
+        </details>
+      )}
+
+      {!!live.length && (
         <p className="text-dim text-xs mt-6">
           Ask before concluding. Every one of these has an innocent explanation
           that is usually the right one.
