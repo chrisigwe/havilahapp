@@ -343,13 +343,31 @@ export default function Credit({ boot }) {
     // one row per method, same as it's always been for a single
     // payment. "Split" just means saving more than one row for the
     // same repayment, one per method with a non-zero amount.
-    const parts = paymentParts(pay, pay.amount).filter(p => p.amount > 0)
+    // Clearing particular debts is one row per credit, each carrying the
+    // sale it settles and the staff member who gave it (Chris, 13
+    // November 2026). Picking a THING rather than a person is why this is
+    // safe for bar staff: the line already knows who served it, so the
+    // money cannot land on somebody who gave no credit.
+    //
+    // One method when targeting. Splitting by method AND by debt at once
+    // would be a matrix nobody could check at a bar at night.
+    const parts = pay.targets
+      ? Object.entries(pay.targets)
+          .map(([saleId, amt]) => {
+            const row = (open?.chain || []).find(c => c.sale_id === saleId)
+            return { method: pay.method, amount: Number(amt || 0),
+                     settlesSaleId: saleId, creditStaffId: row?.staff_id || null }
+          })
+          .filter(p => p.amount > 0)
+      : paymentParts(pay, pay.amount).filter(p => p.amount > 0)
     try {
       for (const part of parts) {
         // Made before the first attempt and carried into the outbox, so a
         // retry of a payment that already landed writes nothing (621).
         const args = { ...base, amount: part.amount, method: part.method,
-                       clientRef: crypto.randomUUID() }
+                       clientRef: crypto.randomUUID(),
+                       settlesSaleId: part.settlesSaleId || null,
+                       creditStaffId: part.creditStaffId || base.creditStaffId }
         try {
           await saveRepayment({ ...args, staff })
         } catch (e) {
@@ -1791,7 +1809,8 @@ export default function Credit({ boot }) {
             <label className="block mt-4 text-dim">Paid by</label>
             <div className="mt-2">
               <PaymentMethodPicker methods={methods.filter(m => m !== 'credit')} amount={pay.amount}
-                value={pay} onChange={v => setPay(p => ({ ...p, ...v }))} />
+                value={pay}
+                onChange={v => setPay(p => ({ ...p, ...v, targets: v.split ? null : p.targets }))} />
             </div>
 
             <label className="block mt-4 text-dim">Date received</label>
@@ -1802,6 +1821,99 @@ export default function Credit({ boot }) {
             <label className="block mt-4 text-dim">Note (optional)</label>
             <input value={pay.note} onChange={e => setPay(p => ({ ...p, note: e.target.value }))}
               className="mt-2 h-14 w-full px-4 rounded-xl bg-surface border border-line" />
+
+            {/* "A customer sometimes wants to clear a particular debt"
+                (Chris, 13 November 2026). Until now the money always went
+                to the oldest credit first and the customer's statement
+                would tell him something he would dispute.
+                
+                Safe for bar staff because they pick a THING, not a
+                person: the line knows who served it, so the money is
+                credited to whoever gave that credit automatically. That
+                is more accurate than oldest-first, not less. */}
+            {(() => {
+              const owedLines = (open?.chain || []).filter(c =>
+                Number(c.still_owed) > 0.009
+                && (!pay.locationId || c.location_id === pay.locationId))
+              if (!owedLines.length) return null
+              const t = pay.targets
+              const chosen = Object.entries(t || {})
+              const allocated = chosen.reduce((s2, [, v]) => s2 + (Number(v) || 0), 0)
+              const target = Number(pay.amount) || 0
+              const gap = target - allocated
+              return (
+                <>
+                  <button type="button"
+                    onClick={() => setPay(p => ({ ...p,
+                      targets: p.targets ? null : {}, split: p.targets ? p.split : null }))}
+                    className={`mt-5 w-full h-12 rounded-xl border font-semibold ${t
+                      ? 'bg-raise border-amber text-amber' : 'border-line text-dim'}`}>
+                    {t ? 'Clearing particular debts' : 'They are paying for something particular'}
+                  </button>
+
+                  {t && (
+                    <div className="mt-3">
+                      <p className="text-dim text-sm mb-2">
+                        Tap what they are paying for. One method only — pick POS or Cash above,
+                        not Split.
+                      </p>
+                      <ul className="divide-y divide-line/60">
+                        {owedLines.map(c => {
+                          const on = c.sale_id in t
+                          return (
+                            <li key={c.sale_id} className="py-2">
+                              <button type="button"
+                                onClick={() => setPay(p => {
+                                  const next = { ...(p.targets || {}) }
+                                  if (c.sale_id in next) delete next[c.sale_id]
+                                  else {
+                                    const left = (Number(p.amount) || 0)
+                                      - Object.values(next).reduce((a, v) => a + (Number(v) || 0), 0)
+                                    next[c.sale_id] = String(Math.max(0,
+                                      Math.min(Number(c.still_owed), left)))
+                                  }
+                                  return { ...p, targets: next }
+                                })}
+                                className="w-full text-left flex items-baseline gap-3">
+                                <span className={`w-5 h-5 shrink-0 rounded border grid place-items-center
+                                  text-xs font-bold ${on
+                                    ? 'bg-amber border-amber text-bg' : 'border-line text-transparent'}`}>
+                                  ✓
+                                </span>
+                                <span className="flex-1 min-w-0">
+                                  <span className="font-semibold">{c.item}</span>
+                                  <span className="text-dim text-sm block">
+                                    {c.taken_on}{c.staff ? ` · ${c.staff}` : ''}
+                                  </span>
+                                </span>
+                                <span className="tnum font-bold text-clay shrink-0">
+                                  {naira(Number(c.still_owed))}
+                                </span>
+                              </button>
+                              {on && (
+                                <div className="flex items-center gap-2 mt-2 pl-8">
+                                  <span className="text-dim text-sm">Paying</span>
+                                  <input inputMode="decimal" value={t[c.sale_id]}
+                                    onChange={e => setPay(p => ({ ...p,
+                                      targets: { ...(p.targets || {}), [c.sale_id]: e.target.value } }))}
+                                    className="h-10 w-32 px-3 rounded-lg bg-raise border border-line tnum" />
+                                </div>
+                              )}
+                            </li>
+                          )
+                        })}
+                      </ul>
+                      <p className={`text-sm mt-2 ${Math.abs(gap) < 0.01 ? 'text-leaf' : 'text-clay'}`}>
+                        {!(target > 0) ? 'Enter the amount above first.'
+                          : Math.abs(gap) < 0.01 ? `The debts chosen add up to ${naira(target)}.`
+                          : gap > 0 ? `${naira(gap)} still to put against a debt`
+                          : `${naira(-gap)} more than the amount above`}
+                      </p>
+                    </div>
+                  )}
+                </>
+              )
+            })()}
           </div>
           <div className="p-5 border-t border-line">
             {paymentAllocated(pay, pay.amount) > Number(pay.balance ?? 0) + 0.01 && (
@@ -1813,14 +1925,22 @@ export default function Credit({ boot }) {
               const target = Number(pay.amount) || 0
               const short = pay.split
                 && Math.abs(paymentAllocated(pay, pay.amount) - target) >= 0.01
+              const tAlloc = pay.targets
+                ? Object.values(pay.targets).reduce((a, v) => a + (Number(v) || 0), 0)
+                : 0
+              const tShort = !!pay.targets && Math.abs(tAlloc - target) >= 0.01
+              const ready = pay.targets
+                ? (target > 0 && !!pay.method && !tShort)
+                : paymentReady(pay, pay.amount)
               return (
                 <button onClick={() => submitPayment()}
-                  disabled={busy || !paymentReady(pay, pay.amount)}
+                  disabled={busy || !ready}
                   className="w-full h-16 rounded-2xl bg-amber text-bg text-xl font-bold disabled:opacity-40">
                   {busy ? 'Saving…'
                     : !(pay.split || pay.method) ? 'Choose how they paid'
                     : !(target > 0) ? 'Enter the amount'
                     : short ? `Split must add up to ${naira(target)}`
+                    : tShort ? `The debts chosen must add up to ${naira(target)}`
                     : 'Save payment'}
                 </button>
               )

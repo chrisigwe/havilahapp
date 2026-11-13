@@ -744,11 +744,14 @@ export async function loadCustomerLedger(branchId, customerId, locationId, staff
 // went in four times that way at Nnewi OpenBar on 28 October, N3,600 of
 // recovered debt that never came in. A genuine second payment of the same
 // amount carries its own ref and is unaffected.
-async function _saveRepayment({ staff, customerId, amount, method, paidOn, note, locationId, creditStaffId, clientRef }) {
+async function _saveRepayment({ staff, customerId, amount, method, paidOn, note, locationId, creditStaffId, clientRef, settlesSaleId }) {
   const row = {
     branch_id: staff.branch_id, customer_id: customerId, location_id: locationId || null,
     credit_staff_id: creditStaffId || staff.id,
     amount, method, paid_on: paidOn, note: note || null, recorded_by: staff.id,
+    // Which one credit this payment is aimed at, when the customer is
+    // clearing something particular. Null is the ordinary case.
+    settles_sale_id: settlesSaleId || null,
   }
   // Runs as the caller, not as a privileged definer, so every row policy
   // that governed the direct insert still governs this.
@@ -756,7 +759,7 @@ async function _saveRepayment({ staff, customerId, amount, method, paidOn, note,
     p_branch: row.branch_id, p_customer: row.customer_id, p_location: row.location_id,
     p_credit_staff: row.credit_staff_id, p_amount: amount, p_method: method,
     p_paid_on: paidOn, p_note: row.note, p_recorded_by: staff.id,
-    p_client_ref: clientRef || null,
+    p_client_ref: clientRef || null, p_settles_sale: settlesSaleId || null,
   })
   if (!error) return
   // Only when the function is not there yet - i.e. the app was deployed
