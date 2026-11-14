@@ -1036,7 +1036,19 @@ async function _deleteRepayment(id) {
 }
 
 async function _saveMovements(rows) {
-  const { error } = await supabase.from('stock_movements').insert(rows)
+  // A reference per row, stamped BEFORE the first attempt and onto the
+  // row objects themselves — the outbox keeps this same array, so a
+  // retry arrives carrying the same references.
+  //
+  // A connection that drops AFTER the write leaves the app believing it
+  // failed; without this the retry wrote a second set of movements
+  // nobody could tell from the first, and a stock figure can sit wrong
+  // for weeks before anyone counts (103 groundnut plates, 12 November).
+  // Sales got this in migration 600, repayments in 621; stock was the
+  // last write without it.
+  for (const r of rows) if (!r.client_ref) r.client_ref = crypto.randomUUID()
+  const { error } = await supabase.from('stock_movements')
+    .upsert(rows, { onConflict: 'client_ref', ignoreDuplicates: true })
   if (error) throw error
 }
 
