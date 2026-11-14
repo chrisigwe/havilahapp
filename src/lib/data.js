@@ -658,6 +658,26 @@ export async function createCustomer(branchId, name, servedBy) {
 const servedByFilter = (staffId, ownColumn) =>
   `${ownColumn}.eq.${staffId},and(${ownColumn}.is.null,recorded_by.eq.${staffId})`
 
+// What a customer owes across the WHOLE branch, and the branch's limit.
+//
+// Deliberately not per department. Mr Chike Ifeadi's N56,700 was split
+// between OpenBar and the Restaurant and neither half looked alarming;
+// the limit is about one person's exposure, so the warning has to be
+// measured the same way the database measures it (14 November 2026).
+export async function loadBranchOwed(branchId) {
+  const [bal, br] = await Promise.all([
+    supabase.from('v_customer_balances_by_staff')
+      .select('customer_id, balance').eq('branch_id', branchId),
+    supabase.from('branches').select('credit_limit').eq('id', branchId).maybeSingle(),
+  ])
+  if (bal.error) throw bal.error
+  const owed = {}
+  for (const r of bal.data || []) {
+    owed[r.customer_id] = (owed[r.customer_id] || 0) + Number(r.balance || 0)
+  }
+  return { owed, limit: br.data?.credit_limit != null ? Number(br.data.credit_limit) : null }
+}
+
 export async function loadBalances(branchId, locationId, staffId) {
   let q = supabase.from('v_customer_balances_by_staff')
     .select('customer_id, location_id, staff_id, staff_name, name, phone, served_by, credit_taken, repaid, balance, first_credit_date, last_credit_date')
