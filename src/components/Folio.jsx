@@ -473,7 +473,22 @@ export default function Folio({ boot, room, onClose, onChanged }) {
   const currentOverstay = stay?.overstay_fee != null ? Number(stay.overstay_fee) : null
   // Past their leaving date — the only time an over-stay charge is a
   // real question.
-  const pastDue = !!scheduledOut && scheduledOut < lagosToday()
+  // The DAY they leave counts, not only the days after it (Chris, 14
+  // November 2026). Room 204 stayed past checkout time on his departure
+  // day and paid N20,000 for it. The desk could take the money and mark
+  // it as an over-stay payment, but the field that records the CHARGE
+  // only appeared once the date had passed — so the fee was never set,
+  // and the folio showed a checked-out guest N20,000 in credit who owed
+  // nothing and was owed nothing. It had to be corrected in SQL.
+  const pastDue = !!scheduledOut && scheduledOut <= lagosToday()
+
+  // Money taken for an over-stay with no fee recorded against it. The
+  // payment alone must never raise the charge — that is the app deciding
+  // what somebody's money was for — but it must not sit there unsaid
+  // either.
+  const overstayPaid = (payments || [])
+    .filter(p => p.is_overstay).reduce((t, p) => t + Number(p.amount || 0), 0)
+  const overstayUnrecorded = overstayPaid > 0.009 && !(Number(currentOverstay) > 0.009)
   const owes = totalOutstanding > 0.009
   const billedToYouOwing = (billedToYou || []).filter(b => Number(b.outstanding) > 0.009)
   const billedToYouClear = (billedToYou || []).filter(b => !(Number(b.outstanding) > 0.009))
@@ -1217,12 +1232,25 @@ export default function Folio({ boot, room, onClose, onChanged }) {
             asked taking up room on a phone. A charge that HAS been set
             keeps showing whatever the date, or you could set one and
             then be unable to see or change it. */}
-        {live && (pastDue || currentOverstay != null) && (
-          <div className="mt-4 rounded-2xl border border-line bg-surface p-4">
+        {((live && (pastDue || currentOverstay != null)) || overstayUnrecorded) && (
+          <div className={`mt-4 rounded-2xl border bg-surface p-4 ${
+            overstayUnrecorded ? 'border-amber' : 'border-line'}`}>
+            {/* Shown after checkout too when money was taken and no fee
+                recorded: that is exactly when nobody can fix it, and it
+                is the one case where the folio is wrong rather than
+                merely incomplete. */}
+            {overstayUnrecorded && (
+              <p className="text-amber font-semibold mb-2">
+                {naira(overstayPaid)} was taken for an over-stay and no charge was recorded.
+                Until it is, this bill reads as {naira(overstayPaid)} overpaid.
+              </p>
+            )}
             <div className="flex items-center justify-between">
               <div className="text-dim">Over-stay charge</div>
               {overstayDraft === null && (
-                <button onClick={() => setOverstayDraft(currentOverstay != null ? String(currentOverstay) : '')}
+                <button onClick={() => setOverstayDraft(
+                  currentOverstay != null ? String(currentOverstay)
+                    : overstayUnrecorded ? String(overstayPaid) : '')}
                   className="text-dim text-sm underline">
                   {currentOverstay != null ? 'Change' : 'Set'}
                 </button>
