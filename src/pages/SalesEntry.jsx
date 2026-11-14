@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { dayToOpenOn } from '../lib/openingday'
 import { lagosDaysAgo, lagosHour, lagosToday, methodLabel, naira, paymentSummary, roomChargeDept, startingDept, tierLabel, whoRecorded } from '../lib/format'
 import { checkRepeatSale, loadStockMap, loadPopular, loadToday, saveBasket, saveWriteoff,
-         loadDailyFinancials, loadCustomers, createCustomer,
+         loadDailyFinancials, loadCustomers, createCustomer, loadBranchOwed,
          loadReceptionRoomSales, loadRoomDebtRecovered, withRoomNights, NIGHTS_AS_SALES_FROM,
          loadOpeningDate, loadBalances, loadReceipt,
          loadStaffForLocation, loadReceptionActivity, loadReceptionDashboard, deleteEntry,
@@ -312,6 +312,8 @@ export default function SalesEntry({ boot }) {
   // GM/admin-only visibility on the reception dashboard — matches
   // is_supervisor()'s own role set, not the broader oversight group.
   const isGmOrAdmin = is(staff.role, SUPERVISOR)
+  const isManagerOrAbove = is(staff.role, MANAGEMENT)
+  const [branchCreditLimit, setBranchCreditLimit] = useState(null)
   const [showYesterday, setShowYesterday] = useState(false)
   const [yesterdaySummary, setYesterdaySummary] = useState(null)
   const [yesterdayActivity, setYesterdayActivity] = useState(null)
@@ -633,10 +635,17 @@ export default function SalesEntry({ boot }) {
     tracked('Customer accounts', Promise.all([
       loadCustomers(staff.branch_id),
       wantsBalances ? loadBalances(staff.branch_id, locationId).catch(() => []) : Promise.resolve([]),
+      // The branch-wide figure and the limit, which is what the database
+      // checks. The per-department balance above is what the picker has
+      // always shown beside a name.
+      wantsBalances ? loadBranchOwed(staff.branch_id).catch(() => ({ owed: {}, limit: null }))
+                    : Promise.resolve({ owed: {}, limit: null }),
     ]))
-      .then(([cs, bals]) => {
+      .then(([cs, bals, branchWide]) => {
         const byId = Object.fromEntries(bals.map(b => [b.customer_id, Number(b.balance)]))
-        setCustomers(cs.map(c => ({ ...c, balance: byId[c.id] || 0 })))
+        setCustomers(cs.map(c => ({ ...c, balance: byId[c.id] || 0,
+                                   owedAtBranch: branchWide.owed[c.id] || 0 })))
+        setBranchCreditLimit(branchWide.limit)
       })
       .catch(() => setCustomers([]))
   }, [staff.branch_id, date, locationId, isReception])
@@ -1866,6 +1875,42 @@ export default function SalesEntry({ boot }) {
                 ? 'Customer (required for credit)'
                 : 'Customer (optional — for a named receipt)'}
             </div>
+            {/* What this customer already owes, said plainly at the moment
+                it matters (Chris, 14 November 2026).
+                
+                The picker has always printed "owes N56,700" in small clay
+                type beside the name. It did not stop a N198,000 function
+                going onto that same account — a figure in a list is not a
+                decision point. On a credit sale the balance now gets a
+                line of its own, and when the branch limit is in reach it
+                says what will happen before the save rather than after.
+                
+                The database is the actual guard; this exists so nobody
+                meets a refusal they could not see coming. */}
+            {creditAmount(paying) > 0 && paying.customerId && (() => {
+              const who = customers.find(c => c.id === paying.customerId)
+              const owed = Number(who?.owedAtBranch ?? who?.balance ?? 0)
+              const after = owed + creditAmount(paying)
+              const limit = Number(branchCreditLimit || 0)
+              if (!(owed > 0.009) && !(limit > 0 && after > limit)) return null
+              const blocked = limit > 0 && after > limit && !isManagerOrAbove
+              return (
+                <div className={`mb-2 rounded-xl border p-3 ${
+                  blocked ? 'border-clay bg-surface' : 'border-line bg-surface'}`}>
+                  <div className={blocked ? 'text-clay font-semibold' : 'text-ink font-semibold'}>
+                    {who?.name} owes {naira(owed)} already
+                  </div>
+                  {limit > 0 && after > limit && (
+                    <div className={`text-sm mt-1 ${blocked ? 'text-clay' : 'text-dim'}`}>
+                      {blocked
+                        ? `This would take it to ${naira(after)}, past the ${naira(limit)} limit. A manager has to approve it.`
+                        : `This takes it to ${naira(after)}, past the ${naira(limit)} limit.`}
+                    </div>
+                  )}
+                </div>
+              )
+            })()}
+
               <CustomerPicker branchId={staff.branch_id} canOverride={isGmOrAdmin} customers={customers} value={paying.customerId}
                 onPick={id => setPaying(p => ({ ...p, customerId: id }))}
                 onCreate={async (name, servedBy) => {
