@@ -623,10 +623,25 @@ export async function loadOpeningDate(branchId) {
 // ---------- customers & credit ----------
 export async function loadCustomers(branchId) {
   const { data, error } = await supabase.from('customers')
-    .select('id, name, phone, served_by').eq('branch_id', branchId)
+    .select('id, name, phone, served_by, no_more_credit').eq('branch_id', branchId)
     .eq('is_active', true).order('name')
   if (error) throw error
   return data
+}
+
+// "This person gets nothing more" — a decision about one customer, which
+// a branch-wide figure cannot express. ₦50,000 cannot say Chike is cut
+// off while leaving a good customer his ₦40,000.
+//
+// It does not block anything at the save button, and it is not meant to:
+// the drink is poured, written on paper, and keyed the next morning, so
+// by the time the app sees it the credit was given hours ago. What the
+// flag does is put the name in front of whoever opens the sales page,
+// and onto the list that goes to the bar.
+export async function setCustomerNoCredit(customerId, on) {
+  const { error } = await supabase.from('customers')
+    .update({ no_more_credit: !!on }).eq('id', customerId)
+  if (error) throw error
 }
 
 export async function createCustomer(branchId, name, servedBy) {

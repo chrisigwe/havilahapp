@@ -10,6 +10,7 @@ import { checkRepeatSale, loadStockMap, loadPopular, loadToday, saveBasket, save
          loadWriteoffsOnDate, loadLiveStays, chargeBasketToRoom,
          getOrCreateGuestTab, updateSaleWithPayments, undoRecentReceipt, recordTillCheck, tillCheckDone,
          conversionRows, saveMovements } from '../lib/data'
+import { creditWatch, creditWatchLine } from '../lib/creditwatch'
 import { enqueue, flush, isConnectionError } from '../lib/outbox'
 import { useToast } from '../components/Toast'
 import ReceptionDashboard from '../components/ReceptionDashboard'
@@ -313,8 +314,25 @@ export default function SalesEntry({ boot }) {
   // GM/admin-only visibility on the reception dashboard — matches
   // is_supervisor()'s own role set, not the broader oversight group.
   const isGmOrAdmin = is(staff.role, SUPERVISOR)
-  const isManagerOrAbove = is(staff.role, MANAGEMENT)
   const [branchCreditLimit, setBranchCreditLimit] = useState(null)
+  // THE BRIEFING (Chris, 16 November 2026).
+  //
+  // Staff pour the drink, write it on paper, and key it here the next
+  // morning. So nothing this page does at the save button can prevent
+  // anything — the credit was given last night, at the counter, away
+  // from the phone. The one useful thing the app can do is say who is
+  // over BEFORE the next shift, and the moment it can say it is now,
+  // while they are keying yesterday's paper with the names in their
+  // hands.
+  //
+  // Expanded until they have read it today, then one line. Keyed on the
+  // real date, not the business date, so closing yesterday's sales does
+  // not make it reappear.
+  const [watchOpen, setWatchOpen] = useState(false)
+  const watchKey = `havilah.creditwatch.seen.${staff.branch_id}`
+  const [watchSeen, setWatchSeen] = useState(() => {
+    try { return localStorage.getItem(watchKey) === lagosToday() } catch { return false }
+  })
   const [showYesterday, setShowYesterday] = useState(false)
   const [yesterdaySummary, setYesterdaySummary] = useState(null)
   const [yesterdayActivity, setYesterdayActivity] = useState(null)
@@ -699,6 +717,41 @@ export default function SalesEntry({ boot }) {
 
   const onHand = (itemId, atLocationId) => stockMap[`${itemId}:${atLocationId || locationId}`] ?? 0
   const basketTotal = basket.reduce((s, l) => s + l.qty * l.unitPrice, 0)
+
+  // Customers already carry their branch-wide balance and the flag, so
+  // the briefing needs no fetch of its own.
+  const watchRows = useMemo(() => creditWatch({
+    customers,
+    owed: Object.fromEntries(customers.map(c =>
+      [c.id, Number(c.owedAtBranch ?? c.balance ?? 0)])),
+    limit: branchCreditLimit,
+  }), [customers, branchCreditLimit])
+
+  const dismissWatch = () => {
+    setWatchOpen(false); setWatchSeen(true)
+    try { localStorage.setItem(watchKey, lagosToday()) } catch { /* blocked */ }
+  }
+
+  // The version that actually stops a drink being poured, because it is
+  // the only one in the room at seven in the evening. Generated from the
+  // live figures each time, so the paper behind the bar is never six
+  // weeks old.
+  async function shareWatch() {
+    const text = [
+      `Havilah — credit watch, ${lagosToday()}`,
+      '',
+      ...watchRows.map(r => r.cutOff
+        ? `${r.name} — NO CREDIT${r.owed > 0 ? ` (owes ${naira(r.owed)})` : ''}`
+        : `${r.name} — owes ${naira(r.owed)}`),
+      '',
+      'No credit means cash or POS only. Nobody else goes past '
+        + `${naira(Number(branchCreditLimit || 0))}.`,
+    ].join('\n')
+    try {
+      if (navigator.share) await navigator.share({ text })
+      else { await navigator.clipboard.writeText(text); toast('Copied — paste it to the bar', 'success') }
+    } catch { /* the person cancelled the share sheet */ }
+  }
 
   function addToBasket(item, sourceLocation) {
     setPicking(false)
@@ -1105,6 +1158,59 @@ export default function SalesEntry({ boot }) {
           Recording for {new Date(date + 'T12:00:00').toLocaleDateString('en-NG',
             { weekday: 'long', day: 'numeric', month: 'long' })}
           {needsReason ? ' — not today' : ' — yesterday'}
+        </div>
+      )}
+
+      {/* Not at Reception: credit accounts are a bar and restaurant
+          habit, and a receptionist reading a debtor list every morning
+          is how a warning becomes furniture. */}
+      {!isReception && watchRows.length > 0 && (
+        <div className="mt-2 rounded-2xl border border-clay bg-surface overflow-hidden">
+          <button onClick={() => setWatchOpen(o => !o)}
+            className="w-full text-left px-4 py-3 flex items-center gap-3">
+            <span className="flex-1 min-w-0">
+              <span className="block font-bold text-clay">Credit watch</span>
+              <span className="block text-dim text-sm">{creditWatchLine(watchRows)}</span>
+            </span>
+            <span className="text-dim text-sm shrink-0">
+              {(watchOpen || !watchSeen) ? 'Hide' : 'Show'}
+            </span>
+          </button>
+
+          {(watchOpen || !watchSeen) && (
+            <div className="px-4 pb-4">
+              <ul className="rounded-xl border border-line divide-y divide-line/60">
+                {watchRows.map(r => (
+                  <li key={r.id} className="px-3 py-2 flex items-baseline gap-3">
+                    <span className="flex-1 min-w-0">
+                      <span className="block font-semibold truncate">{r.name}</span>
+                      {r.cutOff && (
+                        <span className="block text-clay text-sm font-semibold">
+                          No credit — cash or POS only
+                        </span>
+                      )}
+                    </span>
+                    <span className="tnum text-dim text-sm shrink-0">{naira(r.owed)}</span>
+                  </li>
+                ))}
+              </ul>
+              <p className="text-dim text-sm mt-3">
+                Serve them for cash or POS. If one of them is given credit anyway,
+                record it — the GM sees it either way, and an unrecorded drink is
+                worse than a recorded argument.
+              </p>
+              <div className="flex gap-2 mt-3">
+                <button onClick={shareWatch}
+                  className="flex-1 h-12 rounded-xl border border-line text-ink font-semibold">
+                  Send to the bar
+                </button>
+                <button onClick={dismissWatch}
+                  className="flex-1 h-12 rounded-xl bg-amber text-bg font-bold">
+                  Got it
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       )}
 
@@ -1941,27 +2047,47 @@ export default function SalesEntry({ boot }) {
                 decision point. On a credit sale the balance now gets a
                 line of its own, and when the branch limit is in reach it
                 says what will happen before the save rather than after.
-                
-                The database is the actual guard; this exists so nobody
-                meets a refusal they could not see coming. */}
+
+                There is no refusal to warn about any more (16 November
+                2026). The database used to raise CRLIM here and demand a
+                manager, which sounds careful and was not: staff pour the
+                drink, write it on paper and key it the next morning, so
+                refusing the entry declined to transcribe a record that
+                already existed. Chike's drinks sat off the books all
+                night while his balance read N261,700 instead of more.
+                The save now always goes through and the breach is
+                recorded for the GM instead. */}
             {creditAmount(paying) > 0 && paying.customerId && (() => {
               const who = customers.find(c => c.id === paying.customerId)
               const owed = Number(who?.owedAtBranch ?? who?.balance ?? 0)
               const after = owed + creditAmount(paying)
               const limit = Number(branchCreditLimit || 0)
-              if (!(owed > 0.009) && !(limit > 0 && after > limit)) return null
-              const blocked = limit > 0 && after > limit && !isManagerOrAbove
+              const over = limit > 0 && after > limit
+              const cutOff = !!who?.no_more_credit
+              if (!(owed > 0.009) && !over && !cutOff) return null
+              const loud = over || cutOff
               return (
                 <div className={`mb-2 rounded-xl border p-3 ${
-                  blocked ? 'border-clay bg-surface' : 'border-line bg-surface'}`}>
-                  <div className={blocked ? 'text-clay font-semibold' : 'text-ink font-semibold'}>
-                    {who?.name} owes {naira(owed)} already
+                  loud ? 'border-clay bg-surface' : 'border-line bg-surface'}`}>
+                  {cutOff && (
+                    <div className="text-clay font-semibold">
+                      {who?.name} is on no credit
+                    </div>
+                  )}
+                  <div className={cutOff ? 'text-dim text-sm mt-1'
+                    : loud ? 'text-clay font-semibold' : 'text-ink font-semibold'}>
+                    {cutOff ? `Owes ${naira(owed)} already.`
+                      : `${who?.name} owes ${naira(owed)} already`}
                   </div>
-                  {limit > 0 && after > limit && (
-                    <div className={`text-sm mt-1 ${blocked ? 'text-clay' : 'text-dim'}`}>
-                      {blocked
-                        ? `This would take it to ${naira(after)}, past the ${naira(limit)} limit. A manager has to approve it.`
-                        : `This takes it to ${naira(after)}, past the ${naira(limit)} limit.`}
+                  {over && (
+                    <div className="text-sm mt-1 text-clay">
+                      This takes it to {naira(after)}, past the {naira(limit)} limit.
+                      It will save, and the GM will see it.
+                    </div>
+                  )}
+                  {cutOff && !over && (
+                    <div className="text-sm mt-1 text-dim">
+                      Record it if the drink was served — the GM will see it.
                     </div>
                   )}
                 </div>

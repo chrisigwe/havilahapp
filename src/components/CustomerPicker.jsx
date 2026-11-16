@@ -91,6 +91,17 @@ export default function CustomerPicker({ customers, value, onPick, onCreate, bra
                 {c.balance > 0 && (
                   <span className="text-clay text-sm tnum ml-2">owes {naira(c.balance)}</span>
                 )}
+                {/* Cut off by the GM. Said here as well as in the
+                    briefing, because this is the list somebody is
+                    actually looking at while they key — and it does NOT
+                    stop the pick. The drink was poured last night; a
+                    locked button would only push them to record it as
+                    cash nobody took. */}
+                {c.no_more_credit && (
+                  <span className="block text-clay text-sm font-semibold mt-0.5">
+                    No credit — cash or POS only
+                  </span>
+                )}
               </button>
             </li>
           ))}
