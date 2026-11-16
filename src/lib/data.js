@@ -1055,6 +1055,11 @@ async function _deleteRepayment(id) {
   if (error) throw error
 }
 
+// The two legs of a conversion live in their own file so node can test
+// them — see src/lib/conversion.js. Re-exported here so every caller
+// keeps importing from data.js and no import site had to change.
+export { conversionRows } from './conversion'
+
 async function _saveMovements(rows) {
   // A reference per row, stamped BEFORE the first attempt and onto the
   // row objects themselves — the outbox keeps this same array, so a

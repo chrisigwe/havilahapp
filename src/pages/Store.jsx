@@ -3,8 +3,8 @@ import { useToast } from '../components/Toast'
 import { lagosDaysAgo, lagosToday } from '../lib/format'
 import FoldedDays from '../components/FoldedDays'
 import { loadDepartmentSupplies, loadStockMap, loadPopular, loadDepartmentHistory,
-         loadReceiveHistory, loadMoveHistory, loadConvertHistory } from '../lib/data'
-import { supabase } from '../lib/supabase'
+         loadReceiveHistory, loadMoveHistory, loadConvertHistory,
+         conversionRows, saveMovements } from '../lib/data'
 import { enqueue, flush, isConnectionError } from '../lib/outbox'
 import ItemPicker from '../components/ItemPicker'
 import { tracked } from '../lib/loadfail'
@@ -196,8 +196,13 @@ export default function Store({ boot }) {
           : noteWhat,
       }))
       try {
-        const { error } = await supabase.from('stock_movements').insert(rows)
-        if (error) throw error
+        // saveMovements, not a plain insert: it stamps a client_ref onto
+        // these row objects before the first attempt, and the outbox
+        // keeps the same array. Without it a connection that dropped
+        // after the write was saved queued a retry carrying no
+        // reference, and the same delivery went in twice (16 November
+        // 2026).
+        await saveMovements(rows)
         toast(`${rows.length} item${rows.length > 1 ? 's' : ''} ${mode === 'receive' ? 'received' : mode === 'move' ? 'moved' : 'disbursed'}`, 'success')
       } catch (e) {
         if (!isConnectionError(e)) throw e
@@ -220,21 +225,23 @@ export default function Store({ boot }) {
       toast('Pick two different items — this converts one into another', 'error'); return
     }
     setBusy(true)
-    const noteText = `Converted ${convertFrom.qty} × ${convertFrom.item.name} into ${convertTo.qty} × ${convertTo.item.name}`
-    const rows = [
-      { branch_id: staff.branch_id, stock_item_id: convertFrom.item.id, movement_type: 'conversion',
-        from_location: convertLoc, to_location: null, qty: convertFrom.qty,
-        business_date: date, occurred_at: new Date().toISOString(), recorded_by: staff.id,
-        is_migrated: false, note: noteText },
-      { branch_id: staff.branch_id, stock_item_id: convertTo.item.id, movement_type: 'conversion',
-        from_location: null, to_location: convertLoc, qty: convertTo.qty,
-        business_date: date, occurred_at: new Date().toISOString(), recorded_by: staff.id,
-        is_migrated: false, note: noteText },
-    ]
     try {
+      // Built by conversionRows and saved through saveMovements, which
+      // stamps a client_ref onto these same row objects before the first
+      // attempt. The plain insert this replaced had no reference, so a
+      // connection that dropped after the write left the retry free to
+      // convert the same bottle twice (16 November 2026).
+      //
+      // Inside the try because conversionRows refuses a malformed
+      // conversion by throwing, and a throw out here would leave the
+      // button saying "Converting…" for ever.
+      const rows = conversionRows({
+        staff, locationId: convertLoc, date,
+        fromItem: convertFrom.item, fromQty: convertFrom.qty,
+        toItem: convertTo.item, toQty: convertTo.qty,
+      })
       try {
-        const { error } = await supabase.from('stock_movements').insert(rows)
-        if (error) throw error
+        await saveMovements(rows)
         toast('Converted', 'success')
       } catch (e) {
         if (!isConnectionError(e)) throw e
