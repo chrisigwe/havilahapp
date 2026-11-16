@@ -623,10 +623,35 @@ export async function loadOpeningDate(branchId) {
 // ---------- customers & credit ----------
 export async function loadCustomers(branchId) {
   const { data, error } = await supabase.from('customers')
-    .select('id, name, phone, served_by').eq('branch_id', branchId)
+    .select('id, name, phone, served_by, no_more_credit').eq('branch_id', branchId)
     .eq('is_active', true).order('name')
   if (error) throw error
   return data
+}
+
+// Which customers are on no credit. A tiny read of its own, so the
+// Credit page does not pull the whole customer table to learn about a
+// handful of flags.
+export async function loadNoCreditIds(branchId) {
+  const { data, error } = await supabase.from('customers')
+    .select('id').eq('branch_id', branchId).eq('no_more_credit', true)
+  if (error) return []
+  return (data || []).map(r => r.id)
+}
+
+// "This person gets nothing more" — a decision about one customer, which
+// a branch-wide figure cannot express. ₦50,000 cannot say Chike is cut
+// off while leaving a good customer his ₦40,000.
+//
+// It does not block anything at the save button, and it is not meant to:
+// the drink is poured, written on paper, and keyed the next morning, so
+// by the time the app sees it the credit was given hours ago. What the
+// flag does is put the name in front of whoever opens the sales page,
+// and onto the list that goes to the bar.
+export async function setCustomerNoCredit(customerId, on) {
+  const { error } = await supabase.from('customers')
+    .update({ no_more_credit: !!on }).eq('id', customerId)
+  if (error) throw error
 }
 
 export async function createCustomer(branchId, name, servedBy) {
@@ -3198,6 +3223,18 @@ export async function setRoomServiceStatus(roomId, outOfService, reason) {
 // worth more than this one.
 export async function loadLateRepaymentFlags(branchId, days = 14) {
   const { data, error } = await supabase.rpc('review_late_repayments', {
+    p_branch: branchId, p_days: days,
+  })
+  if (error) return []
+  return data || []
+}
+
+// Credit given to somebody already past the limit. Written by the
+// trigger at the moment it was keyed, so owed_before is what they
+// actually owed then — today's balance cannot tell you that once
+// anything has been paid off.
+export async function loadOverLimitCreditFlags(branchId, days = 14) {
+  const { data, error } = await supabase.rpc('review_over_limit_credit', {
     p_branch: branchId, p_days: days,
   })
   if (error) return []

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useToast } from '../components/Toast'
-import { loadReviewFlags, loadLateRepaymentFlags, setReviewHandled } from '../lib/data'
+import { loadReviewFlags, loadLateRepaymentFlags, loadOverLimitCreditFlags,
+         setReviewHandled } from '../lib/data'
 import { naira, lagosTime } from '../lib/format'
 
 // "Needs a look" — the things worth asking about, in one place.
@@ -59,6 +60,10 @@ const KIND = {
     title: 'Entered days late',
     why: 'A sale recorded well after its day was missing when that day was counted, which shows up later as a stock variance nobody can explain.',
   },
+  over_limit_credit: {
+    title: 'Credit past the limit',
+    why: 'Somebody was served on credit who already owed more than the branch limit. The app no longer refuses this, and should not: the drink was poured the night before and written on paper, so refusing the entry would only keep the debt off the books. It is recorded with what that customer owed at the time and who keyed it, and shown here instead. Marked high when the customer is one you have put on no credit at all.',
+  },
   late_repayment: {
     title: 'Credit repaid late',
     why: 'Money recorded two days or more after the day it came in, when Match your Total Sales was already done for that day. The rule allows two days; one is the habit worth having. Named here so a pattern has somewhere to show itself.',
@@ -109,8 +114,9 @@ export default function Review({ boot }) {
     Promise.all([
       loadReviewFlags(boot.staff.branch_id, days),
       loadLateRepaymentFlags(boot.staff.branch_id, days),
+      loadOverLimitCreditFlags(boot.staff.branch_id, days),
     ])
-      .then(([a, b]) => setFlags([...(a || []), ...(b || [])]))
+      .then(([a, b, c]) => setFlags([...(a || []), ...(b || []), ...(c || [])]))
       .catch(e => { setErr(e.message || 'could not load'); setFlags([]) })
   }, [boot.staff.branch_id, days])
 
