@@ -27,7 +27,8 @@ import Receipt from '../components/Receipt'
 import MatchTill from '../components/MatchTill'
 import TillTile, { SubLine, ByMethod } from '../components/TillTile'
 import HandoverNotes from '../components/HandoverNotes'
-import { APPROVE_ROOM_CHARGES, EDITOR, MANAGEMENT, OVERSIGHT, SUPERVISOR, is } from '../lib/roles'
+import { APPROVE_ROOM_CHARGES, EDITOR, MANAGEMENT, OVERSIGHT, SENDS_CREDIT_WATCH,
+         SUPERVISOR, is } from '../lib/roles'
 import Notice from '../components/Notice'
 import { tracked } from '../lib/loadfail'
 
@@ -1199,11 +1200,19 @@ export default function SalesEntry({ boot }) {
                 record it — the GM sees it either way, and an unrecorded drink is
                 worse than a recorded argument.
               </p>
+              {/* Bar staff read the watch — that is why it is shown
+                  where they key. Sending it on is a manager's act: the
+                  same names forwarded from a barman's phone are a
+                  different document from a list a manager posts behind
+                  the bar. Both buttons are flex-1, so when this one is
+                  hidden "Got it" simply takes the width. */}
               <div className="flex gap-2 mt-3">
-                <button onClick={shareWatch}
-                  className="flex-1 h-12 rounded-xl border border-line text-ink font-semibold">
-                  Send to the bar
-                </button>
+                {is(staff.role, SENDS_CREDIT_WATCH) && (
+                  <button onClick={shareWatch}
+                    className="flex-1 h-12 rounded-xl border border-line text-ink font-semibold">
+                    Send to the bar
+                  </button>
+                )}
                 <button onClick={dismissWatch}
                   className="flex-1 h-12 rounded-xl bg-amber text-bg font-bold">
                   Got it
