@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { naira, lagosToday, lagosTime, seesStayTimes } from '../lib/format'
 import {
   checkInReservation, loadCheckoutsStillOwing, loadInternalRoomIds, loadOccupancy,
@@ -205,148 +205,174 @@ export default function RoomBoard({ boot }) {
     setOosBusy(false)
   }
 
+  // THE WHOLE BOARD, WORKED OUT ONCE PER CHANGE OF DATA (16 Nov 2026).
+  //
+  // All of this used to run in the component body, so every render
+  // rebuilt it: one card per room, who the card is about, the booking
+  // strips, the tally, the totals — with a visible.find() nested in a
+  // loop and stateOf() recomputed at each step.
+  //
+  // Shell keeps navDown in React state and sets it on every change of
+  // scroll direction, which re-renders this page. So a thumb moving
+  // down Nnewi's room list rebuilt the entire board several times a
+  // second, the main thread could not keep up, and the bottom tab bar
+  // stalled part-way through its slide — marooned across the middle of
+  // the screen. It read as a hang. It was arithmetic.
+  //
+  // Above the early return below, because a hook cannot be called
+  // conditionally: it handles the not-loaded-yet case itself.
+  const board = useMemo(() => {
+    if (!allRooms) return null
+    const internalSet = new Set(internalIds)
+    // Everything below works on the rooms this person is allowed to see.
+    const visible = seesInternal ? allRooms : allRooms.filter(r => !internalSet.has(r.room_id))
+
+    // ONE CARD PER ROOM.
+    //
+    // The occupancy view returns a row per STAY, so a room with a guest in
+    // it and a booking for November came back twice and was drawn twice.
+    // That was merely untidy while a booking rendered as "Reserved"; once
+    // a future booking started reading as "Ready to let" it became a lie —
+    // room 202 would have shown Mr Okoye asleep in it beside a card
+    // offering it to the next walk-in.
+    //
+    // So each room keeps its most live row. The future booking is not
+    // lost: the card names it underneath the guest, which is where the
+    // desk was already reading it.
+    const byRoom = new Map()
+    for (const r of visible) {
+      const rank = LIVENESS[stateOf(r, paidThrough)] ?? 9
+      const held = byRoom.get(r.room_id)
+      if (!held || rank < held.rank) byRoom.set(r.room_id, { row: r, rank })
+    }
+    // WHO THE CARD IS ABOUT (2 November 2026).
+    //
+    // reserved_due outranks occupied, which is right for an EMPTY room —
+    // an arrival due today is the thing to act on. It is wrong while the
+    // last guest is still in the bed: room 102 showed PSN, who had not
+    // walked in, and Mrs Oby Solaja, who was in the room and being served,
+    // was one grey line near the bottom.
+    //
+    // So when a room holds both, the card is about the guest who is there.
+    // The arrival is not lost — it gets its own strip, with the check-in
+    // button on it, drawn above the guest.
+    const IN_HOUSE = new Set(['occupied', 'leaving', 'overdue'])
+    for (const [roomId, held] of byRoom) {
+      if (stateOf(held.row, paidThrough) !== 'reserved_due') continue
+      const inHouse = visible.find(r => r.room_id === roomId && r.stay_id
+        && IN_HOUSE.has(stateOf(r, paidThrough)))
+      if (inHouse) {
+        byRoom.set(roomId, { row: inHouse, rank: LIVENESS[stateOf(inHouse, paidThrough)] ?? 9 })
+      }
+    }
+
+    const rooms = [...byRoom.values()].map(h => h.row)
+
+    // WHAT THE CARD SAYS IS NOT WHAT CAN BE OPENED (29 October 2026).
+    //
+    // byRoom keeps one row per room, and whatever it drops becomes
+    // unreachable. That has now bitten in both directions: a booking
+    // behind another booking, and today the reverse — reserved_due (2)
+    // outranks leaving (3), so the surveyor arriving this afternoon took
+    // the card from the guest still checking out of the same room, and
+    // 101, 103 and 104 could not be checked out at all.
+    //
+    // Rank decides what the card SAYS. It must never decide what a finger
+    // can reach. So every other stay on the room is listed beneath it.
+    const othersByRoom = new Map()
+    for (const r of visible) {
+      if (!r.stay_id) continue
+      const kept = byRoom.get(r.room_id)
+      if (kept && kept.row.stay_id === r.stay_id) continue
+      othersByRoom.set(r.room_id, [...(othersByRoom.get(r.room_id) || []), r])
+    }
+    for (const list of othersByRoom.values()) {
+      list.sort((a, b) => String(a.check_in_date).localeCompare(String(b.check_in_date)))
+    }
+
+    // TWO GUESTS IN ONE ROOM (20 October 2026).
+    //
+    // Keeping the most live row per room is right for a booking sitting
+    // behind a guest. It is wrong when two rows are both 'occupied': the
+    // ranks tie, one is kept arbitrarily, and the other disappears from
+    // the board with nothing said.
+    //
+    // That is how Room 103 at Awka carried Mr Factor — checked in on the
+    // 18th, due out on the 19th, never checked out — while Pst Pascal was
+    // checked into the same room on the 19th. The desk could not see it,
+    // because the board showed one card and one name. His bill sat open
+    // on a bed somebody else was sleeping in.
+    //
+    // A reopened checkout does the same thing: while it is being
+    // corrected its status reads 'occupied', so it competes with whoever
+    // is in the room now.
+    const liveByRoom = new Map()
+    for (const r of visible) {
+      if (r.status !== 'occupied') continue
+      liveByRoom.set(r.room_id, [...(liveByRoom.get(r.room_id) || []), r])
+    }
+    const doubled = [...liveByRoom.values()].filter(list => list.length > 1)
+
+    // EVERY BOOKING ON A ROOM MUST BE REACHABLE (28 October 2026).
+    //
+    // byRoom keeps ONE row per room. That is right for a booking sitting
+    // behind a guest, but when a room carries two FUTURE bookings both
+    // rank the same, the tie is broken by whichever row the view returned
+    // first, and the loser vanishes — card, name and folio with it.
+    //
+    // Eleven surveyors were booked into Awka for 29 October. Ten of those
+    // rooms already held a PSN booking for 2 November, so ten folios could
+    // not be opened to take the deposit, and which one you could reach was
+    // luck. Room 207, the only one booked once, worked fine.
+    //
+    // So every reservation on a room is listed on its card, soonest first,
+    // each one opening its own folio.
+    const bookingsByRoom = new Map()
+    for (const r of visible) {
+      if (r.status !== 'reserved' || !r.stay_id) continue
+      bookingsByRoom.set(r.room_id, [...(bookingsByRoom.get(r.room_id) || []), r])
+    }
+    for (const list of bookingsByRoom.values()) {
+      list.sort((a, b) => String(a.check_in_date).localeCompare(String(b.check_in_date)))
+    }
+
+    const tally = rooms.reduce((acc, r) => {
+      const s = stateOf(r, paidThrough); acc[s] = (acc[s] || 0) + 1; return acc
+    }, {})
+
+    // A booking three weeks out is not a room anyone can walk into, and as
+    // a full card it doubled the length of the board — eleven PSN rooms
+    // held for November sat beside the eleven live rooms they are booked
+    // for. They live in the strip below now; the live card still names the
+    // booking underneath the guest. A reservation whose day has ARRIVED
+    // stays in the grid, because that one needs doing something about.
+    // Room order, always. Sorting by urgency was tried and taken out: the
+    // desk reads this board as a map of the building — 101, 102, 103 on
+    // the left corridor — and moving the cards around took that away.
+    // What needs attention is carried by the coloured bar and the counts
+    // at the top instead, which do not disturb the layout.
+    const sorted = [...rooms].sort((a, b) =>
+      String(a.room_number).localeCompare(String(b.room_number), undefined, { numeric: true }))
+    const shown = filter ? sorted.filter(r => stateOf(r, paidThrough) === filter) : sorted
+    // A reservation is not a debt. Its whole booking shows as due with
+    // nothing paid because the guest has not arrived — eleven PSN rooms
+    // held for November were adding ₦1,650,000 here, five times every real
+    // balance together, so the outstanding figure meant nothing. Counted
+    // separately below as what is booked, not as what is owed.
+    const arrived = rooms.filter(r => r.status !== 'reserved')
+    const owed = arrived.reduce((s, r) => s + Math.max(Number(r.outstanding || 0), 0), 0)
+    const onDeposit = arrived.reduce((s, r) => s + Math.max(-Number(r.outstanding || 0), 0), 0)
+    const booked = visible.filter(r => r.status === 'reserved')
+      .reduce((s, r) => s + Math.max(Number(r.outstanding || 0), 0), 0)
+    return { visible, rooms, othersByRoom, doubled, bookingsByRoom, tally, sorted, shown, arrived, owed, onDeposit, booked }
+  }, [allRooms, internalIds, seesInternal, paidThrough, filter])
+
   if (allRooms === null) return <p className="px-5 text-dim">Loading…</p>
 
-  // Everything below works on the rooms this person is allowed to see.
-  const visible = seesInternal ? allRooms : allRooms.filter(r => !internalIds.includes(r.room_id))
+  const { visible, rooms, othersByRoom, doubled, bookingsByRoom, tally,
+          sorted, shown, arrived, owed, onDeposit, booked } = board
 
-  // ONE CARD PER ROOM.
-  //
-  // The occupancy view returns a row per STAY, so a room with a guest in
-  // it and a booking for November came back twice and was drawn twice.
-  // That was merely untidy while a booking rendered as "Reserved"; once
-  // a future booking started reading as "Ready to let" it became a lie —
-  // room 202 would have shown Mr Okoye asleep in it beside a card
-  // offering it to the next walk-in.
-  //
-  // So each room keeps its most live row. The future booking is not
-  // lost: the card names it underneath the guest, which is where the
-  // desk was already reading it.
-  const byRoom = new Map()
-  for (const r of visible) {
-    const rank = LIVENESS[stateOf(r, paidThrough)] ?? 9
-    const held = byRoom.get(r.room_id)
-    if (!held || rank < held.rank) byRoom.set(r.room_id, { row: r, rank })
-  }
-  // WHO THE CARD IS ABOUT (2 November 2026).
-  //
-  // reserved_due outranks occupied, which is right for an EMPTY room —
-  // an arrival due today is the thing to act on. It is wrong while the
-  // last guest is still in the bed: room 102 showed PSN, who had not
-  // walked in, and Mrs Oby Solaja, who was in the room and being served,
-  // was one grey line near the bottom.
-  //
-  // So when a room holds both, the card is about the guest who is there.
-  // The arrival is not lost — it gets its own strip, with the check-in
-  // button on it, drawn above the guest.
-  const IN_HOUSE = new Set(['occupied', 'leaving', 'overdue'])
-  for (const [roomId, held] of byRoom) {
-    if (stateOf(held.row, paidThrough) !== 'reserved_due') continue
-    const inHouse = visible.find(r => r.room_id === roomId && r.stay_id
-      && IN_HOUSE.has(stateOf(r, paidThrough)))
-    if (inHouse) {
-      byRoom.set(roomId, { row: inHouse, rank: LIVENESS[stateOf(inHouse, paidThrough)] ?? 9 })
-    }
-  }
 
-  const rooms = [...byRoom.values()].map(h => h.row)
-
-  // WHAT THE CARD SAYS IS NOT WHAT CAN BE OPENED (29 October 2026).
-  //
-  // byRoom keeps one row per room, and whatever it drops becomes
-  // unreachable. That has now bitten in both directions: a booking
-  // behind another booking, and today the reverse — reserved_due (2)
-  // outranks leaving (3), so the surveyor arriving this afternoon took
-  // the card from the guest still checking out of the same room, and
-  // 101, 103 and 104 could not be checked out at all.
-  //
-  // Rank decides what the card SAYS. It must never decide what a finger
-  // can reach. So every other stay on the room is listed beneath it.
-  const othersByRoom = new Map()
-  for (const r of visible) {
-    if (!r.stay_id) continue
-    const kept = byRoom.get(r.room_id)
-    if (kept && kept.row.stay_id === r.stay_id) continue
-    othersByRoom.set(r.room_id, [...(othersByRoom.get(r.room_id) || []), r])
-  }
-  for (const list of othersByRoom.values()) {
-    list.sort((a, b) => String(a.check_in_date).localeCompare(String(b.check_in_date)))
-  }
-
-  // TWO GUESTS IN ONE ROOM (20 October 2026).
-  //
-  // Keeping the most live row per room is right for a booking sitting
-  // behind a guest. It is wrong when two rows are both 'occupied': the
-  // ranks tie, one is kept arbitrarily, and the other disappears from
-  // the board with nothing said.
-  //
-  // That is how Room 103 at Awka carried Mr Factor — checked in on the
-  // 18th, due out on the 19th, never checked out — while Pst Pascal was
-  // checked into the same room on the 19th. The desk could not see it,
-  // because the board showed one card and one name. His bill sat open
-  // on a bed somebody else was sleeping in.
-  //
-  // A reopened checkout does the same thing: while it is being
-  // corrected its status reads 'occupied', so it competes with whoever
-  // is in the room now.
-  const liveByRoom = new Map()
-  for (const r of visible) {
-    if (r.status !== 'occupied') continue
-    liveByRoom.set(r.room_id, [...(liveByRoom.get(r.room_id) || []), r])
-  }
-  const doubled = [...liveByRoom.values()].filter(list => list.length > 1)
-
-  // EVERY BOOKING ON A ROOM MUST BE REACHABLE (28 October 2026).
-  //
-  // byRoom keeps ONE row per room. That is right for a booking sitting
-  // behind a guest, but when a room carries two FUTURE bookings both
-  // rank the same, the tie is broken by whichever row the view returned
-  // first, and the loser vanishes — card, name and folio with it.
-  //
-  // Eleven surveyors were booked into Awka for 29 October. Ten of those
-  // rooms already held a PSN booking for 2 November, so ten folios could
-  // not be opened to take the deposit, and which one you could reach was
-  // luck. Room 207, the only one booked once, worked fine.
-  //
-  // So every reservation on a room is listed on its card, soonest first,
-  // each one opening its own folio.
-  const bookingsByRoom = new Map()
-  for (const r of visible) {
-    if (r.status !== 'reserved' || !r.stay_id) continue
-    bookingsByRoom.set(r.room_id, [...(bookingsByRoom.get(r.room_id) || []), r])
-  }
-  for (const list of bookingsByRoom.values()) {
-    list.sort((a, b) => String(a.check_in_date).localeCompare(String(b.check_in_date)))
-  }
-
-  const tally = rooms.reduce((acc, r) => {
-    const s = stateOf(r, paidThrough); acc[s] = (acc[s] || 0) + 1; return acc
-  }, {})
-
-  // A booking three weeks out is not a room anyone can walk into, and as
-  // a full card it doubled the length of the board — eleven PSN rooms
-  // held for November sat beside the eleven live rooms they are booked
-  // for. They live in the strip below now; the live card still names the
-  // booking underneath the guest. A reservation whose day has ARRIVED
-  // stays in the grid, because that one needs doing something about.
-  // Room order, always. Sorting by urgency was tried and taken out: the
-  // desk reads this board as a map of the building — 101, 102, 103 on
-  // the left corridor — and moving the cards around took that away.
-  // What needs attention is carried by the coloured bar and the counts
-  // at the top instead, which do not disturb the layout.
-  const sorted = [...rooms].sort((a, b) =>
-    String(a.room_number).localeCompare(String(b.room_number), undefined, { numeric: true }))
-  const shown = filter ? sorted.filter(r => stateOf(r, paidThrough) === filter) : sorted
-  // A reservation is not a debt. Its whole booking shows as due with
-  // nothing paid because the guest has not arrived — eleven PSN rooms
-  // held for November were adding ₦1,650,000 here, five times every real
-  // balance together, so the outstanding figure meant nothing. Counted
-  // separately below as what is booked, not as what is owed.
-  const arrived = rooms.filter(r => r.status !== 'reserved')
-  const owed = arrived.reduce((s, r) => s + Math.max(Number(r.outstanding || 0), 0), 0)
-  const onDeposit = arrived.reduce((s, r) => s + Math.max(-Number(r.outstanding || 0), 0), 0)
-  const booked = visible.filter(r => r.status === 'reserved')
-    .reduce((s, r) => s + Math.max(Number(r.outstanding || 0), 0), 0)
 
   return (
     <div className="px-5">

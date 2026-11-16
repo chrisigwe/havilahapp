@@ -56,11 +56,27 @@ export default function Shell({ staff, tab, onTab, children,
   // the scroll handler the tab bar already runs, so there is still only
   // one listener.
   //
-  // On the SHELL, not on the bar. The large title sits below the bar as
-  // its sibling, and a custom property inherits down the tree, never
-  // sideways — set on the bar it reached the compact title and nothing
-  // else, so the large one simply never faded. Caught by measuring it
-  // rather than by reading it back.
+  // On the BAR, not on the shell (16 November 2026).
+  //
+  // It was on the shell because the large title, a sibling of the bar,
+  // faded with it, and a custom property inherits down and never
+  // sideways. On 27 October the large title stopped fading — it is
+  // plain `opacity: 1` now — so the only things still reading --hv-t
+  // are .hv-nav, .hv-nav-title and .hv-bar-brand, and all three are
+  // inside this header.
+  //
+  // Leaving it on the shell was costing the whole app. A custom
+  // property is INHERITED, so writing it on the ancestor of the page
+  // invalidated style recalculation for every descendant — every room
+  // card, every button — on every scroll frame. On Nnewi's room list
+  // that saturated the main thread, and the bottom tab bar's transform
+  // transition stalled part-way through its slide, leaving the bar
+  // marooned across the middle of the screen. It looked like a hang; it
+  // was a page-wide style recalc sixty times a second.
+  //
+  // --hv-bar below stays on the shell: .hv-under-nav is a sibling of
+  // this header and needs it, and it is written on resize, not per
+  // frame.
   const shellRef = useRef(null)
   const barRef = useRef(null)
   const TITLE_RUN = 52   // px of scroll the handover takes
@@ -86,7 +102,7 @@ export default function Shell({ staff, tab, onTab, children,
     let last = window.scrollY
     let frame = 0
     const paint = (y) => {
-      const el = shellRef.current
+      const el = barRef.current
       if (!el) return
       const t = Math.min(1, Math.max(0, y / TITLE_RUN))
       el.style.setProperty('--hv-t', t.toFixed(3))
@@ -117,7 +133,7 @@ export default function Shell({ staff, tab, onTab, children,
   // A tab change scrolls to a new page; the bar must be there when it does.
   useEffect(() => {
     setNavDown(false)
-    shellRef.current?.style.setProperty('--hv-t', '0')
+    barRef.current?.style.setProperty('--hv-t', '0')
   }, [tab])
   // The bar comes from tabsFor() — the single definition shared with
   // the More menu and the landing screen. See lib/tabs.js.
