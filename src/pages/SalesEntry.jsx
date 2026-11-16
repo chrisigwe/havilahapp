@@ -8,7 +8,8 @@ import { checkRepeatSale, loadStockMap, loadPopular, loadToday, saveBasket, save
          loadStaffForLocation, loadReceptionActivity, loadReceptionDashboard, deleteEntry,
          loadRoomCharges, loadRoomBillHandover, deleteOrderItem, saveRestaurantWriteoff, loadRoomsSoldInMonth,
          loadWriteoffsOnDate, loadLiveStays, chargeBasketToRoom,
-         getOrCreateGuestTab, updateSaleWithPayments, undoRecentReceipt, recordTillCheck, tillCheckDone } from '../lib/data'
+         getOrCreateGuestTab, updateSaleWithPayments, undoRecentReceipt, recordTillCheck, tillCheckDone,
+         conversionRows, saveMovements } from '../lib/data'
 import { enqueue, flush, isConnectionError } from '../lib/outbox'
 import { useToast } from '../components/Toast'
 import ReceptionDashboard from '../components/ReceptionDashboard'
@@ -348,6 +349,9 @@ export default function SalesEntry({ boot }) {
   const [onBehalfOf, setOnBehalfOf] = useState(null)
   const [people, setPeople] = useState([])
   const [picking, setPicking] = useState(false)
+  // A shot was reached for and there are none, but a bottle is sitting
+  // there. { piece, bottle, shots } — see commitOpen.
+  const [opening, setOpening] = useState(null)
   const [tuning, setTuning] = useState(null)        // line being adjusted
   const [paying, setPaying] = useState(null)        // payment step
   // An identical line on the same account within the last two minutes,
@@ -711,6 +715,48 @@ export default function SalesEntry({ boot }) {
                       // cross-department pick like a Restaurant item sold at a bar
                       locationId: sourceLocation?.id, locationName: sourceLocation?.name }]
     })
+  }
+
+  // Opening a bottle, from the bar, at the moment it is needed.
+  //
+  // St Remy was being poured by the shot and none of it was recorded —
+  // not because anyone was hiding it, but because there was no shot to
+  // tap. A bottle is one stock item and a shot is another, and the step
+  // between them lived on the Store page, which bar staff cannot reach.
+  // So it needed a storekeeper on the phone at eleven at night, and
+  // anything needing a phone call eventually does not happen.
+  //
+  // This cannot invent stock. It turns one bottle the bar already holds
+  // into the number of shots the catalogue says it makes, in the
+  // barman's own department. The number is editable because a bottle
+  // already half poured yields what is left in it, not a full one.
+  async function commitOpen() {
+    const { piece, bottle, shots } = opening
+    const n = Number(shots)
+    if (!(n > 0)) return
+    setBusy(true)
+    try {
+      // Inside the try: conversionRows refuses a malformed conversion by
+      // throwing, and a throw out here would leave the button saying
+      // "Opening…" for ever.
+      const rows = conversionRows({
+        staff, locationId, date,
+        fromItem: bottle, fromQty: 1, toItem: piece, toQty: n,
+        note: `Opened 1 × ${bottle.name} into ${n} × ${piece.name}`,
+      })
+      try {
+        await saveMovements(rows)
+        toast(`Opened — ${n} × ${piece.name}`, 'success')
+      } catch (e) {
+        if (!isConnectionError(e)) throw e
+        enqueue({ kind: 'movements', payload: { rows } })
+        toast('No connection — saved and will send when you are back online')
+      }
+      setOpening(null)
+      addToBasket(piece)
+      refresh(); flush()
+    } catch (e) { toast('Not saved: ' + e.message, 'error') }
+    setBusy(false)
   }
 
   // typed restaurant order — no catalog item, since a plate of food
@@ -1656,7 +1702,18 @@ export default function SalesEntry({ boot }) {
             if (writeoffMode) {
               setPicking(false); setWriteoffMode(false)
               setWriteoff({ item, kind: 'damage', qty: 1, unitValue: Number(item.selling_price) })
-            } else addToBasket(item)
+              return
+            }
+            // Reaching for a shot with none left, while a bottle of it
+            // sits on this bar's shelf: offer to open one rather than
+            // sending him to find a storekeeper.
+            const bottle = items.find(i => i.piece_item_id === item.id)
+            if (bottle && onHand(item.id) <= 0 && onHand(bottle.id) > 0) {
+              setPicking(false)
+              setOpening({ piece: item, bottle, shots: Number(bottle.pack_size) || 1 })
+              return
+            }
+            addToBasket(item)
           }}
           onClose={() => { setPicking(false); setWriteoffMode(false) }} />
       )}
@@ -2055,6 +2112,31 @@ export default function SalesEntry({ boot }) {
               : (writeoff.date || date) !== todayDate
                 ? `Save write-off · ${dayShort(writeoff.date || date)}`
                 : 'Save write-off'}
+          </button>
+        </Sheet>
+      )}
+
+      {opening && (
+        <Sheet onClose={() => setOpening(null)}>
+          <h2 className="text-2xl font-bold">Open a {opening.bottle.name}?</h2>
+          <p className="text-dim mt-1">
+            No {opening.piece.name} left here. Opening one takes a bottle off this
+            bar and puts the shots on.
+          </p>
+          <Row label="Shots from this bottle">
+            <button onClick={() => setOpening(o => ({ ...o, shots: Math.max(1, Number(o.shots) - 1) }))}
+              className="h-14 w-14 rounded-xl bg-surface border border-line text-2xl">−</button>
+            <span className="tnum text-3xl font-bold w-14 text-center">{opening.shots}</span>
+            <button onClick={() => setOpening(o => ({ ...o, shots: Number(o.shots) + 1 }))}
+              className="h-14 w-14 rounded-xl bg-surface border border-line text-2xl">+</button>
+          </Row>
+          <p className="text-dim text-sm mt-2">
+            If this bottle was already part poured, set it to what is actually left
+            in it — not a full one.
+          </p>
+          <button onClick={commitOpen} disabled={busy || !(Number(opening.shots) > 0)}
+            className="mt-8 w-full h-16 rounded-2xl bg-amber text-bg text-xl font-bold disabled:opacity-40">
+            {busy ? 'Opening…' : `Open it — ${opening.shots} × ${opening.piece.name}`}
           </button>
         </Sheet>
       )}
