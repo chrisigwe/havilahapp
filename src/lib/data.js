@@ -3219,6 +3219,18 @@ export async function loadLateRepaymentFlags(branchId, days = 14) {
   return data || []
 }
 
+// Credit given to somebody already past the limit. Written by the
+// trigger at the moment it was keyed, so owed_before is what they
+// actually owed then — today's balance cannot tell you that once
+// anything has been paid off.
+export async function loadOverLimitCreditFlags(branchId, days = 14) {
+  const { data, error } = await supabase.rpc('review_over_limit_credit', {
+    p_branch: branchId, p_days: days,
+  })
+  if (error) return []
+  return data || []
+}
+
 export async function loadReviewFlags(branchId, days = 14) {
   const { data, error } = await supabase.rpc('review_flags', {
     p_branch: branchId, p_days: days,
