@@ -629,6 +629,16 @@ export async function loadCustomers(branchId) {
   return data
 }
 
+// Which customers are on no credit. A tiny read of its own, so the
+// Credit page does not pull the whole customer table to learn about a
+// handful of flags.
+export async function loadNoCreditIds(branchId) {
+  const { data, error } = await supabase.from('customers')
+    .select('id').eq('branch_id', branchId).eq('no_more_credit', true)
+  if (error) return []
+  return (data || []).map(r => r.id)
+}
+
 // "This person gets nothing more" — a decision about one customer, which
 // a branch-wide figure cannot express. ₦50,000 cannot say Chike is cut
 // off while leaving a good customer his ₦40,000.

@@ -7,7 +7,8 @@ import { checkRepeatPayment, checkRepeatRepayment, deactivateCustomer, deleteCus
 import { enqueue, flush, isConnectionError } from '../lib/outbox'
 import PaymentMethodPicker, { paymentParts, paymentAllocated, paymentReady } from '../components/PaymentMethodPicker'
 import { isClosedDayRefusal, submitPendingRepayment, loadPendingRepayments,
-         approvePendingRepayment, rejectPendingRepayment } from '../lib/data'
+         approvePendingRepayment, rejectPendingRepayment,
+         loadNoCreditIds, setCustomerNoCredit } from '../lib/data'
 import FolioStatement from '../components/FolioStatement'
 import { EDITOR, OPENS_ON_ALL, OVERSIGHT, SUPERVISOR, is } from '../lib/roles'
 import { accountStatementPdf, savePdf } from '../lib/pdfSheet'
@@ -156,6 +157,16 @@ export default function Credit({ boot }) {
     if (!isBoss) return
     loadPendingRepayments(staff.branch_id, staff.id).then(setPending).catch(() => {})
   }, [isBoss, staff.branch_id, staff.id])
+
+  // Who the GM has put on no credit. Shown beside the name here, and on
+  // the briefing the bar reads each morning. It is a decision about a
+  // person, which the branch's ₦50,000 cannot express: a figure cannot
+  // say Chike gets nothing more while leaving a good customer his
+  // ₦40,000.
+  const [noCredit, setNoCredit] = useState(() => new Set())
+  useEffect(() => {
+    loadNoCreditIds(staff.branch_id).then(ids => setNoCredit(new Set(ids))).catch(() => {})
+  }, [staff.branch_id])
 
   const refresh = useCallback(() => {
     const requestedFor = requestKey   // snapshot at the moment this fetch was started
@@ -583,6 +594,11 @@ export default function Credit({ boot }) {
               className="w-full py-3 flex items-center gap-3 text-left">
               <div className="flex-1 min-w-0">
                 <div className="font-semibold break-words">{c.name}</div>
+                {noCredit.has(c.customer_id) && (
+                  <div className="text-clay text-xs font-semibold">
+                    No credit — cash or POS only
+                  </div>
+                )}
                 <div className="text-dim text-sm">
                   {naira(c.credit_taken)} taken · {naira(c.repaid)} repaid
                 </div>
@@ -1544,14 +1560,43 @@ export default function Credit({ boot }) {
               <CreditChain branchId={staff.branch_id} customerId={open.customer.customer_id} />
             </div>
 
-            {isAdmin && (
-              <div className="px-5 pb-5 print:hidden">
-                <button onClick={() => setConfirmDel(open.customer)}
-                  className="w-full h-12 rounded-xl border border-clay text-clay font-semibold">
-                  Delete customer
-                </button>
-              </div>
-            )}
+            {isAdmin && (() => {
+              const id = open.customer.customer_id
+              const on = noCredit.has(id)
+              // It blocks nothing, and is not meant to. Staff pour the
+              // drink, write it on paper and key it the next morning, so
+              // by the time the app sees a credit sale the credit was
+              // given hours ago. What this does is put the name in front
+              // of whoever opens the sales page, and onto the list that
+              // goes to the bar — which is where it can still change
+              // somebody's mind.
+              const toggle = async () => {
+                try {
+                  await setCustomerNoCredit(id, !on)
+                  setNoCredit(s => {
+                    const next = new Set(s)
+                    if (on) next.delete(id); else next.add(id)
+                    return next
+                  })
+                  toast(on ? `${open.customer.name} may take credit again`
+                           : `${open.customer.name} is on no credit — the bars will see it`,
+                        'success')
+                } catch (e) { toast(e.message || 'Could not save', 'error') }
+              }
+              return (
+                <div className="px-5 pb-5 print:hidden flex flex-col gap-3">
+                  <button onClick={toggle}
+                    className={`w-full h-12 rounded-xl font-semibold border ${
+                      on ? 'border-leaf text-leaf' : 'border-clay text-clay'}`}>
+                    {on ? 'Allow credit again' : 'Put on no credit'}
+                  </button>
+                  <button onClick={() => setConfirmDel(open.customer)}
+                    className="w-full h-12 rounded-xl border border-clay text-clay font-semibold">
+                    Delete customer
+                  </button>
+                </div>
+              )
+            })()}
           </div>
 
           <div className="p-5 border-t border-line flex gap-3 print:hidden">
