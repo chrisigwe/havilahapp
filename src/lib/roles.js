@@ -37,6 +37,16 @@ export const is = (role, group) => group.includes(role)
 // database would refuse.
 export const APPROVE_ROOM_CHARGES = ['front_desk', 'manager', 'gm', 'admin']
 
+// manager, gm, admin, auditor. Who may send the credit watch out of the
+// app — to the bar's phone, or to print and stick up (Chris, 16
+// November 2026).
+//
+// Bar staff READ the watch; that is the whole point of showing it where
+// they key. They do not circulate it. A list of who owes what, sent on
+// from a barman's phone, is a different document from the same list
+// posted behind the bar by a manager.
+export const SENDS_CREDIT_WATCH = ['manager', 'gm', 'admin', 'auditor']
+
 // auditor, gm, admin. Open Credit and Recovered debt on ALL departments:
 // their job is the whole branch, and a single department would quietly
 // narrow the review. Everyone else opens on their own department.
