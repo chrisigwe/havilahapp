@@ -1316,11 +1316,47 @@ export default function Credit({ boot }) {
         // vanishing — a page whose parts do not sum to its whole is worse
         // than one that admits a gap.
         const UNPLACED = 'unplaced'
+        const monthCache = {}
         const monthsFor = (c) => {
+          if (monthCache[c.customer_id]) return monthCache[c.customer_id]
           const m = { ...(owedByMonth[c.customer_id] || {}) }
-          const placed = Object.values(m).reduce((t, n) => t + n, 0)
-          const rest = Number(c.balance) - placed
+          const keys = Object.keys(m).sort()          // oldest first
+          let placed = keys.reduce((t, k) => t + m[k], 0)
+          const bal = Number(c.balance)
+
+          // THE MONTHS MUST ADD UP TO WHAT THE PERSON OWES (Chris, 17
+          // November 2026: "Oga Emmy in Awka says 1000 owed in Sep but
+          // when you want to collect the payment it says 0 owe").
+          //
+          // The ladder can only match a repayment to credit given by the
+          // SAME person at the SAME department. Money recorded against
+          // anyone else leaves the sale standing open in the ladder
+          // while the balance — which simply nets credit against
+          // repayments — has already come down. That is the same fault
+          // the settled group names: "how Mr Michael's debt became
+          // invisible when a repayment landed on a barman who had given
+          // him no credit."
+          //
+          // The balance is the truth about what is owed, so the excess is
+          // written off against the months oldest first, which is the
+          // order money is applied in everywhere else.
+          if (placed > bal + 0.009) {
+            let excess = placed - bal
+            for (const k of keys) {
+              if (excess <= 0.009) break
+              const take = Math.min(m[k], excess)
+              m[k] -= take; excess -= take
+              if (m[k] <= 0.009) delete m[k]
+            }
+            placed = bal
+          }
+
+          // And the other way: the ladder leaves out PR, damage and
+          // staff-order sales, so whatever it cannot place is shown
+          // rather than dropped.
+          const rest = bal - placed
           if (rest > 0.009) m[UNPLACED] = rest
+          monthCache[c.customer_id] = m
           return m
         }
 
