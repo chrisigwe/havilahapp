@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useToast } from '../components/Toast'
-import { lagosToday, methodLabel, naira, startingDept, tierLabel } from '../lib/format'
+import { lagosToday, methodLabel, naira, startingDept, stepDate, tierLabel } from '../lib/format'
 import { monthBuckets, monthLabel } from '../lib/months'
 import RoomChargeTracker from '../components/RoomChargeTracker'
 import { checkRepeatPayment, checkRepeatRepayment, deactivateCustomer, deleteCustomer, linkCustomerToGuest, loadBalances, loadCreditForMonth, loadCreditOnDate, loadCustomerLedger, loadCreditChain, loadFolio, loadStayMoves, loadGuestBalances, loadReservedValue, loadStaffForLocation, loadUnlinkedCustomerBalances, loadCustomerNeverAGuest, setCustomerNeverAGuest, moveWorkaroundToRoom, recordStayPayment, saveRepayment, searchSimilarGuests } from '../lib/data'
@@ -117,6 +117,10 @@ export default function Credit({ boot }) {
   // that day's activity instead; the two answer different
   // questions and showing them together would be confusing.
   const [dayFilter, setDayFilter] = useState('')
+  // Walking through days without reopening the calendar. stepDate does
+  // the arithmetic in UTC, which is what keeps a Lagos phone from
+  // landing a day early — see the note on addDays.
+  const stepDay = (by) => setDayFilter(d => stepDate(d, by, lagosToday()))
   // A whole month, for the credit analysis that sets payroll
   // deductions. Separate from the day view: a day answers "what
   // happened", a month answers "what do they owe".
@@ -694,12 +698,27 @@ export default function Credit({ boot }) {
           breaks down a single day the way Recovered does. The month-end
           view is kept, because it is what sets a payroll deduction, but it
           is a line you follow rather than a mode you must first rule out. */}
+      {/* Arrows only once a day is chosen: there is nothing to step from
+          before that, and the row stays as it was. Wrapping, because a
+          date input and two 44px targets and a sentence do not fit
+          across a phone. */}
       {!monthFilter && (
-        <div className="flex items-center gap-2 py-2">
+        <div className="flex flex-wrap items-center gap-2 py-2">
+          {!!dayFilter && (
+            <button type="button" onClick={() => stepDay(-1)} aria-label="Previous day"
+              className="h-11 w-11 shrink-0 rounded-xl bg-surface border border-line
+                         text-ink text-xl leading-none">‹</button>
+          )}
           <input type="date" value={dayFilter} max={lagosToday()}
             onChange={e => { setDayFilter(e.target.value || ''); setMonthFilter(null) }}
             className={`h-11 px-3 rounded-xl bg-surface border tnum ${dayFilter
               ? 'border-amber text-amber' : 'border-line text-dim'}`} />
+          {!!dayFilter && (
+            <button type="button" onClick={() => stepDay(1)} aria-label="Next day"
+              disabled={dayFilter >= lagosToday()}
+              className="h-11 w-11 shrink-0 rounded-xl bg-surface border border-line
+                         text-ink text-xl leading-none disabled:opacity-40">›</button>
+          )}
           <span className="text-dim text-sm">
             {dayFilter ? 'What was taken and repaid that day' : 'Pick a date to break down that day'}
           </span>

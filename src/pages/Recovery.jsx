@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { lagosToday, methodLabel, naira, startingDept } from '../lib/format'
+import { lagosToday, methodLabel, naira, startingDept, stepDate } from '../lib/format'
 import { deleteRepayment, deleteRoomPayment, loadBalances, loadBalancesAsAt, loadRecovery, loadRoomPayments, updateRepayment } from '../lib/data'
 import { useToast } from '../components/Toast'
 import RoomChargeTracker from '../components/RoomChargeTracker'
@@ -275,10 +275,25 @@ export default function Recovery({ boot }) {
       )}
 
       {/* Pick a day to reconcile it; clear it for the rolling view. */}
-      <div className="flex items-center gap-2 py-2">
+      <div className="flex flex-wrap items-center gap-2 py-2">
+        {/* Same stepper as Credit, same shared stepDate, so "next" means
+            the same thing on both pages at the boundary. */}
+        {!!dayFilter && (
+          <button type="button" aria-label="Previous day"
+            onClick={() => setDayFilter(d => stepDate(d, -1, lagosToday()))}
+            className="h-11 w-11 shrink-0 rounded-xl bg-raise border border-line
+                       text-ink text-xl leading-none">‹</button>
+        )}
         <input type="date" value={dayFilter || ''} max={lagosToday()}
           onChange={e => setDayFilter(e.target.value || null)}
           className="h-11 px-3 rounded-xl bg-raise border border-line tnum" />
+        {!!dayFilter && (
+          <button type="button" aria-label="Next day"
+            onClick={() => setDayFilter(d => stepDate(d, 1, lagosToday()))}
+            disabled={dayFilter >= lagosToday()}
+            className="h-11 w-11 shrink-0 rounded-xl bg-raise border border-line
+                       text-ink text-xl leading-none disabled:opacity-40">›</button>
+        )}
         {dayFilter
           ? <button onClick={() => setDayFilter(null)}
               className="h-11 px-3 rounded-xl border border-amber text-amber text-sm font-semibold">
