@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useToast } from '../components/Toast'
 import { lagosToday, methodLabel, naira, startingDept, stepDate, stepMonth, tierLabel } from '../lib/format'
-import { monthBuckets, monthLabel } from '../lib/months'
+import { monthBuckets, monthLabel, UNDATED } from '../lib/months'
 import RoomChargeTracker from '../components/RoomChargeTracker'
 import { checkRepeatPayment, checkRepeatRepayment, deactivateCustomer, deleteCustomer, linkCustomerToGuest, loadBalances, loadCreditForMonth, loadCreditOnDate, loadCustomerLedger, loadCreditChain, loadFolio, loadStayMoves, loadGuestBalances, loadReservedValue, loadStaffForLocation, loadUnlinkedCustomerBalances, loadCustomerNeverAGuest, setCustomerNeverAGuest, moveWorkaroundToRoom, recordStayPayment, saveRepayment, searchSimilarGuests } from '../lib/data'
 import { enqueue, flush, isConnectionError } from '../lib/outbox'
@@ -1117,10 +1117,23 @@ export default function Credit({ boot }) {
         // Months inside a job. Keys are prefixed so October under "must be
         // collected" and October under "comes out of wages" open and close
         // on their own.
+        //
+        // THE HEADING SAYS WHAT THE MONTH MEANS (Chris, 17 November 2026).
+        //
+        // These fold by when somebody LAST TOOK credit, not by when the
+        // debt arose — and a heading reading only "November 2026" invites
+        // the opposite reading. Ella (staff) owed ₦8,800 when October
+        // closed and every naira of it sits under November, because she
+        // bought a malt on the 16th. Looking at 18 and 21 October showed
+        // her owing while no October group existed anywhere, which is
+        // not a sum that is wrong but a label that does not say what it
+        // is counting.
         const monthsOf = (prefix, rows) => monthBuckets(rows, c => c.last_credit_date)
           .map(({ key, rows: inMonth }) => (
             <div key={prefix + key}>
-              {head(prefix + ':' + key, monthLabel(key), inMonth.length,
+              {head(prefix + ':' + key,
+                key === UNDATED ? monthLabel(key) : `Last took credit · ${monthLabel(key)}`,
+                inMonth.length,
                 money(inMonth.reduce((t, r) => t + Number(r.balance), 0), 'text-clay'), null)}
               {isOpen(prefix + ':' + key) && list(inMonth)}
             </div>
