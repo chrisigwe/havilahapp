@@ -1,4 +1,5 @@
 import { OVERSIGHT } from './roles'
+import { addDays } from './days'
 export const naira = (n) =>
   '₦' + Number(n ?? 0).toLocaleString('en-NG', { maximumFractionDigits: 2 })
 
@@ -16,19 +17,11 @@ export const lagosHour = () => Number(
 export const tierLabel = { general: 'Standard', lounge: 'Lounge', staff: 'Staff' }
 export const methodLabel = { pos: 'POS', cash: 'Cash', credit: 'Credit', transfer: 'Transfer' }
 
-// Calendar-date arithmetic done ENTIRELY IN UTC, so no device timezone
-// can shift the result. The previous addDays parsed the date at LOCAL
-// midnight and then converted to UTC to print it — on a Lagos phone
-// (UTC+1) local midnight is 23:00 the previous day in UTC, so every call
-// came back one day EARLY: addDays('2026-10-05', 1) returned
-// '2026-10-05'. That made the default check-out on every new booking the
-// same day as check-in, and shortened the "rooms sold this month" window
-// by a day. It only showed on UTC+ devices, which is why testing in UTC
-// never caught it.
-export const addDays = (iso, n) => {
-  const [y, m, d] = String(iso).slice(0, 10).split('-').map(Number)
-  return new Date(Date.UTC(y, m - 1, d + n)).toISOString().slice(0, 10)
-}
+// Calendar-date arithmetic lives in days.js: this file imports roles,
+// which node cannot resolve without an extension, and date arithmetic
+// is exactly the kind of thing that wants tests. Re-exported here so
+// every existing import site is unchanged.
+export { addDays, stepDate } from './days'
 
 // N days before the Lagos business date — matches lagos_today() - N in
 // the database exactly, so app-side windows never disagree with what
