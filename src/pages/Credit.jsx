@@ -916,6 +916,20 @@ export default function Credit({ boot }) {
               // gave each credit, and the payment step — rather than a
               // second, half-informed sheet of its own.
               const live = combined.find(c => c.customer_id === r.customer_id)
+              // STILL OWING is a balance, not a membership (Chris, 17
+              // November 2026: "Oga Emmy in Awka says 1000 owed in Sep
+              // but when you want to collect the payment it says 0
+              // owe").
+              //
+              // Both figures were right. September genuinely closed with
+              // him owing ₦1,000 and he has paid since, so Collect
+              // correctly offers nothing. The page is supposed to say
+              // that — and did not, because `live` only asked whether he
+              // appears in `combined`, which holds EVERY customer in
+              // scope, settled ones included. For anyone who has ever
+              // taken credit it is truthy, so the note never printed on
+              // the people it was written for.
+              const owesNow = Number(live?.balance ?? 0) > 0.009
               return (
                 <button key={r.customer_id} type="button"
                   disabled={!live}
@@ -932,7 +946,8 @@ export default function Credit({ boot }) {
                     owed {naira(r.opening)} at the start
                     {' · '}took {naira(r.taken)}
                     {' · '}repaid {naira(r.repaid)}
-                    {!live && Number(r.closing) > 0.009 ? ' · nothing owing now' : ''}
+                    {!owesNow && Number(r.closing) > 0.009
+                      ? ' · paid since — nothing owing now' : ''}
                   </div>
                 </button>
               )
@@ -1017,7 +1032,10 @@ export default function Credit({ boot }) {
                         <div className="text-dim text-sm truncate">
                           {/* The customer-level note only where there is
                               nothing more exact to say. */}
-                          {r.who}{!ch && !live ? ' · nothing owing now' : ''}
+                          {/* Same correction as the month view: a
+                              balance, not a membership. */}
+                          {r.who}{!ch && !(Number(live?.balance ?? 0) > 0.009)
+                            ? ' · nothing owing now' : ''}
                         </div>
                         {done && (
                           <div className="text-leaf text-sm truncate">
