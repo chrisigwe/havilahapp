@@ -628,16 +628,29 @@ export default function Credit({ boot }) {
   // credit it asks whose debt the money settles rather than crediting
   // whoever is holding the phone.
   //
-  // `whole` matters: in a month group the row's balance has been
-  // replaced by that month's share, and a payment is not made against a
-  // month. The sheet opens on what the person actually owes, and
-  // targeted settlement inside it is how money is put against
-  // particular debts.
+  // THE MONTH YOU TAPPED IS WHAT IT OFFERS (Chris, 17 November 2026:
+  // "When debt is taken from September, October debt should still be
+  // there, likewise November").
+  //
+  // Collect first suggested the person's WHOLE balance, so tapping it on
+  // a September row offered Ella's entire ₦16,800 and taking that would
+  // have cleared October and November with it. The suggested amount is
+  // now that month's share; the ceiling stays the full balance, so
+  // collecting more than one month is still possible, just never the
+  // accident.
+  //
+  // It lands where it should without anything further: an untargeted
+  // repayment clears the OLDEST debt first, so September's figure pays
+  // off exactly September's sales and leaves the later months standing.
   const collectFrom = (row) => {
     const c = row.__whole || row
+    const suggested = Number(row.__whole ? row.balance : c.balance)
+    // Two people gave this credit, so which debt the money settles is a
+    // real question — the existing chooser asks it, and the month
+    // suggestion gives way to that.
     if ((c.parts || []).length > 1) { setPayWho(c); return }
     setPay({
-      customerId: c.customer_id, amount: c.balance, method: null,
+      customerId: c.customer_id, amount: suggested, method: null,
       paidOn: lagosToday(), note: '', balance: Number(c.balance),
       locationId: c.location_id || locId,
       creditStaffId: c.staff_id || staff.id,
