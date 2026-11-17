@@ -3693,11 +3693,27 @@ export async function loadCreditOnDate(branchId, date, locationId, staffId) {
   // It excludes PR, damage and staff orders by design, so those come
   // back absent. An absent sale is left saying nothing: no claim is
   // better than a guessed one on a page an auditor reads.
-  const span = Math.max(1, Math.round(
-    (Date.parse(lagosToday() + 'T12:00:00') - Date.parse(date + 'T12:00:00')) / 864e5) + 1)
+  // THE WHOLE HISTORY, NOT A WINDOW (corrected 17 November 2026).
+  //
+  // This first asked credit_chain for a window sized from the day being
+  // viewed, which was wrong in a way that showed real money twice.
+  //
+  // An untargeted repayment pays down the OLDEST open sale first. Cut
+  // the window short and the ladder cannot see the older debt, so
+  // whatever sale happens to be first INSIDE the window inherits the
+  // payment. Ella (staff) made one ₦400 repayment to Joseph at OpenBar
+  // on 28 October. Opening 18 October showed ₦400 back against her
+  // Popcorn; opening 21 October put the window past the Popcorn and
+  // showed the same ₦400 back against her Gala. One payment, counted
+  // twice, and the answer changed with the day you happened to pick.
+  //
+  // So the ladder always runs over everything. It is the same
+  // allocation the statement does, and the statement does not move when
+  // you look at it from a different day.
+  const FULL_HISTORY = 3650
   const chainBySale = {}
   try {
-    for (const c of await loadCreditChain(branchId, null, span)) {
+    for (const c of await loadCreditChain(branchId, null, FULL_HISTORY)) {
       chainBySale[c.sale_id] = {
         stillOwed: Number(c.still_owed || 0),
         recovered: Number(c.recovered || 0),
