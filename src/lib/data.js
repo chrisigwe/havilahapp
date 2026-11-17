@@ -3674,6 +3674,39 @@ export async function loadCreditOnDate(branchId, date, locationId, staffId) {
     return `${lead} ${forName}` + (byName ? ` · keyed by ${byName}` : '')
   }
 
+  // HAS THIS PARTICULAR CREDIT BEEN RECOVERED? (Chris, 17 November 2026
+  // — "can it not be marked paid in a way that's not confusing to the
+  // Auditor and everyone using the app".)
+  //
+  // The day already said "nothing owing now", but that is about the
+  // CUSTOMER's whole balance, which is a different question. Chioma can
+  // be square on 4 October and owing from the 11th, and the chicken on
+  // the 4th still read as an open ₦6,000 in clay. The day's two halves
+  // never met either: 4 October showed ₦6,000 taken by Chioma and
+  // ₦4,500 repaid by Mr Prince, two unrelated people.
+  //
+  // credit_chain is what the statement and targeted settlement already
+  // use, so the day cannot give a second opinion — same ladder, same
+  // answer. It carries cleared_on and cleared_by, so a settled row says
+  // when and how rather than only that it happened.
+  //
+  // It excludes PR, damage and staff orders by design, so those come
+  // back absent. An absent sale is left saying nothing: no claim is
+  // better than a guessed one on a page an auditor reads.
+  const span = Math.max(1, Math.round(
+    (Date.parse(lagosToday() + 'T12:00:00') - Date.parse(date + 'T12:00:00')) / 864e5) + 1)
+  const chainBySale = {}
+  try {
+    for (const c of await loadCreditChain(branchId, null, span)) {
+      chainBySale[c.sale_id] = {
+        stillOwed: Number(c.still_owed || 0),
+        recovered: Number(c.recovered || 0),
+        clearedOn: c.cleared_on || null,
+        clearedBy: c.cleared_by || null,
+      }
+    }
+  } catch { /* the day still reads without it */ }
+
   const taken = (sales || []).map(s => {
     const amount = (s.sale_payments || [])
       .filter(p => p.method === 'credit')
@@ -3687,6 +3720,7 @@ export async function loadCreditOnDate(branchId, date, locationId, staffId) {
       item: s.stock_items?.name || s.description || 'Item',
       qty: Number(s.qty), location_id: s.location_id,
       who: credited(s.on_behalf_of, s.recorded_by, 'by'),
+      chain: chainBySale[s.id] || null,
     }
   }).filter(r => r.amount > 0.009)
 
