@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useToast } from '../components/Toast'
 import { lagosToday, methodLabel, naira, startingDept, stepDate, stepMonth, tierLabel } from '../lib/format'
-import { monthBuckets, monthLabel, UNDATED } from '../lib/months'
+import { monthLabel } from '../lib/months'
 import RoomChargeTracker from '../components/RoomChargeTracker'
 import { checkRepeatPayment, checkRepeatRepayment, deactivateCustomer, deleteCustomer, linkCustomerToGuest, loadBalances, loadCreditForMonth, loadCreditOnDate, loadCustomerLedger, loadCreditChain, loadFolio, loadStayMoves, loadGuestBalances, loadReservedValue, loadStaffForLocation, loadUnlinkedCustomerBalances, loadCustomerNeverAGuest, setCustomerNeverAGuest, moveWorkaroundToRoom, recordStayPayment, saveRepayment, searchSimilarGuests } from '../lib/data'
 import { enqueue, flush, isConnectionError } from '../lib/outbox'
@@ -1123,8 +1123,12 @@ export default function Credit({ boot }) {
 
         // Searching must never fold or file a match out of sight.
         const split = !needle && jobs.length > 1
-        const thisMonth = lagosToday().slice(0, 7)
-        const isOpen = k => k in openMonths ? openMonths[k] : k.endsWith(thisMonth)
+        // Only "Nothing owing now" folds now, and it starts shut: it is
+        // the one group you open to check something rather than to work
+        // from. The old default opened whichever group's key ended with
+        // the current month, which meant nothing once the month groups
+        // were gone.
+        const isOpen = k => k in openMonths ? openMonths[k] : false
         const toggle = k => setOpenMonths(o => ({ ...o, [k]: !isOpen(k) }))
 
         const head = (k, label, count, right, flag) => (
@@ -1164,16 +1168,40 @@ export default function Credit({ boot }) {
         // her owing while no October group existed anywhere, which is
         // not a sum that is wrong but a label that does not say what it
         // is counting.
-        const monthsOf = (prefix, rows) => monthBuckets(rows, c => c.last_credit_date)
-          .map(({ key, rows: inMonth }) => (
-            <div key={prefix + key}>
-              {head(prefix + ':' + key,
-                key === UNDATED ? monthLabel(key) : `Last took credit · ${monthLabel(key)}`,
-                inMonth.length,
-                money(inMonth.reduce((t, r) => t + Number(r.balance), 0), 'text-clay'), null)}
-              {isOpen(prefix + ':' + key) && list(inMonth)}
-            </div>
-          ))
+        // FLAT, NOT FOLDED (Chris, 17 November 2026: "I would like to see
+        // everyone still owing on the main list, and if they pay, they are
+        // removed from the list" — then, shown the options, "one flat
+        // list, no months").
+        //
+        // The folding was asked for on 13 November, when the worry was a
+        // page too long to read. Four days of using it says the cost is
+        // higher than the length: 24 debtors sat behind collapsed
+        // headings and only the current month opened by itself, so the
+        // page answered "who owes" with a row of folders.
+        //
+        // Worse, the heading could not be made to mean what it said.
+        // Folding by LAST credit put Ella's October debt under November
+        // because she bought a malt on the 16th; folding by the month
+        // the debt was RUN UP would have split one person across several
+        // rows. The month question has its own view — "what each owed at
+        // the end of a month" — and that is where it belongs.
+        //
+        // Biggest first: this is the list you work down when you are
+        // chasing, and the largest debt is where the money is. Paying
+        // still takes somebody off it, into "Nothing owing now".
+        // No window on it either (Chris: "October and September
+        // inclusive"). loadBalances has never had a date limit, so a debt
+        // from 7 September is on this list exactly like one from
+        // yesterday — the folding was the only thing that put age between
+        // you and it.
+        const byMost = rows => [...rows]
+          .sort((a, b) => Number(b.balance) - Number(a.balance)
+            || String(a.name).localeCompare(String(b.name)))
+        // No left rule and no indent: these rows no longer hang under a
+        // month heading, they ARE the list.
+        const flatList = rows => (
+          <ul className="divide-y divide-line/60">{byMost(rows).map(debtorRow)}</ul>
+        )
 
         // Nobody drops off the list. An account that is square, or that has
         // paid further than it owes, says so instead of vanishing — which is
@@ -1211,8 +1239,7 @@ export default function Credit({ boot }) {
         // heading over the only list is noise.
         if (!split) return (
           <div className="mt-2 flex flex-col gap-2">
-            <p className="text-dim text-xs">Grouped by when each person last took credit.</p>
-            {monthsOf(jobs[0]?.key || 'all', shown)}
+            {flatList(shown)}
             {settledGroup}
           </div>
         )
@@ -1230,7 +1257,7 @@ export default function Credit({ boot }) {
                   </div>
                   {money(j.rows.reduce((t, r) => t + Number(r.balance), 0), 'text-clay')}
                 </div>
-                <div className="p-2 flex flex-col gap-2">{monthsOf(j.key, j.rows)}</div>
+                <div className="px-2 pb-1">{flatList(j.rows)}</div>
               </section>
             ))}
             {settledGroup}
