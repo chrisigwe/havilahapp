@@ -174,6 +174,26 @@ export default function Credit({ boot }) {
   // person, which the branch's ₦50,000 cannot express: a figure cannot
   // say Chike gets nothing more while leaving a good customer his
   // ₦40,000.
+  // WHAT IS STILL OWED, BY THE MONTH IT WAS RUN UP (Chris, 17 November
+  // 2026: "Should be Month by Month starting from September").
+  //
+  // Because an untargeted repayment clears the OLDEST debt first, what
+  // somebody still owes is their most recent credit. Ella's ₦16,800 is
+  // ₦8,000 run up in October and ₦8,800 in November, and she belongs in
+  // both months rather than only under whichever one she last bought in.
+  //
+  // credit_chain is the source because it already decides this, honours
+  // settles_sale_id, and is what the statement and the day view read.
+  // Three answers to "how much of this sale is still owed" would be
+  // worse than no split at all. The whole history, never a window: a
+  // window makes the oldest debt invisible and the ladder then credits
+  // a repayment to the wrong sale.
+  const [chain, setChain] = useState(null)
+  useEffect(() => {
+    loadCreditChain(staff.branch_id, null, 3650)
+      .then(setChain).catch(() => setChain([]))
+  }, [staff.branch_id])
+
   const [noCredit, setNoCredit] = useState(() => new Set())
   useEffect(() => {
     loadNoCreditIds(staff.branch_id).then(ids => setNoCredit(new Set(ids))).catch(() => {})
@@ -596,10 +616,14 @@ export default function Credit({ boot }) {
   const takenAllTime = owing.reduce((t, r) => t + Number(r.credit_taken || 0), 0)
   const repaidAllTime = owing.reduce((t, r) => t + Number(r.repaid || 0), 0)
 
-  const debtorRow = (c) => {
+  // fromMonth: this row is one month's share of what somebody owes, not
+  // their whole account. The lifetime "taken · repaid" line is then a
+  // different scale from the figure on the right and only misleads, so
+  // it is replaced by what the figure actually is.
+  const debtorRow = (c, fromMonth) => {
           const days = daysSince(c.last_credit_date)
           return (
-          <li key={c.customer_id}>
+          <li key={fromMonth ? `${c.customer_id}:${fromMonth}` : c.customer_id}>
             {/* The whole row opens the statement. It always did, but
                 nothing said so — no chevron, no label — so staff asked
                 where a customer's history was. */}
@@ -613,7 +637,9 @@ export default function Credit({ boot }) {
                   </div>
                 )}
                 <div className="text-dim text-sm">
-                  {naira(c.credit_taken)} taken · {naira(c.repaid)} repaid
+                  {fromMonth
+                    ? `still owing from ${monthLabel(fromMonth)}`
+                    : `${naira(c.credit_taken)} taken · ${naira(c.repaid)} repaid`}
                 </div>
                 {!!c.deptIds?.length && (
                   <div className="text-dim text-xs">
@@ -1128,7 +1154,12 @@ export default function Credit({ boot }) {
         // from. The old default opened whichever group's key ended with
         // the current month, which meant nothing once the month groups
         // were gone.
-        const isOpen = k => k in openMonths ? openMonths[k] : false
+        // The current month opens by itself, every other month and
+        // "Nothing owing now" start shut (Chris, 17 November 2026). The
+        // keys are "<job>:<YYYY-MM>", so matching the end of the key
+        // catches November under both jobs and nothing else.
+        const thisMonth = lagosToday().slice(0, 7)
+        const isOpen = k => k in openMonths ? openMonths[k] : k.endsWith(thisMonth)
         const toggle = k => setOpenMonths(o => ({ ...o, [k]: !isOpen(k) }))
 
         const head = (k, label, count, right, flag) => (
@@ -1197,6 +1228,73 @@ export default function Credit({ boot }) {
         const byMost = rows => [...rows]
           .sort((a, b) => Number(b.balance) - Number(a.balance)
             || String(a.name).localeCompare(String(b.name)))
+
+        // customerId -> { 'YYYY-MM': still owed from that month }, scoped
+        // the same way the list itself is, so a department chip narrows
+        // both or neither.
+        const owedByMonth = {}
+        for (const r of (chain || [])) {
+          if (!(Number(r.still_owed) > 0.009)) continue
+          if (locId !== 'all' && r.location_id !== locId) continue
+          if (isEditor && staffFilter && r.staff_id !== staffFilter) continue
+          const key = String(r.taken_on || '').slice(0, 7)
+          if (key.length !== 7) continue
+          const m = owedByMonth[r.customer_id] || (owedByMonth[r.customer_id] = {})
+          m[key] = (m[key] || 0) + Number(r.still_owed)
+        }
+
+        // A customer's months must add up to that customer's balance. The
+        // chain leaves out PR, damage and staff-order sales, so anything
+        // it cannot place goes in one bucket rather than quietly
+        // vanishing — a page whose parts do not sum to its whole is worse
+        // than one that admits a gap.
+        const UNPLACED = 'unplaced'
+        const monthsFor = (c) => {
+          const m = { ...(owedByMonth[c.customer_id] || {}) }
+          const placed = Object.values(m).reduce((t, n) => t + n, 0)
+          const rest = Number(c.balance) - placed
+          if (rest > 0.009) m[UNPLACED] = rest
+          return m
+        }
+
+        // Oldest month first — September, then October, then November —
+        // because that is the order you work through them in, and the
+        // oldest money is the money least likely to arrive. Anything
+        // unplaced sits at the end.
+        const monthKeys = (rows) => {
+          const seen = new Set()
+          for (const c of rows) for (const k of Object.keys(monthsFor(c))) seen.add(k)
+          return [...seen].sort((a, b) =>
+            a === UNPLACED ? 1 : b === UNPLACED ? -1 : a.localeCompare(b))
+        }
+
+        // Until the chain has arrived there is nothing to split by, so
+        // the page shows the plain list rather than an empty one. Every
+        // debtor is still there; only the month headings are missing.
+        const grouped = (prefix, rows) =>
+          chain === null ? flatList(rows) : monthsOf(prefix, rows)
+
+        const monthsOf = (prefix, rows) => monthKeys(rows).map(key => {
+          const inMonth = byMost(rows
+            .filter(c => monthsFor(c)[key] > 0.009)
+            .map(c => ({ ...c, balance: monthsFor(c)[key] })))
+          if (!inMonth.length) return null
+          const k = `${prefix}:${key}`
+          return (
+            <div key={k}>
+              {head(k,
+                key === UNPLACED ? 'Not placed in a month' : monthLabel(key),
+                inMonth.length,
+                money(inMonth.reduce((t, r) => t + Number(r.balance), 0), 'text-clay'),
+                null)}
+              {isOpen(k) && (
+                <ul className="divide-y divide-line/60 pl-3 ml-2 border-l border-line">
+                  {inMonth.map(c => debtorRow(c, key === UNPLACED ? null : key))}
+                </ul>
+              )}
+            </div>
+          )
+        })
         // No left rule and no indent: these rows no longer hang under a
         // month heading, they ARE the list.
         const flatList = rows => (
@@ -1239,7 +1337,7 @@ export default function Credit({ boot }) {
         // heading over the only list is noise.
         if (!split) return (
           <div className="mt-2 flex flex-col gap-2">
-            {flatList(shown)}
+            {grouped(jobs[0]?.key || 'all', shown)}
             {settledGroup}
           </div>
         )
@@ -1257,7 +1355,7 @@ export default function Credit({ boot }) {
                   </div>
                   {money(j.rows.reduce((t, r) => t + Number(r.balance), 0), 'text-clay')}
                 </div>
-                <div className="px-2 pb-1">{flatList(j.rows)}</div>
+                <div className="p-2 flex flex-col gap-2">{grouped(j.key, j.rows)}</div>
               </section>
             ))}
             {settledGroup}
