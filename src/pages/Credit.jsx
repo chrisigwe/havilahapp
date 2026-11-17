@@ -126,6 +126,13 @@ export default function Credit({ boot }) {
   // happened", a month answers "what do they owe".
   const [monthFilter, setMonthFilter] = useState(null)   // 'YYYY-MM'
   const [monthRows, setMonthRows] = useState(null)
+  // A load that FAILED is not a month with nothing in it. The catch here
+  // used to set an empty array, so a permissions error, a dropped
+  // connection or a bad argument all came out as "No credit activity
+  // that month" — stated as confidently as the truth. Stock.jsx already
+  // learned this on 19 October: an empty list left behind by a failure
+  // reads as a claim, not an absence.
+  const [monthErr, setMonthErr] = useState(null)
   const [dayData, setDayData] = useState(null)
   const [linkQuery, setLinkQuery] = useState('')
   const [linkResults, setLinkResults] = useState([])
@@ -309,9 +316,11 @@ export default function Credit({ boot }) {
     if (!monthFilter) { setMonthRows(null); return }
     const [y, m] = monthFilter.split('-').map(Number)
     setMonthRows(null)
+    setMonthErr(null)
     tracked('Credit for the month',
             loadCreditForMonth(staff.branch_id, y, m, locId, isEditor ? staffFilter : null))
-      .then(setMonthRows).catch(() => setMonthRows([]))
+      .then(rows => { setMonthRows(rows); setMonthErr(null) })
+      .catch(e => { setMonthErr(e?.message || 'could not load'); setMonthRows([]) })
   }, [monthFilter, locId, staffFilter, isEditor, staff.branch_id])
 
   async function confirmLink(guest) {
@@ -764,6 +773,15 @@ export default function Credit({ boot }) {
 
       {monthFilter && (() => {
         if (monthRows === null) return <p className="text-dim py-8 text-center">Loading…</p>
+        if (monthErr) {
+          return (
+            <p className="text-clay py-8 text-center">
+              This month could not be loaded — which is not the same as there
+              being nothing in it.
+              <span className="block text-xs text-dim mt-1 break-words">{monthErr}</span>
+            </p>
+          )
+        }
         if (!monthRows.length) {
           return <p className="text-dim py-8 text-center">No credit activity that month.</p>
         }
