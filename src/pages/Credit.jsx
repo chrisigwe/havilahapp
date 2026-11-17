@@ -642,28 +642,44 @@ export default function Credit({ boot }) {
   // It lands where it should without anything further: an untargeted
   // repayment clears the OLDEST debt first, so September's figure pays
   // off exactly September's sales and leaves the later months standing.
+  // Which department a repayment from this row gets credited to, or null
+  // when it cannot be told (Chris, 17 November 2026: "GM/Admin and
+  // Auditors have view access to All Departments").
+  //
+  // Collecting used to be hidden outright while "All departments" was
+  // chosen — which hid it from exactly the people who chase debts, since
+  // that is the view they open on. But the old comment says what the
+  // rule was really for: "in the all view it would otherwise fall back
+  // to the literal 'all'". It guarded a bad fallback, it was never a
+  // policy. A customer with credit at one department carries that
+  // department on the row even in the all view, and one with credit at
+  // several carries parts the chooser settles. So the fallback is fixed
+  // instead, and never reaches for locId unless locId is a real place.
+  const payLocationFor = (c) => c?.location_id || (locId !== 'all' ? locId : null)
+  const canTakeFrom = (c) => canCollect && Number(c?.balance) > 0.009
+    && ((c?.parts || []).length > 1 || !!payLocationFor(c))
+
   const collectFrom = (row) => {
     const c = row.__whole || row
     const suggested = Number(row.__whole ? row.balance : c.balance)
+    const where = payLocationFor(c)
     // Two people gave this credit, so which debt the money settles is a
     // real question — the existing chooser asks it, and the month
     // suggestion gives way to that.
-    if ((c.parts || []).length > 1) { setPayWho(c); return }
+    // Split across people, or no department on the row: ask rather than
+    // guess. Nothing is ever recorded against the literal 'all'.
+    if ((c.parts || []).length > 1 || !where) { setPayWho(c); return }
     setPay({
       customerId: c.customer_id, amount: suggested, method: null,
       paidOn: lagosToday(), note: '', balance: Number(c.balance),
-      locationId: c.location_id || locId,
+      locationId: where,
       creditStaffId: c.staff_id || staff.id,
     })
   }
 
   const debtorRow = (c, fromMonth) => {
           const days = daysSince(c.last_credit_date)
-          // Same rule as the statement's button: a repayment has to be
-          // credited to ONE department, so there is nothing to collect
-          // into while "All departments" is chosen.
-          const canTake = canCollect && locId !== 'all'
-            && Number((c.__whole || c).balance) > 0.009
+          const canTake = canTakeFrom(c.__whole || c)
           return (
           <li key={fromMonth ? `${c.customer_id}:${fromMonth}` : c.customer_id}
             className="flex items-stretch gap-2">
@@ -1927,9 +1943,12 @@ export default function Credit({ boot }) {
               // different staff member — the credit stays with
               // whoever originally gave it, so someone else has to
               // collect it. Buttons hides rather than errors on tap.
-              // A repayment must be credited to one department; in the all
-              // view it would otherwise fall back to the literal 'all'.
-              const hidden = hiddenForRole || locId === 'all'
+              // A repayment must be credited to one department. That used
+              // to mean hiding this in the all view; it now means
+              // KNOWING the department — from the row itself, or from
+              // the chooser when the credit is split. The literal 'all'
+              // is never passed (17 November 2026).
+              const hidden = hiddenForRole || !canTakeFrom(open.customer)
               // More than one person gave this customer credit. Which
               // debt the money settles is a real question with a wrong
               // answer available — crediting it to whoever is holding
@@ -1941,7 +1960,10 @@ export default function Credit({ boot }) {
                 method: null,
                 paidOn: lagosToday(), note: '',
                 balance: Number(part ? part.balance : open.customer.balance),
-                locationId: (part ? part.location_id : open.customer.location_id) || locId,
+                // Never the literal 'all': payLocationFor only reaches
+                // for locId when locId is a real department.
+                locationId: (part ? part.location_id : null)
+                  || payLocationFor(open.customer),
                 creditStaffId: (part ? part.staff_id : open.customer.staff_id) || staff.id,
               })
               return (
@@ -2098,7 +2120,10 @@ export default function Credit({ boot }) {
                         setPay({ customerId: payWho.customer_id, amount: part.balance,
                           method: null,
                           paidOn: lagosToday(), note: '', balance: Number(part.balance),
-                          locationId: part.location_id || locId,
+                          // The chosen part always carries its own
+                          // department; payLocationFor is the guard, not the
+                          // source, and never yields 'all'.
+                          locationId: part.location_id || payLocationFor(payWho),
                           creditStaffId: part.staff_id || staff.id })
                         setPayWho(null)
                       }}
