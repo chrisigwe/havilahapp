@@ -827,6 +827,16 @@ export default function Credit({ boot }) {
                   // again. The month's rows were opened on 12 November and
                   // these were missed (Chris, 13 November 2026).
                   const live = combined.find(c => c.customer_id === r.customer_id)
+                  // Whether THIS credit came back, from the same ladder
+                  // the statement uses. Absent (PR, damage, a staff
+                  // order) says nothing at all rather than guessing.
+                  const ch = r.chain
+                  const done = ch && ch.stillOwed <= 0.009
+                  const part = ch && !done && ch.recovered > 0.009
+                  const on = done && ch.clearedOn
+                    ? new Date(ch.clearedOn + 'T12:00:00')
+                        .toLocaleDateString('en-NG', { day: 'numeric', month: 'short' })
+                    : null
                   return (
                   <li key={r.kind + r.id}>
                     <button type="button" disabled={!live}
@@ -839,11 +849,29 @@ export default function Credit({ boot }) {
                           {locId === 'all' && locById[r.location_id] ? ` · ${locById[r.location_id].name}` : ''}
                         </div>
                         <div className="text-dim text-sm truncate">
-                          {r.who}{live ? '' : ' · nothing owing now'}
+                          {/* The customer-level note only where there is
+                              nothing more exact to say. */}
+                          {r.who}{!ch && !live ? ' · nothing owing now' : ''}
                         </div>
+                        {done && (
+                          <div className="text-leaf text-sm truncate">
+                            Recovered{on ? ` ${on}` : ''}
+                            {ch.clearedBy ? ` · ${methodLabel[ch.clearedBy] || ch.clearedBy}` : ''}
+                          </div>
+                        )}
+                        {part && (
+                          <div className="text-amber text-sm truncate">
+                            {naira(ch.recovered)} back · {naira(ch.stillOwed)} still owing
+                          </div>
+                        )}
                       </div>
                       <span className="shrink-0 text-right">
-                        <span className="tnum font-bold text-clay block">{naira(r.amount)}</span>
+                        {/* Green means the money came back. Red on a day
+                            whose debt was collected weeks ago is what
+                            made this page read as a list of arrears. */}
+                        <span className={`tnum font-bold block ${done ? 'text-leaf' : 'text-clay'}`}>
+                          {naira(r.amount)}
+                        </span>
                         {live && <span className="text-dim text-xs">statement ›</span>}
                       </span>
                     </button>
