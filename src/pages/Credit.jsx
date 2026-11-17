@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useToast } from '../components/Toast'
-import { lagosToday, methodLabel, naira, startingDept, stepDate, tierLabel } from '../lib/format'
+import { lagosToday, methodLabel, naira, startingDept, stepDate, stepMonth, tierLabel } from '../lib/format'
 import { monthBuckets, monthLabel } from '../lib/months'
 import RoomChargeTracker from '../components/RoomChargeTracker'
 import { checkRepeatPayment, checkRepeatRepayment, deactivateCustomer, deleteCustomer, linkCustomerToGuest, loadBalances, loadCreditForMonth, loadCreditOnDate, loadCustomerLedger, loadCreditChain, loadFolio, loadStayMoves, loadGuestBalances, loadReservedValue, loadStaffForLocation, loadUnlinkedCustomerBalances, loadCustomerNeverAGuest, setCustomerNeverAGuest, moveWorkaroundToRoom, recordStayPayment, saveRepayment, searchSimilarGuests } from '../lib/data'
@@ -732,18 +732,32 @@ export default function Credit({ boot }) {
         </button>
       )}
 
+      {/* Not "for deductions" (Chris, 17 November 2026): deductions are
+          for staff only, customers do not get them, and naming the whole
+          view after one half's use of it is what made it confusing. The
+          door says what the view IS; each section below says what it is
+          for. */}
       {!dayFilter && !monthFilter && (
         <button onClick={() => setMonthFilter(lagosToday().slice(0, 7))}
           className="text-dim text-sm underline underline-offset-4 decoration-line pb-1 text-left">
-          What each owed at the end of a month, for deductions
+          What each owed at the end of a month
         </button>
       )}
 
       {monthFilter && (
-        <div className="flex items-center gap-2 pb-2">
+        <div className="flex flex-wrap items-center gap-2 pb-2">
+          <button type="button" aria-label="Previous month"
+            onClick={() => setMonthFilter(m => stepMonth(m, -1, lagosToday().slice(0, 7)))}
+            className="h-11 w-11 shrink-0 rounded-xl bg-surface border border-line
+                       text-ink text-xl leading-none">‹</button>
           <input type="month" value={monthFilter} max={lagosToday().slice(0, 7)}
             onChange={e => { if (e.target.value) { setMonthFilter(e.target.value); setDayFilter('') } }}
             className="h-11 px-3 rounded-xl bg-surface border border-amber text-amber tnum" />
+          <button type="button" aria-label="Next month"
+            onClick={() => setMonthFilter(m => stepMonth(m, 1, lagosToday().slice(0, 7)))}
+            disabled={monthFilter >= lagosToday().slice(0, 7)}
+            className="h-11 w-11 shrink-0 rounded-xl bg-surface border border-line
+                       text-ink text-xl leading-none disabled:opacity-40">›</button>
           <span className="text-dim text-sm">What each owed at the end of that month</span>
         </div>
       )}
@@ -800,7 +814,7 @@ export default function Credit({ boot }) {
         return (
           <>
             <div className="rounded-2xl border border-amber bg-surface p-4 my-2">
-              <div className="text-dim text-sm">Owed at the end of {monthFilter}</div>
+              <div className="text-dim text-sm">Owed at the end of {monthLabel(monthFilter)}</div>
               <div className="tnum text-2xl font-bold text-clay">
                 {naira(sum(monthRows, 'closing'))}
               </div>
@@ -812,8 +826,12 @@ export default function Credit({ boot }) {
 
             {section('Staff', staffRows,
               'The closing figure is what each owes in total, not just this month — '
-              + 'that is normally what gets deducted.')}
-            {section('Everyone else', otherRows)}
+              + 'that is normally what gets deducted from pay.')}
+            {/* Said out loud, because the page used to call itself "for
+                deductions" and these people are not deducted from. */}
+            {section('Everyone else', otherRows,
+              'Customers are not deducted from — these are chased. '
+              + 'The figure is what each owed when the month closed.')}
           </>
         )
       })()}
