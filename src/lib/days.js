@@ -32,3 +32,14 @@ export const stepDate = (iso, by, max) => {
   if (max && by > 0 && next > max) return iso
   return next
 }
+
+// The same, a month at a time, on 'YYYY-MM'. Day-of-month is pinned to
+// the 1st before stepping, so going back from the 31st cannot land on a
+// month that has no 31st and roll into the next one.
+export const stepMonth = (ym, by, max) => {
+  if (!ym) return ym
+  const [y, m] = String(ym).slice(0, 7).split('-').map(Number)
+  const next = new Date(Date.UTC(y, m - 1 + by, 1)).toISOString().slice(0, 7)
+  if (max && by > 0 && next > max) return ym
+  return next
+}

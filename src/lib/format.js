@@ -21,7 +21,7 @@ export const methodLabel = { pos: 'POS', cash: 'Cash', credit: 'Credit', transfe
 // which node cannot resolve without an extension, and date arithmetic
 // is exactly the kind of thing that wants tests. Re-exported here so
 // every existing import site is unchanged.
-export { addDays, stepDate } from './days'
+export { addDays, stepDate, stepMonth } from './days'
 
 // N days before the Lagos business date — matches lagos_today() - N in
 // the database exactly, so app-side windows never disagree with what

@@ -3,7 +3,7 @@
 // midnight, so on any UTC+ device it came back a day EARLY and every
 // new booking defaulted to checking out the day it checked in. Run this
 // file under several TZ values; the numbers must not move.
-import { addDays, stepDate } from '../src/lib/days.js'
+import { addDays, stepDate, stepMonth } from '../src/lib/days.js'
 
 let pass = 0, fail = 0
 const ok = (name, got, want) => {
@@ -44,6 +44,23 @@ ok('no ceiling means no limit', stepDate('2026-11-17', 1, null), '2026-11-18')
 ok('an empty date steps nowhere', stepDate('', -1, TODAY), '')
 ok('a null date steps nowhere', stepDate(null, -1, TODAY), null)
 ok('an undefined date steps nowhere', stepDate(undefined, 1, TODAY), undefined)
+
+const THIS_MONTH = '2026-11'
+
+ok('a month back', stepMonth('2026-11', -1, THIS_MONTH), '2026-10')
+ok('back over a year start', stepMonth('2027-01', -1, THIS_MONTH), '2026-12')
+ok('forward below the ceiling', stepMonth('2026-09', 1, THIS_MONTH), '2026-10')
+ok('forward onto the ceiling', stepMonth('2026-10', 1, THIS_MONTH), '2026-11')
+ok('forward past the ceiling stays put', stepMonth('2026-11', 1, THIS_MONTH), '2026-11')
+ok('the ceiling never blocks going back', stepMonth('2027-03', -1, THIS_MONTH), '2027-02')
+
+// Going back from a 31-day month must not roll through a short one.
+ok('October back to September', stepMonth('2026-10', -1, THIS_MONTH), '2026-09')
+ok('March back to February', stepMonth('2026-03', -1, THIS_MONTH), '2026-02')
+ok('a full year back', stepMonth('2026-11', -12, THIS_MONTH), '2025-11')
+
+ok('an empty month steps nowhere', stepMonth('', -1, THIS_MONTH), '')
+ok('a null month steps nowhere', stepMonth(null, -1, THIS_MONTH), null)
 
 console.log(`\ndates: ${pass} passed, ${fail} failed`)
 process.exit(fail ? 1 : 0)
