@@ -629,6 +629,25 @@ export async function loadCustomers(branchId) {
   return data
 }
 
+// Accounts that have been pointed at a guest, and who that guest is.
+//
+// Linking routes the money onto the right folio but renames nothing, so
+// a credit account somebody opened as "Main bar" or "Suite" keeps that
+// name on every list — and the list exists to tell you who to ask.
+// "Suite" is Sir Ben Etiaba owing ₦46,000 (17 November 2026).
+export async function loadLinkedGuestNames(branchId) {
+  const { data, error } = await supabase.from('customers')
+    .select('id, linked_guest_id, guests!linked_guest_id(full_name)')
+    .eq('branch_id', branchId).not('linked_guest_id', 'is', null)
+  if (error) return {}
+  const out = {}
+  for (const r of data || []) {
+    const n = r.guests?.full_name
+    if (n) out[r.id] = n
+  }
+  return out
+}
+
 // Which customers are on no credit. A tiny read of its own, so the
 // Credit page does not pull the whole customer table to learn about a
 // handful of flags.
