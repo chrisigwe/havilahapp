@@ -1081,7 +1081,7 @@ export default function Credit({ boot }) {
         const jobs = [
           { key: 'collect', title: 'Must be collected', caption: 'somebody has to ask',
             rows: shown.filter(c => !isStaff(c)) },
-          { key: 'wages', title: 'Comes out of wages', caption: 'deducted at payroll',
+          { key: 'salary', title: 'Comes out of salary', caption: 'deducted at payroll',
             rows: shown.filter(isStaff) },
         ].filter(j => j.rows.length)
 
@@ -1115,7 +1115,7 @@ export default function Credit({ boot }) {
         )
 
         // Months inside a job. Keys are prefixed so October under "must be
-        // collected" and October under "comes out of wages" open and close
+        // collected" and October under "comes out of salary" open and close
         // on their own.
         //
         // THE HEADING SAYS WHAT THE MONTH MEANS (Chris, 17 November 2026).
