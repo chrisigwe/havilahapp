@@ -113,7 +113,7 @@ export default function WriteoffBreakdown({ data, settled }) {
             </div>
           )}
 
-      {/* Debt settled with NO money changing hands — deducted from wages
+      {/* Debt settled with NO money changing hands — deducted from salary
           or written off. Both are correctly excluded from the day's
           income, which is exactly why they need saying: otherwise a
           large settlement happens with nothing on screen to show for it.
@@ -126,7 +126,7 @@ export default function WriteoffBreakdown({ data, settled }) {
           </div>
           {byPayroll > 0.009 && (
             <div className="flex justify-between text-sm">
-              <span className="text-dim">Deducted from wages</span>
+              <span className="text-dim">Deducted from salary</span>
               <span className="tnum">{naira(byPayroll)}</span>
             </div>
           )}
