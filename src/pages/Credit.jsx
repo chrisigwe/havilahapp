@@ -969,8 +969,10 @@ export default function Credit({ boot }) {
             </div>
 
             {section('Staff', staffRows,
-              'The closing figure is what each owes in total, not just this month — '
-              + 'that is normally what gets deducted from pay.')}
+              'What each owed when this month closed, in total — not just this '
+              + "month's credit. Money paid since is not in it: to deduct later, "
+              + 'use "Still unpaid from this month" on the main list, or you take '
+              + 'money that has already come in.')}
             {/* Said out loud, because the page used to call itself "for
                 deductions" and these people are not deducted from. */}
             {section('Everyone else', otherRows,
@@ -1405,8 +1407,21 @@ export default function Credit({ boot }) {
           const k = `${prefix}:${key}`
           return (
             <div key={k}>
+              {/* "Still unpaid from October 2026", not "October 2026".
+                  Two screens carry an October figure and they are
+                  different numbers, both right. THIS one is what is
+                  still unpaid from that month as of today — Ella's
+                  ₦8,000. The month-end view's October closing is what
+                  she owed when October CLOSED — ₦8,800. The gap is the
+                  ₦800 she paid on 1 November, which went against her
+                  October debt because repayments clear oldest first.
+                  Deduct from the wrong one a fortnight later and you
+                  take money the person has already handed over, so each
+                  heading now says which question it answers. */}
               {head(k,
-                key === UNPLACED ? 'Not placed in a month' : monthLabel(key),
+                key === UNPLACED
+                  ? 'Not placed in a month'
+                  : `Still unpaid from ${monthLabel(key)}`,
                 inMonth.length,
                 money(inMonth.reduce((t, r) => t + Number(r.balance), 0), 'text-clay'),
                 null)}
