@@ -8,7 +8,7 @@ import { enqueue, flush, isConnectionError } from '../lib/outbox'
 import PaymentMethodPicker, { paymentParts, paymentAllocated, paymentReady } from '../components/PaymentMethodPicker'
 import { isClosedDayRefusal, submitPendingRepayment, loadPendingRepayments,
          approvePendingRepayment, rejectPendingRepayment,
-         loadNoCreditIds, setCustomerNoCredit } from '../lib/data'
+         loadNoCreditIds, setCustomerNoCredit, loadLinkedGuestNames } from '../lib/data'
 import FolioStatement from '../components/FolioStatement'
 import { EDITOR, OPENS_ON_ALL, OVERSIGHT, SUPERVISOR, is } from '../lib/roles'
 import { accountStatementPdf, savePdf } from '../lib/pdfSheet'
@@ -192,6 +192,17 @@ export default function Credit({ boot }) {
   useEffect(() => {
     loadCreditChain(staff.branch_id, null, 3650)
       .then(setChain).catch(() => setChain([]))
+  }, [staff.branch_id])
+
+  // The guest an account was pointed at, where that is a different name
+  // from the account's own. Linking a credit account to a guest routes
+  // the money onto their folio and renames nothing, so an account
+  // somebody opened as "Main bar" or "Suite" keeps that name on a list
+  // whose whole job is telling you who to ask. "Suite" is Sir Ben
+  // Etiaba owing ₦46,000 (Chris, 17 November 2026).
+  const [linkedGuest, setLinkedGuest] = useState({})
+  useEffect(() => {
+    loadLinkedGuestNames(staff.branch_id).then(setLinkedGuest).catch(() => {})
   }, [staff.branch_id])
 
   const [noCredit, setNoCredit] = useState(() => new Set())
@@ -620,6 +631,19 @@ export default function Credit({ boot }) {
   // their whole account. The lifetime "taken · repaid" line is then a
   // different scale from the figure on the right and only misleads, so
   // it is replaced by what the figure actually is.
+  // The linked guest's name, but only when it is genuinely a different
+  // name. Most links point an account at the guest it was already named
+  // after — "Sir Ben Etiaba" at Sir Ben Etiaba — and printing both
+  // there would be noise. Compared on letters and digits alone, so
+  // "Mr Michael (Room 206)" and "Mr Michael Ike" still count as
+  // different while spacing and punctuation do not.
+  const plain = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9]/g, '')
+  const guestNameFor = (c) => {
+    const g = linkedGuest[c?.customer_id]
+    if (!g) return null
+    return plain(g) === plain(c?.name) ? null : g
+  }
+
   // Collecting straight off the list (Chris, 17 November 2026: "Can I be
   // able to take payments from the main list?").
   //
@@ -689,7 +713,17 @@ export default function Credit({ boot }) {
             <button onClick={() => openCustomer(c)}
               className="flex-1 min-w-0 py-3 flex items-center gap-3 text-left">
               <div className="flex-1 min-w-0">
-                <div className="font-semibold break-words">{c.name}</div>
+                {/* The person, then the account it was opened under —
+                    only where they are different names, so an ordinary
+                    row is unchanged. */}
+                <div className="font-semibold break-words">
+                  {guestNameFor(c) || c.name}
+                </div>
+                {guestNameFor(c) && (
+                  <div className="text-dim text-xs break-words">
+                    opened as “{c.name}”
+                  </div>
+                )}
                 {noCredit.has(c.customer_id) && (
                   <div className="text-clay text-xs font-semibold">
                     No credit — cash or POS only
