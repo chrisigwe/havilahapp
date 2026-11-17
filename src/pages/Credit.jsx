@@ -620,15 +620,45 @@ export default function Credit({ boot }) {
   // their whole account. The lifetime "taken · repaid" line is then a
   // different scale from the figure on the right and only misleads, so
   // it is replaced by what the figure actually is.
+  // Collecting straight off the list (Chris, 17 November 2026: "Can I be
+  // able to take payments from the main list?").
+  //
+  // The same two steps the statement takes, so there is one way to
+  // record a repayment and not two. Where more than one person gave the
+  // credit it asks whose debt the money settles rather than crediting
+  // whoever is holding the phone.
+  //
+  // `whole` matters: in a month group the row's balance has been
+  // replaced by that month's share, and a payment is not made against a
+  // month. The sheet opens on what the person actually owes, and
+  // targeted settlement inside it is how money is put against
+  // particular debts.
+  const collectFrom = (row) => {
+    const c = row.__whole || row
+    if ((c.parts || []).length > 1) { setPayWho(c); return }
+    setPay({
+      customerId: c.customer_id, amount: c.balance, method: null,
+      paidOn: lagosToday(), note: '', balance: Number(c.balance),
+      locationId: c.location_id || locId,
+      creditStaffId: c.staff_id || staff.id,
+    })
+  }
+
   const debtorRow = (c, fromMonth) => {
           const days = daysSince(c.last_credit_date)
+          // Same rule as the statement's button: a repayment has to be
+          // credited to ONE department, so there is nothing to collect
+          // into while "All departments" is chosen.
+          const canTake = canCollect && locId !== 'all'
+            && Number((c.__whole || c).balance) > 0.009
           return (
-          <li key={fromMonth ? `${c.customer_id}:${fromMonth}` : c.customer_id}>
+          <li key={fromMonth ? `${c.customer_id}:${fromMonth}` : c.customer_id}
+            className="flex items-stretch gap-2">
             {/* The whole row opens the statement. It always did, but
                 nothing said so — no chevron, no label — so staff asked
                 where a customer's history was. */}
             <button onClick={() => openCustomer(c)}
-              className="w-full py-3 flex items-center gap-3 text-left">
+              className="flex-1 min-w-0 py-3 flex items-center gap-3 text-left">
               <div className="flex-1 min-w-0">
                 <div className="font-semibold break-words">{c.name}</div>
                 {noCredit.has(c.customer_id) && (
@@ -683,6 +713,14 @@ export default function Credit({ boot }) {
                 <span className="text-dim text-xs">statement ›</span>
               </span>
             </button>
+            {canTake && (
+              <button type="button" onClick={() => collectFrom(c)}
+                aria-label={`Collect from ${c.name}`}
+                className="shrink-0 self-center px-3 h-11 rounded-xl border border-amber
+                           text-amber text-sm font-bold">
+                Collect
+              </button>
+            )}
           </li>
     )
   }
@@ -1277,7 +1315,9 @@ export default function Credit({ boot }) {
         const monthsOf = (prefix, rows) => monthKeys(rows).map(key => {
           const inMonth = byMost(rows
             .filter(c => monthsFor(c)[key] > 0.009)
-            .map(c => ({ ...c, balance: monthsFor(c)[key] })))
+            // __whole keeps the untouched row, because Collect must open
+            // on what the person owes, not on one month's slice of it.
+            .map(c => ({ ...c, balance: monthsFor(c)[key], __whole: c })))
           if (!inMonth.length) return null
           const k = `${prefix}:${key}`
           return (
