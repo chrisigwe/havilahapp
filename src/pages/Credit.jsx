@@ -783,7 +783,25 @@ export default function Credit({ boot }) {
           )
         }
         if (!monthRows.length) {
-          return <p className="text-dim py-8 text-center">No credit activity that month.</p>
+          // Say what was ASKED FOR, not just that nothing came back. The
+          // department chip filters this view as well as the day view,
+          // so "no activity" on OpenBar is a different statement from
+          // "no activity", and reading it as the second is how a month
+          // with nineteen debtors in it looked empty.
+          const whereName = locId === 'all'
+            ? 'all departments' : (locById[locId]?.name || 'this department')
+          const whoName = (isEditor && staffFilter)
+            ? (people.find(p => p.id === staffFilter)?.full_name || 'one person')
+            : null
+          return (
+            <p className="text-dim py-8 text-center">
+              No credit activity in {monthLabel(monthFilter)} at {whereName}
+              {whoName ? `, for ${whoName}` : ''}.
+              <span className="block text-xs mt-1">
+                Credit at another department, or by someone else, is not counted here.
+              </span>
+            </p>
+          )
         }
         const staffRows = monthRows.filter(r => r.is_staff)
         const otherRows = monthRows.filter(r => !r.is_staff)
