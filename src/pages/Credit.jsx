@@ -20,7 +20,7 @@ import { useScrollLock } from '../lib/scrollLock'
 
 
 export default function Credit({ boot }) {
-  const { staff, items, methods, allLocations, locations } = boot
+  const { staff, items, allLocations, locations } = boot
   const isEditor = is(staff.role, EDITOR)
   const isAdmin = is(staff.role, SUPERVISOR)
   // Collecting a debt that belongs to a COLLEAGUE is part of working a
@@ -2569,7 +2569,14 @@ export default function Credit({ boot }) {
 
             <label className="block mt-4 text-dim">Paid by</label>
             <div className="mt-2">
-              <PaymentMethodPicker methods={methods.filter(m => m !== 'credit')} amount={pay.amount}
+              {/* POS and Cash, and Split means those two (Chris, 18
+                  November 2026). Debt does not come back by transfer
+                  here, and an unused third button is one more wrong tap
+                  at a bar at night. Fixed rather than read from the
+                  branch's configured methods, matching the folio and the
+                  room payment, which have been fixed this way all
+                  along. */}
+              <PaymentMethodPicker methods={['pos', 'cash']} amount={pay.amount}
                 value={pay}
                 onChange={v => setPay(p => ({ ...p, ...v }))} />
             </div>
