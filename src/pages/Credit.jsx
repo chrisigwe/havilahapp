@@ -377,13 +377,39 @@ export default function Credit({ boot }) {
     // One method when targeting. Splitting by method AND by debt at once
     // would be a matrix nobody could check at a bar at night.
     const parts = pay.targets
-      ? Object.entries(pay.targets)
-          .map(([saleId, amt]) => {
-            const row = (open?.chain || []).find(c => c.sale_id === saleId)
-            return { method: pay.method, amount: Number(amt || 0),
-                     settlesSaleId: saleId, creditStaffId: row?.staff_id || null }
-          })
-          .filter(p => p.amount > 0)
+      ? (() => {
+          // A TARGETED PAYMENT NAMES ITS DEBTS AND MAY STILL BE SPLIT
+          // (Chris, 18 November 2026 — fundamental 4: "debt that wasn't
+          // repaid stays in that month").
+          //
+          // The chain row behind each chosen sale carries the department
+          // and the person who gave it, so each written row goes to the
+          // counter the debt is at rather than to the sheet's one
+          // department. The month list and the statement both feed this,
+          // so the lookup tries whichever chain is loaded.
+          //
+          // applyMethods walks the debts against the method parts, which
+          // is what lets "part cash, part POS" settle named debts: one
+          // row per debt per method, each still naming its sale. That
+          // used to be forbidden — "one method only" — because there was
+          // no rule for it.
+          const src = (open?.chain?.length ? open.chain : chain) || []
+          const debts = Object.entries(pay.targets)
+            .map(([saleId, amt]) => {
+              const row = src.find(c => c.sale_id === saleId)
+              return { saleId, amount: Number(amt || 0),
+                       staffId: row?.staff_id || null,
+                       locationId: row?.location_id || null,
+                       on: row?.taken_on || '' }
+            })
+            .filter(d => d.amount > 0.009)
+            .sort((a, b) => String(a.on).localeCompare(String(b.on)))
+          const methods = paymentParts(pay, pay.amount).filter(m => m.amount > 0)
+          return applyMethods(debts, methods).map(x => ({
+            method: x.method, amount: x.amount, settlesSaleId: x.saleId,
+            creditStaffId: x.staffId, locationId: x.locationId,
+          }))
+        })()
       : pay.spread
         ? applyMethods(
             splitRepaymentByCredit(pay.spread, pay.amount, staff.id),
@@ -664,9 +690,46 @@ export default function Credit({ boot }) {
   const canTakeFrom = (c) => canCollect && Number(c?.balance) > 0.009
     && ((c?.parts || []).length > 1 || !!payLocationFor(c))
 
-  const collectFrom = (row) => {
+  // The unpaid debts of ONE month, oldest first, up to what is being
+  // paid. This is fundamental 4 made mechanical: a payment taken against
+  // September names September's sales, so it cannot reach into October
+  // however the ladder would otherwise have applied it.
+  const targetsForMonth = (customerId, monthKey, amount) => {
+    const rows = (chain || [])
+      .filter(r => r.customer_id === customerId
+        && String(r.taken_on || '').slice(0, 7) === monthKey
+        && Number(r.still_owed) > 0.009)
+      .sort((a, b) => String(a.taken_on).localeCompare(String(b.taken_on)))
+    const out = {}
+    let left = Number(amount) || 0
+    for (const r of rows) {
+      if (left <= 0.009) break
+      const take = Math.min(left, Number(r.still_owed))
+      out[r.sale_id] = String(Math.round(take * 100) / 100)
+      left = Math.round((left - take) * 100) / 100
+    }
+    return out
+  }
+
+  const collectFrom = (row, fromMonth) => {
     const c = row.__whole || row
     const suggested = Number(row.__whole ? row.balance : c.balance)
+    // Collecting from a month heading settles that month's own debts.
+    // It takes precedence over the spread below, and names the
+    // department and the person for each debt on the way through, so a
+    // month spanning two counters still pays each counter its own.
+    if (fromMonth) {
+      const targets = targetsForMonth(c.customer_id, fromMonth, suggested)
+      if (Object.keys(targets).length) {
+        setPay({
+          customerId: c.customer_id, amount: suggested, method: null,
+          paidOn: lagosToday(), note: '', balance: Number(c.balance),
+          locationId: payLocationFor(c), creditStaffId: c.staff_id || staff.id,
+          targets, fromMonth,
+        })
+        return
+      }
+    }
     const where = payLocationFor(c)
     // TWO PEOPLE GAVE THIS CREDIT, AND THAT IS NOT THE COLLECTOR'S
     // PROBLEM (Chris, 18 November 2026: collecting is awkward).
@@ -787,7 +850,7 @@ export default function Credit({ boot }) {
               </span>
             </button>
             {canTake && (
-              <button type="button" onClick={() => collectFrom(c)}
+              <button type="button" onClick={() => collectFrom(c, fromMonth)}
                 aria-label={`Collect from ${c.name}`}
                 className="shrink-0 self-center px-3 h-11 rounded-xl border border-amber
                            text-amber text-sm font-bold">
@@ -2192,6 +2255,20 @@ export default function Credit({ boot }) {
               onChange={e => setPay(p => ({ ...p, amount: e.target.value }))}
               className="mt-2 h-14 w-full px-4 rounded-xl bg-surface border border-line tnum" />
 
+            {/* Which month is being cleared, said at the top of the sheet
+                rather than left to be inferred from a list of ticks. */}
+            {pay.fromMonth && (
+              <div className="mt-3 rounded-2xl border border-amber bg-surface p-4">
+                <div className="text-amber font-semibold">
+                  Clearing {monthLabel(pay.fromMonth)}
+                </div>
+                <p className="text-dim text-sm mt-1">
+                  This settles that month's own debts, oldest first. Nothing in any
+                  other month is touched by it.
+                </p>
+              </div>
+            )}
+
             {/* Shown BEFORE saving, because money landing on the wrong
                 person's slate is the fault this whole rule exists to
                 stop, and a rule nobody can see is one nobody can
@@ -2229,7 +2306,7 @@ export default function Credit({ boot }) {
             <div className="mt-2">
               <PaymentMethodPicker methods={methods.filter(m => m !== 'credit')} amount={pay.amount}
                 value={pay}
-                onChange={v => setPay(p => ({ ...p, ...v, targets: v.split ? null : p.targets }))} />
+                onChange={v => setPay(p => ({ ...p, ...v }))} />
             </div>
 
             <label className="block mt-4 text-dim">Date received</label>
@@ -2273,8 +2350,8 @@ export default function Credit({ boot }) {
                   {t && (
                     <div className="mt-3">
                       <p className="text-dim text-sm mb-2">
-                        Tap what they are paying for. One method only — pick POS or Cash above,
-                        not Split.
+                        Tap what they are paying for. A split works here too — the
+                        payment is divided across these debts, oldest first.
                       </p>
                       <ul className="divide-y divide-line/60">
                         {owedLines.map(c => {
@@ -2349,7 +2426,7 @@ export default function Credit({ boot }) {
                 : 0
               const tShort = !!pay.targets && Math.abs(tAlloc - target) >= 0.01
               const ready = pay.targets
-                ? (target > 0 && !!pay.method && !tShort)
+                ? (target > 0 && !tShort && !short && (pay.split ? true : !!pay.method))
                 : paymentReady(pay, pay.amount)
               return (
                 <button onClick={() => submitPayment()}

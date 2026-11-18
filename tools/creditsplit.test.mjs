@@ -204,5 +204,23 @@ t3('a part payment, part cash part POS', endToEnd,
    'ikenna@openbar/cash:3000 ikenna@openbar/pos:2000')
 sums('end to end', endToEnd, 5000)
 
+// Named debts keep their sale through a method split, so a payment that
+// is part cash part POS still says which debt each part cleared.
+const named = applyMethods(
+  [{ staffId: 'ikenna', locationId: 'openbar', saleId: 's1', amount: 2600 },
+   { staffId: 'ikenna', locationId: 'openbar', saleId: 's2', amount: 600 }],
+  [{ method: 'cash', amount: 3000 }, { method: 'pos', amount: 200 }])
+const eq = (name, got, want) => {
+  if (got === want) { pass++; console.log(`  ok   ${name} -> ${got}`) }
+  else { fail++; console.log(`  FAIL ${name}: got "${got}", want "${want}"`) }
+}
+eq('a split payment still names each debt',
+   named.map(p => `${p.saleId}/${p.method}:${p.amount}`).join(' '),
+   's1/cash:2600 s2/cash:400 s2/pos:200')
+sums('named debts across methods', named, 3200)
+eq('no sale means a null sale, not undefined',
+   applyMethods([{ staffId: 'a', amount: 100 }], [{ method: 'cash', amount: 100 }])
+     .map(p => String(p.saleId)).join(''), 'null')
+
 console.log(`\n${pass} passed, ${fail} failed`)
 process.exit(fail ? 1 : 0)
