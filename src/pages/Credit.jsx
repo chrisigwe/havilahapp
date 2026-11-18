@@ -183,7 +183,8 @@ export default function Credit({ boot }) {
   // a repayment to the wrong sale.
   const [chain, setChain] = useState(null)
   useEffect(() => {
-    loadCreditChain(staff.branch_id, null, 3650)
+    tracked('What was taken, month by month',
+      loadCreditChain(staff.branch_id, null, 3650))
       .then(setChain).catch(() => setChain([]))
   }, [staff.branch_id])
 

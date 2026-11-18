@@ -116,7 +116,9 @@ export default function Folio({ boot, room, onClose, onChanged }) {
   useEffect(() => {
     if (!linkFix) return
     const t = setTimeout(() => {
-      searchSimilarGuests(staff.branch_id, linkQuery).then(setLinkResults).catch(() => setLinkResults([]))
+      tracked('Guests with a similar name',
+        searchSimilarGuests(staff.branch_id, linkQuery))
+        .then(setLinkResults).catch(() => setLinkResults([]))
     }, 400)
     return () => clearTimeout(t)
   }, [linkQuery, staff.branch_id, linkFix])

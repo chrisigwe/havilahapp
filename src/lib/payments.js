@@ -32,3 +32,56 @@ export function paymentReady(value, amount) {
   if (!value.split) return !!value.method
   return Math.abs(paymentAllocated(value, amount) - target) < 0.01
 }
+
+// ---- choosing the methods ----
+//
+// Chris, 18 November 2026: "when you tap POS, you can enter the POS
+// amount; the same goes for Cash. Tap both, and you get a split
+// payment."
+//
+// The picker used to have single-method chips plus a separate Split
+// button that revealed a box for EVERY method, selected or not. So a
+// split was a mode you entered rather than something that followed from
+// what you tapped, and the boxes included methods nobody had chosen.
+//
+// Now the chips are toggles: one is the whole payment, two is a split,
+// and the split holds only the methods actually tapped. The arithmetic
+// is here rather than in the component because it decides how much of a
+// payment lands on each method, and that is money.
+
+const round2 = n => Math.round(Number(n) * 100) / 100
+const chosen = value =>
+  value.split ? Object.keys(value.split) : (value.method ? [value.method] : [])
+
+// The first chosen method absorbs whatever the others have not claimed,
+// so nobody stands at the counter doing subtraction.
+function absorb(split, keeper, amount) {
+  const others = Object.keys(split).filter(x => x !== keeper)
+  const taken = others.reduce((t, x) => t + Number(split[x] || 0), 0)
+  return { ...split, [keeper]: String(Math.max(0, round2(Number(amount || 0) - taken))) }
+}
+
+export function toggleMethod(value, m, amount) {
+  const sel = chosen(value)
+  if (sel.includes(m)) {
+    const rest = sel.filter(x => x !== m)
+    if (!rest.length) return { method: null, split: null }
+    if (rest.length === 1) return { method: rest[0], split: null }
+    const split = {}
+    for (const x of rest) split[x] = value.split[x]
+    return { method: rest[0], split: absorb(split, rest[0], amount) }
+  }
+  if (!sel.length) return { method: m, split: null }
+  const split = {}
+  for (const x of sel) split[x] = value.split ? value.split[x] : String(round2(amount))
+  split[m] = ''
+  return { method: sel[0], split: absorb(split, sel[0], amount) }
+}
+
+// Typing into one method's box moves the remainder onto another, so the
+// two always add up to what is being paid.
+export function setSplitAmount(value, m, raw, amount) {
+  const split = { ...(value.split || {}), [m]: raw }
+  const keeper = Object.keys(split).find(x => x !== m)
+  return { ...value, split: keeper ? absorb(split, keeper, amount) : split }
+}

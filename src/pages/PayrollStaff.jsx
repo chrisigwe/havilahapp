@@ -6,6 +6,7 @@ import {
   loadLinkableCustomers, loadStaffCreditOwing,
 } from '../lib/data'
 import { useToast } from '../components/Toast'
+import { tracked } from '../lib/loadfail'
 
 const BLANK = {
   full_name: '', sex: '', role_title: '', tier: 'junior', monthly_salary: '',
@@ -37,8 +38,10 @@ export default function PayrollStaff({ boot }) {
   const refresh = useCallback(() => {
     loadPayrollEmployees(staff.branch_id, { includeLeavers: showLeavers })
       .then(setRows).catch(e => { setRows([]); toast(e.message, 'error') })
-    loadLinkableCustomers(staff.branch_id).then(setCustomers).catch(() => setCustomers([]))
-    loadStaffCreditOwing(staff.branch_id).then(setOwing).catch(() => setOwing({}))
+    tracked('Credit accounts that can be linked',
+      loadLinkableCustomers(staff.branch_id)).then(setCustomers).catch(() => setCustomers([]))
+    tracked('What each employee owes',
+      loadStaffCreditOwing(staff.branch_id)).then(setOwing).catch(() => setOwing({}))
   }, [staff.branch_id, showLeavers, toast])
   useEffect(refresh, [refresh])
 
