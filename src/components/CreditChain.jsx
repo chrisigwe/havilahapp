@@ -18,7 +18,22 @@ const shortDate = d => !d ? '' : new Date(String(d).slice(0, 10) + 'T12:00:00')
 // that customer's credit sales oldest first — which is how they are
 // applied in practice anyway. See 570 for why that is honest rather
 // than a guess.
-export default function CreditChain({ branchId, customerId, days = 120, className = '' }) {
+// The window is the WHOLE history, not a recent slice (Chris, 18
+// November 2026: "the day view, month view and main list view feel like
+// they do not agree with each other").
+//
+// It defaulted to 120 days, and both call sites — the statement on
+// Credit and "What was taken" on Recovered — took the default. Every
+// other reader of the chain already asks for everything: the main
+// list's month grouping passes 3650, the collect flow 4000, the day
+// view 3650. So the balance beside a person's name counted all of their
+// credit while the statement opened to explain that balance counted
+// four months of it. At Awka on 18 November that was 106 sales and
+// N138,400 the statement could not show.
+//
+// A statement that does not add up to the balance above it is the
+// reason to distrust the page, and it was right to.
+export default function CreditChain({ branchId, customerId, days = 3650, className = '' }) {
   const [rows, setRows] = useState(null)
   const [err, setErr] = useState(null)
   const [all, setAll] = useState(false)
