@@ -88,7 +88,8 @@ export function splitRepaymentByCredit(slices, amount, fallbackStaffId) {
 // per (person, department, method) — which is exactly what
 // credit_repayments stores, one row per method, as it always has.
 //
-// debtParts   - [{ staffId, locationId, amount }] from splitRepaymentByCredit
+// debtParts   - [{ staffId, locationId, amount, saleId? }] — from
+//               splitRepaymentByCredit, or built from named debts
 // methodParts - [{ method, amount }] from paymentParts
 export function applyMethods(debtParts, methodParts) {
   const round = n => Math.round(Number(n) * 100) / 100
@@ -103,6 +104,11 @@ export function applyMethods(debtParts, methodParts) {
     if (!(ms[j].left > 0.009)) { j++; continue }
     const take = round(Math.min(ds[i].left, ms[j].left))
     out.push({ staffId: ds[i].staffId, locationId: ds[i].locationId ?? null,
+               // The sale this part clears, when the caller is settling
+               // named debts rather than a balance. Carried through so a
+               // split payment can still say which debt each method paid
+               // (18 November 2026).
+               saleId: ds[i].saleId ?? null,
                method: ms[j].method, amount: take })
     ds[i].left = round(ds[i].left - take)
     ms[j].left = round(ms[j].left - take)
