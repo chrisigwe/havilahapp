@@ -844,7 +844,7 @@ export default function Credit({ boot }) {
       {!monthFilter && (
         <button onClick={() => setMonthFilter(lagosToday().slice(0, 7))}
           className="text-dim text-sm underline underline-offset-4 decoration-line pb-1 text-left">
-          What customers owed at the end of a month
+          What each owed at the end of a month
         </button>
       )}
 
@@ -862,7 +862,7 @@ export default function Credit({ boot }) {
             disabled={monthFilter >= lagosToday().slice(0, 7)}
             className="h-11 w-11 shrink-0 rounded-xl bg-surface border border-line
                        text-ink text-xl leading-none disabled:opacity-40">›</button>
-          <span className="text-dim text-sm">What customers owed at the end of that month</span>
+          <span className="text-dim text-sm">What each owed at the end of that month</span>
         </div>
       )}
 
@@ -919,7 +919,7 @@ export default function Credit({ boot }) {
         // cannot see any of this. Customers are chased, not deducted,
         // and this is the record they are chased from.
         const monthCustomers = monthRows.filter(r => !r.is_staff)
-        const staffCount = monthRows.filter(r => r.is_staff).length
+        const monthStaff = monthRows.filter(r => r.is_staff)
         const sum = (rows, k) => rows.reduce((t, r) => t + Number(r[k] || 0), 0)
 
         const section = (title, rows, note) => !!rows.length && (
@@ -998,29 +998,38 @@ export default function Credit({ boot }) {
         return (
           <>
             <div className="rounded-2xl border border-amber bg-surface p-4 my-2">
-              <div className="text-dim text-sm">
-                Owed by customers at the end of {monthLabel(monthFilter)}
-              </div>
+              <div className="text-dim text-sm">Owed at the end of {monthLabel(monthFilter)}</div>
               <div className="tnum text-2xl font-bold text-clay">
-                {naira(sum(monthCustomers, 'closing'))}
+                {naira(sum(monthRows, 'closing'))}
               </div>
               <div className="text-dim text-sm mt-1">
-                took {naira(sum(monthCustomers, 'taken'))}
-                {' · '}repaid {naira(sum(monthCustomers, 'repaid'))} during the month
+                took {naira(sum(monthRows, 'taken'))}
+                {' · '}repaid {naira(sum(monthRows, 'repaid'))} during the month
               </div>
+              {!!monthStaff.length && (
+                <div className="text-dim text-sm mt-1">
+                  {naira(sum(monthStaff, 'closing'))} of it is staff
+                </div>
+              )}
             </div>
 
-            {/* Where staff credit went, said plainly rather than left as
-                an absence someone has to notice. */}
-            {staffCount > 0 && (
-              <p className="rounded-2xl border border-line bg-surface p-4 text-dim text-sm">
-                {staffCount} staff {staffCount === 1 ? 'account is' : 'accounts are'} not
-                shown here. Staff credit is deducted from salary, and that is done
-                in <span className="text-ink font-semibold">Payroll → Pull credit
-                deductions</span>, which knows which employee each account belongs to
-                and lets you check every line before anything is taken.
-              </p>
-            )}
+            {/* Staff are BACK on this view (Chris, 18 November 2026).
+                
+                They were taken off this morning because the section read
+                as a deduction sheet, and Payroll already is one. That was
+                half right: the deduction belongs to Payroll, but SEEING
+                who owes does not — and taking the list away took away the
+                step before the deduction. In Chris's words: "They should
+                be listed as credit and given an opportunity to clear
+                their debt; if not, I will manually pull it from their
+                payroll."
+                
+                So the list is here and the money still moves in Payroll.
+                Nothing on this page deducts anything. */}
+            {section('Staff', monthStaff,
+              'Nothing here is taken automatically. This is what each owed when '
+              + 'the month closed — give them the chance to clear it themselves, '
+              + 'and pull whatever is left from payroll when you decide to.')}
 
             {section('Customers', monthCustomers,
               'Customers are not deducted from — these are chased. The figure is '
@@ -1142,7 +1151,7 @@ export default function Credit({ boot }) {
         const jobs = [
           { key: 'collect', title: 'Must be collected', caption: 'somebody has to ask',
             rows: shown.filter(c => !isStaff(c)) },
-          { key: 'salary', title: 'Comes out of salary', caption: 'deducted at payroll',
+          { key: 'salary', title: 'Staff', caption: 'theirs to clear, or pulled from salary at month end',
             rows: shown.filter(isStaff) },
         ].filter(j => j.rows.length)
 
