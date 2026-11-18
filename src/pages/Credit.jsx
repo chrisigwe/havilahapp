@@ -1363,16 +1363,38 @@ export default function Credit({ boot }) {
         // paid further than it owes, says so instead of vanishing — which is
         // how Mr Michael's debt became invisible when a repayment landed on
         // a barman who had given him no credit.
-        const settled = needle ? [] : combined.filter(r => Number(r.balance) <= 0.009)
+        // A SEARCH LOOKS THROUGH EVERYONE, NOT ONLY THE DEBTORS (Kate,
+        // via Chris, 18 November 2026).
+        //
+        // Kate went to collect Ikenna's ₦600 Minimart debt, typed his
+        // name, and got nothing back at all: the search above filters
+        // `owing`, and this line emptied the settled group whenever
+        // there was a needle. So the one person she was looking for was
+        // the one person the page could not show her, and the app
+        // reads as having lost him.
+        //
+        // He was square, and for a reason worth seeing: he paid ₦1,000
+        // against a ₦400 debt on 9 November, and the ₦600 Gala on the
+        // 16th used that credit up. His statement says so in those words
+        // — "Covered — they were already in credit" — but only to
+        // somebody who can reach it.
+        const settled = needle
+          ? combined.filter(r => Number(r.balance) <= 0.009
+              && (r.name || '').toLowerCase().includes(needle))
+          : combined.filter(r => Number(r.balance) <= 0.009)
         const odd = settled.filter(r => Number(r.balance) < -0.009).length
         const settledGroup = !!settled.length && (
           <div className="mt-2">
-            {head('settled', 'Nothing owing now', settled.length,
+            {head('settled', needle ? `Nothing owing now · matching “${find}”` : 'Nothing owing now',
+              settled.length,
               <span className="tnum font-bold text-leaf shrink-0">
                 {odd ? '' : 'square'}
               </span>,
               odd ? `${odd} ${odd === 1 ? 'needs' : 'need'} a look` : null)}
-            {isOpen('settled') && list(settled)}
+            {/* Open on a search: a name typed in is a deliberate
+                lookup, and answering it with a closed fold is the same
+                as answering with nothing. */}
+            {(needle || isOpen('settled')) && list(settled)}
           </div>
         )
 
@@ -1383,7 +1405,10 @@ export default function Credit({ boot }) {
               {!owing.length && <li className="py-8 text-center text-dim">Nobody owes anything.</li>}
               {!!owing.length && !shown.length && (
                 <li className="py-8 text-center text-dim">
-                  Nobody owing matches “{find}”. {owing.length} {owing.length === 1 ? 'debtor' : 'debtors'} in all.
+                  Nobody owing matches “{find}”.
+                  {settled.length
+                    ? ' Anyone of that name who has paid up is below.'
+                    : ` ${owing.length} ${owing.length === 1 ? 'debtor' : 'debtors'} in all.`}
                 </li>
               )}
             </ul>
