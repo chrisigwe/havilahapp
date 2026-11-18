@@ -1027,9 +1027,9 @@ export default function Credit({ boot }) {
                 So the list is here and the money still moves in Payroll.
                 Nothing on this page deducts anything. */}
             {section('Staff', monthStaff,
-              'Nothing here is taken automatically. This is what each owed when '
-              + 'the month closed — give them the chance to clear it themselves, '
-              + 'and pull whatever is left from payroll when you decide to.')}
+              'Payroll no longer touches credit at all — every repayment is '
+              + 'recorded here, like anyone else\'s. This is what each owed when '
+              + 'the month closed, to chase.')}
 
             {section('Customers', monthCustomers,
               'Customers are not deducted from — these are chased. The figure is '
@@ -1151,7 +1151,7 @@ export default function Credit({ boot }) {
         const jobs = [
           { key: 'collect', title: 'Must be collected', caption: 'somebody has to ask',
             rows: shown.filter(c => !isStaff(c)) },
-          { key: 'salary', title: 'Staff', caption: 'theirs to clear, or pulled from salary at month end',
+          { key: 'salary', title: 'Staff', caption: 'chased and recorded here, like anyone else',
             rows: shown.filter(isStaff) },
         ].filter(j => j.rows.length)
 
