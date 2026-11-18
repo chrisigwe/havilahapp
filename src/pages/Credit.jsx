@@ -795,13 +795,14 @@ export default function Credit({ boot }) {
 
       {/* Not "for deductions" (Chris, 17 November 2026): deductions are
           for staff only, customers do not get them, and naming the whole
-          view after one half's use of it is what made it confusing. The
-          door says what the view IS; each section below says what it is
-          for. */}
+          view after one half's use of it is what made it confusing.
+          Since 18 November there is no staff half at all — it lives in
+          Payroll, where the employee link is real — so the door now says
+          whose money it is. */}
       {!monthFilter && (
         <button onClick={() => setMonthFilter(lagosToday().slice(0, 7))}
           className="text-dim text-sm underline underline-offset-4 decoration-line pb-1 text-left">
-          What each owed at the end of a month
+          What customers owed at the end of a month
         </button>
       )}
 
@@ -819,7 +820,7 @@ export default function Credit({ boot }) {
             disabled={monthFilter >= lagosToday().slice(0, 7)}
             className="h-11 w-11 shrink-0 rounded-xl bg-surface border border-line
                        text-ink text-xl leading-none disabled:opacity-40">›</button>
-          <span className="text-dim text-sm">What each owed at the end of that month</span>
+          <span className="text-dim text-sm">What customers owed at the end of that month</span>
         </div>
       )}
 
@@ -851,8 +852,32 @@ export default function Credit({ boot }) {
             </p>
           )
         }
-        const staffRows = monthRows.filter(r => r.is_staff)
-        const otherRows = monthRows.filter(r => !r.is_staff)
+        // CUSTOMERS ONLY (Chris, 18 November 2026).
+        //
+        // Staff used to have their own section here, as a deduction
+        // sheet. It was a worse copy of one that already exists: Payroll
+        // → Pull credit deductions takes each employee's unsettled
+        // credit for a chosen month, plus the accounts they are
+        // responsible for, honours the grace month (August's debt out of
+        // October's salary), is reviewed line by line before finalising,
+        // and on finalising writes the repayment — so the balance drops
+        // and the person leaves the main list on their own.
+        //
+        // Above all it attributes by a REAL link: a payroll employee
+        // carries customer_id. This section identified a person by the
+        // word "staff" in a customer name, and of the 21 staff-named
+        // accounts at Awka only 9 matched an employee by name, while
+        // "Manager (staff)" and "Supervisor (staff)" are job titles with
+        // no one behind them. "Manager (staff)" took N39,500 in
+        // September. No sheet should propose taking that out of a salary
+        // without knowing whose.
+        //
+        // What is left has no equivalent anywhere: Payroll only knows
+        // employees, and Payroll is GM/admin, so a manager or auditor
+        // cannot see any of this. Customers are chased, not deducted,
+        // and this is the record they are chased from.
+        const monthCustomers = monthRows.filter(r => !r.is_staff)
+        const staffCount = monthRows.filter(r => r.is_staff).length
         const sum = (rows, k) => rows.reduce((t, r) => t + Number(r[k] || 0), 0)
 
         const section = (title, rows, note) => !!rows.length && (
@@ -928,26 +953,34 @@ export default function Credit({ boot }) {
         return (
           <>
             <div className="rounded-2xl border border-amber bg-surface p-4 my-2">
-              <div className="text-dim text-sm">Owed at the end of {monthLabel(monthFilter)}</div>
+              <div className="text-dim text-sm">
+                Owed by customers at the end of {monthLabel(monthFilter)}
+              </div>
               <div className="tnum text-2xl font-bold text-clay">
-                {naira(sum(monthRows, 'closing'))}
+                {naira(sum(monthCustomers, 'closing'))}
               </div>
               <div className="text-dim text-sm mt-1">
-                took {naira(sum(monthRows, 'taken'))} · repaid {naira(sum(monthRows, 'repaid'))}
-                {' '}during the month
+                took {naira(sum(monthCustomers, 'taken'))}
+                {' · '}repaid {naira(sum(monthCustomers, 'repaid'))} during the month
               </div>
             </div>
 
-            {section('Staff', staffRows,
-              'What each owed when this month closed, in total — not just this '
-              + "month's credit. Money paid since is not in it: to deduct later, "
-              + 'use "Still unpaid from this month" on the main list, or you take '
-              + 'money that has already come in.')}
-            {/* Said out loud, because the page used to call itself "for
-                deductions" and these people are not deducted from. */}
-            {section('Everyone else', otherRows,
-              'Customers are not deducted from — these are chased. '
-              + 'The figure is what each owed when the month closed.')}
+            {/* Where staff credit went, said plainly rather than left as
+                an absence someone has to notice. */}
+            {staffCount > 0 && (
+              <p className="rounded-2xl border border-line bg-surface p-4 text-dim text-sm">
+                {staffCount} staff {staffCount === 1 ? 'account is' : 'accounts are'} not
+                shown here. Staff credit is deducted from salary, and that is done
+                in <span className="text-ink font-semibold">Payroll → Pull credit
+                deductions</span>, which knows which employee each account belongs to
+                and lets you check every line before anything is taken.
+              </p>
+            )}
+
+            {section('Customers', monthCustomers,
+              'Customers are not deducted from — these are chased. The figure is '
+              + 'what each owed when the month closed, in total, not just this '
+              + "month's credit. Money paid since is not in it.")}
           </>
         )
       })()}
