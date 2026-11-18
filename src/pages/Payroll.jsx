@@ -78,7 +78,42 @@ export default function Payroll({ boot }) {
 
   // Proposes each person's current department credit as deductions. The
   // GM reviews and edits before finalising — nothing is applied blind.
+  // A MONTH THAT HAS NOT ENDED IS NOT READY TO BE DEDUCTED FROM
+  // (Chris, 18 November 2026).
+  //
+  // > Let us allow staff to make payments on their own; then, at the end
+  // > of the month, if their debt is not fully paid, then it is removed
+  // > from payroll.
+  //
+  // The proposal itself already honours the second half: the database
+  // counts every repayment to date, including ones made after the month
+  // closed, so somebody who pays in early December shrinks or clears
+  // their November deduction. What nothing guarded was the first half.
+  // pullMonth defaults to the month being run, so on the 18th this
+  // button proposed taking credit the person still had twelve days to
+  // pay themselves.
+  //
+  // A warning, not a block: an earlier month is pulled deliberately
+  // under the grace rule, and payroll is sometimes run on the last
+  // working day rather than the last day of all.
+  const monthHasEnded = (ym) => {
+    const [y, m] = String(ym || '').split('-').map(Number)
+    if (!y || !m) return true
+    const lastDay = new Date(Date.UTC(y, m, 0)).toISOString().slice(0, 10)
+    return lagosToday() > lastDay
+  }
+
   async function doPullCredit() {
+    if (!monthHasEnded(pullMonth)) {
+      const label = new Date(`${pullMonth}-01T12:00:00`)
+        .toLocaleDateString('en-NG', { month: 'long', year: 'numeric' })
+      if (!window.confirm(
+        `${label} is not over yet.\n\n`
+        + 'Staff can still pay this themselves before the month ends, and '
+        + 'anything they do not pay will still be here when it does. '
+        + 'Pulling now proposes taking money they have not had their full '
+        + 'month to clear.\n\nPull it anyway?')) return
+    }
     setBusy(true)
     try {
       const withCustomer = lines.map(l => ({
@@ -378,6 +413,15 @@ export default function Payroll({ boot }) {
                   className="h-11 px-4 rounded-xl border border-amber text-amber font-semibold">
                   Pull credit deductions
                 </button>
+                {/* Said before the button is pressed, not only in the
+                    confirm after it. The whole point is that the money
+                    is not due yet. */}
+                {!monthHasEnded(pullMonth) && (
+                  <p className="basis-full text-amber text-sm">
+                    That month is not over — staff can still pay this themselves,
+                    and whatever they do not pay will still be here at month end.
+                  </p>
+                )}
                 <button onClick={() => window.print()}
                   className="h-11 px-4 rounded-xl border border-line text-dim font-semibold">
                   Print
