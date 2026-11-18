@@ -144,6 +144,32 @@ input[type="datetime-local"]::-webkit-calendar-picker-indicator:hover { opacity:
    Transforms only (no width, height or margin), so nothing reflows and
    the tap targets keep their size. */
 
+/* Where the bar sits. Held here rather than in utility classes so every
+   property that decides its position is in one place — and so `top` can
+   be pinned to auto. A fixed element with only `bottom` set is already
+   anchored, but stating `top: auto` leaves nothing for a stray rule, or
+   a browser resolving against the wrong box, to fill in. Shell portals
+   this onto <body>; see the note there (18 November 2026).
+
+   The safe-area inset moved from an inline margin-bottom into `bottom`,
+   so the one declaration says how far up from the screen edge it sits.
+
+   will-change promotes it to its own compositor layer. That is the
+   standard mitigation for a fixed bar drifting during momentum
+   scrolling on iOS, and costs nothing here: it is already animated on
+   both of those properties whenever it hides. */
+.hv-tabbar {
+  position: fixed;
+  top: auto;
+  bottom: calc(0.75rem + env(safe-area-inset-bottom, 0px));
+  left: 0.75rem;
+  right: 0.75rem;
+  z-index: 40;
+  will-change: transform, translate;
+  -webkit-backface-visibility: hidden;
+  backface-visibility: hidden;
+}
+
 /* Press feedback was removed at the user's request; these transitions
    now only serve the capsule fading in and the selected icon's settle. */
 .nav-tab > span, .nav-ico {
