@@ -15,7 +15,6 @@ import { EDITOR, OPENS_ON_ALL, OVERSIGHT, SUPERVISOR, is } from '../lib/roles'
 import { accountStatementPdf, savePdf } from '../lib/pdfSheet'
 import Notice from '../components/Notice'
 import { tracked } from '../lib/loadfail'
-import CreditChain from '../components/CreditChain'
 import { useScrollLock } from '../lib/scrollLock'
 
 
@@ -132,6 +131,8 @@ export default function Credit({ boot }) {
   const [movingToRoom, setMovingToRoom] = useState(null)   // { customerId, locationId, amount }
   const [moveBusy, setMoveBusy] = useState(false)
   const [pay, setPay] = useState(null)
+  // What a payment just cleared, shown once, right after it is saved.
+  const [receipt, setReceipt] = useState(null)
   // The customer whose debt is split between two staff, while we ask
   // which of them the money settles.
   const [payWho, setPayWho] = useState(null)
@@ -437,8 +438,32 @@ export default function Credit({ boot }) {
           enqueue({ kind: 'repayment', payload: args })
         }
       }
-      toast('Payment recorded', 'success')
       flush()
+      // A RECEIPT, WHERE THE PAYMENT NAMED ITS DEBTS (Chris, 18 November
+      // 2026, on the prototype). A toast saying "Payment recorded" is
+      // true and tells the collector nothing: which debts went, in which
+      // months, by which method. This says it, once, and closes the
+      // account behind it so the next open reloads fresh.
+      if (pay.targets) {
+        const src = (open?.chain?.length ? open.chain : chain) || []
+        const byMethod = {}
+        for (const q of parts) byMethod[q.method] = (byMethod[q.method] || 0) + Number(q.amount || 0)
+        setReceipt({
+          name: open?.customer?.name || 'this account',
+          amount: parts.reduce((t, q) => t + Number(q.amount || 0), 0),
+          methods: Object.entries(byMethod).map(([method, amount]) => ({ method, amount })),
+          cleared: parts.map(q => {
+            const row = src.find(c2 => c2.sale_id === q.settlesSaleId)
+            return {
+              item: row?.item || 'Item', on: row?.taken_on || '',
+              dept: row?.dept || '', month: String(row?.taken_on || '').slice(0, 7),
+              amount: Number(q.amount || 0),
+            }
+          }),
+        })
+      } else {
+        toast('Payment recorded', 'success')
+      }
       setPay(null); setOpen(null); refresh()
     } catch (e) {
       // Every other refusal is final and must be read. This one has a
@@ -709,6 +734,99 @@ export default function Credit({ boot }) {
       left = Math.round((left - take) * 100) / 100
     }
     return out
+  }
+
+  // THE ACCOUNT'S OWN COLLECT ROUTES (Chris, 18 November 2026, on the
+  // prototype). The main list collects a month across people; these two
+  // collect inside one person's account, which is where a guest clearing
+  // their debt is actually dealt with.
+  //
+  // Both go through `targets`, so each written row names the sale it
+  // settles and carries that sale's own department and collector. A
+  // month here can never reach into another month.
+  const targetsFrom = (rows) => {
+    const out = {}
+    for (const r of [...rows].sort((a, b) =>
+      String(a.taken_on).localeCompare(String(b.taken_on)))) {
+      out[r.sale_id] = String(Math.round(Number(r.still_owed) * 100) / 100)
+    }
+    return out
+  }
+  const openPayFor = (rows, fromMonth) => {
+    const c = open?.customer
+    const unpaid = (rows || []).filter(r => Number(r.still_owed) > 0.009)
+    if (!c || !unpaid.length) return
+    const amount = Math.round(unpaid.reduce((t, r) => t + Number(r.still_owed), 0) * 100) / 100
+    setPay({
+      customerId: c.customer_id, amount, method: null,
+      paidOn: lagosToday(), note: '', balance: Number(c.balance),
+      locationId: payLocationFor(c), creditStaffId: c.staff_id || staff.id,
+      targets: targetsFrom(unpaid), fromMonth: fromMonth || null,
+    })
+  }
+
+  // THE STATEMENT AS TEXT (Chris, 18 November 2026: "the statement can
+  // be shared via WhatsApp, etc").
+  //
+  // The PDF already reaches WhatsApp through the phone's share sheet,
+  // and it is the right thing when a guest wants a document. It is the
+  // wrong thing for chasing N7,100 on a small phone: it arrives as a
+  // file somebody has to open. Text arrives readable, and both sides can
+  // quote the same lines back when a figure is queried.
+  //
+  // Settled months are left out entirely. The message shows what is
+  // being chased, not the history.
+  const statementText = () => {
+    const c = open?.customer
+    const rows = (open?.chain || []).filter(r => Number(r.still_owed) > 0.009)
+    const day = d => new Date(String(d) + 'T12:00:00')
+      .toLocaleDateString('en-NG', { day: 'numeric', month: 'short' })
+    const by = {}
+    for (const r of rows) {
+      const k = String(r.taken_on || '').slice(0, 7)
+      ;(by[k] || (by[k] = [])).push(r)
+    }
+    const out = []
+    out.push(String(boot.branchName || 'Havilah Suite').toUpperCase())
+    out.push(c?.name || '')
+    out.push('Account as at ' + new Date()
+      .toLocaleDateString('en-NG', { day: 'numeric', month: 'long', year: 'numeric' }))
+    const keys = Object.keys(by).sort()
+    if (keys.length) {
+      out.push('', 'STILL UNPAID')
+      for (const k of keys) {
+        const owed = by[k].reduce((t, r) => t + Number(r.still_owed), 0)
+        out.push(`${monthLabel(k)} — ${naira(owed)}`)
+        for (const r of by[k]) {
+          out.push(`  ${day(r.taken_on)} · ${r.item}${r.qty ? ` ×${r.qty}` : ''}`
+            + ` — ${naira(r.still_owed)}`
+            + (Number(r.recovered) > 0.009 ? ` (${naira(r.recovered)} already paid)` : ''))
+        }
+      }
+    }
+    const total = rows.reduce((t, r) => t + Number(r.still_owed), 0)
+    out.push('', 'TOTAL OWING: ' + (total > 0.009 ? naira(total) : 'nothing — settled'))
+    return out.join('\n')
+  }
+
+  // The phone's own share sheet first, which is what puts WhatsApp in
+  // front of the collector. The clipboard is the fallback for a laptop.
+  async function sendStatement() {
+    const text = statementText()
+    try {
+      if (navigator.share) {
+        await navigator.share({ text, title: `Statement — ${open?.customer?.name || ''}` })
+        return
+      }
+    } catch (e) {
+      if (e?.name === 'AbortError') return      // they closed the share sheet
+    }
+    try {
+      await navigator.clipboard.writeText(text)
+      toast('Statement copied — paste it into the chat', 'success')
+    } catch {
+      toast('This device would not share or copy the statement', 'error')
+    }
   }
 
   const collectFrom = (row, fromMonth) => {
@@ -1949,9 +2067,108 @@ export default function Credit({ boot }) {
                 Kept off the printed statement, which is the formal
                 account; this is the working view — the one that answers
                 "has he paid for the Desperados yet". */}
+            {/* The account, month by month — the prototype's shape.
+                Built from open.chain, which this sheet already loads, so
+                the second request CreditChain used to make is gone. */}
             <div className="px-5 pb-5 print:hidden">
-              <h3 className="font-semibold mb-1">What was taken, and how it came back</h3>
-              <CreditChain branchId={staff.branch_id} customerId={open.customer.customer_id} />
+              <div className="flex items-baseline justify-between gap-3 mb-2">
+                <h3 className="font-semibold">What was taken, month by month</h3>
+                {open.chain?.length > 0 && (
+                  <span className="text-dim text-xs">oldest first</span>
+                )}
+              </div>
+              {open.error && (
+                <p className="text-clay text-sm">
+                  The list of what was taken could not be loaded — this is not the
+                  same as nothing being taken.
+                </p>
+              )}
+              {!open.error && open.chain === null && (
+                <p className="text-dim text-sm">Loading…</p>
+              )}
+              {!open.error && open.chain?.length === 0 && (
+                <p className="text-dim text-sm">Nothing has been taken on this account.</p>
+              )}
+              {!open.error && !!open.chain?.length && (() => {
+                const by = {}
+                for (const r of open.chain) {
+                  const k = String(r.taken_on || '').slice(0, 7)
+                  if (k.length !== 7) continue
+                  ;(by[k] || (by[k] = [])).push(r)
+                }
+                const keys = Object.keys(by).sort()
+                const owedAll = open.chain.reduce((t, r) => t + Number(r.still_owed || 0), 0)
+                return (
+                  <>
+                    {canCollect && owedAll > 0.009 && (
+                      <button type="button" onClick={() => openPayFor(open.chain, null)}
+                        className="w-full h-13 py-3 mb-3 rounded-2xl bg-amber text-bg font-bold">
+                        Collect everything · {naira(owedAll)}
+                      </button>
+                    )}
+                    <div className="flex flex-col gap-3">
+                      {keys.map(k => {
+                        const rows = by[k]
+                        const owed = rows.reduce((t, r) => t + Number(r.still_owed || 0), 0)
+                        const done = owed <= 0.009
+                        return (
+                          <section key={k} className="rounded-2xl border border-line bg-surface">
+                            <div className="flex items-baseline justify-between gap-3
+                                            px-4 py-3 border-b border-line">
+                              <h4 className="font-semibold">
+                                {done ? monthLabel(k) : `Still unpaid from ${monthLabel(k)}`}
+                              </h4>
+                              <span className={`tnum font-bold shrink-0 ${done ? 'text-leaf' : 'text-clay'}`}>
+                                {done ? 'settled' : naira(owed)}
+                              </span>
+                            </div>
+                            <ul className="divide-y divide-line/60">
+                              {rows.map(r => {
+                                const left = Number(r.still_owed || 0)
+                                const part = left > 0.009 && Number(r.recovered || 0) > 0.009
+                                return (
+                                  <li key={r.sale_id} className="px-4 py-2.5">
+                                    <div className="flex items-baseline justify-between gap-3">
+                                      <span className="font-semibold break-words min-w-0">{r.item}</span>
+                                      <span className="tnum shrink-0">{naira(r.amount)}</span>
+                                    </div>
+                                    <div className="text-dim text-sm tnum">
+                                      {r.qty ? `${r.qty} × ${naira(r.unit_price)} · ` : ''}
+                                      taken {new Date(String(r.taken_on) + 'T12:00:00')
+                                        .toLocaleDateString('en-NG', { day: 'numeric', month: 'short' })}
+                                      {r.dept ? ` · ${r.dept}` : ''}
+                                      {r.staff ? ` · ${r.staff}` : ''}
+                                    </div>
+                                    <div className={`text-sm font-semibold ${left <= 0.009 ? 'text-leaf' : 'text-clay'}`}>
+                                      {left <= 0.009
+                                        ? (r.cleared_on
+                                            ? `Recovered ${new Date(String(r.cleared_on) + 'T12:00:00')
+                                                .toLocaleDateString('en-NG', { day: 'numeric', month: 'short' })}`
+                                              + (r.cleared_by ? ` · ${methodLabel[r.cleared_by] || r.cleared_by}` : '')
+                                            : 'Covered — they were already in credit')
+                                        : part ? `${naira(r.recovered)} back · ${naira(left)} still owing`
+                                          : `${naira(left)} still owing`}
+                                    </div>
+                                  </li>
+                                )
+                              })}
+                            </ul>
+                            {canCollect && !done && (
+                              <div className="px-4 py-3">
+                                <button type="button" onClick={() => openPayFor(rows, k)}
+                                  className="w-full h-12 rounded-xl border border-amber
+                                             text-amber font-bold text-sm">
+                                  Collect {monthLabel(k)} · {naira(owed)}
+                                </button>
+                              </div>
+                            )}
+                          </section>
+                        )
+                      })}
+                    </div>
+                  </>
+                )
+              })()}
             </div>
 
             {isAdmin && (() => {
@@ -1993,7 +2210,7 @@ export default function Credit({ boot }) {
             })()}
           </div>
 
-          <div className="p-5 border-t border-line flex gap-3 print:hidden">
+          <div className="p-5 border-t border-line flex flex-wrap gap-3 print:hidden">
             <button disabled={!open.ledger}
               onClick={() => savePdf(accountStatementPdf({
               branchName: boot.branchName,
@@ -2021,7 +2238,11 @@ export default function Credit({ boot }) {
               paidTotal: stmt.paidTotal,
               balance: stmt.totalOwed,
             }), `Statement ${open.customer.name}`)}
-              className="flex-1 h-14 rounded-2xl border border-line font-bold disabled:opacity-40">Save / share PDF</button>
+              className="flex-1 min-w-[45%] h-14 rounded-2xl border border-line font-bold disabled:opacity-40">Save / share PDF</button>
+            <button type="button" disabled={!open.chain?.length} onClick={sendStatement}
+              className="flex-1 min-w-[45%] h-14 rounded-2xl border border-line font-bold disabled:opacity-40">
+              Send as text
+            </button>
             {(() => {
               const hiddenForRole = !canCollect
               // Anyone below GM/admin can't
@@ -2236,6 +2457,50 @@ export default function Credit({ boot }) {
               })}
             </ul>
           </div>
+        </div>
+      )}
+
+      {receipt && (
+        <div className="fixed inset-0 z-[70] bg-bg overflow-y-auto p-5">
+          <button onClick={() => setReceipt(null)} className="text-dim">Done</button>
+          <div className="mt-4 rounded-2xl border border-leaf bg-surface p-4">
+            <div className="text-dim text-sm">Payment recorded</div>
+            <div className="tnum text-3xl font-bold text-leaf">{naira(receipt.amount)}</div>
+            <div className="text-dim text-sm mt-1">
+              {receipt.name} · {receipt.methods
+                .map(m => `${naira(m.amount)} ${methodLabel[m.method] || m.method}`)
+                .join(' + ')}
+            </div>
+          </div>
+
+          {(() => {
+            const by = {}
+            for (const c of receipt.cleared) (by[c.month] || (by[c.month] = [])).push(c)
+            return Object.keys(by).sort().map(k => (
+              <div key={k} className="mt-3 rounded-2xl border border-line bg-surface p-4">
+                <div className="text-dim text-xs uppercase tracking-wide mb-2">
+                  Cleared in {monthLabel(k)}
+                </div>
+                <ul className="flex flex-col gap-1">
+                  {by[k].map((c, i) => (
+                    <li key={i} className="flex items-baseline justify-between gap-3 text-sm">
+                      <span className="text-dim min-w-0 break-words">
+                        {c.item}{c.dept ? ` · ${c.dept}` : ''}
+                      </span>
+                      <span className="tnum shrink-0">{naira(c.amount)}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ))
+          })()}
+
+          <p className="text-dim text-sm mt-4">
+            Only the debts listed here were settled. Anything owed in another month is
+            exactly where it was.
+          </p>
+          <button onClick={() => setReceipt(null)}
+            className="mt-5 w-full h-14 rounded-2xl bg-amber text-bg font-bold">Done</button>
         </div>
       )}
 
