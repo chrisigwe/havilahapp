@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useToast } from '../components/Toast'
 import { lagosToday, methodLabel, naira, startingDept, stepMonth, tierLabel } from '../lib/format'
 import { monthLabel } from '../lib/months'
+import { splitRepaymentByCredit, applyMethods } from '../lib/creditsplit'
 import RoomChargeTracker from '../components/RoomChargeTracker'
 import { checkRepeatPayment, checkRepeatRepayment, deactivateCustomer, deleteCustomer, linkCustomerToGuest, loadBalances, loadCreditForMonth, loadCustomerLedger, loadCreditChain, loadFolio, loadStayMoves, loadGuestBalances, loadReservedValue, loadUnlinkedCustomerBalances, loadCustomerNeverAGuest, setCustomerNeverAGuest, moveWorkaroundToRoom, recordStayPayment, saveRepayment, searchSimilarGuests } from '../lib/data'
 import { enqueue, flush, isConnectionError } from '../lib/outbox'
@@ -383,7 +384,13 @@ export default function Credit({ boot }) {
                      settlesSaleId: saleId, creditStaffId: row?.staff_id || null }
           })
           .filter(p => p.amount > 0)
-      : paymentParts(pay, pay.amount).filter(p => p.amount > 0)
+      : pay.spread
+        ? applyMethods(
+            splitRepaymentByCredit(pay.spread, pay.amount, staff.id),
+            paymentParts(pay, pay.amount).filter(p => p.amount > 0))
+          .map(p => ({ method: p.method, amount: p.amount,
+                       locationId: p.locationId, creditStaffId: p.staffId }))
+        : paymentParts(pay, pay.amount).filter(p => p.amount > 0)
     try {
       for (const part of parts) {
         // Made before the first attempt and carried into the outbox, so a
@@ -391,6 +398,11 @@ export default function Credit({ boot }) {
         const args = { ...base, amount: part.amount, method: part.method,
                        clientRef: crypto.randomUUID(),
                        settlesSaleId: part.settlesSaleId || null,
+                       // A spread row names its own department as well as
+                       // its own person: the same person can be owed at
+                       // two counters, and the repayment belongs to the
+                       // counter the debt is at.
+                       locationId: part.locationId || base.locationId,
                        creditStaffId: part.creditStaffId || base.creditStaffId }
         try {
           await saveRepayment({ ...args, staff })
@@ -536,6 +548,7 @@ export default function Credit({ boot }) {
     if (Number(r.balance) > 0.009) {
       a.parts.push({ location_id: r.location_id, staff_id: r.staff_id,
                      staff_name: r.staff_name, balance: Number(r.balance),
+                     first_credit_date: r.first_credit_date,
                      last_credit_date: r.last_credit_date })
     }
     return acc
@@ -655,12 +668,40 @@ export default function Credit({ boot }) {
     const c = row.__whole || row
     const suggested = Number(row.__whole ? row.balance : c.balance)
     const where = payLocationFor(c)
-    // Two people gave this credit, so which debt the money settles is a
-    // real question — the existing chooser asks it, and the month
-    // suggestion gives way to that.
-    // Split across people, or no department on the row: ask rather than
-    // guess. Nothing is ever recorded against the literal 'all'.
-    if ((c.parts || []).length > 1 || !where) { setPayWho(c); return }
+    // TWO PEOPLE GAVE THIS CREDIT, AND THAT IS NOT THE COLLECTOR'S
+    // PROBLEM (Chris, 18 November 2026: collecting is awkward).
+    //
+    // This used to open a chooser — "whose credit is being paid?" — and
+    // take one answer, so a customer clearing what they owed at two
+    // counters had to be entered twice. At Awka that is 36 people.
+    //
+    // The question already has an answer that does not need asking:
+    // oldest debt first, which is the rule splitRepaymentByCredit has
+    // applied at the front desk since 9 November and the rule the
+    // statement chain uses everywhere else. So the payment is spread
+    // down the debts in that order, and the sheet shows where each naira
+    // lands before it is saved. The chooser is still there for a
+    // customer who insists on clearing one person's debt only — it is
+    // just no longer the way through.
+    const slices = (c.parts || [])
+    if (slices.length > 1) {
+      setPay({
+        customerId: c.customer_id, amount: suggested, method: null,
+        paidOn: lagosToday(), note: '', balance: Number(c.balance),
+        locationId: slices[0].location_id,
+        creditStaffId: slices[0].staff_id || staff.id,
+        spread: slices.map(p => ({
+          staffId: p.staff_id, locationId: p.location_id,
+          staffName: p.staff_name, balance: Number(p.balance),
+          firstCreditDate: p.first_credit_date, lastCreditDate: p.last_credit_date,
+        })),
+        whole: c,
+      })
+      return
+    }
+    // No department on the row: ask rather than guess. Nothing is ever
+    // recorded against the literal 'all'.
+    if (!where) { setPayWho(c); return }
     setPay({
       customerId: c.customer_id, amount: suggested, method: null,
       paidOn: lagosToday(), note: '', balance: Number(c.balance),
@@ -2038,11 +2079,12 @@ export default function Credit({ boot }) {
         <div className="fixed inset-0 z-[60] bg-bg h-[100dvh] flex flex-col">
           <div className="p-5 flex-1 min-h-0 overflow-y-auto overscroll-contain">
             <button onClick={() => setPayWho(null)} className="text-dim">Back</button>
-            <h2 className="mt-3 text-2xl font-bold">Whose credit is being paid?</h2>
+            <h2 className="mt-3 text-2xl font-bold">Settle one person's debt</h2>
             <p className="text-dim mt-2">
-              {payWho.name} owes {naira(payWho.balance)} in all. Two people gave it,
-              and a repayment goes back to whoever gave the credit — so pick the
-              one this money settles. Paying the other is a second entry.
+              {payWho.name} owes {naira(payWho.balance)} in all, given by more than
+              one person. Going back clears the oldest debt first and needs no
+              choice. Pick someone here only if this money is meant for their
+              debt alone — anything left over is a second entry.
             </p>
             <ul className="mt-5 divide-y divide-line/60 rounded-2xl border border-line bg-surface px-4">
               {(payWho.parts || []).map((part, i) => {
@@ -2105,6 +2147,39 @@ export default function Credit({ boot }) {
             <input type="number" inputMode="decimal" value={pay.amount}
               onChange={e => setPay(p => ({ ...p, amount: e.target.value }))}
               className="mt-2 h-14 w-full px-4 rounded-xl bg-surface border border-line tnum" />
+
+            {/* Shown BEFORE saving, because money landing on the wrong
+                person's slate is the fault this whole rule exists to
+                stop, and a rule nobody can see is one nobody can
+                check. */}
+            {pay.spread && (
+              <div className="mt-3 rounded-2xl border border-line bg-surface p-4">
+                <div className="text-dim text-sm">Where this goes</div>
+                <ul className="mt-2 space-y-1">
+                  {splitRepaymentByCredit(pay.spread, pay.amount, staff.id).map((p, i) => {
+                    const who = (pay.spread || []).find(
+                      x => x.staffId === p.staffId && x.locationId === p.locationId)
+                    return (
+                      <li key={i} className="flex items-baseline justify-between gap-2 text-sm">
+                        <span className="text-dim truncate">
+                          {who?.staffName || 'Not recorded'}
+                          {' · '}{locById[p.locationId]?.name || '—'}
+                        </span>
+                        <span className="tnum shrink-0">{naira(p.amount)}</span>
+                      </li>
+                    )
+                  })}
+                </ul>
+                <p className="text-dim text-xs mt-2">
+                  Oldest debt first — a repayment goes back to whoever gave the credit.
+                </p>
+                <button type="button"
+                  onClick={() => { const w = pay.whole; setPay(null); setPayWho(w) }}
+                  className="text-amber text-sm font-semibold mt-2">
+                  Settle one person's debt only ›
+                </button>
+              </div>
+            )}
 
             <label className="block mt-4 text-dim">Paid by</label>
             <div className="mt-2">
