@@ -2360,6 +2360,36 @@ export async function loadInternalRoomIds(branchId) {
   return (data || []).map(r => r.id)
 }
 
+// Put a BOOKING in a different room. Not a guest — a booking.
+//
+// The busy-season problem (Chris, 13 November 2026): a guest will not
+// check out, another is at the desk with a reservation for that room,
+// and there is nothing the desk can do but refuse one of them. The room
+// board already shows the collision — the occupied room names who is
+// arriving into it — and then stops.
+//
+// Deliberately NOT move_stay_room, which is for a guest already in a
+// room: it adjusts the bill for nights at the old rate, writes a move
+// record and can put the old room out of service. A booking that has
+// not started has no bill, no nights and no room to service. Changing
+// its room is changing its room.
+//
+// Guarded on status so this can never touch a guest who has checked in,
+// and the row is read back so a move the database refused — the
+// exclusion constraint on overlapping dates does the real checking —
+// is reported rather than looking done.
+export async function moveReservationRoom(stayId, toRoomId) {
+  const { data, error } = await supabase.from('stays')
+    .update({ room_id: toRoomId })
+    .eq('id', stayId).eq('status', 'reserved')
+    .select('id')
+  if (error) throw error
+  if (!data?.length) {
+    throw new Error('That booking could not be moved. It may already be checked in, '
+      + 'or you may not have the right to move it.')
+  }
+}
+
 // Move a stay's leaving date and NOTHING else.
 //
 // updateStayDetails writes the rate, the cycle, the reason and the

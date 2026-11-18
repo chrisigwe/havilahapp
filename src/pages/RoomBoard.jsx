@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useState } from 'react'
-import { naira, lagosToday, lagosTime, seesStayTimes } from '../lib/format'
+import { naira, friendlyStayError, lagosToday, lagosTime, seesStayTimes } from '../lib/format'
 import {
-  checkInReservation, loadCheckoutsStillOwing, loadInternalRoomIds, loadOccupancy,
-  loadPaidThrough, setRoomServiceStatus, loadUpcomingReservations,
+  checkInReservation, loadCheckoutsStillOwing, loadFreeRooms, loadInternalRoomIds,
+  loadOccupancy, loadPaidThrough, moveReservationRoom, setRoomServiceStatus,
+  loadUpcomingReservations,
 } from '../lib/data'
 import CheckIn from './CheckIn'
 import Folio from '../components/Folio'
@@ -167,6 +168,9 @@ export default function RoomBoard({ boot }) {
   // gm/admin, read from rooms.is_internal rather than a room number.
   const seesInternal = is(staff.role, SUPERVISOR)
   const [internalIds, setInternalIds] = useState([])
+  // A booking being re-roomed, and the rooms it could go to.
+  const [moving, setMoving] = useState(null)      // { booking, sitting }
+  const [freeRooms, setFreeRooms] = useState(null)
   const refresh = () => {
     tracked('The room board', loadOccupancy(staff.branch_id)).then(setAllRooms).catch(() => setAllRooms([]))
     tracked('Bookings not yet arrived', loadUpcomingReservations(staff.branch_id)).then(setReservations).catch(() => setReservations([]))
@@ -174,6 +178,31 @@ export default function RoomBoard({ boot }) {
     tracked('Which rooms are internal', loadInternalRoomIds(staff.branch_id)).then(setInternalIds).catch(() => setInternalIds([]))
   }
   useEffect(refresh, [staff.branch_id])
+
+  // Rooms free for the WHOLE of the booking's dates, the booking itself
+  // excepted so its own room is not counted as blocking it.
+  useEffect(() => {
+    if (!moving) { setFreeRooms(null); return }
+    setFreeRooms(null)
+    tracked('Rooms free for those dates',
+      loadFreeRooms(staff.branch_id, moving.booking.check_in_date,
+                    moving.booking.scheduled_out, moving.booking.stay_id))
+      // loadFreeRooms answers "free for those nights", which the GM's
+      // office is. It is not a room anyone lets, so it never appears
+      // here, whatever the person moving the booking may see elsewhere.
+      .then(rs => setFreeRooms(rs.filter(r => !internalIds.includes(r.id))))
+      .catch(() => setFreeRooms([]))
+  }, [moving, staff.branch_id, internalIds])
+
+  async function moveBookingTo(roomId, roomNumber) {
+    setOosBusy(true)
+    try {
+      await moveReservationRoom(moving.booking.stay_id, roomId)
+      toast(`${moving.booking.guest_name} moved to Room ${roomNumber}`, 'success')
+      setMoving(null); refresh()
+    } catch (e) { toast(friendlyStayError(e), 'error') }
+    setOosBusy(false)
+  }
 
   async function confirmMarkOOS() {
     setOosBusy(true)
@@ -336,6 +365,30 @@ export default function RoomBoard({ boot }) {
       list.sort((a, b) => String(a.check_in_date).localeCompare(String(b.check_in_date)))
     }
 
+    // ARRIVALS WITH NOWHERE TO GO (Chris, 13 November 2026, on busy
+    // seasons: "some guests refuse to checkout for other guests to check
+    // in").
+    //
+    // A booking whose day has come, on a room somebody is still sitting
+    // in. The board already SHOWED this — an occupied card names who is
+    // arriving into it — and then stopped, leaving the desk to refuse
+    // one of the two people in front of them. Collected here so they can
+    // be dealt with rather than discovered one card at a time.
+    const occupiedBy = new Map()
+    for (const r of visible) {
+      if (r.status === 'occupied') occupiedBy.set(r.room_id, r)
+    }
+    const todayIso = lagosToday()
+    const blocked = []
+    for (const r of visible) {
+      if (r.status !== 'reserved' || !r.stay_id) continue
+      if (String(r.check_in_date) > todayIso) continue
+      const sitting = occupiedBy.get(r.room_id)
+      if (sitting) blocked.push({ booking: r, sitting })
+    }
+    blocked.sort((a, b) =>
+      String(a.booking.check_in_date).localeCompare(String(b.booking.check_in_date)))
+
     const tally = rooms.reduce((acc, r) => {
       const s = stateOf(r, paidThrough); acc[s] = (acc[s] || 0) + 1; return acc
     }, {})
@@ -364,13 +417,13 @@ export default function RoomBoard({ boot }) {
     const onDeposit = arrived.reduce((s, r) => s + Math.max(-Number(r.outstanding || 0), 0), 0)
     const booked = visible.filter(r => r.status === 'reserved')
       .reduce((s, r) => s + Math.max(Number(r.outstanding || 0), 0), 0)
-    return { visible, rooms, othersByRoom, doubled, bookingsByRoom, tally, sorted, shown, arrived, owed, onDeposit, booked }
+    return { visible, rooms, othersByRoom, doubled, bookingsByRoom, tally, sorted, shown, arrived, owed, onDeposit, booked, blocked }
   }, [allRooms, internalIds, seesInternal, paidThrough, filter])
 
   if (allRooms === null) return <p className="px-5 text-dim">Loading…</p>
 
   const { visible, rooms, othersByRoom, doubled, bookingsByRoom, tally,
-          sorted, shown, arrived, owed, onDeposit, booked } = board
+          sorted, shown, arrived, owed, onDeposit, booked, blocked } = board
 
 
 
@@ -612,6 +665,91 @@ export default function RoomBoard({ boot }) {
           className="w-full h-11 rounded-xl border border-line text-dim font-semibold text-sm mb-3">
           Showing {shown.length} of {rooms.length} rooms — show all
         </button>
+      )}
+
+      {/* Above the board, because this is the thing standing at the desk
+          while the board is being read. */}
+      {!!blocked.length && (
+        <section className="mb-4 rounded-2xl border border-clay bg-surface p-4">
+          <div className="text-clay font-bold">
+            {blocked.length === 1
+              ? 'A guest has arrived and their room is still occupied'
+              : `${blocked.length} guests have arrived and their rooms are still occupied`}
+          </div>
+          <p className="text-dim text-sm mt-1">
+            Move the booking to a room that is free for the whole of their stay,
+            or check the sitting guest out first.
+          </p>
+          <ul className="mt-3 space-y-2">
+            {blocked.map(({ booking, sitting }) => (
+              <li key={booking.stay_id} className="rounded-xl border border-line px-3 py-2">
+                <div className="font-semibold break-words">{booking.guest_name}</div>
+                <div className="text-dim text-sm break-words">
+                  due into Room {booking.room_number}
+                  {booking.check_in_date < lagosToday()
+                    ? ` since ${shortDate(booking.check_in_date)}`
+                    : ' today'}
+                  {' · '}{sitting.guest_name} is still in it
+                </div>
+                {canBook && (
+                  <button onClick={() => setMoving({ booking, sitting })}
+                    className="mt-2 h-11 px-4 rounded-xl border border-amber
+                               text-amber font-semibold text-sm">
+                    Move to a free room
+                  </button>
+                )}
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+
+      {/* The rooms that are free for EVERY night of the booking, which is
+          what loadFreeRooms answers — a room free tonight but booked
+          tomorrow would move the problem to tomorrow. */}
+      {moving && (
+        <div className="fixed inset-0 z-[60] bg-bg overflow-y-auto p-5">
+          <button onClick={() => setMoving(null)} className="text-dim">Back</button>
+          <h2 className="mt-3 text-2xl font-bold break-words">
+            Move {moving.booking.guest_name}
+          </h2>
+          <p className="text-dim mt-2">
+            Booked into Room {moving.booking.room_number} from{' '}
+            {shortDate(moving.booking.check_in_date)} to{' '}
+            {shortDate(moving.booking.scheduled_out)}, where{' '}
+            {moving.sitting.guest_name} is still checked in. These rooms are free
+            for all of those nights.
+          </p>
+
+          {freeRooms === null && <p className="text-dim py-8 text-center">Loading…</p>}
+          {freeRooms && !freeRooms.length && (
+            <p className="text-dim py-8 text-center">
+              No room is free for the whole of that stay. Shorten the booking, or
+              check {moving.sitting.guest_name} out of Room {moving.booking.room_number}.
+            </p>
+          )}
+          {!!freeRooms?.length && (
+            <ul className="mt-5 space-y-2">
+              {freeRooms.map(r => (
+                <li key={r.id}>
+                  <button type="button" disabled={oosBusy}
+                    onClick={() => moveBookingTo(r.id, r.room_number)}
+                    className="w-full flex items-baseline justify-between gap-3 text-left
+                               rounded-2xl border border-line bg-surface px-4 py-3
+                               disabled:opacity-40">
+                    <span className="min-w-0">
+                      <span className="font-semibold block">Room {r.room_number}</span>
+                      <span className="text-dim text-sm block truncate">
+                        {r.room_categories?.name || 'Room'}
+                      </span>
+                    </span>
+                    <span className="tnum text-dim shrink-0">{naira(r.rate_standard)}</span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
       )}
 
       <div className="grid grid-cols-2 gap-3">
