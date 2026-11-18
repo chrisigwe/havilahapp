@@ -28,8 +28,19 @@ export default function Payroll({ boot }) {
   // of UTC — the wrong default month at every month boundary.
   const [year, setYear] = useState(Number(lagosToday().slice(0, 4)))
   const [month, setMonth] = useState(Number(lagosToday().slice(5, 7)))
+  // Which month's unsettled credit the pull should take. Follows the
+  // payroll month unless the GM picks an earlier one, which is how the
+  // grace period works: August's debt deducted from October's salary.
+  const [pullMonth, setPullMonth] = useState(
+    `${lagosToday().slice(0, 4)}-${lagosToday().slice(5, 7)}`)
   const [period, setPeriod] = useState(null)
   const [lines, setLines] = useState(null)
+  // Moving to a different payroll month moves the credit month with it;
+  // the GM can then step it back. Without this, opening October's payroll
+  // after September's would silently keep September in the picker.
+  useEffect(() => {
+    setPullMonth(`${year}-${String(month).padStart(2, '0')}`)
+  }, [year, month])
   const [payouts, setPayouts] = useState([])
   const [potNext, setPotNext] = useState(null)
   const [savings, setSavings] = useState({})
@@ -67,12 +78,52 @@ export default function Payroll({ boot }) {
 
   // Proposes each person's current department credit as deductions. The
   // GM reviews and edits before finalising — nothing is applied blind.
+  // A MONTH THAT HAS NOT ENDED IS NOT READY TO BE DEDUCTED FROM
+  // (Chris, 18 November 2026).
+  //
+  // > Let us allow staff to make payments on their own; then, at the end
+  // > of the month, if their debt is not fully paid, then it is removed
+  // > from payroll.
+  //
+  // The proposal itself already honours the second half: the database
+  // counts every repayment to date, including ones made after the month
+  // closed, so somebody who pays in early December shrinks or clears
+  // their November deduction. What nothing guarded was the first half.
+  // pullMonth defaults to the month being run, so on the 18th this
+  // button proposed taking credit the person still had twelve days to
+  // pay themselves.
+  //
+  // A warning, not a block: an earlier month is pulled deliberately
+  // under the grace rule, and payroll is sometimes run on the last
+  // working day rather than the last day of all.
+  const monthHasEnded = (ym) => {
+    const [y, m] = String(ym || '').split('-').map(Number)
+    if (!y || !m) return true
+    const lastDay = new Date(Date.UTC(y, m, 0)).toISOString().slice(0, 10)
+    return lagosToday() > lastDay
+  }
+
   async function doPullCredit() {
+    if (!monthHasEnded(pullMonth)) {
+      const label = new Date(`${pullMonth}-01T12:00:00`)
+        .toLocaleDateString('en-NG', { month: 'long', year: 'numeric' })
+      if (!window.confirm(
+        `${label} is not over yet.\n\n`
+        + 'Staff can still pay this themselves before the month ends, and '
+        + 'anything they do not pay will still be here when it does. '
+        + 'Pulling now proposes taking money they have not had their full '
+        + 'month to clear.\n\nPull it anyway?')) return
+    }
     setBusy(true)
     try {
       const withCustomer = lines.map(l => ({
         ...l, customer_id: employees.find(e => e.id === l.employee_id)?.customer_id }))
-      const proposed = await proposeCreditDeductions(staff.branch_id, withCustomer, year, month)
+      // WHICH MONTH'S CREDIT (Chris, 12 November 2026). OpenBar is given a
+      // month's grace to collect before anything is deducted, so August's
+      // debt is taken out of October's salary. The pull was hardwired to
+      // the payroll month, which made that impossible.
+      const [py, pm] = (pullMonth || `${year}-${String(month).padStart(2, '0')}`).split('-').map(Number)
+      const proposed = await proposeCreditDeductions(staff.branch_id, withCustomer, py, pm)
       let added = 0
       for (const l of withCustomer) {
         const items = proposed[l.customer_id] || []
@@ -82,8 +133,11 @@ export default function Payroll({ boot }) {
           // added a moment ago in this loop), so a person with credit at
           // several departments gets one row each in a single pull, and
           // a second press of the button adds nothing.
+          // The note carries the month it came from, so pulling August and
+          // then September adds both, while pressing the same button twice
+          // for one month still adds nothing.
           const already = (l.payroll_deduction || []).some(d => d.auto && d.source === 'credit'
-            && d.customer_id === l.customer_id)
+            && d.customer_id === l.customer_id && (d.note || '') === (it.note || ''))
           if (already) continue
           await addDeduction(l.id, { source: 'credit', location_id: it.location_id,
                                      customer_id: l.customer_id, amount: it.amount,
@@ -349,10 +403,25 @@ export default function Payroll({ boot }) {
             )}
             {period && !final && (
               <>
+                <label className="flex items-center gap-2">
+                  <span className="text-dim text-sm">Credit from</span>
+                  <input type="month" value={pullMonth} max={`${year}-${String(month).padStart(2, '0')}`}
+                    onChange={e => e.target.value && setPullMonth(e.target.value)}
+                    className="h-11 px-3 rounded-xl bg-surface border border-line tnum" />
+                </label>
                 <button onClick={doPullCredit} disabled={busy}
                   className="h-11 px-4 rounded-xl border border-amber text-amber font-semibold">
                   Pull credit deductions
                 </button>
+                {/* Said before the button is pressed, not only in the
+                    confirm after it. The whole point is that the money
+                    is not due yet. */}
+                {!monthHasEnded(pullMonth) && (
+                  <p className="basis-full text-amber text-sm">
+                    That month is not over — staff can still pay this themselves,
+                    and whatever they do not pay will still be here at month end.
+                  </p>
+                )}
                 <button onClick={() => window.print()}
                   className="h-11 px-4 rounded-xl border border-line text-dim font-semibold">
                   Print
