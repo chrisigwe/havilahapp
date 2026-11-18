@@ -4,7 +4,7 @@ import { naira, lagosToday } from '../lib/format'
 import { useToast } from '../components/Toast'
 import { loadLoginsForPayroll, loadPossibleDuplicateAccounts } from '../lib/data'
 import {
-  addDeduction, endEmployment, finalisePeriod, giveRaise, lineTotals, loadCustomersForLinking, loadEmployees, loadLines, loadPayouts, loadPeriod, loadPotNext, loadSalaryHistory, openPeriod, proposeCreditDeductions, proposeLinkedDeductions, loadResponsibleLinks, setCustomerResponsible, loadAccountBalances, removeAddition, removeDeduction, reopenPeriod, saveEmployee, savePayout, savingsBalances, setEmployeeCreditAccount, updateLine,
+  addDeduction, endEmployment, finalisePeriod, giveRaise, lineTotals, loadCustomersForLinking, loadEmployees, loadLines, loadPayouts, loadPeriod, loadPotNext, loadSalaryHistory, openPeriod, loadResponsibleLinks, setCustomerResponsible, loadAccountBalances, removeAddition, removeDeduction, reopenPeriod, saveEmployee, savePayout, savingsBalances, setEmployeeCreditAccount, updateLine,
 } from '../lib/payroll'
 import Notice from '../components/Notice'
 import { tracked } from '../lib/loadfail'
@@ -28,19 +28,8 @@ export default function Payroll({ boot }) {
   // of UTC — the wrong default month at every month boundary.
   const [year, setYear] = useState(Number(lagosToday().slice(0, 4)))
   const [month, setMonth] = useState(Number(lagosToday().slice(5, 7)))
-  // Which month's unsettled credit the pull should take. Follows the
-  // payroll month unless the GM picks an earlier one, which is how the
-  // grace period works: August's debt deducted from October's salary.
-  const [pullMonth, setPullMonth] = useState(
-    `${lagosToday().slice(0, 4)}-${lagosToday().slice(5, 7)}`)
   const [period, setPeriod] = useState(null)
   const [lines, setLines] = useState(null)
-  // Moving to a different payroll month moves the credit month with it;
-  // the GM can then step it back. Without this, opening October's payroll
-  // after September's would silently keep September in the picker.
-  useEffect(() => {
-    setPullMonth(`${year}-${String(month).padStart(2, '0')}`)
-  }, [year, month])
   const [payouts, setPayouts] = useState([])
   const [potNext, setPotNext] = useState(null)
   const [savings, setSavings] = useState({})
@@ -78,101 +67,35 @@ export default function Payroll({ boot }) {
 
   // Proposes each person's current department credit as deductions. The
   // GM reviews and edits before finalising — nothing is applied blind.
-  // A MONTH THAT HAS NOT ENDED IS NOT READY TO BE DEDUCTED FROM
-  // (Chris, 18 November 2026).
+  // CREDIT DEDUCTIONS ARE NO LONGER PULLED INTO PAYROLL (Chris, 18
+  // November 2026): "Discontinue Payroll deduction and deactivate it."
   //
-  // > Let us allow staff to make payments on their own; then, at the end
-  // > of the month, if their debt is not fully paid, then it is removed
-  // > from payroll.
+  // What it did: proposed each linked employee's unsettled credit for a
+  // month as deduction lines, which finalising then wrote back as
+  // repayments with method 'payroll', settling the debt.
   //
-  // The proposal itself already honours the second half: the database
-  // counts every repayment to date, including ones made after the month
-  // closed, so somebody who pays in early December shrinks or clears
-  // their November deduction. What nothing guarded was the first half.
-  // pullMonth defaults to the month being run, so on the 18th this
-  // button proposed taking credit the person still had twelve days to
-  // pay themselves.
+  // Why it is gone. The pull asks the database what is unsettled, and
+  // the database cannot see money sitting in the held-payment queue —
+  // repayments taken after a day is closed, waiting for the GM. In
+  // September the pull ran on 7 and 11 October and deducted the month's
+  // credit; the POS payments dated 30 September were approved on 17 and
+  // 18 November, six weeks later, and settled the same debt a second
+  // time. N53,500 of credit across nine accounts came out of that, and
+  // at least one of those POS rows is a salary deduction someone had
+  // already recorded by hand ("Taken from salary").
   //
-  // A warning, not a block: an earlier month is pulled deliberately
-  // under the grace rule, and payroll is sometimes run on the last
-  // working day rather than the last day of all.
-  const monthHasEnded = (ym) => {
-    const [y, m] = String(ym || '').split('-').map(Number)
-    if (!y || !m) return true
-    const lastDay = new Date(Date.UTC(y, m, 0)).toISOString().slice(0, 10)
-    return lagosToday() > lastDay
-  }
-
-  async function doPullCredit() {
-    if (!monthHasEnded(pullMonth)) {
-      const label = new Date(`${pullMonth}-01T12:00:00`)
-        .toLocaleDateString('en-NG', { month: 'long', year: 'numeric' })
-      if (!window.confirm(
-        `${label} is not over yet.\n\n`
-        + 'Staff can still pay this themselves before the month ends, and '
-        + 'anything they do not pay will still be here when it does. '
-        + 'Pulling now proposes taking money they have not had their full '
-        + 'month to clear.\n\nPull it anyway?')) return
-    }
-    setBusy(true)
-    try {
-      const withCustomer = lines.map(l => ({
-        ...l, customer_id: employees.find(e => e.id === l.employee_id)?.customer_id }))
-      // WHICH MONTH'S CREDIT (Chris, 12 November 2026). OpenBar is given a
-      // month's grace to collect before anything is deducted, so August's
-      // debt is taken out of October's salary. The pull was hardwired to
-      // the payroll month, which made that impossible.
-      const [py, pm] = (pullMonth || `${year}-${String(month).padStart(2, '0')}`).split('-').map(Number)
-      const proposed = await proposeCreditDeductions(staff.branch_id, withCustomer, py, pm)
-      let added = 0
-      for (const l of withCustomer) {
-        const items = proposed[l.customer_id] || []
-        for (const it of items) {
-          // Never add the same automatic pull twice. Checked against the
-          // deductions the line had BEFORE this pull started (not ones
-          // added a moment ago in this loop), so a person with credit at
-          // several departments gets one row each in a single pull, and
-          // a second press of the button adds nothing.
-          // The note carries the month it came from, so pulling August and
-          // then September adds both, while pressing the same button twice
-          // for one month still adds nothing.
-          const already = (l.payroll_deduction || []).some(d => d.auto && d.source === 'credit'
-            && d.customer_id === l.customer_id && (d.note || '') === (it.note || ''))
-          if (already) continue
-          await addDeduction(l.id, { source: 'credit', location_id: it.location_id,
-                                     customer_id: l.customer_id, amount: it.amount,
-                                     note: it.note, auto: true })
-          added++
-        }
-      }
-      // Accounts this person is responsible for (customers and guests the GM linked
-      // to them). One line per account and department, never repeated on a second press.
-      let linkedAdded = 0
-      try {
-        const links = await loadResponsibleLinks(staff.branch_id)
-        const linked = await proposeLinkedDeductions(staff.branch_id, links, year, month)
-        for (const l of lines) {
-          for (const it of (linked[l.employee_id] || [])) {
-            const dup = (l.payroll_deduction || []).some(d => d.source === 'credit'
-              && d.customer_id === it.customer_id && (d.location_id || null) === (it.location_id || null))
-            if (dup) continue
-            await addDeduction(l.id, { source: 'credit', location_id: it.location_id,
-                                       customer_id: it.customer_id, amount: it.amount,
-                                       note: it.note, auto: true })
-            linkedAdded++
-          }
-        }
-      } catch (e) {
-        if (!/function|does not exist/i.test(e.message)) throw e   // 348 not run yet: skip quietly
-      }
-      added += linkedAdded
-      await refresh()
-      toast(added ? `${added} credit deduction(s) added${linkedAdded ? ` (${linkedAdded} from linked accounts)` : ''} — check them before finalising`
-                  : 'No outstanding department credit to deduct', added ? 'success' : 'info')
-    } catch (e) { toast(e.message, 'error') }
-    setBusy(false)
-  }
-
+  // A deduction that can be taken for money already paid, weeks before
+  // anyone can see it was paid, does not belong on a button. Staff
+  // credit is now chased on the Credit page like anyone else's, and
+  // whatever comes out of a salary is decided and entered deliberately.
+  //
+  // proposeCreditDeductions and proposeLinkedDeductions are left in
+  // lib/payroll.js with nothing calling them, so the shape of this is
+  // recoverable if it is ever wanted back — but it should not come back
+  // without the held queue being counted. loadResponsibleLinks stays in
+  // use: which accounts a person is responsible for is still worth
+  // recording and still shown on their page. It just no longer feeds a
+  // deduction.
   const payoutFor = (employeeId) =>
     Number(payouts.find(p => p.employee_id === employeeId)?.amount || 0)
 
@@ -403,25 +326,6 @@ export default function Payroll({ boot }) {
             )}
             {period && !final && (
               <>
-                <label className="flex items-center gap-2">
-                  <span className="text-dim text-sm">Credit from</span>
-                  <input type="month" value={pullMonth} max={`${year}-${String(month).padStart(2, '0')}`}
-                    onChange={e => e.target.value && setPullMonth(e.target.value)}
-                    className="h-11 px-3 rounded-xl bg-surface border border-line tnum" />
-                </label>
-                <button onClick={doPullCredit} disabled={busy}
-                  className="h-11 px-4 rounded-xl border border-amber text-amber font-semibold">
-                  Pull credit deductions
-                </button>
-                {/* Said before the button is pressed, not only in the
-                    confirm after it. The whole point is that the money
-                    is not due yet. */}
-                {!monthHasEnded(pullMonth) && (
-                  <p className="basis-full text-amber text-sm">
-                    That month is not over — staff can still pay this themselves,
-                    and whatever they do not pay will still be here at month end.
-                  </p>
-                )}
                 <button onClick={() => window.print()}
                   className="h-11 px-4 rounded-xl border border-line text-dim font-semibold">
                   Print
@@ -447,12 +351,17 @@ export default function Payroll({ boot }) {
 
           {period && (
             <div className="print:hidden mt-6">
+              {/* Still worth saying, for a different reason than before:
+                  nothing is deducted from pay any more, but a person with
+                  two credit accounts is chased twice and shows up twice on
+                  Credit. */}
               {!final && dupAccts.length > 0 && (
                 <Notice tone="warn" className="mb-4" title="Possible duplicate credit accounts">
                   <p className="mb-2">
-                    Only the account linked to the employee is deducted from pay.
-                    Credit sitting on another account of the same person is missed.
-                    Merge them in Corrections (Reception tab) before finalising.
+                    This person appears to have credit on more than one account.
+                    Neither is touched by payroll — credit is recovered on the
+                    Credit page — but two accounts for one person means two rows
+                    to chase. Merge them in Corrections (Reception tab).
                   </p>
                   {dupAccts.map((d, i) => (
                     <div key={i} className="py-2 border-t border-line/60 first:border-0 text-sm">
@@ -472,9 +381,7 @@ export default function Payroll({ boot }) {
                     Reopen this month to change it
                   </button>
                 : <button onClick={async () => {
-                      if (!window.confirm(dupAccts.length
-                        ? `Finalise this month? It will be frozen until reopened.\n\nWarning: ${dupAccts.length} possible duplicate credit account${dupAccts.length === 1 ? '' : 's'} (${[...new Set(dupAccts.map(d => d.employee_name))].join(', ')}) may hold credit that is not being deducted.`
-                        : 'Finalise this month? It will be frozen until reopened.')) return
+                      if (!window.confirm('Finalise this month? It will be frozen until reopened.')) return
                       let r
                       // Had no error handling: a refused or failed
                       // finalise was an unhandled rejection and the
