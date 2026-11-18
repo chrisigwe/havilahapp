@@ -715,7 +715,8 @@ export default function Credit({ boot }) {
           const canTake = canTakeFrom(c.__whole || c)
           return (
           <li key={fromMonth ? `${c.customer_id}:${fromMonth}` : c.customer_id}
-            className="flex items-stretch gap-2">
+            className="flex items-stretch gap-2 rounded-2xl border border-line
+                       bg-surface px-4">
             {/* The whole row opens the statement. It always did, but
                 nothing said so — no chevron, no label — so staff asked
                 where a customer's history was. */}
@@ -928,6 +929,7 @@ export default function Credit({ boot }) {
               <span className="tnum font-bold text-clay">{naira(sum(rows, 'closing'))}</span>
             </div>
             {note && <p className="text-dim text-xs mt-1">{note}</p>}
+            <div className="mt-2 space-y-2">
             {rows.map(r => {
               // Reaching the person from here (Chris, 12 November 2026).
               // The month view listed who owed what and stopped there, so
@@ -971,7 +973,8 @@ export default function Credit({ boot }) {
                 <button key={r.customer_id} type="button"
                   disabled={!live}
                   onClick={() => live && openCustomer(live)}
-                  className="w-full text-left py-2 border-b border-line/60 disabled:opacity-60">
+                  className="w-full text-left px-4 py-3 rounded-2xl border border-line
+                             bg-surface disabled:opacity-60">
                   <div className="flex items-baseline justify-between gap-2">
                     <span className="truncate">{r.name}</span>
                     <span className={`tnum font-bold shrink-0 ${tone}`}>
@@ -988,6 +991,7 @@ export default function Credit({ boot }) {
                 </button>
               )
             })}
+            </div>
           </section>
         )
 
@@ -1171,8 +1175,14 @@ export default function Credit({ boot }) {
             {right}
           </button>
         )
+        // Cards, like Recovered (Chris, 18 November 2026: "can the
+        // Credit page have the same layout as Recovered"). Each person is
+        // their own bordered card with their detail inside it, rather
+        // than rows separated by hairlines — which is what made a long
+        // list read as one undifferentiated block. The left rule and the
+        // indent stay: they are what shows these hang under a heading.
         const list = rows => (
-          <ul className="divide-y divide-line/60 pl-3 ml-2 border-l border-line">
+          <ul className="space-y-2 pl-3 ml-2 border-l border-line">
             {rows.map(debtorRow)}
           </ul>
         )
@@ -1336,7 +1346,7 @@ export default function Credit({ boot }) {
                 money(inMonth.reduce((t, r) => t + Number(r.balance), 0), 'text-clay'),
                 null)}
               {isOpen(k) && (
-                <ul className="divide-y divide-line/60 pl-3 ml-2 border-l border-line">
+                <ul className="space-y-2 pl-3 ml-2 border-l border-line">
                   {inMonth.map(c => debtorRow(c, key === UNPLACED ? null : key))}
                 </ul>
               )}
@@ -1346,7 +1356,7 @@ export default function Credit({ boot }) {
         // No left rule and no indent: these rows no longer hang under a
         // month heading, they ARE the list.
         const flatList = rows => (
-          <ul className="divide-y divide-line/60">{byMost(rows).map(debtorRow)}</ul>
+          <ul className="space-y-2">{byMost(rows).map(debtorRow)}</ul>
         )
 
         // Nobody drops off the list. An account that is square, or that has
