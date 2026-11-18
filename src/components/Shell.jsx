@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import Logo from './Logo'
 import PendingBanner from './PendingBanner'
 import UpdateBanner from './UpdateBanner'
@@ -319,53 +320,68 @@ export default function Shell({ staff, tab, onTab, children,
             className="mt-3 w-full h-12 text-dim">Cancel</button>
         </div>
       )}
-      <nav className={`lg:hidden fixed bottom-3 inset-x-3 z-40 transition-transform duration-200 ease-out ${
-        navDown ? 'translate-y-[150%]' : 'translate-y-0'}`}
-        style={{ marginBottom: 'env(safe-area-inset-bottom)' }}>
-        <div className="mx-auto max-w-md flex gap-1 p-1.5 rounded-[28px]
-                         bg-surface/70
-                         border border-white/10 shadow-[0_8px_32px_rgba(0,0,0,0.45)]">
-          {tabs.map(([k, label]) => {
-            const active = tab === k || (k === 'more' && MORE.includes(tab) && !directTabKeys.has(tab))
-            return (
-              <button key={k} onClick={() => onTab(k)}
-                aria-current={active ? 'page' : undefined}
-                style={{ WebkitTapHighlightColor: 'transparent', touchAction: 'manipulation' }}
-                className="nav-tab relative flex-1 flex flex-col items-center justify-center
-                           gap-1 py-2 rounded-full">
+      {/* Rendered straight onto <body>, not here in the tree.
+          
+          The bar is position:fixed, so by the spec it answers to the
+          viewport and nothing else — unless some ancestor creates a
+          containing block for it (a transform, a filter, will-change,
+          contain). On 18 November it appeared at the TOP of the Credit
+          page, tucked under the status bar, which is where it would
+          land if it were being positioned against the header's box
+          instead of the screen. Nothing in this tree explains that, and
+          an iOS-only compositing fault cannot be reproduced from here.
+          
+          So rather than guess at the cause a second time, the bar is
+          moved out of reach of the question: as a direct child of
+          <body> there is no ancestor left that could ever own it. Its
+          height is still reserved by pb-24 on the shell above. */}
+      {createPortal(
+        <nav className={`lg:hidden hv-tabbar transition-transform duration-200 ease-out ${
+          navDown ? 'translate-y-[150%]' : 'translate-y-0'}`}>
+          <div className="mx-auto max-w-md flex gap-1 p-1.5 rounded-[28px]
+                           bg-surface/70
+                           border border-white/10 shadow-[0_8px_32px_rgba(0,0,0,0.45)]">
+            {tabs.map(([k, label]) => {
+              const active = tab === k || (k === 'more' && MORE.includes(tab) && !directTabKeys.has(tab))
+              return (
+                <button key={k} onClick={() => onTab(k)}
+                  aria-current={active ? 'page' : undefined}
+                  style={{ WebkitTapHighlightColor: 'transparent', touchAction: 'manipulation' }}
+                  className="nav-tab relative flex-1 flex flex-col items-center justify-center
+                             gap-1 py-2 rounded-full">
 
-                {/* The capsule wraps the WHOLE tab — icon and label —
-                    like WhatsApp's, not just the icon. */}
-                <span className={`nav-pill absolute inset-0 rounded-full bg-amber/20 ${
-                  active ? 'opacity-100' : 'opacity-0'}`} />
+                  {/* The capsule wraps the WHOLE tab — icon and label —
+                      like WhatsApp's, not just the icon. */}
+                  <span className={`nav-pill absolute inset-0 rounded-full bg-amber/20 ${
+                    active ? 'opacity-100' : 'opacity-0'}`} />
 
-                {/* Hollow when resting, solid when selected. That, more
-                    than colour, is what marks the chosen tab — and it
-                    still reads on a dim or small screen. */}
-                <span key={active ? `on-${popKey}` : 'off'}
-                  className={`relative ${active ? 'nav-ico-pop' : ''}`}>
-                  <NavIcon tab={k} filled={active}
-                    className={`nav-ico block w-6 h-6 ${active ? 'text-amber' : 'text-dim'}`} />
-                </span>
-
-                <span className={`relative text-[0.7rem] leading-none ${
-                  active ? 'text-amber font-bold' : 'text-dim font-semibold'}`}>
-                  {label}
-                </span>
-
-                {/* On the icon's top-right, which with the capsule now
-                    spanning the whole tab means offsetting from centre. */}
-                {k === countBadgeTab && pendingCount > 0 && (
-                  <span className="absolute top-1 left-1/2 translate-x-1.5 min-w-[1.1rem] h-[1.1rem] px-1
-                                    rounded-full bg-clay text-bg text-[0.6rem] font-bold flex items-center justify-center">
-                    {pendingCount > 9 ? '9+' : pendingCount}
+                  {/* Hollow when resting, solid when selected. That, more
+                      than colour, is what marks the chosen tab — and it
+                      still reads on a dim or small screen. */}
+                  <span key={active ? `on-${popKey}` : 'off'}
+                    className={`relative ${active ? 'nav-ico-pop' : ''}`}>
+                    <NavIcon tab={k} filled={active}
+                      className={`nav-ico block w-6 h-6 ${active ? 'text-amber' : 'text-dim'}`} />
                   </span>
-                )}
-              </button>
-            )
-          })}
-        </div>
-      </nav>
+
+                  <span className={`relative text-[0.7rem] leading-none ${
+                    active ? 'text-amber font-bold' : 'text-dim font-semibold'}`}>
+                    {label}
+                  </span>
+
+                  {/* On the icon's top-right, which with the capsule now
+                      spanning the whole tab means offsetting from centre. */}
+                  {k === countBadgeTab && pendingCount > 0 && (
+                    <span className="absolute top-1 left-1/2 translate-x-1.5 min-w-[1.1rem] h-[1.1rem] px-1
+                                      rounded-full bg-clay text-bg text-[0.6rem] font-bold flex items-center justify-center">
+                      {pendingCount > 9 ? '9+' : pendingCount}
+                    </span>
+                  )}
+                </button>
+              )
+            })}
+          </div>
+        </nav>, document.body)}
     </div>
   )
 }
