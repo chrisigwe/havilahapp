@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useToast } from '../components/Toast'
-import { lagosToday, methodLabel, naira, startingDept, stepDate, stepMonth, tierLabel } from '../lib/format'
+import { lagosToday, methodLabel, naira, startingDept, stepMonth, tierLabel } from '../lib/format'
 import { monthLabel } from '../lib/months'
 import RoomChargeTracker from '../components/RoomChargeTracker'
-import { checkRepeatPayment, checkRepeatRepayment, deactivateCustomer, deleteCustomer, linkCustomerToGuest, loadBalances, loadCreditForMonth, loadCreditOnDate, loadCustomerLedger, loadCreditChain, loadFolio, loadStayMoves, loadGuestBalances, loadReservedValue, loadStaffForLocation, loadUnlinkedCustomerBalances, loadCustomerNeverAGuest, setCustomerNeverAGuest, moveWorkaroundToRoom, recordStayPayment, saveRepayment, searchSimilarGuests } from '../lib/data'
+import { checkRepeatPayment, checkRepeatRepayment, deactivateCustomer, deleteCustomer, linkCustomerToGuest, loadBalances, loadCreditForMonth, loadCustomerLedger, loadCreditChain, loadFolio, loadStayMoves, loadGuestBalances, loadReservedValue, loadUnlinkedCustomerBalances, loadCustomerNeverAGuest, setCustomerNeverAGuest, moveWorkaroundToRoom, recordStayPayment, saveRepayment, searchSimilarGuests } from '../lib/data'
 import { enqueue, flush, isConnectionError } from '../lib/outbox'
 import PaymentMethodPicker, { paymentParts, paymentAllocated, paymentReady } from '../components/PaymentMethodPicker'
 import { isClosedDayRefusal, submitPendingRepayment, loadPendingRepayments,
@@ -79,19 +79,13 @@ export default function Credit({ boot }) {
   }, [staff.branch_id])
   const [confirmDel, setConfirmDel] = useState(null)
   const [delBusy, setDelBusy] = useState(false)
-  const [people, setPeople] = useState([])
-  const [staffFilter, setStaffFilter] = useState(null)   // null = everyone
   // tracked synchronously so an in-flight response can check, when it
   // arrives, whether it's still answering the CURRENT question — a
   // ref rather than state, since it must be read inside an async
   // callback without being subject to closure staleness itself.
-  // Widened from just locId to a combined key including staffFilter,
-  // because switching departments can trigger the staff filter to
-  // auto-clear (its previously-selected person doesn't work in the
-  // new department), which fires a SECOND refresh — and the first
-  // response's location was still correct when it arrived, so the
-  // narrower guard let it through despite carrying the wrong filter.
-  const requestKey = `${locId}|${isEditor ? (staffFilter || 'everyone') : 'na'}`
+  // One department at a time is the only question this page asks now,
+  // so the key is the department (Chris, 18 November 2026).
+  const requestKey = `${locId}`
   const requestKeyRef = useRef(requestKey)
   requestKeyRef.current = requestKey
   const [rows, setRows] = useState(null)
@@ -113,17 +107,15 @@ export default function Credit({ boot }) {
   // list at all.
   const [linkTarget, setLinkTarget] = useState(null)
   const [unlinked, setUnlinked] = useState(null)
-  // Empty = the normal running-balance view. A date switches to
-  // that day's activity instead; the two answer different
-  // questions and showing them together would be confusing.
-  const [dayFilter, setDayFilter] = useState('')
-  // Walking through days without reopening the calendar. stepDate does
-  // the arithmetic in UTC, which is what keeps a Lagos phone from
-  // landing a day early — see the note on addDays.
-  const stepDay = (by) => setDayFilter(d => stepDate(d, by, lagosToday()))
   // A whole month, for the credit analysis that sets payroll
-  // deductions. Separate from the day view: a day answers "what
-  // happened", a month answers "what do they owe".
+  // deductions.
+  //
+  // The day view that used to sit beside this is gone (Chris, 18
+  // November 2026). Three views competed to be the front of the page —
+  // who owes, what happened on a day, what each owed at month end —
+  // and the day one was the weakest of the three: everything it showed
+  // is on Daily Sales already. Its date picker, and the arrows that
+  // walked it, went with it.
   const [monthFilter, setMonthFilter] = useState(null)   // 'YYYY-MM'
   const [monthRows, setMonthRows] = useState(null)
   // A load that FAILED is not a month with nothing in it. The catch here
@@ -133,7 +125,6 @@ export default function Credit({ boot }) {
   // learned this on 19 October: an empty list left behind by a failure
   // reads as a claim, not an absence.
   const [monthErr, setMonthErr] = useState(null)
-  const [dayData, setDayData] = useState(null)
   const [linkQuery, setLinkQuery] = useState('')
   const [linkResults, setLinkResults] = useState([])
   const [linkBusy, setLinkBusy] = useState(false)
@@ -212,35 +203,21 @@ export default function Credit({ boot }) {
 
   const refresh = useCallback(() => {
     const requestedFor = requestKey   // snapshot at the moment this fetch was started
-    loadBalances(staff.branch_id, locId === 'all' ? null : locId, isEditor ? staffFilter : null)
+    loadBalances(staff.branch_id, locId === 'all' ? null : locId, null)
       .then(data => { if (requestKeyRef.current === requestedFor) setRows(data) })
       .catch(e => toast(e.message, 'error'))
-  }, [staff.branch_id, locId, staffFilter, isEditor, requestKey])
+  }, [staff.branch_id, locId, requestKey])
   useEffect(refresh, [refresh])
 
   // Reception's guest balances — a different data model entirely, so
   // a separate load rather than folded into the customer refresh above.
   const refreshGuestBalances = useCallback(() => {
     if (!hasReceptionAccess) return
-    tracked('What guests owe', loadGuestBalances(staff.branch_id, isEditor ? staffFilter : null))
+    tracked('What guests owe', loadGuestBalances(staff.branch_id, null))
       .then(setGuestBalances).catch(() => setGuestBalances([]))
     tracked('Bookings not yet arrived', loadReservedValue(staff.branch_id)).then(setUpcoming).catch(() => setUpcoming([]))
-  }, [staff.branch_id, hasReceptionAccess, isEditor, staffFilter])
+  }, [staff.branch_id, hasReceptionAccess])
   useEffect(refreshGuestBalances, [refreshGuestBalances])
-
-  // Load the department-scoped staff list once per department change,
-  // NOT on every refresh — because the auto-clear inside would also
-  // reset staffFilter every time the user picks a filter chip, then
-  // immediately drop the (correct) response as stale. This was the
-  // real reason clicking a person still returned every debtor.
-  useEffect(() => {
-    if (!isEditor || !locId) return
-    if (locId === 'all') { setPeople([]); setStaffFilter(null); return }
-    loadStaffForLocation(staff.branch_id, locId).then(ps => {
-      setPeople(ps)
-      setStaffFilter(cur => ps.some(p => p.id === cur) ? cur : null)
-    })
-  }, [staff.branch_id, locId, isEditor])
 
   // Opens FIRST, then fills (25 October 2026). It used to await the
   // whole ledger before putting anything on screen, and that query has
@@ -330,18 +307,10 @@ export default function Credit({ boot }) {
     if (!hasReceptionAccess) return
     tracked('Customer accounts not linked to a guest',
             loadUnlinkedCustomerBalances(staff.branch_id, locId === 'all' ? null : locId,
-                                         isEditor ? staffFilter : null))
+                                         null))
       .then(setUnlinked).catch(() => setUnlinked([]))
-  }, [hasReceptionAccess, staff.branch_id, locId, staffFilter, isEditor])
+  }, [hasReceptionAccess, staff.branch_id, locId])
   useEffect(refreshUnlinked, [refreshUnlinked])
-
-  useEffect(() => {
-    if (!dayFilter) { setDayData(null); return }
-    setDayData(null)
-    loadCreditOnDate(staff.branch_id, dayFilter, locId === 'all' ? null : locId,
-                     isEditor ? staffFilter : null)
-      .then(setDayData).catch(e => toast(e.message, 'error'))
-  }, [dayFilter, staff.branch_id, locId, staffFilter, isEditor, toast])
 
   useEffect(() => {
     if (!monthFilter) { setMonthRows(null); return }
@@ -349,10 +318,10 @@ export default function Credit({ boot }) {
     setMonthRows(null)
     setMonthErr(null)
     tracked('Credit for the month',
-            loadCreditForMonth(staff.branch_id, y, m, locId, isEditor ? staffFilter : null))
+            loadCreditForMonth(staff.branch_id, y, m, locId, null))
       .then(rows => { setMonthRows(rows); setMonthErr(null) })
       .catch(e => { setMonthErr(e?.message || 'could not load'); setMonthRows([]) })
-  }, [monthFilter, locId, staffFilter, isEditor, staff.branch_id])
+  }, [monthFilter, locId, staff.branch_id])
 
   async function confirmLink(guest) {
     setLinkBusy(true)
@@ -537,8 +506,7 @@ export default function Credit({ boot }) {
   // paint under the wrong department — the filter is on the data
   // itself, not on a timing guard that can drift.
   const inScope = rows.filter(r =>
-    (!locId || locId === 'all' || r.location_id === locId)
-    && (!staffFilter || r.staff_id === staffFilter))
+    (!locId || locId === 'all' || r.location_id === locId))
   // One line per person, always (Chris, 27 October 2026: "why is the
   // Credit page duplicating customer records?").
   //
@@ -809,60 +777,17 @@ export default function Credit({ boot }) {
         </div>
       )}
 
-      {isEditor && people.length > 1 && (
-        <div className="flex gap-2 overflow-x-auto py-1 -mx-1 px-1">
-          <button onClick={() => setStaffFilter(null)}
-            className={`shrink-0 h-10 px-3 rounded-full border text-sm ${!staffFilter
-              ? 'bg-raise border-amber text-amber font-bold' : 'border-line text-dim'}`}>
-            Everyone
-          </button>
-          {people.filter(p => p.role === 'bar' || p.role === 'front_desk').map(p => (
-            <button key={p.id} onClick={() => setStaffFilter(p.id)}
-              className={`shrink-0 h-10 px-3 rounded-full border text-sm ${staffFilter === p.id
-                ? 'bg-raise border-amber text-amber font-bold' : 'border-line text-dim'}`}>
-              {p.full_name}
-            </button>
-          ))}
-        </div>
-      )}
+      {/* One question: who is owing (Chris, 13 and 18 November 2026).
 
-      {/* No mode switch (Chris, 13 November 2026). One switch with three
-          views was still three questions to choose between before seeing a
-          figure, and the page's job is one question: who is owing.
-
-          So the page IS the balances, folded by month, and a date picker
-          breaks down a single day the way Recovered does. The month-end
-          view is kept, because it is what sets a payroll deduction, but it
-          is a line you follow rather than a mode you must first rule out. */}
-      {/* Arrows only once a day is chosen: there is nothing to step from
-          before that, and the row stays as it was. Wrapping, because a
-          date input and two 44px targets and a sentence do not fit
-          across a phone. */}
-      {!monthFilter && (
-        <div className="flex flex-wrap items-center gap-2 py-2">
-          {!!dayFilter && (
-            <button type="button" onClick={() => stepDay(-1)} aria-label="Previous day"
-              className="h-11 w-11 shrink-0 rounded-xl bg-surface border border-line
-                         text-ink text-xl leading-none">‹</button>
-          )}
-          <input type="date" value={dayFilter} max={lagosToday()}
-            onChange={e => { setDayFilter(e.target.value || ''); setMonthFilter(null) }}
-            className={`h-11 px-3 rounded-xl bg-surface border tnum ${dayFilter
-              ? 'border-amber text-amber' : 'border-line text-dim'}`} />
-          {!!dayFilter && (
-            <button type="button" onClick={() => stepDay(1)} aria-label="Next day"
-              disabled={dayFilter >= lagosToday()}
-              className="h-11 w-11 shrink-0 rounded-xl bg-surface border border-line
-                         text-ink text-xl leading-none disabled:opacity-40">›</button>
-          )}
-          <span className="text-dim text-sm">
-            {dayFilter ? 'What was taken and repaid that day' : 'Pick a date to break down that day'}
-          </span>
-        </div>
-      )}
-
-      {(dayFilter || monthFilter) && (
-        <button onClick={() => { setDayFilter(''); setMonthFilter(null) }}
+          The page IS the balances, folded by month. What used to sit
+          above them — a date picker with its arrows, and a row of staff
+          chips — is gone: the day it broke down is on Daily Sales, and
+          who gave the credit is a line on each row rather than a way of
+          slicing the list. The month-end view stays, because it is what
+          sets a payroll deduction, but as a line you follow rather than
+          a mode to rule out first. */}
+      {monthFilter && (
+        <button onClick={() => setMonthFilter(null)}
           className="h-10 px-4 mb-2 rounded-xl border border-line text-dim text-sm">
           ← Back to who is owing
         </button>
@@ -873,7 +798,7 @@ export default function Credit({ boot }) {
           view after one half's use of it is what made it confusing. The
           door says what the view IS; each section below says what it is
           for. */}
-      {!dayFilter && !monthFilter && (
+      {!monthFilter && (
         <button onClick={() => setMonthFilter(lagosToday().slice(0, 7))}
           className="text-dim text-sm underline underline-offset-4 decoration-line pb-1 text-left">
           What each owed at the end of a month
@@ -917,15 +842,11 @@ export default function Credit({ boot }) {
           // with nineteen debtors in it looked empty.
           const whereName = locId === 'all'
             ? 'all departments' : (locById[locId]?.name || 'this department')
-          const whoName = (isEditor && staffFilter)
-            ? (people.find(p => p.id === staffFilter)?.full_name || 'one person')
-            : null
           return (
             <p className="text-dim py-8 text-center">
-              No credit activity in {monthLabel(monthFilter)} at {whereName}
-              {whoName ? `, for ${whoName}` : ''}.
+              No credit activity in {monthLabel(monthFilter)} at {whereName}.
               <span className="block text-xs mt-1">
-                Credit at another department, or by someone else, is not counted here.
+                Credit at another department is not counted here.
               </span>
             </p>
           )
@@ -1031,141 +952,7 @@ export default function Credit({ boot }) {
         )
       })()}
 
-      {monthFilter ? null : dayFilter ? (
-        <>
-          {/* Credit raised and repayments received are SEPARATE
-              sections with separate totals. They were one list with
-              repayments shown as negatives, which left neither figure
-              readable: credit raised increases what customers owe, a
-              repayment reduces it and brings cash in. An accountant
-              needs both, apart. */}
-          {!dayData && <p className="text-dim py-8 text-center">Loading…</p>}
-
-          {dayData && !dayData.rows.length && (
-            <p className="text-dim py-8 text-center">No credit activity on {dayFilter}.</p>
-          )}
-
-          {!!dayData?.rows.filter(r => r.kind !== 'repaid').length && (
-            <>
-              <div className="flex items-baseline justify-between py-2 mt-2">
-                <h2 className="text-dim">Credit taken on {dayFilter}</h2>
-                <span className="tnum font-bold text-lg text-clay">{naira(dayData.takenTotal || 0)}</span>
-              </div>
-              <ul className="divide-y divide-line/60">
-                {dayData.rows.filter(r => r.kind !== 'repaid').map(r => {
-                  // A day was a report you could read and not act on: the
-                  // name was there, tapping it did nothing, and collecting
-                  // meant going back to the list and finding the person
-                  // again. The month's rows were opened on 12 November and
-                  // these were missed (Chris, 13 November 2026).
-                  const live = combined.find(c => c.customer_id === r.customer_id)
-                  // Whether THIS credit came back, from the same ladder
-                  // the statement uses. Absent (PR, damage, a staff
-                  // order) says nothing at all rather than guessing.
-                  const ch = r.chain
-                  const done = ch && ch.stillOwed <= 0.009
-                  const part = ch && !done && ch.recovered > 0.009
-                  const on = done && ch.clearedOn
-                    ? new Date(ch.clearedOn + 'T12:00:00')
-                        .toLocaleDateString('en-NG', { day: 'numeric', month: 'short' })
-                    : null
-                  return (
-                  <li key={r.kind + r.id}>
-                    <button type="button" disabled={!live}
-                      onClick={() => live && openCustomer(live)}
-                      className="w-full text-left py-3 flex items-center gap-3 disabled:opacity-60">
-                      <div className="flex-1 min-w-0">
-                        <div className="font-semibold truncate">{r.customer}</div>
-                        <div className="text-dim text-sm truncate">
-                          {r.item}{r.qty ? ` × ${r.qty}` : ''}
-                          {locId === 'all' && locById[r.location_id] ? ` · ${locById[r.location_id].name}` : ''}
-                        </div>
-                        <div className="text-dim text-sm truncate">
-                          {/* The customer-level note only where there is
-                              nothing more exact to say. */}
-                          {/* Same correction as the month view: a
-                              balance, not a membership. */}
-                          {r.who}{!ch && !(Number(live?.balance ?? 0) > 0.009)
-                            ? ' · nothing owing now' : ''}
-                        </div>
-                        {done && (
-                          <div className="text-leaf text-sm truncate">
-                            Recovered{on ? ` ${on}` : ''}
-                            {ch.clearedBy ? ` · ${methodLabel[ch.clearedBy] || ch.clearedBy}` : ''}
-                          </div>
-                        )}
-                        {part && (
-                          <div className="text-amber text-sm truncate">
-                            {naira(ch.recovered)} back · {naira(ch.stillOwed)} still owing
-                          </div>
-                        )}
-                      </div>
-                      <span className="shrink-0 text-right">
-                        {/* Green means the money came back. Red on a day
-                            whose debt was collected weeks ago is what
-                            made this page read as a list of arrears. */}
-                        <span className={`tnum font-bold block ${done ? 'text-leaf' : 'text-clay'}`}>
-                          {naira(r.amount)}
-                        </span>
-                        {live && <span className="text-dim text-xs">statement ›</span>}
-                      </span>
-                    </button>
-                  </li>
-                )})}
-              </ul>
-            </>
-          )}
-
-          {!!dayData?.rows.filter(r => r.kind === 'repaid').length && (
-            <>
-              <div className="flex items-baseline justify-between py-2 mt-5 border-t border-line">
-                <h2 className="text-dim">Repayments received on {dayFilter}</h2>
-                <span className="tnum font-bold text-lg text-leaf">{naira(dayData.repaidTotal || 0)}</span>
-              </div>
-              <ul className="divide-y divide-line/60">
-                {dayData.rows.filter(r => r.kind === 'repaid').map(r => {
-                  const live = combined.find(c => c.customer_id === r.customer_id)
-                  return (
-                  <li key={r.kind + r.id} className="py-3 flex items-center gap-3">
-                    <button type="button" disabled={!live}
-                      onClick={() => live && openCustomer(live)}
-                      className="flex-1 min-w-0 text-left disabled:opacity-60">
-                      <div className="font-semibold truncate">{r.customer}</div>
-                      <div className="text-dim text-sm truncate">
-                        {locId === 'all' && locById[r.location_id] ? `${locById[r.location_id].name} · ` : ''}
-                        {r.who}{live ? ' · statement ›' : ' · settled'}
-                      </div>
-                    </button>
-                    <span className="tnum font-bold shrink-0 text-leaf">{naira(r.amount)}</span>
-                  </li>
-                )})}
-              </ul>
-            </>
-          )}
-
-          {/* The day in one line: what customers owe went up by X, down
-              by Y, so the net movement is Z. */}
-          {!!dayData?.rows.length && (
-            <div className="mt-5 pt-3 border-t-2 border-line space-y-1">
-              <div className="flex justify-between text-sm">
-                <span className="text-dim">Credit taken (owed to us, up)</span>
-                <span className="tnum text-clay">+{naira(dayData.takenTotal || 0)}</span>
-              </div>
-              <div className="flex justify-between text-sm">
-                <span className="text-dim">Repayments received (owed to us, down)</span>
-                <span className="tnum text-leaf">-{naira(dayData.repaidTotal || 0)}</span>
-              </div>
-              <div className="flex justify-between font-bold pt-1 border-t border-line/60">
-                <span>Net change in what customers owe</span>
-                <span className="tnum">
-                  {(dayData.takenTotal || 0) - (dayData.repaidTotal || 0) >= 0 ? '+' : ''}
-                  {naira((dayData.takenTotal || 0) - (dayData.repaidTotal || 0))}
-                </span>
-              </div>
-            </div>
-          )}
-        </>
-      ) : (
+      {monthFilter ? null : (
       <>
       {/* Money somebody has taken that the books have not accepted. It sits
           above everything, because an unapproved payment is money in a till
@@ -1215,8 +1002,6 @@ export default function Credit({ boot }) {
       <section className="rounded-2xl border border-clay bg-surface p-4 mt-1">
         <div className="text-dim text-sm">
           {locId === 'all' ? 'Owed across all departments' : `Owed to ${locById[locId]?.name || 'this department'}`}
-          {staffFilter && people.find(p => p.id === staffFilter)
-            ? ` · ${people.find(p => p.id === staffFilter).full_name}` : ''}
         </div>
         <div className="tnum text-3xl font-bold text-clay">{naira(total)}</div>
         <div className="text-dim text-sm mt-1">
@@ -1367,12 +1152,14 @@ export default function Credit({ boot }) {
 
         // customerId -> { 'YYYY-MM': still owed from that month }, scoped
         // the same way the list itself is, so a department chip narrows
-        // both or neither.
+        // both or neither. There is no longer a staff chip to narrow by:
+        // who gave the credit is a line on the row, and the question
+        // "what is this person carrying" belongs to the month-end sheet,
+        // which is where a deduction is decided (Chris, 18 November 2026).
         const owedByMonth = {}
         for (const r of (chain || [])) {
           if (!(Number(r.still_owed) > 0.009)) continue
           if (locId !== 'all' && r.location_id !== locId) continue
-          if (isEditor && staffFilter && r.staff_id !== staffFilter) continue
           const key = String(r.taken_on || '').slice(0, 7)
           if (key.length !== 7) continue
           const m = owedByMonth[r.customer_id] || (owedByMonth[r.customer_id] = {})
@@ -1558,15 +1345,15 @@ export default function Credit({ boot }) {
           departments, where they belong; under any other department a
           one-line pointer keeps them findable without pretending they
           belong there. */}
-      {!dayFilter && !monthFilter && !isReception && (
+      {!monthFilter && !isReception && (
         <RoomChargeTracker branchId={staff.branch_id} locationId={locId === 'all' ? null : locId} />
       )}
-      {!dayFilter && !monthFilter && hasReceptionAccess && !isReception && locId !== 'all' && (
+      {!monthFilter && hasReceptionAccess && !isReception && locId !== 'all' && (
         <p className="text-dim text-sm py-3">
           Guest room balances are under Reception.
         </p>
       )}
-      {!dayFilter && !monthFilter && hasReceptionAccess && (isReception || locId === 'all') && (() => {
+      {!monthFilter && hasReceptionAccess && (isReception || locId === 'all') && (() => {
         const gb = guestBalances || []
         // Must match what each ROW below displays and what
         // loadReceptionDashboard's deferredTotal uses. Summing only
