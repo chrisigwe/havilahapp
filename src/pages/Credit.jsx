@@ -964,6 +964,22 @@ export default function Credit({ boot }) {
               // taken credit it is truthy, so the note never printed on
               // the people it was written for.
               const owesNow = Number(live?.balance ?? 0) > 0.009
+              const closedOwing = Number(r.closing) > 0.009
+              // Three states, not two (Chris, 18 November 2026).
+              //
+              // The colour was decided by the closing figure alone, so a
+              // month that closed owing was painted clay whatever had
+              // happened since. That put the colour of money to chase
+              // directly beside a line reading "paid since — nothing
+              // owing now", on the same row: Afunwa, Obinna White, the
+              // General Manager, Sir chuka, Oga Emmy and the written-off
+              // Minimart bucket all sat in red having paid in full.
+              //
+              // The figure itself stays — the month did close that way,
+              // and that is what the deduction was taken on — but it is
+              // dimmed out of the set that needs action, which is what
+              // this view is read for.
+              const tone = !closedOwing ? 'text-leaf' : owesNow ? 'text-clay' : 'text-dim'
               return (
                 <button key={r.customer_id} type="button"
                   disabled={!live}
@@ -971,16 +987,15 @@ export default function Credit({ boot }) {
                   className="w-full text-left py-2 border-b border-line/60 disabled:opacity-60">
                   <div className="flex items-baseline justify-between gap-2">
                     <span className="truncate">{r.name}</span>
-                    <span className={`tnum font-bold shrink-0 ${
-                      Number(r.closing) > 0.009 ? 'text-clay' : 'text-leaf'}`}>
-                      {Number(r.closing) > 0.009 ? naira(r.closing) : 'settled'}
+                    <span className={`tnum font-bold shrink-0 ${tone}`}>
+                      {closedOwing ? naira(r.closing) : 'settled'}
                     </span>
                   </div>
                   <div className="text-dim text-xs">
                     owed {naira(r.opening)} at the start
                     {' · '}took {naira(r.taken)}
                     {' · '}repaid {naira(r.repaid)}
-                    {!owesNow && Number(r.closing) > 0.009
+                    {!owesNow && closedOwing
                       ? ' · paid since — nothing owing now' : ''}
                   </div>
                 </button>
