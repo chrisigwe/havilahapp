@@ -954,7 +954,12 @@ export default function Credit({ boot }) {
           Since 18 November there is no staff half at all — it lives in
           Payroll, where the employee link is real — so the door now says
           whose money it is. */}
-      {!monthFilter && (
+      {/* A manager's tool, not a barman's (Chris, 19 November 2026:
+          "give staff a page that shows only their departments and the
+          customers and guests they know"). Month-end decides what to
+          chase across a whole branch — OVERSIGHT, the same roles that
+          see All departments. */}
+      {!monthFilter && seesAllDepartments && (
         <button onClick={() => setMonthFilter(lagosToday().slice(0, 7))}
           className="text-dim text-sm underline underline-offset-4 decoration-line pb-1 text-left">
           What each owed at the end of a month
@@ -1746,6 +1751,190 @@ export default function Credit({ boot }) {
               </div>
             </div>
 
+            {/* What was taken, and how each of it came back (570).
+                Kept off the printed statement, which is the formal
+                account; this is the working view — the one that answers
+                "has he paid for the Desperados yet". */}
+            {/* The account, month by month — the prototype's shape.
+                Built from open.chain, which this sheet already loads, so
+                the second request CreditChain used to make is gone. */}
+            <div className="px-5 pb-5 print:hidden">
+              <div className="flex items-baseline justify-between gap-3 mb-2">
+                <h3 className="font-semibold">What was taken, month by month</h3>
+                {open.chain?.length > 0 && (
+                  <span className="text-dim text-xs">oldest first</span>
+                )}
+              </div>
+              {open.error && (
+                <p className="text-clay text-sm">
+                  The list of what was taken could not be loaded — this is not the
+                  same as nothing being taken.
+                </p>
+              )}
+              {!open.error && open.chain === null && (
+                <p className="text-dim text-sm">Loading…</p>
+              )}
+              {!open.error && open.chain?.length === 0 && (
+                <p className="text-dim text-sm">Nothing has been taken on this account.</p>
+              )}
+              {!open.error && !!open.chain?.length && (() => {
+                const by = {}
+                for (const r of open.chain) {
+                  const k = String(r.taken_on || '').slice(0, 7)
+                  if (k.length !== 7) continue
+                  ;(by[k] || (by[k] = [])).push(r)
+                }
+                const keys = Object.keys(by).sort()
+                const owedAll = open.chain.reduce((t, r) => t + Number(r.still_owed || 0), 0)
+                return (
+                  <>
+                    {canCollect && owedAll > 0.009 && (
+                      <button type="button" onClick={() => openPayFor(open.chain, null)}
+                        className="w-full h-13 py-3 mb-3 rounded-2xl bg-amber text-bg font-bold">
+                        Collect everything · {naira(owedAll)}
+                      </button>
+                    )}
+                    <div className="flex flex-col gap-3">
+                      {keys.map(k => {
+                        const rows = by[k]
+                        const owed = rows.reduce((t, r) => t + Number(r.still_owed || 0), 0)
+                        const done = owed <= 0.009
+                        // A month that owes nothing is history: the
+                        // heading alone, and its items one tap away. A
+                        // month that still owes is the work, and opens.
+                        const shown = !done || shownMonths.has(k)
+                        return (
+                          <section key={k} className="rounded-2xl border border-line bg-surface">
+                            <button type="button" disabled={!done}
+                              onClick={() => setShownMonths(prev => {
+                                const next = new Set(prev)
+                                next.has(k) ? next.delete(k) : next.add(k)
+                                return next
+                              })}
+                              className={`w-full text-left flex items-baseline justify-between
+                                          gap-3 px-4 py-3 ${shown ? 'border-b border-line' : ''}`}>
+                              <h4 className="font-semibold">
+                                {done ? monthLabel(k) : `Still unpaid from ${monthLabel(k)}`}
+                                {done && (
+                                  <span className="block text-dim text-xs font-normal">
+                                    {rows.length} item{rows.length === 1 ? '' : 's'}
+                                    {shown ? ' · tap to hide' : ' · tap to see them'}
+                                  </span>
+                                )}
+                              </h4>
+                              <span className={`tnum font-bold shrink-0 ${done ? 'text-leaf' : 'text-clay'}`}>
+                                {done ? 'settled' : naira(owed)}
+                              </span>
+                            </button>
+                            {shown && (() => {
+                              // DAYS INSIDE MONTHS (Chris, 19 November
+                              // 2026, relaying the prototype's reviewers:
+                              // "the days can collapse into a month").
+                              // Inside an account the unit really is the
+                              // debt, so this is where the structure
+                              // belongs — unlike the main list, where it
+                              // would bury the person being chased.
+                              const byDay = {}
+                              for (const r of rows) {
+                                const d = String(r.taken_on || '')
+                                ;(byDay[d] || (byDay[d] = [])).push(r)
+                              }
+                              return Object.keys(byDay).sort().map(d => {
+                              const dayRows = byDay[d]
+                              const dayOwed = dayRows.reduce((t, r) => t + Number(r.still_owed || 0), 0)
+                              return (
+                              <div key={d}>
+                            <div className="px-4 py-1.5 bg-raise flex items-baseline justify-between
+                                            gap-3 border-b border-line/60">
+                              <span className="text-sm font-semibold">
+                                {new Date(d + 'T12:00:00').toLocaleDateString('en-NG',
+                                  { weekday: 'short', day: 'numeric', month: 'short' })}
+                              </span>
+                              <span className={`tnum text-sm font-semibold ${
+                                dayOwed > 0.009 ? 'text-clay' : 'text-leaf'}`}>
+                                {dayOwed > 0.009 ? naira(dayOwed) : 'settled'}
+                              </span>
+                            </div>
+                            <ul className="divide-y divide-line/60">
+                              {dayRows.map(r => {
+                                const left = Number(r.still_owed || 0)
+                                const part = left > 0.009 && Number(r.recovered || 0) > 0.009
+                                const on = picked.has(r.sale_id)
+                                return (
+                                  <li key={r.sale_id} className="px-4 py-2.5 flex items-start gap-3">
+                                    {canCollect && left > 0.009 && (
+                                      <button type="button"
+                                        aria-pressed={on}
+                                        aria-label={`Choose ${r.item}`}
+                                        onClick={() => setPicked(prev => {
+                                          const next = new Set(prev)
+                                          next.has(r.sale_id) ? next.delete(r.sale_id) : next.add(r.sale_id)
+                                          return next
+                                        })}
+                                        className={`shrink-0 mt-0.5 w-6 h-6 rounded-full border grid
+                                                    place-items-center text-xs font-bold ${on
+                                          ? 'bg-amber border-amber text-bg' : 'border-line text-transparent'}`}>
+                                        ✓
+                                      </button>
+                                    )}
+                                    <div className="min-w-0 flex-1">
+                                    <div className="flex items-baseline justify-between gap-3">
+                                      <span className="font-semibold break-words min-w-0">{r.item}</span>
+                                      <span className="tnum shrink-0">{naira(r.amount)}</span>
+                                    </div>
+                                    <div className="text-dim text-sm tnum">
+                                      {r.qty ? `${r.qty} × ${naira(r.unit_price)} · ` : ''}
+                                      {r.dept || ''}
+                                      {r.staff ? ` · ${r.staff}` : ''}
+                                    </div>
+                                    <div className={`text-sm font-semibold ${left <= 0.009 ? 'text-leaf' : 'text-clay'}`}>
+                                      {left <= 0.009
+                                        ? (r.cleared_on
+                                            ? `Recovered ${new Date(String(r.cleared_on) + 'T12:00:00')
+                                                .toLocaleDateString('en-NG', { day: 'numeric', month: 'short' })}`
+                                              + (r.cleared_by ? ` · ${methodLabel[r.cleared_by] || r.cleared_by}` : '')
+                                            : 'Covered — they were already in credit')
+                                        : part ? `${naira(r.recovered)} back · ${naira(left)} still owing`
+                                          : `${naira(left)} still owing`}
+                                    </div>
+                                    </div>
+                                  </li>
+                                )
+                              })}
+                            </ul>
+                              </div>
+                              )
+                              })
+                            })()}
+                            {canCollect && !done && (
+                              <div className="px-4 py-3">
+                                <button type="button" onClick={() => openPayFor(rows, k)}
+                                  className="w-full h-12 rounded-xl border border-amber
+                                             text-amber font-bold text-sm">
+                                  Collect {monthLabel(k)} · {naira(owed)}
+                                </button>
+                              </div>
+                            )}
+                          </section>
+                        )
+                      })}
+                    </div>
+                  </>
+                )
+              })()}
+            </div>
+
+            {/* THE WORKING VIEW FIRST, THE DOCUMENT UNDER IT (Chris,
+                19 November 2026: "can the statements be in the bottom
+                layer, with the items they owe in months and when
+                settled, folded for space?").
+                
+                You open an account to collect, so what is owed comes
+                first: months, their days, their items, a Collect on
+                each, and settled months folded away. The formal
+                statement sits below it, for sending and printing —
+                reached when you want it rather than scrolled past every
+                time you do not. */}
             <div id="statement-area" className="invoice-print px-5 pb-6">
               {/* letterhead */}
               <div className="invoice-head">
@@ -1993,150 +2182,6 @@ export default function Credit({ boot }) {
                 or with the store manager.
               </p>
               </>)}
-            </div>
-
-            {/* What was taken, and how each of it came back (570).
-                Kept off the printed statement, which is the formal
-                account; this is the working view — the one that answers
-                "has he paid for the Desperados yet". */}
-            {/* The account, month by month — the prototype's shape.
-                Built from open.chain, which this sheet already loads, so
-                the second request CreditChain used to make is gone. */}
-            <div className="px-5 pb-5 print:hidden">
-              <div className="flex items-baseline justify-between gap-3 mb-2">
-                <h3 className="font-semibold">What was taken, month by month</h3>
-                {open.chain?.length > 0 && (
-                  <span className="text-dim text-xs">oldest first</span>
-                )}
-              </div>
-              {open.error && (
-                <p className="text-clay text-sm">
-                  The list of what was taken could not be loaded — this is not the
-                  same as nothing being taken.
-                </p>
-              )}
-              {!open.error && open.chain === null && (
-                <p className="text-dim text-sm">Loading…</p>
-              )}
-              {!open.error && open.chain?.length === 0 && (
-                <p className="text-dim text-sm">Nothing has been taken on this account.</p>
-              )}
-              {!open.error && !!open.chain?.length && (() => {
-                const by = {}
-                for (const r of open.chain) {
-                  const k = String(r.taken_on || '').slice(0, 7)
-                  if (k.length !== 7) continue
-                  ;(by[k] || (by[k] = [])).push(r)
-                }
-                const keys = Object.keys(by).sort()
-                const owedAll = open.chain.reduce((t, r) => t + Number(r.still_owed || 0), 0)
-                return (
-                  <>
-                    {canCollect && owedAll > 0.009 && (
-                      <button type="button" onClick={() => openPayFor(open.chain, null)}
-                        className="w-full h-13 py-3 mb-3 rounded-2xl bg-amber text-bg font-bold">
-                        Collect everything · {naira(owedAll)}
-                      </button>
-                    )}
-                    <div className="flex flex-col gap-3">
-                      {keys.map(k => {
-                        const rows = by[k]
-                        const owed = rows.reduce((t, r) => t + Number(r.still_owed || 0), 0)
-                        const done = owed <= 0.009
-                        // A month that owes nothing is history: the
-                        // heading alone, and its items one tap away. A
-                        // month that still owes is the work, and opens.
-                        const shown = !done || shownMonths.has(k)
-                        return (
-                          <section key={k} className="rounded-2xl border border-line bg-surface">
-                            <button type="button" disabled={!done}
-                              onClick={() => setShownMonths(prev => {
-                                const next = new Set(prev)
-                                next.has(k) ? next.delete(k) : next.add(k)
-                                return next
-                              })}
-                              className={`w-full text-left flex items-baseline justify-between
-                                          gap-3 px-4 py-3 ${shown ? 'border-b border-line' : ''}`}>
-                              <h4 className="font-semibold">
-                                {done ? monthLabel(k) : `Still unpaid from ${monthLabel(k)}`}
-                                {done && (
-                                  <span className="block text-dim text-xs font-normal">
-                                    {rows.length} item{rows.length === 1 ? '' : 's'}
-                                    {shown ? ' · tap to hide' : ' · tap to see them'}
-                                  </span>
-                                )}
-                              </h4>
-                              <span className={`tnum font-bold shrink-0 ${done ? 'text-leaf' : 'text-clay'}`}>
-                                {done ? 'settled' : naira(owed)}
-                              </span>
-                            </button>
-                            {shown && (
-                            <ul className="divide-y divide-line/60">
-                              {rows.map(r => {
-                                const left = Number(r.still_owed || 0)
-                                const part = left > 0.009 && Number(r.recovered || 0) > 0.009
-                                const on = picked.has(r.sale_id)
-                                return (
-                                  <li key={r.sale_id} className="px-4 py-2.5 flex items-start gap-3">
-                                    {canCollect && left > 0.009 && (
-                                      <button type="button"
-                                        aria-pressed={on}
-                                        aria-label={`Choose ${r.item}`}
-                                        onClick={() => setPicked(prev => {
-                                          const next = new Set(prev)
-                                          next.has(r.sale_id) ? next.delete(r.sale_id) : next.add(r.sale_id)
-                                          return next
-                                        })}
-                                        className={`shrink-0 mt-0.5 w-6 h-6 rounded-full border grid
-                                                    place-items-center text-xs font-bold ${on
-                                          ? 'bg-amber border-amber text-bg' : 'border-line text-transparent'}`}>
-                                        ✓
-                                      </button>
-                                    )}
-                                    <div className="min-w-0 flex-1">
-                                    <div className="flex items-baseline justify-between gap-3">
-                                      <span className="font-semibold break-words min-w-0">{r.item}</span>
-                                      <span className="tnum shrink-0">{naira(r.amount)}</span>
-                                    </div>
-                                    <div className="text-dim text-sm tnum">
-                                      {r.qty ? `${r.qty} × ${naira(r.unit_price)} · ` : ''}
-                                      taken {new Date(String(r.taken_on) + 'T12:00:00')
-                                        .toLocaleDateString('en-NG', { day: 'numeric', month: 'short' })}
-                                      {r.dept ? ` · ${r.dept}` : ''}
-                                      {r.staff ? ` · ${r.staff}` : ''}
-                                    </div>
-                                    <div className={`text-sm font-semibold ${left <= 0.009 ? 'text-leaf' : 'text-clay'}`}>
-                                      {left <= 0.009
-                                        ? (r.cleared_on
-                                            ? `Recovered ${new Date(String(r.cleared_on) + 'T12:00:00')
-                                                .toLocaleDateString('en-NG', { day: 'numeric', month: 'short' })}`
-                                              + (r.cleared_by ? ` · ${methodLabel[r.cleared_by] || r.cleared_by}` : '')
-                                            : 'Covered — they were already in credit')
-                                        : part ? `${naira(r.recovered)} back · ${naira(left)} still owing`
-                                          : `${naira(left)} still owing`}
-                                    </div>
-                                    </div>
-                                  </li>
-                                )
-                              })}
-                            </ul>
-                            )}
-                            {canCollect && !done && (
-                              <div className="px-4 py-3">
-                                <button type="button" onClick={() => openPayFor(rows, k)}
-                                  className="w-full h-12 rounded-xl border border-amber
-                                             text-amber font-bold text-sm">
-                                  Collect {monthLabel(k)} · {naira(owed)}
-                                </button>
-                              </div>
-                            )}
-                          </section>
-                        )
-                      })}
-                    </div>
-                  </>
-                )
-              })()}
             </div>
 
             {isAdmin && (() => {
