@@ -689,10 +689,6 @@ export default function Credit({ boot }) {
   const takenAllTime = owing.reduce((t, r) => t + Number(r.credit_taken || 0), 0)
   const repaidAllTime = owing.reduce((t, r) => t + Number(r.repaid || 0), 0)
 
-  // fromMonth: this row is one month's share of what somebody owes, not
-  // their whole account. The lifetime "taken · repaid" line is then a
-  // different scale from the figure on the right and only misleads, so
-  // it is replaced by what the figure actually is.
   // The linked guest's name, but only when it is genuinely a different
   // name. Most links point an account at the guest it was already named
   // after — "Sir Ben Etiaba" at Sir Ben Etiaba — and printing both
@@ -745,194 +741,32 @@ export default function Credit({ boot }) {
   const canTakeFrom = (c) => canCollect && Number(c?.balance) > 0.009
     && ((c?.parts || []).length > 1 || !!payLocationFor(c))
 
-  // The unpaid debts of ONE month, oldest first, up to what is being
-  // paid. This is fundamental 4 made mechanical: a payment taken against
-  // September names September's sales, so it cannot reach into October
-  // however the ladder would otherwise have applied it.
-  const targetsForMonth = (customerId, monthKey, amount) => {
-    const rows = (chain || [])
-      .filter(r => r.customer_id === customerId
-        && String(r.taken_on || '').slice(0, 7) === monthKey
-        && Number(r.still_owed) > 0.009)
-      .sort((a, b) => String(a.taken_on).localeCompare(String(b.taken_on)))
-    const out = {}
-    let left = Number(amount) || 0
-    for (const r of rows) {
-      if (left <= 0.009) break
-      const take = Math.min(left, Number(r.still_owed))
-      out[r.sale_id] = String(Math.round(take * 100) / 100)
-      left = Math.round((left - take) * 100) / 100
-    }
-    return out
-  }
+  // collectFrom and targetsForMonth lived here until 19 November, to
+  // serve a Collect button on each list card. The card now opens the
+  // account, which collects by month, by item or in full and names what
+  // each payment clears — so the list no longer collects at all, and
+  // the one path through openPayFor is the only one left.
 
-  // THE ACCOUNT'S OWN COLLECT ROUTES (Chris, 18 November 2026, on the
-  // prototype). The main list collects a month across people; these two
-  // collect inside one person's account, which is where a guest clearing
-  // their debt is actually dealt with.
-  //
-  // Both go through `targets`, so each written row names the sale it
-  // settles and carries that sale's own department and collector. A
-  // month here can never reach into another month.
-  const targetsFrom = (rows) => {
-    const out = {}
-    for (const r of [...rows].sort((a, b) =>
-      String(a.taken_on).localeCompare(String(b.taken_on)))) {
-      out[r.sale_id] = String(Math.round(Number(r.still_owed) * 100) / 100)
-    }
-    return out
-  }
-  const openPayFor = (rows, fromMonth) => {
-    const c = open?.customer
-    const unpaid = (rows || []).filter(r => Number(r.still_owed) > 0.009)
-    if (!c || !unpaid.length) return
-    const amount = Math.round(unpaid.reduce((t, r) => t + Number(r.still_owed), 0) * 100) / 100
-    setPay({
-      customerId: c.customer_id, amount, method: null,
-      paidOn: lagosToday(), note: '', balance: Number(c.balance),
-      locationId: payLocationFor(c), creditStaffId: c.staff_id || staff.id,
-      targets: targetsFrom(unpaid), fromMonth: fromMonth || null,
-    })
-  }
-
-  // THE STATEMENT AS TEXT (Chris, 18 November 2026: "the statement can
-  // be shared via WhatsApp, etc").
-  //
-  // The PDF already reaches WhatsApp through the phone's share sheet,
-  // and it is the right thing when a guest wants a document. It is the
-  // wrong thing for chasing N7,100 on a small phone: it arrives as a
-  // file somebody has to open. Text arrives readable, and both sides can
-  // quote the same lines back when a figure is queried.
-  //
-  // Settled months are left out entirely. The message shows what is
-  // being chased, not the history.
-  const statementText = () => {
-    const c = open?.customer
-    const rows = (open?.chain || []).filter(r => Number(r.still_owed) > 0.009)
-    const day = d => new Date(String(d) + 'T12:00:00')
-      .toLocaleDateString('en-NG', { day: 'numeric', month: 'short' })
-    const by = {}
-    for (const r of rows) {
-      const k = String(r.taken_on || '').slice(0, 7)
-      ;(by[k] || (by[k] = [])).push(r)
-    }
-    const out = []
-    out.push(String(boot.branchName || 'Havilah Suite').toUpperCase())
-    out.push(c?.name || '')
-    out.push('Account as at ' + new Date()
-      .toLocaleDateString('en-NG', { day: 'numeric', month: 'long', year: 'numeric' }))
-    const keys = Object.keys(by).sort()
-    if (keys.length) {
-      out.push('', 'STILL UNPAID')
-      for (const k of keys) {
-        const owed = by[k].reduce((t, r) => t + Number(r.still_owed), 0)
-        out.push(`${monthLabel(k)} — ${naira(owed)}`)
-        for (const r of by[k]) {
-          out.push(`  ${day(r.taken_on)} · ${r.item}${r.qty ? ` ×${r.qty}` : ''}`
-            + ` — ${naira(r.still_owed)}`
-            + (Number(r.recovered) > 0.009 ? ` (${naira(r.recovered)} already paid)` : ''))
-        }
-      }
-    }
-    const total = rows.reduce((t, r) => t + Number(r.still_owed), 0)
-    out.push('', 'TOTAL OWING: ' + (total > 0.009 ? naira(total) : 'nothing — settled'))
-    return out.join('\n')
-  }
-
-  // The phone's own share sheet first, which is what puts WhatsApp in
-  // front of the collector. The clipboard is the fallback for a laptop.
-  async function sendStatement() {
-    const text = statementText()
-    try {
-      if (navigator.share) {
-        await navigator.share({ text, title: `Statement — ${open?.customer?.name || ''}` })
-        return
-      }
-    } catch (e) {
-      if (e?.name === 'AbortError') return      // they closed the share sheet
-    }
-    try {
-      await navigator.clipboard.writeText(text)
-      toast('Statement copied — paste it into the chat', 'success')
-    } catch {
-      toast('This device would not share or copy the statement', 'error')
-    }
-  }
-
-  const collectFrom = (row, fromMonth) => {
-    const c = row.__whole || row
-    const suggested = Number(row.__whole ? row.balance : c.balance)
-    // Collecting from a month heading settles that month's own debts.
-    // It takes precedence over the spread below, and names the
-    // department and the person for each debt on the way through, so a
-    // month spanning two counters still pays each counter its own.
-    if (fromMonth) {
-      const targets = targetsForMonth(c.customer_id, fromMonth, suggested)
-      if (Object.keys(targets).length) {
-        setPay({
-          customerId: c.customer_id, amount: suggested, method: null,
-          paidOn: lagosToday(), note: '', balance: Number(c.balance),
-          locationId: payLocationFor(c), creditStaffId: c.staff_id || staff.id,
-          targets, fromMonth,
-        })
-        return
-      }
-    }
-    const where = payLocationFor(c)
-    // TWO PEOPLE GAVE THIS CREDIT, AND THAT IS NOT THE COLLECTOR'S
-    // PROBLEM (Chris, 18 November 2026: collecting is awkward).
-    //
-    // This used to open a chooser — "whose credit is being paid?" — and
-    // take one answer, so a customer clearing what they owed at two
-    // counters had to be entered twice. At Awka that is 36 people.
-    //
-    // The question already has an answer that does not need asking:
-    // oldest debt first, which is the rule splitRepaymentByCredit has
-    // applied at the front desk since 9 November and the rule the
-    // statement chain uses everywhere else. So the payment is spread
-    // down the debts in that order, and the sheet shows where each naira
-    // lands before it is saved. The chooser is still there for a
-    // customer who insists on clearing one person's debt only — it is
-    // just no longer the way through.
-    const slices = (c.parts || [])
-    if (slices.length > 1) {
-      setPay({
-        customerId: c.customer_id, amount: suggested, method: null,
-        paidOn: lagosToday(), note: '', balance: Number(c.balance),
-        locationId: slices[0].location_id,
-        creditStaffId: slices[0].staff_id || staff.id,
-        spread: slices.map(p => ({
-          staffId: p.staff_id, locationId: p.location_id,
-          staffName: p.staff_name, balance: Number(p.balance),
-          firstCreditDate: p.first_credit_date, lastCreditDate: p.last_credit_date,
-        })),
-        whole: c,
-      })
-      return
-    }
-    // No department on the row: ask rather than guess. Nothing is ever
-    // recorded against the literal 'all'.
-    if (!where) { setPayWho(c); return }
-    setPay({
-      customerId: c.customer_id, amount: suggested, method: null,
-      paidOn: lagosToday(), note: '', balance: Number(c.balance),
-      locationId: where,
-      creditStaffId: c.staff_id || staff.id,
-    })
-  }
-
-  const debtorRow = (c, fromMonth, note) => {
+  const debtorRow = (c, note) => {
           const days = daysSince(c.last_credit_date)
-          const canTake = canTakeFrom(c.__whole || c)
           return (
-          <li key={fromMonth ? `${c.customer_id}:${fromMonth}` : c.customer_id}
-            className="flex items-stretch gap-2 rounded-2xl border border-line
-                       bg-surface px-4">
-            {/* The whole row opens the statement. It always did, but
-                nothing said so — no chevron, no label — so staff asked
-                where a customer's history was. */}
+          <li key={c.customer_id}
+            className="rounded-2xl border border-line bg-surface px-4">
+            {/* THE WHOLE CARD OPENS THE ACCOUNT, AND NOTHING COMPETES
+                WITH IT (Chris, 19 November 2026: "the Collect button
+                there might discourage staff from tapping and opening
+                debtor accounts").
+                
+                He is right, and it was worse than discouraging. The
+                boxed amber Collect was the loudest thing on the card
+                while the way in read as grey label text — so the
+                prominent button was also the blunter tool: from here it
+                could only take the whole balance, where the account
+                offers the month, the items, and what each payment
+                clears. Collecting belongs where you can see what you are
+                clearing. */}
             <button onClick={() => openCustomer(c)}
-              className="flex-1 min-w-0 py-3 flex items-center gap-3 text-left">
+              className="w-full min-w-0 py-3 flex items-center gap-3 text-left">
               <div className="flex-1 min-w-0">
                 {/* The person, then the account it was opened under —
                     only where they are different names, so an ordinary
@@ -951,11 +785,9 @@ export default function Credit({ boot }) {
                   </div>
                 )}
                 <div className="text-dim text-sm">
-                  {fromMonth
-                    ? `still owing from ${monthLabel(fromMonth)}`
-                    : `${naira(c.credit_taken)} taken · ${naira(c.repaid)} repaid`}
+                  {naira(c.credit_taken)} taken · {naira(c.repaid)} repaid
                 </div>
-                {!fromMonth && note && (
+                {note && (
                   <div className="text-clay text-sm font-semibold">{note}</div>
                 )}
                 {!!c.deptIds?.length && (
@@ -997,17 +829,9 @@ export default function Credit({ boot }) {
                     : Number(c.balance) < -0.009 ? `${naira(-c.balance)} ahead`
                     : 'square'}
                 </span>
-                <span className="text-dim text-xs">statement ›</span>
+                <span className="text-amber text-xs font-semibold">open ›</span>
               </span>
             </button>
-            {canTake && (
-              <button type="button" onClick={() => collectFrom(c, fromMonth)}
-                aria-label={`Collect from ${c.name}`}
-                className="shrink-0 self-center px-3 h-11 rounded-xl border border-amber
-                           text-amber text-sm font-bold">
-                Collect
-              </button>
-            )}
           </li>
     )
   }
@@ -1549,10 +1373,11 @@ export default function Credit({ boot }) {
           const names = ks.map(k => k === UNPLACED ? 'not placed' : monthLabel(k).split(' ')[0])
           return `unpaid in ${names.join(', ')}`
         }
-        // .map(debtorRow) would hand the array index in as the month.
+        // Never .map(debtorRow): map hands the array index in as the
+        // second argument, which here is the note.
         const flatList = rows => (
           <ul className="space-y-2">
-            {byMost(rows).map(c => debtorRow(c, null, monthsNote(c)))}
+            {byMost(rows).map(c => debtorRow(c, monthsNote(c)))}
           </ul>
         )
 
