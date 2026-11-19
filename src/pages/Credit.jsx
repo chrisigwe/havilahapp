@@ -4,7 +4,7 @@ import { lagosToday, methodLabel, naira, startingDept, stepMonth, tierLabel } fr
 import { monthLabel } from '../lib/months'
 import { splitRepaymentByCredit, applyMethods } from '../lib/creditsplit'
 import RoomChargeTracker from '../components/RoomChargeTracker'
-import { checkRepeatPayment, checkRepeatRepayment, deactivateCustomer, deleteCustomer, linkCustomerToGuest, loadBalances, loadCreditForMonth, loadCustomerLedger, loadCreditChain, loadFolio, loadStayMoves, loadGuestBalances, loadReservedValue, loadUnlinkedCustomerBalances, loadCustomerNeverAGuest, setCustomerNeverAGuest, moveWorkaroundToRoom, recordStayPayment, saveRepayment, searchSimilarGuests } from '../lib/data'
+import { checkRepeatPayment, checkRepeatRepayment, deactivateCustomer, deleteCustomer, linkCustomerToGuest, loadBalances, loadCreditForMonth, loadCreditAllocations, loadCustomerLedger, loadCreditChain, loadFolio, loadStayMoves, loadGuestBalances, loadReservedValue, loadUnlinkedCustomerBalances, loadCustomerNeverAGuest, setCustomerNeverAGuest, moveWorkaroundToRoom, recordStayPayment, saveRepayment, searchSimilarGuests } from '../lib/data'
 import { enqueue, flush, isConnectionError } from '../lib/outbox'
 import PaymentMethodPicker, { paymentParts, paymentAllocated, paymentReady } from '../components/PaymentMethodPicker'
 import { isClosedDayRefusal, submitPendingRepayment, loadPendingRepayments,
@@ -255,11 +255,18 @@ export default function Credit({ boot }) {
       // the default 120: the oldest credit on the books is 20 May 2026,
       // and a debt that falls outside the window would simply vanish
       // from a statement whose whole purpose is to show what is unpaid.
-      const [ledger, chain] = await Promise.all([
+      // Three loads, three jobs. The chain says what is STILL OWED,
+      // item by item; the ledger supplies the payments received; the
+      // allocations say which items each of those payments paid for,
+      // which is what a statement has to show and what nothing could
+      // answer before 19 November.
+      const [ledger, chain, allocations] = await Promise.all([
         loadCustomerLedger(staff.branch_id, c.customer_id, null, null),
         loadCreditChain(staff.branch_id, c.customer_id, 4000),
+        loadCreditAllocations(staff.branch_id, c.customer_id).catch(() => []),
       ])
-      setOpen(o => (o && o.customer.customer_id === c.customer_id) ? { ...o, ledger, chain } : o)
+      setOpen(o => (o && o.customer.customer_id === c.customer_id)
+        ? { ...o, ledger, chain, allocations } : o)
     } catch (e) {
       setOpen(o => (o && o.customer.customer_id === c.customer_id)
         ? { ...o, error: e.message || 'could not load' } : o)
@@ -289,20 +296,36 @@ export default function Credit({ boot }) {
     const totalOwed = owing.reduce((t, r) => t + Number(r.still_owed || 0), 0)
     const pays = open?.ledger?.repayments || []
     const paidTotal = pays.reduce((t, r) => t + Number(r.amount || 0), 0)
+    // BY MONTH, NOT BY DEPARTMENT (Chris, 19 November 2026, pointing at
+    // the prototype). A guest reading a statement is answering "what do
+    // I still owe, and from when" — and the months are what the whole
+    // page is now built on. The department stays on each line.
     const by = new Map()
     for (const r of owing) {
-      const k = r.dept || 'none'
-      if (!by.has(k)) by.set(k, { key: k, name: r.dept || 'Elsewhere', rows: [], subtotal: 0 })
+      const k = String(r.taken_on || '').slice(0, 7) || 'none'
+      if (!by.has(k)) by.set(k, { key: k, name: k === 'none' ? 'No date' : monthLabel(k), rows: [], subtotal: 0 })
       const g = by.get(k)
       g.rows.push(r); g.subtotal += Number(r.still_owed || 0)
     }
-    const groups = [...by.values()].sort((a, b) => b.subtotal - a.subtotal)
+    const groups = [...by.values()].sort((a, b) => String(a.key).localeCompare(String(b.key)))
+
+    // What each payment was FOR, from the allocations.
+    const clearedBy = new Map()
+    for (const a of (open?.allocations || [])) {
+      const g = clearedBy.get(a.repaymentId)
+        || { months: new Set(), items: [], total: 0 }
+      if (a.takenOn) g.months.add(String(a.takenOn).slice(0, 7))
+      g.items.push(a.item)
+      g.total += Number(a.amount || 0)
+      clearedBy.set(a.repaymentId, g)
+    }
     // The most recent payments only. The point of showing any is that a
     // customer sees their money acknowledged, not that they re-read a
     // year of history.
     const recent = pays.slice(0, 10)
-    return { owing, totalOwed, paidTotal, groups, recent, morePays: Math.max(0, pays.length - recent.length) }
-  }, [open?.chain, open?.ledger])
+    return { owing, totalOwed, paidTotal, groups, recent, clearedBy,
+             morePays: Math.max(0, pays.length - recent.length) }
+  }, [open?.chain, open?.ledger, open?.allocations])
 
   useEffect(() => {
     if (!linking) return
@@ -1886,11 +1909,12 @@ export default function Credit({ boot }) {
                     <th className="num">Still owing</th>
                   </tr>
                 </thead>
-                {/* One body per department, each closing with its own
-                    subtotal — a statement covering three bars that gives
-                    only a grand total cannot be checked by any one of
-                    them. A single-department account gets no subtotal
-                    row, because it would only repeat the total below. */}
+                {/* One body per MONTH, each closing with what is still
+                    unpaid from it. A guest reading this is answering
+                    "what do I owe, and from when", and the months are
+                    what the rest of the page is built on. One month
+                    gets no subtotal row, because it would only repeat
+                    the total below. */}
                 {stmt.groups.map(g => (
                 <tbody key={g.key}>
                   {stmt.groups.length > 1 && (
@@ -1960,8 +1984,9 @@ export default function Credit({ boot }) {
               </table>
 
               <p className="text-dim text-sm mt-2">
-                Money paid is applied to the oldest item still owing first, which is
-                how it is settled at the till. A payment is not tied to one item.
+                Each payment below names the items it cleared. Money that was not
+                given for a particular item cleared the oldest still owing, and what
+                is left unpaid stays in the month it was taken.
               </p>
 
               <h3 className="mt-6 mb-2 font-bold">
@@ -1971,9 +1996,8 @@ export default function Credit({ boot }) {
                 <thead>
                   <tr>
                     <th>Date</th><th>Method</th>
-                    <th className="hidden sm:table-cell print:table-cell">Where</th>
+                    <th>What it cleared</th>
                     <th className="hidden sm:table-cell print:table-cell">Taken by</th>
-                    <th className="hidden sm:table-cell print:table-cell">Note</th>
                     <th className="num">Amount</th>
                   </tr>
                 </thead>
@@ -1989,26 +2013,46 @@ export default function Credit({ boot }) {
                             .filter(Boolean).join(' · ')}
                         </span>
                       </td>
-                      <td className="text-dim hidden sm:table-cell print:table-cell">{locById[r.location_id]?.name || '—'}</td>
+                      {/* The answer the statement could never give
+                          before the allocations existed. */}
+                      <td className="text-dim">
+                        {(() => {
+                          const g = stmt.clearedBy.get(r.id)
+                          if (!g) return '—'
+                          const months = [...g.months].sort()
+                            .map(k => monthLabel(k).split(' ')[0]).join(', ')
+                          const items = [...new Set(g.items)]
+                          const shown = items.slice(0, 3).join(', ')
+                          return (
+                            <>
+                              {months}
+                              <span className="block text-xs">
+                                {shown}{items.length > 3 ? ` and ${items.length - 3} more` : ''}
+                              </span>
+                            </>
+                          )
+                        })()}
+                      </td>
                       <td className="text-dim hidden sm:table-cell print:table-cell">{r.taken_by || '—'}</td>
-                      <td className="text-dim hidden sm:table-cell print:table-cell">{r.note || ''}</td>
                       <td className="num tnum">{naira(r.amount)}</td>
                     </tr>
                   ))}
                   {!stmt.recent.length && (
-                    <tr><td colSpan="6" className="text-dim">None yet.</td></tr>
+                    <tr><td colSpan="5" className="text-dim">None yet.</td></tr>
                   )}
                 </tbody>
                 <tfoot>
                   {/* Paid in full, across the whole account — not the sum
                       of the ten rows above it, which would be a different
-                      number and a confusing one. */}
+                      number and a confusing one.
+                      The spans count the columns actually VISIBLE: four on
+                      a phone, five once "Taken by" appears. */}
                   <tr className="sm:hidden print:hidden">
-                    <td colSpan="2" className="num font-bold">Paid to date</td>
+                    <td colSpan="3" className="num font-bold">Paid to date</td>
                     <td className="num tnum font-bold">{naira(stmt.paidTotal)}</td>
                   </tr>
                   <tr className="hidden sm:table-row print:table-row">
-                    <td colSpan="5" className="num font-bold">Paid to date</td>
+                    <td colSpan="4" className="num font-bold">Paid to date</td>
                     <td className="num tnum font-bold">{naira(stmt.paidTotal)}</td>
                   </tr>
                 </tfoot>

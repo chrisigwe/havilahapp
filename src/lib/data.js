@@ -2895,6 +2895,35 @@ async function _splitPaymentToDepartment(paymentId, amount, locationId) {
 
 // What was taken, when, and how it was recovered (570).
 //
+// WHICH SALES A REPAYMENT PAID OFF — now recorded, not worked out.
+//
+// Until 19 November 2026 nothing stored this: credit_chain rebuilt it at
+// read time by running every payment against every debt, oldest first,
+// which is why deleting one payment moved months that had nothing to do
+// with it. credit_allocations holds it as a fact — one row per payment
+// per item — written by a trigger as each repayment lands.
+//
+// This is what lets a statement say what a payment was FOR, rather than
+// only that it arrived.
+export async function loadCreditAllocations(branchId, customerId) {
+  const { data, error } = await supabase.from('credit_allocations')
+    .select(`amount, repayment_id,
+             credit_repayments!inner(paid_on, method, customer_id),
+             sales!inner(business_date, location_id, description, stock_items(name))`)
+    .eq('branch_id', branchId)
+    .eq('credit_repayments.customer_id', customerId)
+  if (error) throw error
+  return (data || []).map(a => ({
+    repaymentId: a.repayment_id,
+    amount: Number(a.amount || 0),
+    paidOn: a.credit_repayments?.paid_on || '',
+    method: a.credit_repayments?.method || '',
+    takenOn: a.sales?.business_date || '',
+    locationId: a.sales?.location_id || null,
+    item: a.sales?.stock_items?.name || a.sales?.description || 'Item',
+  }))
+}
+
 // Nothing records which sales a repayment paid off — credit_repayments
 // only moves a balance. The function rebuilds the chain at read time by
 // running repayments against that customer's credit sales oldest first,
