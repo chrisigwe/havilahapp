@@ -820,11 +820,39 @@ export default function Credit({ boot }) {
     }
   }
 
+  // COLLECTING INSIDE THE ACCOUNT.
+  //
   // collectFrom and targetsForMonth lived here until 19 November, to
   // serve a Collect button on each list card. The card now opens the
   // account, which collects by month, by item or in full and names what
   // each payment clears — so the list no longer collects at all, and
-  // the one path through openPayFor is the only one left.
+  // these two, inside the account, are the only path left. They were
+  // swept out with the list button by mistake on the 19th and restored
+  // the same evening; the account's Collect buttons call openPayFor.
+  //
+  // Both go through `targets`, so each written row names the sale it
+  // settles and carries that sale's own department and collector. A
+  // month here can never reach into another month.
+  const targetsFrom = (rows) => {
+    const out = {}
+    for (const r of [...rows].sort((a, b) =>
+      String(a.taken_on).localeCompare(String(b.taken_on)))) {
+      out[r.sale_id] = String(Math.round(Number(r.still_owed) * 100) / 100)
+    }
+    return out
+  }
+  const openPayFor = (rows, fromMonth) => {
+    const c = open?.customer
+    const unpaid = (rows || []).filter(r => Number(r.still_owed) > 0.009)
+    if (!c || !unpaid.length) return
+    const amount = Math.round(unpaid.reduce((t, r) => t + Number(r.still_owed), 0) * 100) / 100
+    setPay({
+      customerId: c.customer_id, amount, method: null,
+      paidOn: lagosToday(), note: '', balance: Number(c.balance),
+      locationId: payLocationFor(c), creditStaffId: c.staff_id || staff.id,
+      targets: targetsFrom(unpaid), fromMonth: fromMonth || null,
+    })
+  }
 
   const debtorRow = (c, note) => {
           const days = daysSince(c.last_credit_date)
@@ -984,7 +1012,7 @@ export default function Credit({ boot }) {
             className="h-11 w-11 shrink-0 rounded-xl bg-surface border border-line
                        text-ink text-xl leading-none">‹</button>
           <input type="month" value={monthFilter} max={lagosToday().slice(0, 7)}
-            onChange={e => { if (e.target.value) { setMonthFilter(e.target.value); setDayFilter('') } }}
+            onChange={e => { if (e.target.value) setMonthFilter(e.target.value) }}
             className="h-11 px-3 rounded-xl bg-surface border border-amber text-amber tnum" />
           <button type="button" aria-label="Next month"
             onClick={() => setMonthFilter(m => stepMonth(m, 1, lagosToday().slice(0, 7)))}
