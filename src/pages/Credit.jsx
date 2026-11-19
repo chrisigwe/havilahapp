@@ -741,6 +741,70 @@ export default function Credit({ boot }) {
   const canTakeFrom = (c) => canCollect && Number(c?.balance) > 0.009
     && ((c?.parts || []).length > 1 || !!payLocationFor(c))
 
+  // THE STATEMENT AS TEXT (Chris, 18 November 2026: "the statement can
+  // be shared via WhatsApp, etc").
+  //
+  // The PDF already reaches WhatsApp through the phone's share sheet,
+  // and it is the right thing when a guest wants a document. It is the
+  // wrong thing for chasing N7,100 on a small phone: it arrives as a
+  // file somebody has to open. Text arrives readable, and both sides
+  // can quote the same lines back when a figure is queried.
+  //
+  // Settled months are left out entirely. The message shows what is
+  // being chased, not the history.
+  const statementText = () => {
+    const c = open?.customer
+    const rows = (open?.chain || []).filter(r => Number(r.still_owed) > 0.009)
+    const day = d => new Date(String(d) + 'T12:00:00')
+      .toLocaleDateString('en-NG', { day: 'numeric', month: 'short' })
+    const by = {}
+    for (const r of rows) {
+      const k = String(r.taken_on || '').slice(0, 7)
+      ;(by[k] || (by[k] = [])).push(r)
+    }
+    const out = []
+    out.push(String(boot.branchName || 'Havilah Suite').toUpperCase())
+    out.push(c?.name || '')
+    out.push('Account as at ' + new Date()
+      .toLocaleDateString('en-NG', { day: 'numeric', month: 'long', year: 'numeric' }))
+    const keys = Object.keys(by).sort()
+    if (keys.length) {
+      out.push('', 'STILL UNPAID')
+      for (const k of keys) {
+        const owed = by[k].reduce((t, r) => t + Number(r.still_owed), 0)
+        out.push(`${monthLabel(k)} — ${naira(owed)}`)
+        for (const r of by[k]) {
+          out.push(`  ${day(r.taken_on)} · ${r.item}${r.qty ? ` ×${r.qty}` : ''}`
+            + ` — ${naira(r.still_owed)}`
+            + (Number(r.recovered) > 0.009 ? ` (${naira(r.recovered)} already paid)` : ''))
+        }
+      }
+    }
+    const total = rows.reduce((t, r) => t + Number(r.still_owed), 0)
+    out.push('', 'TOTAL OWING: ' + (total > 0.009 ? naira(total) : 'nothing — settled'))
+    return out.join('\n')
+  }
+
+  // The phone's own share sheet first, which is what puts WhatsApp in
+  // front of the collector. The clipboard is the fallback for a laptop.
+  async function sendStatement() {
+    const text = statementText()
+    try {
+      if (navigator.share) {
+        await navigator.share({ text, title: `Statement — ${open?.customer?.name || ''}` })
+        return
+      }
+    } catch (e) {
+      if (e?.name === 'AbortError') return      // they closed the share sheet
+    }
+    try {
+      await navigator.clipboard.writeText(text)
+      toast('Statement copied — paste it into the chat', 'success')
+    } catch {
+      toast('This device would not share or copy the statement', 'error')
+    }
+  }
+
   // collectFrom and targetsForMonth lived here until 19 November, to
   // serve a Collect button on each list card. The card now opens the
   // account, which collects by month, by item or in full and names what
