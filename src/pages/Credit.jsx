@@ -142,6 +142,10 @@ export default function Credit({ boot }) {
   // Ifeadi has taken ₦627,500 of credit; listing every recovered item
   // means scrolling a wall of green to reach what is still owed.
   const [shownMonths, setShownMonths] = useState(() => new Set())
+  // And the same for a settled DAY inside a month that still owes
+  // (Chris, 19 November 2026). A month where only Tuesday is outstanding
+  // should not make you scroll Monday, Wednesday and Thursday to find it.
+  const [shownDays, setShownDays] = useState(() => new Set())
   // The customer whose debt is split between two staff, while we ask
   // which of them the money settles.
   const [payWho, setPayWho] = useState(null)
@@ -239,7 +243,7 @@ export default function Credit({ boot }) {
   // immediately and says it is loading.
   async function openCustomer(c) {
     setOpen({ customer: c, ledger: null, chain: null, error: null })
-    setPicked(new Set()); setShownMonths(new Set())
+    setPicked(new Set()); setShownMonths(new Set()); setShownDays(new Set())
     setOpenNotGuest(false)
     loadCustomerNeverAGuest(c.customer_id).then(setOpenNotGuest).catch(() => setOpenNotGuest(false))
     try {
@@ -1842,19 +1846,33 @@ export default function Credit({ boot }) {
                               return Object.keys(byDay).sort().map(d => {
                               const dayRows = byDay[d]
                               const dayOwed = dayRows.reduce((t, r) => t + Number(r.still_owed || 0), 0)
+                              const dayDone = dayOwed <= 0.009
+                              const daySeen = !dayDone || shownDays.has(d)
                               return (
                               <div key={d}>
-                            <div className="px-4 py-1.5 bg-raise flex items-baseline justify-between
-                                            gap-3 border-b border-line/60">
+                            <button type="button" disabled={!dayDone}
+                              onClick={() => setShownDays(prev => {
+                                const next = new Set(prev)
+                                next.has(d) ? next.delete(d) : next.add(d)
+                                return next
+                              })}
+                              className={`w-full text-left px-4 py-1.5 bg-raise flex items-baseline
+                                          justify-between gap-3 ${daySeen ? 'border-b border-line/60' : ''}`}>
                               <span className="text-sm font-semibold">
                                 {new Date(d + 'T12:00:00').toLocaleDateString('en-NG',
                                   { weekday: 'short', day: 'numeric', month: 'short' })}
+                                {dayDone && (
+                                  <span className="text-dim font-normal">
+                                    {' · '}{dayRows.length} item{dayRows.length === 1 ? '' : 's'}
+                                  </span>
+                                )}
                               </span>
                               <span className={`tnum text-sm font-semibold ${
                                 dayOwed > 0.009 ? 'text-clay' : 'text-leaf'}`}>
                                 {dayOwed > 0.009 ? naira(dayOwed) : 'settled'}
                               </span>
-                            </div>
+                            </button>
+                            {daySeen && (
                             <ul className="divide-y divide-line/60">
                               {dayRows.map(r => {
                                 const left = Number(r.still_owed || 0)
@@ -1902,6 +1920,7 @@ export default function Credit({ boot }) {
                                 )
                               })}
                             </ul>
+                            )}
                               </div>
                               )
                               })
