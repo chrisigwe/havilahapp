@@ -138,6 +138,10 @@ export default function Credit({ boot }) {
   // It lived inside the payment sheet behind "they are paying for
   // something particular", which is the same thing nobody could find.
   const [picked, setPicked] = useState(() => new Set())
+  // Settled months in an account open only if asked for. Mr Chike
+  // Ifeadi has taken ₦627,500 of credit; listing every recovered item
+  // means scrolling a wall of green to reach what is still owed.
+  const [shownMonths, setShownMonths] = useState(() => new Set())
   // The customer whose debt is split between two staff, while we ask
   // which of them the money settles.
   const [payWho, setPayWho] = useState(null)
@@ -235,7 +239,7 @@ export default function Credit({ boot }) {
   // immediately and says it is loading.
   async function openCustomer(c) {
     setOpen({ customer: c, ledger: null, chain: null, error: null })
-    setPicked(new Set())
+    setPicked(new Set()); setShownMonths(new Set())
     setOpenNotGuest(false)
     loadCustomerNeverAGuest(c.customer_id).then(setOpenNotGuest).catch(() => setOpenNotGuest(false))
     try {
@@ -878,8 +882,15 @@ export default function Credit({ boot }) {
                   {/* Two people gave this person credit. One line, both
                       named — which is what the two rows were really
                       saying, without reading as the same customer twice. */}
+                  {/* Two names join with "and"; three or more take
+                      commas, because "A and B and C" reads as a list
+                      somebody forgot to punctuate. */}
                   {c.parts?.length > 1 && (
-                    <span className="text-dim"> · by {c.parts.map(p2 => p2.staff_name || 'someone').join(' and ')}</span>
+                    <span className="text-dim"> · by {(() => {
+                      const who = c.parts.map(p2 => p2.staff_name || 'someone')
+                      return who.length === 2 ? who.join(' and ')
+                        : who.slice(0, -1).join(', ') + ' and ' + who[who.length - 1]
+                    })()}</span>
                   )}
                 </div>
               </div>
@@ -1789,7 +1800,7 @@ export default function Credit({ boot }) {
               <table className="invoice-table">
                 <thead>
                   <tr>
-                    <th>Date</th>
+                    <th>Day</th>
                     <th className="hidden sm:table-cell print:table-cell">Department</th>
                     <th>Item</th>
                     <th className="hidden sm:table-cell print:table-cell">Served by</th>
@@ -1816,7 +1827,11 @@ export default function Credit({ boot }) {
                     const part = Number(r.recovered || 0) > 0.009
                     return (
                     <tr key={r.sale_id}>
-                      <td className="tnum">{String(r.taken_on || '').slice(5)}</td>
+                      {/* The DAY only. The month is the heading this row
+                          sits under, so "10-31" repeated down the column
+                          said October thirty times and wrapped onto two
+                          lines on a phone while doing it. */}
+                      <td className="tnum">{String(r.taken_on || '').slice(8) || '—'}</td>
                       <td className="hidden sm:table-cell print:table-cell">{r.dept || '—'}</td>
                       <td>
                         {r.item || '—'}
@@ -2028,17 +2043,34 @@ export default function Credit({ boot }) {
                         const rows = by[k]
                         const owed = rows.reduce((t, r) => t + Number(r.still_owed || 0), 0)
                         const done = owed <= 0.009
+                        // A month that owes nothing is history: the
+                        // heading alone, and its items one tap away. A
+                        // month that still owes is the work, and opens.
+                        const shown = !done || shownMonths.has(k)
                         return (
                           <section key={k} className="rounded-2xl border border-line bg-surface">
-                            <div className="flex items-baseline justify-between gap-3
-                                            px-4 py-3 border-b border-line">
+                            <button type="button" disabled={!done}
+                              onClick={() => setShownMonths(prev => {
+                                const next = new Set(prev)
+                                next.has(k) ? next.delete(k) : next.add(k)
+                                return next
+                              })}
+                              className={`w-full text-left flex items-baseline justify-between
+                                          gap-3 px-4 py-3 ${shown ? 'border-b border-line' : ''}`}>
                               <h4 className="font-semibold">
                                 {done ? monthLabel(k) : `Still unpaid from ${monthLabel(k)}`}
+                                {done && (
+                                  <span className="block text-dim text-xs font-normal">
+                                    {rows.length} item{rows.length === 1 ? '' : 's'}
+                                    {shown ? ' · tap to hide' : ' · tap to see them'}
+                                  </span>
+                                )}
                               </h4>
                               <span className={`tnum font-bold shrink-0 ${done ? 'text-leaf' : 'text-clay'}`}>
                                 {done ? 'settled' : naira(owed)}
                               </span>
-                            </div>
+                            </button>
+                            {shown && (
                             <ul className="divide-y divide-line/60">
                               {rows.map(r => {
                                 const left = Number(r.still_owed || 0)
@@ -2088,6 +2120,7 @@ export default function Credit({ boot }) {
                                 )
                               })}
                             </ul>
+                            )}
                             {canCollect && !done && (
                               <div className="px-4 py-3">
                                 <button type="button" onClick={() => openPayFor(rows, k)}
