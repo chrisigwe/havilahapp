@@ -133,6 +133,11 @@ export default function Credit({ boot }) {
   const [pay, setPay] = useState(null)
   // What a payment just cleared, shown once, right after it is saved.
   const [receipt, setReceipt] = useState(null)
+  // Items ticked in the account, for clearing a few debts rather than a
+  // whole month (Chris, 19 November 2026, pointing at the prototype).
+  // It lived inside the payment sheet behind "they are paying for
+  // something particular", which is the same thing nobody could find.
+  const [picked, setPicked] = useState(() => new Set())
   // The customer whose debt is split between two staff, while we ask
   // which of them the money settles.
   const [payWho, setPayWho] = useState(null)
@@ -230,6 +235,7 @@ export default function Credit({ boot }) {
   // immediately and says it is loading.
   async function openCustomer(c) {
     setOpen({ customer: c, ledger: null, chain: null, error: null })
+    setPicked(new Set())
     setOpenNotGuest(false)
     loadCustomerNeverAGuest(c.customer_id).then(setOpenNotGuest).catch(() => setOpenNotGuest(false))
     try {
@@ -892,7 +898,7 @@ export default function Credit({ boot }) {
     })
   }
 
-  const debtorRow = (c, fromMonth) => {
+  const debtorRow = (c, fromMonth, note) => {
           const days = daysSince(c.last_credit_date)
           const canTake = canTakeFrom(c.__whole || c)
           return (
@@ -926,6 +932,9 @@ export default function Credit({ boot }) {
                     ? `still owing from ${monthLabel(fromMonth)}`
                     : `${naira(c.credit_taken)} taken · ${naira(c.repaid)} repaid`}
                 </div>
+                {!fromMonth && note && (
+                  <div className="text-clay text-sm font-semibold">{note}</div>
+                )}
                 {!!c.deptIds?.length && (
                   <div className="text-dim text-xs">
                     {c.deptIds.map(id => locById[id]?.name).filter(Boolean).join(', ')}
@@ -1491,63 +1500,37 @@ export default function Credit({ boot }) {
           return m
         }
 
-        // Oldest month first — September, then October, then November —
-        // because that is the order you work through them in, and the
-        // oldest money is the money least likely to arrive. Anything
-        // unplaced sits at the end.
-        const monthKeys = (rows) => {
-          const seen = new Set()
-          for (const c of rows) for (const k of Object.keys(monthsFor(c))) seen.add(k)
-          return [...seen].sort((a, b) =>
-            a === UNPLACED ? 1 : b === UNPLACED ? -1 : a.localeCompare(b))
+        // ONE CARD PER PERSON, AND THE MONTHS LIVE IN THEIR ACCOUNT
+        // (Chris, 19 November 2026, pointing at the prototype).
+        //
+        // This list used to be sectioned by month, with people inside
+        // each section. That was asked for on 17 November, when the
+        // account could not break a person's debt down by month and
+        // this was the only place the months existed. The account does
+        // it properly now — months, their own items, a Collect on each
+        // heading — so the two were answering the same question twice
+        // and the list was the worse of the two: a person owing across
+        // three months appeared three times.
+        //
+        // The list answers WHO OWES. The account answers WHICH MONTHS.
+        // The months a person still owes in are named on their card, so
+        // nothing is lost on the way to the tap.
+        const grouped = (prefix, rows) => flatList(rows)
+
+        // The months a person still owes in, named on their card. It is
+        // what the month headings used to say, carried onto the row that
+        // opens the account where those months can be worked through.
+        const monthsNote = (c) => {
+          const ks = Object.keys(monthsFor(c)).filter(k => monthsFor(c)[k] > 0.009).sort()
+          if (!ks.length) return null
+          const names = ks.map(k => k === UNPLACED ? 'not placed' : monthLabel(k).split(' ')[0])
+          return `unpaid in ${names.join(', ')}`
         }
-
-        // Until the chain has arrived there is nothing to split by, so
-        // the page shows the plain list rather than an empty one. Every
-        // debtor is still there; only the month headings are missing.
-        const grouped = (prefix, rows) =>
-          chain === null ? flatList(rows) : monthsOf(prefix, rows)
-
-        const monthsOf = (prefix, rows) => monthKeys(rows).map(key => {
-          const inMonth = byMost(rows
-            .filter(c => monthsFor(c)[key] > 0.009)
-            // __whole keeps the untouched row, because Collect must open
-            // on what the person owes, not on one month's slice of it.
-            .map(c => ({ ...c, balance: monthsFor(c)[key], __whole: c })))
-          if (!inMonth.length) return null
-          const k = `${prefix}:${key}`
-          return (
-            <div key={k}>
-              {/* "Still unpaid from October 2026", not "October 2026".
-                  Two screens carry an October figure and they are
-                  different numbers, both right. THIS one is what is
-                  still unpaid from that month as of today — Ella's
-                  ₦8,000. The month-end view's October closing is what
-                  she owed when October CLOSED — ₦8,800. The gap is the
-                  ₦800 she paid on 1 November, which went against her
-                  October debt because repayments clear oldest first.
-                  Deduct from the wrong one a fortnight later and you
-                  take money the person has already handed over, so each
-                  heading now says which question it answers. */}
-              {head(k,
-                key === UNPLACED
-                  ? 'Not placed in a month'
-                  : `Still unpaid from ${monthLabel(key)}`,
-                inMonth.length,
-                money(inMonth.reduce((t, r) => t + Number(r.balance), 0), 'text-clay'),
-                null)}
-              {isOpen(k) && (
-                <ul className="space-y-2 pl-3 ml-2 border-l border-line">
-                  {inMonth.map(c => debtorRow(c, key === UNPLACED ? null : key))}
-                </ul>
-              )}
-            </div>
-          )
-        })
-        // No left rule and no indent: these rows no longer hang under a
-        // month heading, they ARE the list.
+        // .map(debtorRow) would hand the array index in as the month.
         const flatList = rows => (
-          <ul className="space-y-2">{byMost(rows).map(debtorRow)}</ul>
+          <ul className="space-y-2">
+            {byMost(rows).map(c => debtorRow(c, null, monthsNote(c)))}
+          </ul>
         )
 
         // Nobody drops off the list. An account that is square, or that has
@@ -2127,8 +2110,25 @@ export default function Credit({ boot }) {
                               {rows.map(r => {
                                 const left = Number(r.still_owed || 0)
                                 const part = left > 0.009 && Number(r.recovered || 0) > 0.009
+                                const on = picked.has(r.sale_id)
                                 return (
-                                  <li key={r.sale_id} className="px-4 py-2.5">
+                                  <li key={r.sale_id} className="px-4 py-2.5 flex items-start gap-3">
+                                    {canCollect && left > 0.009 && (
+                                      <button type="button"
+                                        aria-pressed={on}
+                                        aria-label={`Choose ${r.item}`}
+                                        onClick={() => setPicked(prev => {
+                                          const next = new Set(prev)
+                                          next.has(r.sale_id) ? next.delete(r.sale_id) : next.add(r.sale_id)
+                                          return next
+                                        })}
+                                        className={`shrink-0 mt-0.5 w-6 h-6 rounded-full border grid
+                                                    place-items-center text-xs font-bold ${on
+                                          ? 'bg-amber border-amber text-bg' : 'border-line text-transparent'}`}>
+                                        ✓
+                                      </button>
+                                    )}
+                                    <div className="min-w-0 flex-1">
                                     <div className="flex items-baseline justify-between gap-3">
                                       <span className="font-semibold break-words min-w-0">{r.item}</span>
                                       <span className="tnum shrink-0">{naira(r.amount)}</span>
@@ -2149,6 +2149,7 @@ export default function Credit({ boot }) {
                                             : 'Covered — they were already in credit')
                                         : part ? `${naira(r.recovered)} back · ${naira(left)} still owing`
                                           : `${naira(left)} still owing`}
+                                    </div>
                                     </div>
                                   </li>
                                 )
@@ -2210,6 +2211,29 @@ export default function Credit({ boot }) {
               )
             })()}
           </div>
+
+          {/* Appears only once something is ticked, and says what it
+              will take before it takes it. */}
+          {picked.size > 0 && (() => {
+            const rows = (open.chain || []).filter(r => picked.has(r.sale_id))
+            const owed = rows.reduce((t, r) => t + Number(r.still_owed || 0), 0)
+            return (
+              <div className="px-5 py-3 border-t border-amber bg-raise flex items-center gap-3 print:hidden">
+                <span className="flex-1 min-w-0">
+                  <span className="font-bold">
+                    {picked.size} item{picked.size === 1 ? '' : 's'}
+                  </span>
+                  <span className="text-dim tnum"> · {naira(owed)}</span>
+                </span>
+                <button type="button" onClick={() => setPicked(new Set())}
+                  className="h-11 px-3 rounded-xl text-dim text-sm">Clear</button>
+                <button type="button" onClick={() => openPayFor(rows, null)}
+                  className="h-11 px-4 rounded-xl bg-amber text-bg font-bold text-sm shrink-0">
+                  Collect these
+                </button>
+              </div>
+            )
+          })()}
 
           <div className="p-5 border-t border-line flex flex-wrap gap-3 print:hidden">
             <button disabled={!open.ledger}
