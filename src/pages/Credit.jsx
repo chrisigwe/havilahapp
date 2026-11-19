@@ -146,6 +146,10 @@ export default function Credit({ boot }) {
   // (Chris, 19 November 2026). A month where only Tuesday is outstanding
   // should not make you scroll Monday, Wednesday and Thursday to find it.
   const [shownDays, setShownDays] = useState(() => new Set())
+  // Which statement is open: null, 'all', or a 'YYYY-MM'. A statement is
+  // a document, so the account lists them as documents and one opens
+  // when you pick it up (Chris, 19 November 2026).
+  const [statementFor, setStatementFor] = useState(null)
   // The customer whose debt is split between two staff, while we ask
   // which of them the money settles.
   const [payWho, setPayWho] = useState(null)
@@ -244,6 +248,7 @@ export default function Credit({ boot }) {
   async function openCustomer(c) {
     setOpen({ customer: c, ledger: null, chain: null, error: null })
     setPicked(new Set()); setShownMonths(new Set()); setShownDays(new Set())
+    setStatementFor(null)
     setOpenNotGuest(false)
     loadCustomerNeverAGuest(c.customer_id).then(setOpenNotGuest).catch(() => setOpenNotGuest(false))
     try {
@@ -760,9 +765,11 @@ export default function Credit({ boot }) {
   //
   // Settled months are left out entirely. The message shows what is
   // being chased, not the history.
-  const statementText = () => {
+  const statementText = (onlyMonth) => {
     const c = open?.customer
-    const rows = (open?.chain || []).filter(r => Number(r.still_owed) > 0.009)
+    const rows = (open?.chain || []).filter(r => Number(r.still_owed) > 0.009
+      && (!onlyMonth || onlyMonth === 'all'
+          || String(r.taken_on || '').slice(0, 7) === onlyMonth))
     const day = d => new Date(String(d) + 'T12:00:00')
       .toLocaleDateString('en-NG', { day: 'numeric', month: 'short' })
     const by = {}
@@ -795,8 +802,8 @@ export default function Credit({ boot }) {
 
   // The phone's own share sheet first, which is what puts WhatsApp in
   // front of the collector. The clipboard is the fallback for a laptop.
-  async function sendStatement() {
-    const text = statementText()
+  async function sendStatement(onlyMonth) {
+    const text = statementText(onlyMonth)
     try {
       if (navigator.share) {
         await navigator.share({ text, title: `Statement — ${open?.customer?.name || ''}` })
@@ -1954,13 +1961,88 @@ export default function Credit({ boot }) {
                 statement sits below it, for sending and printing —
                 reached when you want it rather than scrolled past every
                 time you do not. */}
+            {/* The statements this account can produce, as documents
+                to pick up rather than a page that prints itself whether
+                anybody wanted it or not. */}
+            <div className="px-5 pb-5 print:hidden">
+              <h3 className="font-semibold mb-2">Statements</h3>
+              <div className="flex flex-col gap-2">
+                {(() => {
+                  const months = [...new Set((open.chain || [])
+                    .map(r => String(r.taken_on || '').slice(0, 7))
+                    .filter(k => k.length === 7))].sort().reverse()
+                  const sheet = (key, title, sub) => (
+                    <button key={key} type="button" onClick={() => setStatementFor(key)}
+                      className="w-full text-left flex items-center gap-3 rounded-2xl
+                                 border border-line bg-surface px-4 py-3">
+                      <span aria-hidden="true"
+                        className="shrink-0 w-9 h-11 rounded-md border border-amber/60
+                                   bg-amber/10 grid place-items-center text-amber text-[0.6rem]
+                                   font-bold tracking-wide">PDF</span>
+                      <span className="min-w-0 flex-1">
+                        <span className="font-semibold block break-words">{title}</span>
+                        <span className="text-dim text-xs block">{sub}</span>
+                      </span>
+                      <span className="text-amber text-xs font-semibold shrink-0">open ›</span>
+                    </button>
+                  )
+                  return [
+                    sheet('all', 'Account statement',
+                      `every month · as at ${new Date().toLocaleDateString('en-NG',
+                        { day: 'numeric', month: 'long', year: 'numeric' })}`),
+                    ...months.map(k => {
+                      const rows = (open.chain || [])
+                        .filter(r => String(r.taken_on || '').slice(0, 7) === k)
+                      const owed = rows.reduce((t, r) => t + Number(r.still_owed || 0), 0)
+                      return sheet(k, `${monthLabel(k)} statement`,
+                        `${rows.length} item${rows.length === 1 ? '' : 's'} · `
+                        + (owed > 0.009 ? `${naira(owed)} still owing` : 'settled'))
+                    }),
+                  ]
+                })()}
+              </div>
+            </div>
+
+            {/* THE STATEMENT IS A DOCUMENT, SO IT IS KEPT LIKE ONE
+                (Chris, 19 November 2026: "can it be like a file with the
+                name on it, September Statement or Invoice, and then,
+                when tapped, open with sharing options?").
+                
+                It used to print itself down the page whether or not
+                anybody wanted it. Now the account ends with the
+                statements it can produce — one per month that has
+                anything on it, and the whole account — and picking one
+                opens it with its two ways out. */}
+            {statementFor && (() => {
+              // One month, or the lot. The groups are already by month,
+              // so scoping a statement is choosing among them — and the
+              // payments shown are the ones that cleared something in it.
+              const groups = statementFor === 'all'
+                ? stmt.groups : stmt.groups.filter(g => g.key === statementFor)
+              const keep = new Set(groups.map(g => g.key))
+              const recent = statementFor === 'all' ? stmt.recent
+                : stmt.recent.filter(r => {
+                    const g = stmt.clearedBy.get(r.id)
+                    return g && [...g.months].some(m => keep.has(m))
+                  })
+              const shownStmt = {
+                ...stmt, groups, recent,
+                totalOwed: groups.reduce((t, g) => t + g.subtotal, 0),
+                paidTotal: recent.reduce((t, r) => t + Number(r.amount || 0), 0),
+              }
+              return (
+            <div className="fixed inset-0 z-[65] bg-bg h-[100dvh] flex flex-col">
+            <div className="flex-1 min-h-0 overflow-y-auto">
+            <div className="px-5 pt-5">
+              <button onClick={() => setStatementFor(null)} className="text-dim">‹ Back</button>
+            </div>
             <div id="statement-area" className="invoice-print px-5 pb-6">
               {/* letterhead */}
               <div className="invoice-head">
                 <h1 className="text-2xl font-bold">Havilah Suite Ltd</h1>
                 <p className="text-dim">
                   {boot.branchName || ''} · Statement of Account
-                  {stmt.groups.length > 1 ? ' · all departments' : ''}
+                  {shownStmt.groups.length > 1 ? ' · all departments' : ''}
                 </p>
               </div>
 
@@ -2023,9 +2105,9 @@ export default function Credit({ boot }) {
                     what the rest of the page is built on. One month
                     gets no subtotal row, because it would only repeat
                     the total below. */}
-                {stmt.groups.map(g => (
+                {shownStmt.groups.map(g => (
                 <tbody key={g.key}>
-                  {stmt.groups.length > 1 && (
+                  {shownStmt.groups.length > 1 && (
                     <tr>
                       <td colSpan="7" style={{ paddingTop: '0.9rem' }} className="font-bold">{g.name}</td>
                     </tr>
@@ -2066,7 +2148,7 @@ export default function Credit({ boot }) {
                     </tr>
                     )
                   })}
-                  {stmt.groups.length > 1 && (
+                  {shownStmt.groups.length > 1 && (
                     <tr>
                       <td colSpan="2" className="num text-dim">{g.name} subtotal</td>
                       <td className="hidden sm:table-cell print:table-cell"></td>
@@ -2079,18 +2161,18 @@ export default function Credit({ boot }) {
                 </tbody>
                 ))}
                 <tbody>
-                  {!stmt.owing.length && (
+                  {!shownStmt.owing.length && (
                     <tr><td colSpan="7" className="text-dim">Nothing outstanding. This account is settled.</td></tr>
                   )}
                 </tbody>
                 <tfoot>
                   <tr className="sm:hidden print:hidden">
                     <td colSpan="2" className="num font-bold">Total still owed</td>
-                    <td className="num tnum font-bold">{naira(stmt.totalOwed)}</td>
+                    <td className="num tnum font-bold">{naira(shownStmt.totalOwed)}</td>
                   </tr>
                   <tr className="hidden sm:table-row print:table-row">
                     <td colSpan="6" className="num font-bold">Total still owed</td>
-                    <td className="num tnum font-bold">{naira(stmt.totalOwed)}</td>
+                    <td className="num tnum font-bold">{naira(shownStmt.totalOwed)}</td>
                   </tr>
                 </tfoot>
               </table>
@@ -2102,7 +2184,7 @@ export default function Credit({ boot }) {
               </p>
 
               <h3 className="mt-6 mb-2 font-bold">
-                {stmt.morePays ? 'Recent payments' : 'Payments received'}
+                {shownStmt.morePays ? 'Recent payments' : 'Payments received'}
               </h3>
               <table className="invoice-table">
                 <thead>
@@ -2114,7 +2196,7 @@ export default function Credit({ boot }) {
                   </tr>
                 </thead>
                 <tbody>
-                  {stmt.recent.map(r => (
+                  {shownStmt.recent.map(r => (
                     <tr key={r.id}>
                       <td className="tnum">{r.paid_on?.slice(5)}</td>
                       <td>
@@ -2129,7 +2211,7 @@ export default function Credit({ boot }) {
                           before the allocations existed. */}
                       <td className="text-dim">
                         {(() => {
-                          const g = stmt.clearedBy.get(r.id)
+                          const g = shownStmt.clearedBy.get(r.id)
                           if (!g) return '—'
                           const months = [...g.months].sort()
                             .map(k => monthLabel(k).split(' ')[0]).join(', ')
@@ -2149,7 +2231,7 @@ export default function Credit({ boot }) {
                       <td className="num tnum">{naira(r.amount)}</td>
                     </tr>
                   ))}
-                  {!stmt.recent.length && (
+                  {!shownStmt.recent.length && (
                     <tr><td colSpan="5" className="text-dim">None yet.</td></tr>
                   )}
                 </tbody>
@@ -2161,25 +2243,25 @@ export default function Credit({ boot }) {
                       a phone, five once "Taken by" appears. */}
                   <tr className="sm:hidden print:hidden">
                     <td colSpan="3" className="num font-bold">Paid to date</td>
-                    <td className="num tnum font-bold">{naira(stmt.paidTotal)}</td>
+                    <td className="num tnum font-bold">{naira(shownStmt.paidTotal)}</td>
                   </tr>
                   <tr className="hidden sm:table-row print:table-row">
                     <td colSpan="4" className="num font-bold">Paid to date</td>
-                    <td className="num tnum font-bold">{naira(stmt.paidTotal)}</td>
+                    <td className="num tnum font-bold">{naira(shownStmt.paidTotal)}</td>
                   </tr>
                 </tfoot>
               </table>
-              {stmt.morePays > 0 && (
+              {shownStmt.morePays > 0 && (
                 <p className="text-dim text-sm mt-2">
-                  The {stmt.recent.length} most recent payments are listed.
-                  {' '}{stmt.morePays} earlier payment{stmt.morePays === 1 ? ' is' : 's are'} included in the
+                  The {shownStmt.recent.length} most recent payments are listed.
+                  {' '}{shownStmt.morePays} earlier payment{shownStmt.morePays === 1 ? ' is' : 's are'} included in the
                   total but not shown.
                 </p>
               )}
 
               <div className="invoice-balance mt-6">
-                <span>{stmt.totalOwed > 0.009 ? 'Balance owing' : 'Balance'}</span>
-                <span className="tnum">{naira(stmt.totalOwed)}</span>
+                <span>{shownStmt.totalOwed > 0.009 ? 'Balance owing' : 'Balance'}</span>
+                <span className="tnum">{naira(shownStmt.totalOwed)}</span>
               </div>
 
               {open.customer.balance > 0.009 && locId === 'all' && (
@@ -2202,6 +2284,44 @@ export default function Credit({ boot }) {
               </p>
               </>)}
             </div>
+            </div>
+            <div className="p-5 border-t border-line flex gap-3">
+            <button disabled={!open.ledger}
+              onClick={() => savePdf(accountStatementPdf({
+              branchName: boot.branchName,
+              where: shownStmt.groups.length > 1 ? 'All departments' : shownStmt.groups[0]?.name,
+              customerName: open.customer.name,
+              // Grouped the same way as the screen, so the printed copy
+              // and the one on the phone are the same document.
+              creditRows: shownStmt.groups.flatMap(g => g.rows).map(r => ({
+                date: String(r.taken_on || '').slice(5),
+                department: r.dept || '—',
+                // A part-paid line carries its own arithmetic, so a
+                // printed "still owing" smaller than the charge cannot
+                // read as a mistake.
+                item: `${r.item || '—'}${Number(r.recovered || 0) > 0.009
+                  ? ` (${naira(r.recovered)} of ${naira(r.amount)} already paid)` : ''}`,
+                servedBy: r.staff || '',
+                qty: r.qty, unit: r.amount, amount: r.still_owed,
+              })),
+              creditTotal: shownStmt.totalOwed,
+              payments: shownStmt.recent.map(r => ({
+                date: r.paid_on?.slice(5) || '', method: methodLabel[r.method] || r.method,
+                where: locById[r.location_id]?.name || '',
+                takenBy: r.taken_by || '', note: r.note || '', amount: r.amount,
+              })),
+              paidTotal: shownStmt.paidTotal,
+              balance: shownStmt.totalOwed,
+            }), `Statement ${open.customer.name}`)}
+              className="flex-1 min-w-[45%] h-14 rounded-2xl border border-line font-bold disabled:opacity-40">Save / share PDF</button>
+            <button type="button" disabled={!open.chain?.length} onClick={() => sendStatement(statementFor)}
+              className="flex-1 min-w-[45%] h-14 rounded-2xl border border-line font-bold disabled:opacity-40">
+              Send as text
+            </button>
+            </div>
+            </div>
+            )
+            })()}
 
             {isAdmin && (() => {
               const id = open.customer.customer_id
@@ -2265,39 +2385,12 @@ export default function Credit({ boot }) {
             )
           })()}
 
+          {/* Only Record payment lives here now; the statement carries
+              its own two ways out. Hidden entirely for someone who
+              cannot collect, rather than left as an empty bordered
+              strip. */}
+          {canCollect && (
           <div className="p-5 border-t border-line flex flex-wrap gap-3 print:hidden">
-            <button disabled={!open.ledger}
-              onClick={() => savePdf(accountStatementPdf({
-              branchName: boot.branchName,
-              where: stmt.groups.length > 1 ? 'All departments' : stmt.groups[0]?.name,
-              customerName: open.customer.name,
-              // Grouped the same way as the screen, so the printed copy
-              // and the one on the phone are the same document.
-              creditRows: stmt.groups.flatMap(g => g.rows).map(r => ({
-                date: String(r.taken_on || '').slice(5),
-                department: r.dept || '—',
-                // A part-paid line carries its own arithmetic, so a
-                // printed "still owing" smaller than the charge cannot
-                // read as a mistake.
-                item: `${r.item || '—'}${Number(r.recovered || 0) > 0.009
-                  ? ` (${naira(r.recovered)} of ${naira(r.amount)} already paid)` : ''}`,
-                servedBy: r.staff || '',
-                qty: r.qty, unit: r.amount, amount: r.still_owed,
-              })),
-              creditTotal: stmt.totalOwed,
-              payments: stmt.recent.map(r => ({
-                date: r.paid_on?.slice(5) || '', method: methodLabel[r.method] || r.method,
-                where: locById[r.location_id]?.name || '',
-                takenBy: r.taken_by || '', note: r.note || '', amount: r.amount,
-              })),
-              paidTotal: stmt.paidTotal,
-              balance: stmt.totalOwed,
-            }), `Statement ${open.customer.name}`)}
-              className="flex-1 min-w-[45%] h-14 rounded-2xl border border-line font-bold disabled:opacity-40">Save / share PDF</button>
-            <button type="button" disabled={!open.chain?.length} onClick={sendStatement}
-              className="flex-1 min-w-[45%] h-14 rounded-2xl border border-line font-bold disabled:opacity-40">
-              Send as text
-            </button>
             {(() => {
               const hiddenForRole = !canCollect
               // Anyone below GM/admin can't
@@ -2335,6 +2428,7 @@ export default function Credit({ boot }) {
               )
             })()}
           </div>
+          )}
         </div>
       )}
 
