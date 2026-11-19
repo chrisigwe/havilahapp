@@ -10,6 +10,7 @@ import TillTile, { SubLine, ByMethod } from '../components/TillTile'
 import CorrectionsOnDay from '../components/CorrectionsOnDay'
 import { is, SUPERVISOR } from '../lib/roles'
 import Notice from '../components/Notice'
+import { tracked } from '../lib/loadfail'
 
 // Read-only — browse any past day's sales by department. Built for
 // the auditor (who has no live Sales tab at all, by design — never
@@ -153,7 +154,8 @@ export default function DailySales({ boot }) {
       // room bill lands in the other ledger, so N40,000 collected at the
       // desk on 6 November was in the drawer and on no figure here.
       // Works for any past day, unlike the dashboard below.
-      loadDailyFinancials(staff.branch_id, date, loc)
+      tracked('Who recovered debt that day',
+        loadDailyFinancials(staff.branch_id, date, loc))
         .then(f => setReceptionRecovered(f.recoveredBy || {}))
         .catch(() => setReceptionRecovered(null))
       // Deferred/advance are computed from CURRENT balances (v_stay_
