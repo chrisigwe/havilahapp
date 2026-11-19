@@ -2014,20 +2014,47 @@ export default function Credit({ boot }) {
                 anything on it, and the whole account — and picking one
                 opens it with its two ways out. */}
             {statementFor && (() => {
-              // One month, or the lot. The groups are already by month,
-              // so scoping a statement is choosing among them — and the
-              // payments shown are the ones that cleared something in it.
-              const groups = statementFor === 'all'
-                ? stmt.groups : stmt.groups.filter(g => g.key === statementFor)
-              const keep = new Set(groups.map(g => g.key))
-              const recent = statementFor === 'all' ? stmt.recent
+              // A MONTH STATEMENT IS THE WHOLE MONTH, BY DAY (Chris, 19
+              // November 2026: "can it be redesigned to be easy to
+              // understand and detailed?").
+              //
+              // The account statement lists only what is unpaid, which
+              // is right for chasing. A month statement is a different
+              // document: a guest reading "October" wants everything
+              // they took in October, what they have paid against it and
+              // what is left — a settled line is part of that answer,
+              // not clutter. So it carries the whole month, grouped by
+              // the day it was taken.
+              const isMonth = statementFor !== 'all'
+              const monthRowsAll = isMonth
+                ? (open.chain || []).filter(r =>
+                    String(r.taken_on || '').slice(0, 7) === statementFor)
+                : []
+              const groups = !isMonth ? stmt.groups : (() => {
+                const byDay = {}
+                for (const r of monthRowsAll) {
+                  const d = String(r.taken_on || '')
+                  ;(byDay[d] || (byDay[d] = [])).push(r)
+                }
+                return Object.keys(byDay).sort().map(d => ({
+                  key: d,
+                  name: new Date(d + 'T12:00:00').toLocaleDateString('en-NG',
+                    { weekday: 'long', day: 'numeric', month: 'long' }),
+                  rows: byDay[d],
+                  subtotal: byDay[d].reduce((t, r) => t + Number(r.still_owed || 0), 0),
+                }))
+              })()
+              const recent = !isMonth ? stmt.recent
                 : stmt.recent.filter(r => {
                     const g = stmt.clearedBy.get(r.id)
-                    return g && [...g.months].some(m => keep.has(m))
+                    return g && [...g.months].some(m => m === statementFor)
                   })
+              const scopeRows = isMonth ? monthRowsAll : stmt.owing
+              const charged = scopeRows.reduce((t, r) => t + Number(r.amount || 0), 0)
+              const backAlready = scopeRows.reduce((t, r) => t + Number(r.recovered || 0), 0)
               const shownStmt = {
                 ...stmt, groups, recent,
-                totalOwed: groups.reduce((t, g) => t + g.subtotal, 0),
+                totalOwed: scopeRows.reduce((t, r) => t + Number(r.still_owed || 0), 0),
                 paidTotal: recent.reduce((t, r) => t + Number(r.amount || 0), 0),
               }
               return (
@@ -2038,11 +2065,18 @@ export default function Credit({ boot }) {
             </div>
             <div id="statement-area" className="invoice-print px-5 pb-6">
               {/* letterhead */}
+              {/* The month first and biggest. A reader three statements
+                  deep should never have to work out which one is in
+                  front of them (Chris, 19 November 2026). */}
               <div className="invoice-head">
-                <h1 className="text-2xl font-bold">Havilah Suite Ltd</h1>
-                <p className="text-dim">
-                  {boot.branchName || ''} · Statement of Account
-                  {shownStmt.groups.length > 1 ? ' · all departments' : ''}
+                <p className="text-dim text-sm uppercase tracking-wide">
+                  {isMonth ? 'Statement for' : 'Statement of account'}
+                </p>
+                <h1 className="text-3xl font-extrabold leading-tight">
+                  {isMonth ? monthLabel(statementFor) : 'The whole account'}
+                </h1>
+                <p className="text-dim mt-1">
+                  Havilah Suite Ltd · {boot.branchName || ''}
                 </p>
               </div>
 
@@ -2083,9 +2117,28 @@ export default function Credit({ boot }) {
                   department, the quantity and the server folded under the
                   item. Wider screens and print get the full invoice
                   columns, because that is what a customer is handed. */}
-              <h3 className="mt-6 mb-2 font-bold">Still owed</h3>
+              {/* Three figures before any detail, so the answer is on
+                  the page before the reading starts. */}
+              <div className="mt-5 grid grid-cols-3 gap-2">
+                {[['Charged', isMonth ? charged : shownStmt.totalOwed, 'text-ink'],
+                  ['Paid', isMonth ? backAlready : shownStmt.paidTotal, 'text-leaf'],
+                  ['Still owing', shownStmt.totalOwed,
+                    shownStmt.totalOwed > 0.009 ? 'text-clay' : 'text-leaf']].map(([label, value, tone]) => (
+                  <div key={label} className="rounded-xl border border-line bg-surface px-3 py-2">
+                    <div className="text-dim text-xs">{label}</div>
+                    <div className={`tnum font-bold ${tone}`}>{naira(value)}</div>
+                  </div>
+                ))}
+              </div>
+
+              <h3 className="mt-6 mb-2 font-bold">
+                {isMonth ? `Everything taken in ${monthLabel(statementFor)}` : 'Still owed'}
+              </h3>
               <p className="text-dim text-sm mb-2">
-                Only what is unpaid. Anything already settled is not listed.
+                {isMonth
+                  ? 'Every item taken that month, by the day it was taken, with what '
+                    + 'is still owed on each. A line reading nothing has been paid in full.'
+                  : 'Only what is unpaid. Anything already settled is not listed.'}
               </p>
               <table className="invoice-table">
                 <thead>
@@ -2144,13 +2197,19 @@ export default function Credit({ boot }) {
                       <td className="text-dim hidden sm:table-cell print:table-cell">{r.staff || '—'}</td>
                       <td className="num tnum hidden sm:table-cell print:table-cell">{r.qty}</td>
                       <td className="num tnum hidden sm:table-cell print:table-cell">{naira(r.amount)}</td>
-                      <td className="num tnum font-semibold">{naira(left)}</td>
+                      {/* ₦0 in a money column reads as a mistake. A line
+                          that is paid off says so. */}
+                      <td className={`num tnum font-semibold ${left > 0.009 ? '' : 'text-leaf'}`}>
+                        {left > 0.009 ? naira(left) : 'paid'}
+                      </td>
                     </tr>
                     )
                   })}
                   {shownStmt.groups.length > 1 && (
                     <tr>
-                      <td colSpan="2" className="num text-dim">{g.name} subtotal</td>
+                      <td colSpan="2" className="num text-dim">
+                        {isMonth ? `${g.name} — still owing` : `${g.name} subtotal`}
+                      </td>
                       <td className="hidden sm:table-cell print:table-cell"></td>
                       <td className="hidden sm:table-cell print:table-cell"></td>
                       <td className="num tnum hidden sm:table-cell print:table-cell"></td>
