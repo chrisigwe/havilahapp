@@ -5,7 +5,7 @@ import { tidyName } from './names'
 import { nightsInWindow } from './nights'
 import { SUPERVISOR } from './roles'
 import { tracked } from './activity'
-import { splitRepaymentByCredit } from './creditsplit'
+import { partRef, splitRepaymentByCredit } from './creditsplit'
 import { noteLoadFailure } from './loadfail'
 
 export async function loadBranches() {
@@ -903,7 +903,15 @@ export async function rejectPendingRepayment(id, decidedBy, reason) {
 // above the debt is a real overpayment and goes to whoever served the
 // customer there last, because that is who will serve them next - never to
 // someone who gave no credit, which is the fault this replaces.
-async function _saveRepaymentByCredit({ staff, customerId, amount, method, paidOn, note, locationId }) {
+async function _saveRepaymentByCredit({ staff, customerId, amount, method, paidOn, note, locationId, clientRef }) {
+  // The base reference is made by the caller BEFORE the first attempt and
+  // is the same on every retry; partRef turns it into one stable
+  // reference per part. Required, and loudly: it used to be minted with
+  // crypto.randomUUID() inside the loop below, which meant a collection
+  // that failed halfway and was tapped again wrote the parts that had
+  // already landed a second time. A missing base has to fail here, where
+  // it is obvious, rather than quietly duplicate money later.
+  if (!clientRef) throw new Error('A repayment split needs a clientRef made before the first attempt')
   // No department means no slices to split across - the row is written as
   // it always was rather than guessed at.
   let slices = []
@@ -921,10 +929,10 @@ async function _saveRepaymentByCredit({ staff, customerId, amount, method, paidO
   }
   // The arithmetic lives in creditsplit.js, on its own and under test.
   const parts = splitRepaymentByCredit(slices, amount, staff.id)
-  for (const part of parts) {
+  for (let i = 0; i < parts.length; i++) {
     await _saveRepayment({
-      staff, customerId, amount: part.amount, method, paidOn, note, locationId,
-      creditStaffId: part.staffId, clientRef: crypto.randomUUID(),
+      staff, customerId, amount: parts[i].amount, method, paidOn, note, locationId,
+      creditStaffId: parts[i].staffId, clientRef: partRef(clientRef, i),
     })
   }
 }

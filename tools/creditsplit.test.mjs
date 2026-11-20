@@ -1,4 +1,4 @@
-import { splitRepaymentByCredit, applyMethods } from '../src/lib/creditsplit.js'
+import { partRef, splitRepaymentByCredit, applyMethods } from '../src/lib/creditsplit.js'
 
 let pass = 0, fail = 0
 const show = p => p.map(x => `${x.staffId}:${x.amount}`).join(' ')
@@ -221,6 +221,36 @@ sums('named debts across methods', named, 3200)
 eq('no sale means a null sale, not undefined',
    applyMethods([{ staffId: 'a', amount: 100 }], [{ method: 'cash', amount: 100 }])
      .map(p => String(p.saleId)).join(''), 'null')
+
+//
+// A part's reference must be the same on every retry, and never collide
+// with another part or another payment. This is what stops a collection
+// that failed halfway writing its first parts twice when tapped again.
+const uuidish = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
+eq('the same base and position give the same reference',
+   partRef('pay-1', 0) === partRef('pay-1', 0), true)
+eq('a different position gives a different reference',
+   partRef('pay-1', 0) !== partRef('pay-1', 1), true)
+eq('a different payment gives a different reference',
+   partRef('pay-1', 0) !== partRef('pay-2', 0), true)
+eq('the reference is shaped like a uuid',
+   uuidish.test(partRef('pay-1', 0)), true)
+{
+  const seen = new Set()
+  for (let b = 0; b < 500; b++) for (let i = 0; i < 8; i++) seen.add(partRef(`pay-${b}`, i))
+  eq('4000 references, none repeated', seen.size, 4000)
+}
+{
+  // The lanes must not share their state. Appending the lane number left
+  // all four nearly identical, which is far less spread than 128 bits.
+  const parts = partRef('pay-1', 0).replace(/-/g, '').match(/.{8}/g)
+  eq('the four lanes differ from each other', new Set(parts).size, parts.length)
+}
+{
+  let threw = false
+  try { partRef('', 0) } catch { threw = true }
+  eq('no base is refused rather than guessed', threw, true)
+}
 
 console.log(`\n${pass} passed, ${fail} failed`)
 process.exit(fail ? 1 : 0)

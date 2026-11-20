@@ -115,3 +115,46 @@ export function applyMethods(debtParts, methodParts) {
   }
   return out
 }
+
+// A PER-PART REFERENCE THAT SURVIVES A RETRY (20 November 2026).
+//
+// Each part of a split is its own row, so each needs its own client
+// reference — but minting them with crypto.randomUUID() at write time,
+// inside the loop, defeated the whole point of having one. A collection
+// that failed halfway and was tapped again sent a fresh set of
+// references, and the database, seeing references it had never seen
+// before, wrote the parts that had already landed a second time. The
+// rule on _saveRepayment states it plainly: the reference is made
+// before the first attempt and unchanged through every retry. That path
+// broke it.
+//
+// So the parts derive their references from ONE base belonging to the
+// payment. The same base at the same position gives the same reference
+// every time, so a retry re-sends exactly what it sent before and the
+// database refuses whatever already landed, part by part.
+//
+// Deliberately NOT derived from the amount or the day: a genuine second
+// payment of the same amount carries a new base and must still be
+// accepted. That is the fault this must not reintroduce.
+export function partRef(base, index) {
+  if (!base) throw new Error('partRef needs a base reference')
+  // Four independent FNV-1a lanes — the lane number is part of what is
+  // hashed, so the lanes are not correlated — giving 128 bits laid out
+  // in the shape Postgres accepts as a uuid.
+  const lane = (k) => {
+    // The lane number leads the string, not trails it: appended, all four
+    // hashes shared their state until the final byte and the lanes came
+    // out nearly identical (7cfe5d6a-7dfe-5efd-7afe-...), which is far
+    // less spread than 128 bits. Leading, they diverge from the first.
+    const s = `${k}:${base}:${index}`
+    let h = 0x811c9dc5 >>> 0
+    for (let i = 0; i < s.length; i++) {
+      h = (h ^ s.charCodeAt(i)) >>> 0
+      h = Math.imul(h, 0x01000193) >>> 0
+    }
+    return h.toString(16).padStart(8, '0')
+  }
+  const hex = lane(0) + lane(1) + lane(2) + lane(3)
+  return [hex.slice(0, 8), hex.slice(8, 12), hex.slice(12, 16),
+          hex.slice(16, 20), hex.slice(20, 32)].join('-')
+}

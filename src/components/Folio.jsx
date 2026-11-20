@@ -34,7 +34,13 @@ export default function Folio({ boot, room, onClose, onChanged }) {
   // 2026, where four months of takings read 75-96% POS at every bar and
   // measured how rarely the default was changed rather than how guests
   // paid. Reception handles the larger sums, so it matters more here.
-  const [pay, setPay] = useState({ amount: '', method: null, split: null, date: lagosToday() })
+  // `ref` is the payment's own id, made when the sheet is opened and kept
+  // through every failed attempt, so tapping Collect again after a dropped
+  // connection re-sends the same references and the database refuses
+  // whatever already landed. A new sheet gets a new one, so a genuine
+  // second payment of the same amount is still accepted.
+  const [pay, setPay] = useState({ amount: '', method: null, split: null,
+                                   date: lagosToday(), ref: crypto.randomUUID() })
   // Putting the bill on credit (567). A guest who leaves owing was only
   // ever an implicit balance on a banner; this moves the debt onto a
   // named account, where Credit and Recovery already know how to chase
@@ -722,6 +728,9 @@ export default function Folio({ boot, room, onClose, onChanged }) {
           paidOn: pay.date || lagosToday(),
           locationId: c.pick.locationId,
           note: `Taken at Reception, Room ${room.room_number}`,
+          // One base per sheet, made distinct per customer and counter so
+          // two departments' slices can never derive the same reference.
+          clientRef: `${pay.ref}:${c.pick.customerId}:${c.pick.locationId || 'none'}`,
         })
       }
 
@@ -746,7 +755,7 @@ export default function Folio({ boot, room, onClose, onChanged }) {
         ? `Payment recorded against ${pickedList.length} line${pickedList.length === 1 ? '' : 's'}`
         : `Payment recorded — put against ${merged.length} charge${merged.length === 1 ? '' : 's'}, oldest first`,
         'success')
-      setPay({ amount: '', method: null, split: null, date: lagosToday() }); setIsOverstay(false)
+      setPay({ amount: '', method: null, split: null, date: lagosToday(), ref: crypto.randomUUID() }); setIsOverstay(false)
       setPicked({})
       refresh(); onChanged?.()
     } catch (e) { toast(friendlyStayError(e), 'error') }
