@@ -936,11 +936,14 @@ export default function Credit({ boot }) {
     return (
       <li key={pk} className="border-t border-line/60 first:border-t-0">
         <button type="button" onClick={() => togglePerson(pk)}
-          className="w-full text-left px-4 py-2.5 flex items-baseline justify-between gap-3">
+          className="w-full text-left pl-6 pr-4 py-2.5 flex items-baseline justify-between gap-3">
           <span className="min-w-0">
             <span className={`font-semibold ${settled ? 'text-dim' : ''}`}>{person.name}</span>
             <span className="block text-dim text-xs">
-              {naira(person.given)} taken in {monthLabel(m.key).split(' ')[0]}
+              {/* No "in October" here: the heading above says the month
+                  at four times the size, and repeating it crowds the
+                  line that has to carry the amount and the item count. */}
+              {naira(person.given)} taken
               {' · '}{person.rows.length} item{person.rows.length === 1 ? '' : 's'}
               {open ? ' · tap to hide' : ' · tap for the days'}
             </span>
@@ -994,18 +997,34 @@ export default function Credit({ boot }) {
     const clearShown = agedMonths.has(clearKey)
     return (
       <section key={m.key} className="rounded-2xl border border-line bg-surface overflow-hidden">
+        {/* A MONTH MUST NOT READ AS A NAME (Chris, 20 November 2026,
+            with a screenshot: "can the month look different from the
+            names so it can be distinguished?").
+
+            It shipped in the same size, weight and colour as the people
+            under it, so "October 2026" and "Mr Obitex (Room 207)" were
+            the same kind of thing on the page and the hierarchy was
+            invisible. Same treatment as the month statement letterhead,
+            which does work: a small eyebrow, then the month large.
+            Banded in raise against the surface the people sit on, so
+            the step is tonal as well as typographic. */}
         <button type="button" disabled={!done} onClick={() => toggleAgedMonth(m.key)}
-          className={`w-full text-left flex items-baseline justify-between gap-3 px-4 py-3
+          className={`w-full text-left flex items-baseline justify-between gap-3 px-4 py-3 bg-raise
                       ${shown ? 'border-b border-line' : ''}`}>
-          <h4 className="font-semibold">
-            {monthLabel(m.key)}
-            <span className="block text-dim text-xs font-normal">
+          <h4 className="min-w-0">
+            <span className="block text-dim text-[0.65rem] uppercase tracking-[0.18em] font-semibold">
+              {done ? 'Settled month' : 'Credit given in'}
+            </span>
+            <span className="block text-xl font-extrabold uppercase tracking-wide leading-tight">
+              {monthLabel(m.key)}
+            </span>
+            <span className="block text-dim text-xs font-normal mt-1">
               {naira(m.given)} given to {m.people.length}{' '}
               {m.people.length === 1 ? 'person' : 'people'}
               {done && (shown ? ' · tap to hide' : ' · tap to see them')}
             </span>
           </h4>
-          <span className={`tnum font-bold shrink-0 ${done ? 'text-leaf' : 'text-clay'}`}>
+          <span className={`tnum text-xl font-extrabold shrink-0 ${done ? 'text-leaf' : 'text-clay'}`}>
             {done ? 'settled' : naira(m.owed)}
           </span>
         </button>
@@ -1015,7 +1034,7 @@ export default function Credit({ boot }) {
             {!!clear.length && !clearShown && (
               <li className="border-t border-line/60">
                 <button type="button" onClick={() => toggleAgedMonth(clearKey)}
-                  className="w-full text-left px-4 py-2 text-dim text-sm">
+                  className="w-full text-left pl-6 pr-4 py-2 text-dim text-sm">
                   {clear.length} other{clear.length === 1 ? '' : 's'} paid up in full ·
                   tap to see them
                 </button>
