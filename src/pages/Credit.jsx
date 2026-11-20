@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useToast } from '../components/Toast'
 import { lagosToday, methodLabel, naira, startingDept, stepMonth, tierLabel } from '../lib/format'
+import { ageByMonth, undatedRows } from '../lib/aging'
 import { monthLabel } from '../lib/months'
 import { splitRepaymentByCredit, applyMethods } from '../lib/creditsplit'
 import RoomChargeTracker from '../components/RoomChargeTracker'
@@ -146,6 +147,42 @@ export default function Credit({ boot }) {
   // (Chris, 19 November 2026). A month where only Tuesday is outstanding
   // should not make you scroll Monday, Wednesday and Thursday to find it.
   const [shownDays, setShownDays] = useState(() => new Set())
+
+  // THE TIME VIEW (Chris, 20 November 2026, relaying the Auditor, the
+  // Manager and the Store Manager: "days collapsing into months and
+  // months into years -- a better fit for chasing than one card per
+  // person").
+  //
+  // The list answers WHO OWES. That is the right question at a counter,
+  // where you are looking at the person. It is the wrong one for review,
+  // where the question is how much of September has never been paid for
+  // -- and a person-first list cannot answer it without opening every
+  // account in turn.
+  //
+  // This is only honest from today. Until the date fence went into
+  // allocate_credit_repayment this morning, a September payment could
+  // settle a November charge, so a month's outstanding figure drifted
+  // every time somebody paid. Now a month's total stays that month's.
+  //
+  // Only OVERSIGHT -- storekeeper, manager, gm, admin, auditor -- ever
+  // sees the switch. A barman's page does not gain a control and does
+  // not run a line of this.
+  const [listView, setListView] = useState(() => {
+    try {
+      const saved = localStorage.getItem('hv.credit.listView')
+      if (saved === 'people' || saved === 'months') return saved
+    } catch { /* private window, or storage blocked */ }
+    return seesAllDepartments ? 'months' : 'people'
+  })
+  const chooseView = (v) => {
+    setListView(v)
+    try { localStorage.setItem('hv.credit.listView', v) } catch { /* ignore */ }
+  }
+  // Separate sets from the account sheet's: both are keyed 'YYYY-MM',
+  // and sharing them would make opening October here open October there.
+  const [agedMonths, setAgedMonths] = useState(() => new Set())
+  const [agedPeople, setAgedPeople] = useState(() => new Set())
+  const showMonths = seesAllDepartments && listView === 'months'
   // Which statement is open: null, 'all', or a 'YYYY-MM'. A statement is
   // a document, so the account lists them as documents and one opens
   // when you pick it up (Chris, 19 November 2026).
@@ -204,6 +241,21 @@ export default function Credit({ boot }) {
       loadCreditChain(staff.branch_id, null, 3650))
       .then(setChain).catch(() => setChain([]))
   }, [staff.branch_id])
+
+  // The same chain, rolled up the other way: year, then month, then the
+  // people who still owe from it. Built here rather than fetched -- the
+  // branch's whole chain is already on the page, so the time view costs
+  // one pass over an array and no query at all.
+  //
+  // still_owed comes from credit_allocations, so a month's figure is
+  // what that month's credit has never been paid for -- not a balance
+  // as at a date. The two read alike and answer different questions;
+  // "what each owed at the end of a month" is the other one.
+  const aged = useMemo(() => chain && ageByMonth(chain, locId), [chain, locId])
+  // Credit with no date cannot sit in a month. Saying so keeps the
+  // months honest against the total above them, rather than quietly
+  // adding up to less.
+  const agedUndated = useMemo(() => chain ? undatedRows(chain, locId) : [], [chain, locId])
 
   // The guest an account was pointed at, where that is a different name
   // from the account's own. Linking a credit account to a guest routes
@@ -854,6 +906,166 @@ export default function Credit({ boot }) {
     })
   }
 
+  // Year, then month, then the people who still owe from it.
+  //
+  // People under a month rather than days, decided by Chris on
+  // 20 November: a month's job here is to hand you the names and the
+  // amounts to chase. The days are still there, one tap further in,
+  // because that is the evidence when somebody queries the figure.
+  const agedToggle = (set, fn) => (k) => fn(prev => {
+    const next = new Set(prev)
+    next.has(k) ? next.delete(k) : next.add(k)
+    return next
+  })
+  const toggleAgedMonth = agedToggle(agedMonths, setAgedMonths)
+  const togglePerson = agedToggle(agedPeople, setAgedPeople)
+
+  const agedPersonRow = (m, person) => {
+    const pk = `${m.key}|${person.id}`
+    const open = agedPeople.has(pk)
+    const settled = person.owed <= 0.009
+    // The whole account, not just this month. Someone paying is rarely
+    // paying one month, and the account is where every month can be
+    // worked through -- so the way out of the time view is the same
+    // sheet the person list opens.
+    const full = (combined || []).find(x => x.customer_id === person.id)
+    const dayOf = d => new Date(d + 'T12:00:00')
+      .toLocaleDateString('en-NG', { weekday: 'short', day: 'numeric', month: 'short' })
+    const byDay = {}
+    for (const r of person.rows) (byDay[r.taken_on] || (byDay[r.taken_on] = [])).push(r)
+    return (
+      <li key={pk} className="border-t border-line/60 first:border-t-0">
+        <button type="button" onClick={() => togglePerson(pk)}
+          className="w-full text-left px-4 py-2.5 flex items-baseline justify-between gap-3">
+          <span className="min-w-0">
+            <span className={`font-semibold ${settled ? 'text-dim' : ''}`}>{person.name}</span>
+            <span className="block text-dim text-xs">
+              {naira(person.given)} taken in {monthLabel(m.key).split(' ')[0]}
+              {' · '}{person.rows.length} item{person.rows.length === 1 ? '' : 's'}
+              {open ? ' · tap to hide' : ' · tap for the days'}
+            </span>
+          </span>
+          <span className={`tnum font-bold shrink-0 ${settled ? 'text-leaf' : 'text-clay'}`}>
+            {settled ? 'settled' : naira(person.owed)}
+          </span>
+        </button>
+        {open && (
+          <div className="bg-raise border-t border-line/60">
+            {Object.keys(byDay).sort().map(d => (
+              <div key={d} className="px-4 py-2 border-b border-line/40 last:border-b-0">
+                <div className="text-sm font-semibold">{dayOf(d)}</div>
+                <ul className="mt-1 space-y-1">
+                  {byDay[d].map(r => (
+                    <li key={r.sale_id} className="flex items-baseline justify-between gap-3 text-sm">
+                      <span className="text-dim min-w-0">
+                        {Number(r.qty) > 1 ? `${Number(r.qty)} × ` : ''}{r.item}
+                        {[locById[r.location_id]?.name, r.staff].filter(Boolean).length > 0 && (
+                          <span className="block text-xs">
+                            {[locById[r.location_id]?.name, r.staff].filter(Boolean).join(' · ')}
+                          </span>
+                        )}
+                      </span>
+                      <span className={`tnum shrink-0 ${Number(r.still_owed) > 0.009 ? 'text-ink' : 'text-leaf'}`}>
+                        {Number(r.still_owed) > 0.009 ? naira(r.still_owed) : 'paid'}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ))}
+            {!!full && (
+              <button type="button" onClick={() => openCustomer(full)}
+                className="w-full text-left px-4 py-2.5 text-amber font-semibold">
+                open {person.name}’s account ›
+              </button>
+            )}
+          </div>
+        )}
+      </li>
+    )
+  }
+
+  const agedMonthBlock = (m) => {
+    const done = m.owed <= 0.009
+    const shown = !done || agedMonths.has(m.key)
+    const owing = m.people.filter(p => p.owed > 0.009)
+    const clear = m.people.filter(p => p.owed <= 0.009)
+    const clearKey = `${m.key}|settled`
+    const clearShown = agedMonths.has(clearKey)
+    return (
+      <section key={m.key} className="rounded-2xl border border-line bg-surface overflow-hidden">
+        <button type="button" disabled={!done} onClick={() => toggleAgedMonth(m.key)}
+          className={`w-full text-left flex items-baseline justify-between gap-3 px-4 py-3
+                      ${shown ? 'border-b border-line' : ''}`}>
+          <h4 className="font-semibold">
+            {monthLabel(m.key)}
+            <span className="block text-dim text-xs font-normal">
+              {naira(m.given)} given to {m.people.length}{' '}
+              {m.people.length === 1 ? 'person' : 'people'}
+              {done && (shown ? ' · tap to hide' : ' · tap to see them')}
+            </span>
+          </h4>
+          <span className={`tnum font-bold shrink-0 ${done ? 'text-leaf' : 'text-clay'}`}>
+            {done ? 'settled' : naira(m.owed)}
+          </span>
+        </button>
+        {shown && (
+          <ul>
+            {owing.map(person => agedPersonRow(m, person))}
+            {!!clear.length && !clearShown && (
+              <li className="border-t border-line/60">
+                <button type="button" onClick={() => toggleAgedMonth(clearKey)}
+                  className="w-full text-left px-4 py-2 text-dim text-sm">
+                  {clear.length} other{clear.length === 1 ? '' : 's'} paid up in full ·
+                  tap to see them
+                </button>
+              </li>
+            )}
+            {!!clear.length && clearShown && clear.map(person => agedPersonRow(m, person))}
+          </ul>
+        )}
+      </section>
+    )
+  }
+
+  const agedList = () => {
+    if (!aged) {
+      return <p className="mt-3 text-dim text-sm">Working out what each month still owes…</p>
+    }
+    if (!aged.length) {
+      return <p className="mt-6 text-center text-dim">No credit recorded here yet.</p>
+    }
+    // A year heading above the only year is an extra tap that always
+    // leads to the same place. It appears on its own when 2027 does.
+    const single = aged.length === 1
+    const stray = agedUndated.reduce((t, r) => t + Number(r.still_owed || 0), 0)
+    return (
+      <div className="mt-3 flex flex-col gap-3">
+        {stray > 0.009 && (
+          <p className="text-amber text-sm px-1">
+            {naira(stray)} is owed on credit with no date on it, so it is in
+            none of the months below. The person list still shows it.
+          </p>
+        )}
+        {aged.map(y => single ? (
+          <div key={y.key} className="flex flex-col gap-2">
+            {y.months.map(agedMonthBlock)}
+          </div>
+        ) : (
+          <section key={y.key}>
+            <div className="flex items-baseline justify-between gap-3 px-1 pb-1">
+              <h3 className="text-lg font-bold">{y.key}</h3>
+              <span className={`tnum font-bold ${y.owed > 0.009 ? 'text-clay' : 'text-leaf'}`}>
+                {y.owed > 0.009 ? `${naira(y.owed)} still owing` : 'settled'}
+              </span>
+            </div>
+            <div className="flex flex-col gap-2">{y.months.map(agedMonthBlock)}</div>
+          </section>
+        ))}
+      </div>
+    )
+  }
+
   const debtorRow = (c, note) => {
           const days = daysSince(c.last_credit_date)
           return (
@@ -1272,14 +1484,46 @@ export default function Credit({ boot }) {
         )}
       </section>
 
+      {/* TWO WAYS TO READ THE SAME DEBT (Chris, 20 November 2026, for
+          the Auditor, the Manager and the Store Manager).
+
+          By person is the counter's question: who owes, biggest first,
+          and you are looking at them. By month is the review question:
+          how much of September has never been paid for -- which a
+          person-first list can only answer by opening every account.
+
+          Only OVERSIGHT gets the switch. Everyone else keeps the list
+          they have, unchanged, and never renders a line of the other
+          one. The choice is remembered per phone, so nobody has to set
+          it every time they open the page. */}
+      {seesAllDepartments && (
+        <div role="group" aria-label="How to list the debt"
+          className="mt-3 flex rounded-xl border border-line bg-surface p-1">
+          <button type="button" onClick={() => chooseView('people')}
+            aria-pressed={!showMonths}
+            className={`flex-1 h-9 rounded-lg text-sm font-semibold
+                        ${showMonths ? 'text-dim' : 'bg-raise text-ink'}`}>
+            By person
+          </button>
+          <button type="button" onClick={() => chooseView('months')}
+            aria-pressed={showMonths}
+            className={`flex-1 h-9 rounded-lg text-sm font-semibold
+                        ${showMonths ? 'bg-raise text-ink' : 'text-dim'}`}>
+            By month
+          </button>
+        </div>
+      )}
+
+      {showMonths && agedList()}
+
       {/* Only once the list is long enough to be worth searching. */}
-      {owing.length > 4 && (
+      {!showMonths && owing.length > 4 && (
         <input value={find} onChange={e => setFind(e.target.value)}
           placeholder="Find a name" aria-label="Find a name"
           className="mt-3 h-11 w-full px-3 rounded-xl bg-surface border border-line" />
       )}
 
-      {(() => {
+      {!showMonths && (() => {
         // Months fold. One row per month carrying its total, the current
         // month open and the rest one tap away.
         //
