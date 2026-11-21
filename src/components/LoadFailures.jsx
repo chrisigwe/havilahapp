@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { subscribeLoadFailures, clearAllLoadFailures } from '../lib/loadfail'
+import { subscribeConnection } from '../lib/connection'
 import Notice from './Notice'
 
 // What did not load, said once at the top of the app rather than forty-five
@@ -8,10 +9,16 @@ import Notice from './Notice'
 // The screens underneath still render their empty states, because a blank
 // list is better than a blank page. This is what stops that blank list from
 // being read as an answer.
-export default function LoadFailures() {
+export default function LoadFailures({ showDetail = false }) {
   const [list, setList] = useState([])
+  const [online, setOnline] = useState(true)
   useEffect(() => subscribeLoadFailures(setList), [])
+  useEffect(() => subscribeConnection(c => setOnline(c.online)), [])
   if (!list.length) return null
+  // With no signal, of course it did not load. The connection bar above
+  // says so calmly and says what still works; a red alarm beside it only
+  // makes a wait look like a breakage (21 November 2026).
+  if (!online) return null
 
   return (
     <div className="px-5 pt-3">
@@ -27,7 +34,11 @@ export default function LoadFailures() {
           {list.map(f => (
             <li key={f.label} className="break-words">
               <b>{f.label}</b>
-              <span className="block text-xs">{f.message}</span>
+              {/* The raw message has earned its keep twice this week, but
+                  "TypeError: Failed to fetch" tells somebody keying sales
+                  nothing except that the machine is broken. Kept for the
+                  people who can act on it. */}
+              {showDetail && <span className="block text-xs">{f.message}</span>}
             </li>
           ))}
         </ul>

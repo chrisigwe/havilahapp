@@ -177,6 +177,14 @@ input[type="datetime-local"]::-webkit-calendar-picker-indicator:hover { opacity:
   will-change: transform, translate;
   -webkit-backface-visibility: hidden;
   backface-visibility: hidden;
+  /* The slide lives here, not in a React-driven class, so showing and
+     hiding the bar never re-renders the page beneath it (21 November
+     2026). transform only -- nothing that costs layout or paint. */
+  transform: translateY(0);
+  transition: transform 200ms ease-out;
+}
+.hv-tabbar.is-down {
+  transform: translateY(150%);
 }
 
 /* Press feedback was removed at the user's request; these transitions

@@ -16,6 +16,8 @@
 // Deliberately not a toast: a toast is gone in four seconds and these
 // matter for as long as the figure is wrong.
 
+import { noteReachable, noteLoadError } from './connection'
+
 const failures = new Map()   // label -> { label, message, at }
 const listeners = new Set()
 
@@ -54,6 +56,6 @@ export function subscribeLoadFailures(fn) {
 // The caller's own .catch still runs and still empties the list — the
 // screen behaves exactly as before, it just no longer lies about why.
 export function tracked(label, promise) {
-  return promise.then(v => { clearLoadFailure(label); return v })
-                .catch(e => { noteLoadFailure(label, e); throw e })
+  return promise.then(v => { clearLoadFailure(label); noteReachable(); return v })
+                .catch(e => { noteLoadFailure(label, e); noteLoadError(e); throw e })
 }
