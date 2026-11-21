@@ -1828,6 +1828,78 @@ export function billedToLabel(b) {
 // would overlap someone else's stay and corrupt both bills — so a
 // returning guest is always a new stay; this is what carries their old
 // balance into view rather than into the room record.
+// WHICH GUEST IS THIS, from a name and a phone number, without creating
+// one. Pulled out of loadPriorBalance on 22 November 2026 so the PR check
+// below resolves a guest EXACTLY as the prior-balance warning does.
+//
+// Two rules for the same question drift apart, and this one is not
+// obvious: a merged record keeps its phone number (a merge renames, it
+// does not delete), so a phone match can land on a retired record and
+// has to be followed to the survivor. A second copy of this that forgot
+// that would quietly fail for every merged guest.
+export async function resolveGuestId(branchId, name, phone) {
+  const live = q => q.not('full_name', 'ilike', '[merged into%')
+  const digits = (phone || '').replace(/\D/g, '')
+  let guestId = null
+  if (digits) {
+    const { data } = await supabase.from('guests')
+      .select('id, full_name').eq('branch_id', branchId).eq('phone_norm', digits).maybeSingle()
+    if (data) {
+      const m = /^\[merged into (.+?)\]/i.exec(data.full_name || '')
+      if (m) {
+        const { data: survivor } = await live(supabase.from('guests')
+          .select('id').eq('branch_id', branchId).eq('full_name', m[1].trim())).limit(1)
+        guestId = survivor?.[0]?.id || null
+      } else guestId = data.id
+    }
+  }
+  if (!guestId) {
+    const key = nameKey(name)
+    if (!key) return null
+    const { data } = await live(supabase.from('guests')
+      .select('id').eq('branch_id', branchId).eq('name_key', key))
+      .order('created_at').limit(1)
+    guestId = data?.[0]?.id || null
+  }
+  return guestId
+}
+
+// IS THIS GUEST ALREADY ON PR FOR THESE NIGHTS (Chris, 22 November 2026).
+//
+// Sir Ben Etiaba stayed on PR in the Suite, 105, 203 and 204 on 20-21
+// November. Room 207 — the same guest, the same nights — went in as a
+// one-off at a special rate of N38,000 and sat outstanding until he
+// asked why. It was keyed five days earlier by somebody who had not
+// been told the booking was complimentary.
+//
+// So the desk is asked, at the moment it can still be answered: this
+// guest is already on PR for these nights, is this room PR too? Never
+// refused, only asked — the booking saves either way.
+//
+// Reservations count. Every PR room in that group existed as a
+// reservation days before anyone arrived, so a check that only looked
+// at people already in house would have seen nothing.
+//
+// Stays BILLED to the guest count as well: Sir Ben's driver stayed on
+// PR under his own name with bill_to pointing at Sir Ben.
+export async function loadPrStaysOverlapping(branchId, guestId, fromDate, toDate) {
+  if (!guestId || !fromDate || !toDate) return []
+  const { data, error } = await supabase.from('stays')
+    .select('id, check_in_date, scheduled_out, actual_out, billing_cycle, status, rooms(room_number)')
+    .eq('branch_id', branchId)
+    .eq('billing_cycle', 'pr')
+    .neq('status', 'cancelled')
+    .or(`guest_id.eq.${guestId},bill_to_guest_id.eq.${guestId}`)
+    // Overlap: it starts before this one ends, and ends after this one
+    // starts. A same-day checkout is not an overlap.
+    .lt('check_in_date', toDate)
+  if (error) return []
+  return (data || []).filter(r => {
+    const out = r.actual_out || r.scheduled_out
+    return out && out > fromDate
+  })
+}
+
 export async function loadPriorBalance(branchId, name, phone) {
   const live = q => q.not('full_name', 'ilike', '[merged into%')
   const digits = (phone || '').replace(/\D/g, '')
