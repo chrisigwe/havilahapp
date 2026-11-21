@@ -12,6 +12,7 @@ import LoadFailures from './LoadFailures'
 import { clearAllLoadFailures } from '../lib/loadfail'
 import NotificationSetup from './NotificationSetup'
 import { signOutCleanly } from '../lib/push'
+import { is, MANAGEMENT } from '../lib/roles'
 import { moreItemsFor } from '../pages/More'
 
 // GM/admin/manager oversee everything rather than doing one
@@ -45,7 +46,29 @@ export default function Shell({ staff, tab, onTab, children,
   // Never hidden near the top of a page, so it cannot be missing when
   // someone has not scrolled anywhere. Small movements are ignored, or
   // the bar would flicker on every thumb tremor.
-  const [navDown, setNavDown] = useState(false)
+  // THE BAR'S VISIBILITY IS NOT REACT STATE (Chris, 21 November 2026:
+  // "fix the bottom nav hanging halfway on iPhone and in my account").
+  //
+  // It was `useState`, so every change of scroll direction re-rendered
+  // the WHOLE PAGE underneath -- at the exact moment the bar was
+  // sliding. On the GM's account those pages are the heaviest in the
+  // app (the branch-wide credit chain, the month rollup, a 47-person
+  // October) and on iPhone the main thread has least headroom, so the
+  // transition stopped where it stood: the bar frozen halfway, which is
+  // precisely the 16 November symptom.
+  //
+  // That day's fix moved a per-FRAME write of an inherited custom
+  // property off the shell. This is the per-INTERACTION React update
+  // that was left behind. The bar now toggles a class on its own node,
+  // so hiding it re-renders nothing and the transition is the
+  // compositor's work alone.
+  const tabsRef = useRef(null)
+  const downRef = useRef(false)
+  const setNavDown = (down) => {
+    if (downRef.current === down) return     // no redundant DOM writes
+    downRef.current = down
+    tabsRef.current?.classList.toggle('is-down', down)
+  }
   // The big page title at the top of a screen shrinks into the bar as you
   // scroll, and comes back at the top — WhatsApp's Chats screen, which is
   // how Chris asked for it (26 October 2026).
@@ -301,7 +324,8 @@ export default function Shell({ staff, tab, onTab, children,
       <NotificationSetup staff={staff} alertEligible={alertEligible} />
       {/* Above the page, because what is missing from a figure has to be
           read before the figure is. */}
-      <LoadFailures />
+      {/* The technical line goes only to the people who can act on it. */}
+      <LoadFailures showDetail={is(staff.role, MANAGEMENT)} />
       {children}
       </div>
       </div>
@@ -336,8 +360,7 @@ export default function Shell({ staff, tab, onTab, children,
           <body> there is no ancestor left that could ever own it. Its
           height is still reserved by pb-24 on the shell above. */}
       {createPortal(
-        <nav className={`lg:hidden hv-tabbar transition-transform duration-200 ease-out ${
-          navDown ? 'translate-y-[150%]' : 'translate-y-0'}`}>
+        <nav ref={tabsRef} className="lg:hidden hv-tabbar">
           <div className="mx-auto max-w-md flex gap-1 p-1.5 rounded-[28px]
                            bg-surface/70
                            border border-white/10 shadow-[0_8px_32px_rgba(0,0,0,0.45)]">
