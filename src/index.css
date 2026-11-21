@@ -67,6 +67,15 @@ input[type="datetime-local"]::-webkit-calendar-picker-indicator:hover { opacity:
 .invoice-table tfoot td { border-bottom: none; border-top: 2px solid var(--color-line); }
 .invoice-head { border-bottom: 2px solid var(--color-amber); padding-bottom: 0.75rem; }
 .invoice-meta { display: flex; justify-content: space-between; gap: 1rem; }
+/* Says the document covers one counter, not the whole account. Bordered
+   rather than plain text so it survives being skimmed, and it must print
+   and go into the PDF like everything else here (21 November 2026). */
+.invoice-note {
+  border: 1px solid var(--color-clay);
+  border-radius: 0.5rem;
+  padding: 0.5rem 0.75rem;
+  font-size: 0.9rem;
+}
 .invoice-balance {
   display: flex; justify-content: space-between; align-items: baseline;
   font-size: 1.25rem; font-weight: 700;
