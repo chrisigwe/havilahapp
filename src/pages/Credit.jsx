@@ -183,6 +183,20 @@ export default function Credit({ boot }) {
   const [agedMonths, setAgedMonths] = useState(() => new Set())
   const [agedPeople, setAgedPeople] = useState(() => new Set())
   const showMonths = seesAllDepartments && listView === 'months'
+
+  // WHAT THIS VIEWER CAN SEE OF AN ACCOUNT (Chris, 21 November 2026:
+  // "open bar staff should only see open bar items ... so
+  // frontdesk/minimart staff don't collect open bar debt mistakenly").
+  //
+  // credit_chain now returns only the departments the caller may see,
+  // which is the fix. It also breaks a rule Chris set on 25 October --
+  // "a statement is the whole account", because one filtered to a
+  // single counter understates the debt when it is handed to a
+  // customer. Both are right, so the document has to say which it is
+  // rather than silently being the narrow one.
+  const partialAccount = !seesAllDepartments
+  const seenDepts = (rows) => [...new Set((rows || [])
+    .map(r => locById[r.location_id]?.name).filter(Boolean))].sort()
   // Which statement is open: null, 'all', or a 'YYYY-MM'. A statement is
   // a document, so the account lists them as documents and one opens
   // when you pick it up (Chris, 19 November 2026).
@@ -834,6 +848,15 @@ export default function Credit({ boot }) {
     out.push(c?.name || '')
     out.push('Account as at ' + new Date()
       .toLocaleDateString('en-NG', { day: 'numeric', month: 'long', year: 'numeric' }))
+    // The text goes out by WhatsApp, where nobody sees the sheet it came
+    // from. If it only covers one counter it has to say so in the message
+    // itself, or a customer reads a part of their debt as all of it.
+    if (partialAccount) {
+      const d = seenDepts(open?.chain)
+      out.push(d.length
+        ? `${d.join(' and ')} only — there may be credit at other counters.`
+        : 'This covers only some counters — there may be credit at others.')
+    }
     const keys = Object.keys(by).sort()
     if (keys.length) {
       out.push('', 'STILL UNPAID')
@@ -2370,6 +2393,19 @@ export default function Credit({ boot }) {
                   Havilah Suite Ltd · {boot.branchName || ''}
                 </p>
               </div>
+
+              {/* Never let a part of an account leave the building looking
+                  like all of it. */}
+              {partialAccount && (
+                <p className="invoice-note mt-3 text-clay font-semibold">
+                  {(() => {
+                    const d = seenDepts(open?.chain)
+                    return d.length
+                      ? `${d.join(' and ')} only — this account may have credit at other counters.`
+                      : 'Your departments only — this account may have credit at other counters.'
+                  })()}
+                </p>
+              )}
 
               <div className="invoice-meta mt-5">
                 <div>
