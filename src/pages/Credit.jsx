@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useToast } from '../components/Toast'
-import { lagosToday, methodLabel, naira, startingDept, stepMonth, tierLabel } from '../lib/format'
+import { amountOnly, lagosToday, methodLabel, naira, startingDept, stepMonth, tierLabel } from '../lib/format'
 import { ageByMonth, undatedRows } from '../lib/aging'
 import { monthLabel } from '../lib/months'
 import { splitRepaymentByCredit, applyMethods } from '../lib/creditsplit'
@@ -2684,9 +2684,13 @@ export default function Credit({ boot }) {
                 department: r.dept || '—',
                 // A part-paid line carries its own arithmetic, so a
                 // printed "still owing" smaller than the charge cannot
-                // read as a mistake.
+                // read as a mistake. What was charged sits in its own
+                // column on the same row, so only the paid part is
+                // repeated here, and without a currency sign: the column
+                // headings carry NGN, and the sign itself breaks the line
+                // (see src/lib/pdfSheet.js).
                 item: `${r.item || '—'}${Number(r.recovered || 0) > 0.009
-                  ? ` (${naira(r.recovered)} of ${naira(r.amount)} already paid)` : ''}`,
+                  ? ` (${amountOnly(r.recovered)} already paid)` : ''}`,
                 servedBy: r.staff || '',
                 qty: r.qty, unit: r.amount, amount: r.still_owed,
               })),
