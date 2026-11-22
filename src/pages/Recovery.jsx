@@ -438,19 +438,29 @@ export default function Recovery({ boot }) {
         )}
         renderDay={(day, items) => {
         const open = dayOpen(day)
+        // A day is read the way a month is on the Credit page (Chris,
+        // 22 November 2026): a small eyebrow, then the date large and
+        // banded in raise, so it reads as the heading of what is under it
+        // rather than as one more line among the payments. No border-b on
+        // the button -- the list below already carries border-t.
         const dayTotal = items.reduce((t, r) => t + Number(r.amount || 0), 0)
         return (
-        <section key={day} className="mt-4 rounded-2xl border border-line bg-surface">
+        <section key={day} className="mt-4 rounded-2xl border border-line bg-surface overflow-hidden">
           <button type="button" onClick={() => toggleDay(day)} aria-expanded={open}
-            className="w-full px-4 py-3 flex items-baseline justify-between gap-3 text-left">
+            className="w-full px-4 py-3 flex items-baseline justify-between gap-3 text-left bg-raise">
             <span className="min-w-0">
-              <span className="font-semibold">{dayLabel(day)}</span>
-              <span className="text-dim text-sm block">
+              <span className="block text-dim text-[0.65rem] uppercase tracking-[0.18em] font-semibold">
+                Recovered on
+              </span>
+              <span className="block text-xl font-extrabold uppercase tracking-wide leading-tight">
+                {dayLabel(day)}
+              </span>
+              <span className="block text-dim text-xs font-normal mt-1">
                 {items.length} {items.length === 1 ? 'payment' : 'payments'}
               </span>
             </span>
             <span className="flex items-baseline gap-2 shrink-0">
-              <span className="tnum font-bold text-leaf">{naira(dayTotal)}</span>
+              <span className="tnum text-xl font-extrabold text-leaf">{naira(dayTotal)}</span>
               <svg viewBox="0 0 20 20" aria-hidden="true"
                    className={`w-4 h-4 text-dim transition-transform ${open ? 'rotate-180' : ''}`}
                    fill="none" stroke="currentColor" strokeWidth="2">
@@ -572,19 +582,25 @@ export default function Recovery({ boot }) {
             )}
             renderDay={(day, items) => {
             const open = dayOpen(day)
+            // Same treatment as the day above, so the two lists match.
             const dayTotal = items.reduce((t, p) => t + Number(p.amount || 0), 0)
             return (
-            <section key={day} className="mt-4 rounded-2xl border border-line bg-surface">
+            <section key={day} className="mt-4 rounded-2xl border border-line bg-surface overflow-hidden">
               <button type="button" onClick={() => toggleDay(day)} aria-expanded={open}
-                className="w-full px-4 py-3 flex items-baseline justify-between gap-3 text-left">
+                className="w-full px-4 py-3 flex items-baseline justify-between gap-3 text-left bg-raise">
                 <span className="min-w-0">
-                  <span className="font-semibold">{dayLabel(day)}</span>
-                  <span className="text-dim text-sm block">
+                  <span className="block text-dim text-[0.65rem] uppercase tracking-[0.18em] font-semibold">
+                    Settled on
+                  </span>
+                  <span className="block text-xl font-extrabold uppercase tracking-wide leading-tight">
+                    {dayLabel(day)}
+                  </span>
+                  <span className="block text-dim text-xs font-normal mt-1">
                     {items.length} {items.length === 1 ? 'payment' : 'payments'}
                   </span>
                 </span>
                 <span className="flex items-baseline gap-2 shrink-0">
-                  <span className="tnum font-bold text-leaf">{naira(dayTotal)}</span>
+                  <span className="tnum text-xl font-extrabold text-leaf">{naira(dayTotal)}</span>
                   <svg viewBox="0 0 20 20" aria-hidden="true"
                        className={`w-4 h-4 text-dim transition-transform ${open ? 'rotate-180' : ''}`}
                        fill="none" stroke="currentColor" strokeWidth="2">
