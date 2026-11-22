@@ -47,7 +47,24 @@ export const APPROVE_ROOM_CHARGES = ['front_desk', 'manager', 'gm', 'admin']
 // posted behind the bar by a manager.
 export const SENDS_CREDIT_WATCH = ['manager', 'gm', 'admin', 'auditor']
 
-// auditor, gm, admin. Open Credit and Recovered debt on ALL departments:
-// their job is the whole branch, and a single department would quietly
-// narrow the review. Everyone else opens on their own department.
-export const OPENS_ON_ALL = ['auditor', 'gm', 'admin']
+// auditor, manager, storekeeper, gm, admin. Open Credit and Recovered
+// debt on ALL departments: their job is the whole branch, and a single
+// department would quietly narrow the review. Everyone else opens on
+// their own department.
+//
+// Manager and storekeeper joined on 22 November 2026 (Chris). They were
+// already oversight everywhere else on those two pages -- they get the
+// by-month view, which is the branch-wide rollup -- but opened scoped to
+// one department, so they were handed a branch summary with most of the
+// branch missing. Worse, neither usually HAS a department: startingDept
+// falls through to the first sales point in the list, so a store manager
+// was landing on whichever counter sorts first, with nothing on screen
+// to say the choice was arbitrary.
+export const OPENS_ON_ALL = ['auditor', 'manager', 'storekeeper', 'gm', 'admin']
+
+// auditor, gm, admin. Deliberately NOT the list above, though Stock once
+// shared it. Stock is a page people WORK on -- where is my stock, what
+// came in -- and a storekeeper opening on her Store rather than the
+// whole branch is the behaviour she is used to. Credit and Recovered are
+// pages people REVIEW on, which is why the two lists part company.
+export const STOCK_OPENS_ON_ALL = ['auditor', 'gm', 'admin']
