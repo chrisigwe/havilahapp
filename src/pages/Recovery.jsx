@@ -430,9 +430,9 @@ export default function Recovery({ boot }) {
 
       {/* Finished months and years fold into one row each (579). The day
           block below is unchanged — only what wraps it is new. */}
-      <FoldedDays groups={byDay} today={lagosToday()}
+      <FoldedDays groups={byDay} today={lagosToday()} eyebrow="Recovered in"
         summary={(items) => (
-          <span className="tnum font-bold text-leaf">
+          <span className="tnum text-2xl font-extrabold text-leaf">
             {naira(items.reduce((t, r) => t + Number(r.amount || 0), 0))}
           </span>
         )}
@@ -447,25 +447,25 @@ export default function Recovery({ boot }) {
         return (
         <section key={day} className="mt-4 rounded-2xl border border-line bg-surface overflow-hidden">
           <button type="button" onClick={() => toggleDay(day)} aria-expanded={open}
-            className="w-full px-4 py-3 flex items-baseline justify-between gap-3 text-left bg-raise">
-            <span className="min-w-0">
-              <span className="block text-dim text-[0.65rem] uppercase tracking-[0.18em] font-semibold">
-                Recovered on
-              </span>
-              <span className="block text-xl font-extrabold uppercase tracking-wide leading-tight">
-                {dayLabel(day)}
-              </span>
-              <span className="block text-dim text-xs font-normal mt-1">
+            className="w-full px-4 py-3 text-left bg-raise">
+            <span className="block text-dim text-[0.65rem] uppercase tracking-[0.18em] font-semibold">
+              Recovered on
+            </span>
+            <span className="block text-xl font-extrabold uppercase tracking-wide leading-tight">
+              {dayLabel(day)}
+            </span>
+            <span className="mt-1 flex items-baseline justify-between gap-3">
+              <span className="text-dim text-xs">
                 {items.length} {items.length === 1 ? 'payment' : 'payments'}
               </span>
-            </span>
-            <span className="flex items-baseline gap-2 shrink-0">
-              <span className="tnum text-xl font-extrabold text-leaf">{naira(dayTotal)}</span>
+              <span className="flex items-baseline gap-2 shrink-0">
+                <span className="tnum text-xl font-extrabold text-leaf">{naira(dayTotal)}</span>
               <svg viewBox="0 0 20 20" aria-hidden="true"
                    className={`w-4 h-4 text-dim transition-transform ${open ? 'rotate-180' : ''}`}
                    fill="none" stroke="currentColor" strokeWidth="2">
                 <path d="M5 8l5 5 5-5" strokeLinecap="round" strokeLinejoin="round" />
               </svg>
+              </span>
             </span>
           </button>
           {open && (
@@ -574,9 +574,9 @@ export default function Recovery({ boot }) {
 
           {/* Folded the same way as the list above (579) — this one runs
               sixty days, so it grows month rows just as fast. */}
-          <FoldedDays groups={roomByDay} today={lagosToday()}
+          <FoldedDays groups={roomByDay} today={lagosToday()} eyebrow="Settled in"
             summary={(items) => (
-              <span className="tnum font-bold text-leaf">
+              <span className="tnum text-2xl font-extrabold text-leaf">
                 {naira(items.reduce((t, p) => t + Number(p.amount || 0), 0))}
               </span>
             )}
@@ -587,25 +587,25 @@ export default function Recovery({ boot }) {
             return (
             <section key={day} className="mt-4 rounded-2xl border border-line bg-surface overflow-hidden">
               <button type="button" onClick={() => toggleDay(day)} aria-expanded={open}
-                className="w-full px-4 py-3 flex items-baseline justify-between gap-3 text-left bg-raise">
-                <span className="min-w-0">
-                  <span className="block text-dim text-[0.65rem] uppercase tracking-[0.18em] font-semibold">
-                    Settled on
-                  </span>
-                  <span className="block text-xl font-extrabold uppercase tracking-wide leading-tight">
-                    {dayLabel(day)}
-                  </span>
-                  <span className="block text-dim text-xs font-normal mt-1">
+                className="w-full px-4 py-3 text-left bg-raise">
+                <span className="block text-dim text-[0.65rem] uppercase tracking-[0.18em] font-semibold">
+                  Settled on
+                </span>
+                <span className="block text-xl font-extrabold uppercase tracking-wide leading-tight">
+                  {dayLabel(day)}
+                </span>
+                <span className="mt-1 flex items-baseline justify-between gap-3">
+                  <span className="text-dim text-xs">
                     {items.length} {items.length === 1 ? 'payment' : 'payments'}
                   </span>
-                </span>
-                <span className="flex items-baseline gap-2 shrink-0">
-                  <span className="tnum text-xl font-extrabold text-leaf">{naira(dayTotal)}</span>
+                  <span className="flex items-baseline gap-2 shrink-0">
+                    <span className="tnum text-xl font-extrabold text-leaf">{naira(dayTotal)}</span>
                   <svg viewBox="0 0 20 20" aria-hidden="true"
                        className={`w-4 h-4 text-dim transition-transform ${open ? 'rotate-180' : ''}`}
                        fill="none" stroke="currentColor" strokeWidth="2">
                     <path d="M5 8l5 5 5-5" strokeLinecap="round" strokeLinejoin="round" />
                   </svg>
+                  </span>
                 </span>
               </button>
               {open && (
