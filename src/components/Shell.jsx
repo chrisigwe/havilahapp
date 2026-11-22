@@ -14,6 +14,7 @@ import NotificationSetup from './NotificationSetup'
 import { signOutCleanly } from '../lib/push'
 import { is, MANAGEMENT } from '../lib/roles'
 import { moreItemsFor } from '../pages/More'
+import { navStart, navStep } from '../lib/scrollnav'
 
 // GM/admin/manager oversee everything rather than doing one
 // department's day-to-day work — their four most load-bearing
@@ -63,6 +64,7 @@ export default function Shell({ staff, tab, onTab, children,
   // so hiding it re-renders nothing and the transition is the
   // compositor's work alone.
   const tabsRef = useRef(null)
+  const navRef = useRef(navStart(0))
   const downRef = useRef(false)
   const setNavDown = (down) => {
     if (downRef.current === down) return     // no redundant DOM writes
@@ -123,7 +125,7 @@ export default function Shell({ staff, tab, onTab, children,
     return () => { ro?.disconnect(); window.removeEventListener('resize', measure) }
   }, [])
   useEffect(() => {
-    let last = window.scrollY
+    navRef.current = navStart(window.scrollY)
     let frame = 0
     const paint = (y) => {
       const el = barRef.current
@@ -141,11 +143,15 @@ export default function Shell({ staff, tab, onTab, children,
         // continuously, while the tab bar only reacts to a deliberate
         // push in one direction.
         paint(y)
-        const dy = y - last
-        if (Math.abs(dy) < 6) return
-        last = y
-        if (y < 80) { setNavDown(false); return }
-        setNavDown(dy > 0)
+        // The decision itself lives in src/lib/scrollnav.js, pure and
+        // tested against a recorded iPhone bounce: a flick to the end of
+        // a list springs the page past its own height and back within a
+        // fraction of a second, which read naively is down-up-down
+        // inside one 200ms slide and leaves the bar resting halfway.
+        const max = document.documentElement.scrollHeight - window.innerHeight
+        const next = navStep(navRef.current, y, max, performance.now())
+        if (next.down !== navRef.current.down) setNavDown(next.down)
+        navRef.current = next
       })
     }
     window.addEventListener('scroll', onScroll, { passive: true })
@@ -157,6 +163,7 @@ export default function Shell({ staff, tab, onTab, children,
   // A tab change scrolls to a new page; the bar must be there when it does.
   useEffect(() => {
     setNavDown(false)
+    navRef.current = navStart(0)
     barRef.current?.style.setProperty('--hv-t', '0')
   }, [tab])
   // The bar comes from tabsFor() — the single definition shared with

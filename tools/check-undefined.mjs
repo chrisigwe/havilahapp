@@ -41,6 +41,7 @@ const GLOBALS = new Set([
   'File', 'FileReader', 'URL', 'URLSearchParams', 'AbortController',
   'setTimeout', 'clearTimeout', 'setInterval', 'clearInterval',
   'requestAnimationFrame', 'cancelAnimationFrame', 'queueMicrotask',
+  'performance',
   'localStorage', 'sessionStorage', 'indexedDB', 'crypto', 'caches',
   'alert', 'confirm', 'prompt', 'print', 'open', 'close',
   'Math', 'JSON', 'Date', 'Number', 'String', 'Boolean', 'Array', 'Object',
