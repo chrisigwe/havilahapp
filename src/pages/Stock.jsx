@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { loadStockMap, loadRecentlyAdded } from '../lib/data'
-import { OPENS_ON_ALL, is } from '../lib/roles'
+import { STOCK_OPENS_ON_ALL, is } from '../lib/roles'
 import Notice from '../components/Notice'
 import { tracked } from '../lib/loadfail'
 
@@ -10,9 +10,15 @@ export default function Stock({ boot }) {
   const [err, setErr] = useState(null)
   // Opens on the person's own department (their default), so a bartender
   // lands on their bar, not the whole branch. Auditor, GM and admin watch
-  // everything, so they open on all, same rule as Recovery.
+  // everything, so they open on all.
+  //
+  // This used OPENS_ON_ALL until 22 November 2026, when manager and
+  // storekeeper were added to that list for Credit and Recovered. Stock
+  // is a working page, not a review one, and a storekeeper opening on
+  // the whole branch instead of her Store would have been a change
+  // nobody asked for -- so it has its own list now.
   const [locId, setLocId] = useState(() =>
-    !is(staff.role, OPENS_ON_ALL) && staff.default_location_id
+    !is(staff.role, STOCK_OPENS_ON_ALL) && staff.default_location_id
       && locations.some(l => l.id === staff.default_location_id)
       ? staff.default_location_id : 'all')
   // A branch switch can leave the chosen department behind: fall back to all.
