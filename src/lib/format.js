@@ -1,7 +1,12 @@
 import { OVERSIGHT } from './roles'
 import { addDays } from './days'
-export const naira = (n) =>
-  '₦' + Number(n ?? 0).toLocaleString('en-NG', { maximumFractionDigits: 2 })
+// The figure on its own, for places that carry the currency somewhere
+// else: a PDF column headed "(NGN)", a sentence that already said naira.
+// The naira sign cannot be drawn in a PDF at all (see src/lib/pdfSheet.js).
+export const amountOnly = (n) =>
+  Number(n ?? 0).toLocaleString('en-NG', { maximumFractionDigits: 2 })
+
+export const naira = (n) => '₦' + amountOnly(n)
 
 // business date in Africa/Lagos regardless of device timezone
 export const lagosToday = () =>

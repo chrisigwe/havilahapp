@@ -31,11 +31,54 @@ const RULE = [170, 170, 170]
 const num = (n) => Number(n || 0).toLocaleString('en-NG', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 const money = (n) => 'NGN ' + num(n)
 
+// jsPDF's built-in fonts are single-byte. One character above 0xFF and it
+// writes the WHOLE string as UCS-2BE with no marker, so the reader draws
+// every other byte as a blank glyph: the line comes out spaced apart, at
+// roughly twice the width jsPDF measured it at, which is why it is never
+// wrapped and runs clean across the next column, and the character itself
+// lands as junk. Measured on a real statement, 22 November 2026:
+// "Star (₦1,300 of ₦1,300 already paid)" went out as
+// 00 53 00 74 00 61 00 72 ... with the naira sign a stray broken bar, and
+// the line printed over the Served by column on top of the server's name.
+//
+// Figures here carry NGN in the column heading, so nothing needs a
+// currency sign. Anything that still reaches us — a naira sign from a
+// screen label, an em dash placeholder, a curly quote off a phone
+// keyboard — is folded to characters the font can actually draw, at
+// the one place every string passes on its way to the page.
+const FOLD = [
+  [/\u20a6\s*/g, 'NGN '],             // naira sign, spaced as the headings are
+  [/[\u2013\u2014\u2212]/g, '-'],     // en dash, em dash, minus
+  [/[\u2018\u2019\u201b]/g, "'"],
+  [/[\u201c\u201d\u201e]/g, '"'],
+  [/\u2026/g, '...'],
+  [/\u2022/g, '-'],
+  [/\u00a0/g, ' '],                   // non-breaking space
+]
+export const plain = (v) => {
+  let s = String(v ?? '')
+  for (const [re, to] of FOLD) s = s.replace(re, to)
+  // Anything left above 0xFF would take the same path, so it is dropped
+  // rather than drawn as noise. Accented letters sit below it and stay.
+  return s.replace(/[^\u0000-\u00ff]/g, '')
+}
+
+// Patched onto the document itself, over both methods that take text, so
+// that no call site here or later can forget: splitTextToSize measures,
+// text draws, and they must agree on the same characters.
+function foldText(doc) {
+  const draw = doc.text.bind(doc)
+  doc.text = (t, ...rest) => draw(Array.isArray(t) ? t.map(plain) : plain(t), ...rest)
+  const split = doc.splitTextToSize.bind(doc)
+  doc.splitTextToSize = (t, ...rest) => split(plain(t), ...rest)
+  return doc
+}
+
 // Everything is drawn through this little cursor so page breaks happen in one
 // place: any block that will not fit starts a new page instead of being cut.
 class Sheet {
   constructor(title) {
-    this.doc = new jsPDF({ unit: 'pt', format: 'a4', compress: true })
+    this.doc = foldText(new jsPDF({ unit: 'pt', format: 'a4', compress: true }))
     this.doc.setProperties({ title })
     this.y = M
     this.page = 1
