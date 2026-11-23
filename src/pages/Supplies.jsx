@@ -115,7 +115,13 @@ export default function Supplies({ boot }) {
     (isKeeper ? r.business_date >= lagosDaysAgo(30)
               : r.recorded_by === staff.id && r.business_date >= lagosDaysAgo(6))
 
-  const tabs = [...(canRecord ? [['record', 'Record use']] : []), ['entries', 'Entries'], ['balances', 'Balances'],
+  // "Record use" was clipped to "Record u..." on a GM's phone, where
+  // four tabs share the row (Chris, 23 November 2026, with a
+  // screenshot). Measured against the built stylesheet at 320 to 430px
+  // wide, three tabs and four: the label, the letter-spacing and the
+  // padding together are what make every case fit. Changing any one of
+  // them back puts "Balances" over the edge on a 375px screen.
+  const tabs = [...(canRecord ? [['record', 'Record']] : []), ['entries', 'Entries'], ['balances', 'Balances'],
     ...(isAdmin ? [['lists', 'Lists']] : [])]
 
   return (
@@ -125,10 +131,10 @@ export default function Supplies({ boot }) {
         {places.map(l => <Chip key={l.id} on={l.id === locId} onClick={() => setLocId(l.id)}>{l.name}</Chip>)}
       </div>
 
-      <div className="grid gap-1.5 mb-3" style={{ gridTemplateColumns: `repeat(${tabs.length}, minmax(0, 1fr))` }}>
+      <div className="grid gap-1 mb-3" style={{ gridTemplateColumns: `repeat(${tabs.length}, minmax(0, 1fr))` }}>
         {tabs.map(([k, label]) => (
           <button key={k} onClick={() => setView(k)}
-            className={`h-9 px-1 rounded-lg border text-[13px] leading-none whitespace-nowrap truncate font-bold ${view === k
+            className={`h-9 px-0.5 rounded-lg border text-[13px] tracking-tight leading-none whitespace-nowrap truncate font-bold ${view === k
               ? 'bg-amber/20 text-amber border-amber' : 'border-line text-dim'}`}>{label}</button>
         ))}
       </div>
