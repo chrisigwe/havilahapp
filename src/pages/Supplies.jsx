@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from 'react'
 import { loadStockMap, loadSuppliesUse, recordSuppliesUse, voidSuppliesUse,
-         loadDepartmentSupplies, setDepartmentSupply, returnSuppliesToStore } from '../lib/data'
-import { lagosDaysAgo } from '../lib/format'
+         loadDepartmentSupplies, setDepartmentSupply, returnSuppliesToStore,
+         loadSupplyLastUsed } from '../lib/data'
+import { lagosDaysAgo, lagosToday } from '../lib/format'
 import { useToast } from '../components/Toast'
 import { VersionLine } from './More'
 import { tracked } from '../lib/loadfail'
@@ -35,11 +36,22 @@ export default function Supplies({ boot }) {
   }, [places, locId, canRecord, isKeeper, staff.default_location_id])
 
   const [stockMap, setStockMap] = useState({})
+  // null until it has loaded, and null again if it fails -- never {}.
+  // An empty map renders as "no use ever recorded" against every line,
+  // which is the Store Manager refusing supplies over a failed fetch.
+  const [lastUsed, setLastUsed] = useState(null)
   const [deptLists, setDeptLists] = useState({})
   const isAdmin = ['gm', 'admin'].includes(staff.role)
   const [feed, setFeed] = useState(null)
   const [days, setDays] = useState(30)
-  const [view, setView] = useState(canRecord ? 'record' : 'entries')  // record | entries | balances
+  // Who opens where. A department records its own use, so it lands on
+  // Record use. The Store Manager and above do not record anything --
+  // that panel is blank for them until they pick a department -- and
+  // what they came for is the balances (Chris, 23 November 2026: the
+  // Store Manager asked to see each department's supplies so she can
+  // judge whether to issue or refuse). So they land there instead.
+  const [view, setView] = useState(
+    canRecord ? (isKeeper ? 'balances' : 'record') : 'entries')  // record | entries | balances
   const [q, setQ] = useState('')
   const [lines, setLines] = useState([])
   const [note, setNote] = useState('')
@@ -51,6 +63,7 @@ export default function Supplies({ boot }) {
     loadStockMap(staff.branch_id).then(setStockMap).catch(console.error)
     tracked('Supplies used', loadSuppliesUse(staff.branch_id, days)).then(setFeed).catch(() => setFeed([]))
     loadDepartmentSupplies(staff.branch_id).then(setDeptLists).catch(() => {})
+    tracked('Supply use dates', loadSupplyLastUsed(staff.branch_id)).then(setLastUsed).catch(() => setLastUsed(null))
   }
   useEffect(refresh, [staff.branch_id, days])
   useEffect(() => { setLines([]); setNote(''); setUsedBy('') }, [locId])
@@ -102,7 +115,13 @@ export default function Supplies({ boot }) {
     (isKeeper ? r.business_date >= lagosDaysAgo(30)
               : r.recorded_by === staff.id && r.business_date >= lagosDaysAgo(6))
 
-  const tabs = [...(canRecord ? [['record', 'Record use']] : []), ['entries', 'Entries'], ['balances', 'Balances'],
+  // "Record use" was clipped to "Record u..." on a GM's phone, where
+  // four tabs share the row (Chris, 23 November 2026, with a
+  // screenshot). Measured against the built stylesheet at 320 to 430px
+  // wide, three tabs and four: the label, the letter-spacing and the
+  // padding together are what make every case fit. Changing any one of
+  // them back puts "Balances" over the edge on a 375px screen.
+  const tabs = [...(canRecord ? [['record', 'Record']] : []), ['entries', 'Entries'], ['balances', 'Balances'],
     ...(isAdmin ? [['lists', 'Lists']] : [])]
 
   return (
@@ -112,10 +131,10 @@ export default function Supplies({ boot }) {
         {places.map(l => <Chip key={l.id} on={l.id === locId} onClick={() => setLocId(l.id)}>{l.name}</Chip>)}
       </div>
 
-      <div className="grid gap-1.5 mb-3" style={{ gridTemplateColumns: `repeat(${tabs.length}, minmax(0, 1fr))` }}>
+      <div className="grid gap-1 mb-3" style={{ gridTemplateColumns: `repeat(${tabs.length}, minmax(0, 1fr))` }}>
         {tabs.map(([k, label]) => (
           <button key={k} onClick={() => setView(k)}
-            className={`h-9 px-1 rounded-lg border text-[13px] leading-none whitespace-nowrap truncate font-bold ${view === k
+            className={`h-9 px-0.5 rounded-lg border text-[13px] tracking-tight leading-none whitespace-nowrap truncate font-bold ${view === k
               ? 'bg-amber/20 text-amber border-amber' : 'border-line text-dim'}`}>{label}</button>
         ))}
       </div>
@@ -235,7 +254,8 @@ export default function Supplies({ boot }) {
       )}
 
       {view === 'balances' && (
-        <Balances feed={feed} stockMap={stockMap} locId={locId} places={places} items={supplyItems} days={days}
+        <Balances feed={feed} stockMap={stockMap} lastUsed={lastUsed} locId={locId}
+          places={places} items={supplyItems} days={days}
           setDays={setDays} canReturn={isKeeper} onChanged={refresh}
           store={(allLocations || locations).find(l => l.is_store)} />
       )}
@@ -252,9 +272,21 @@ export default function Supplies({ boot }) {
   )
 }
 
+// How long since a department last recorded using something. The age is
+// what decides whether to issue more, so it is spelled out rather than
+// left as a date to subtract in your head.
+const sinceText = (d) => {
+  if (!d) return null
+  const day = new Date(d + 'T12:00:00')
+  const days = Math.round((new Date(lagosToday() + 'T12:00:00') - day) / 864e5)
+  const when = day.toLocaleDateString('en-NG', { day: 'numeric', month: 'short' })
+  if (days <= 0) return 'last recorded today'
+  return `last recorded ${when}, ${days} day${days === 1 ? '' : 's'} ago`
+}
+
 // Per department and item: handed over by the Store, used (net of undone), and
 // what the system says is still held. Negative = used more than was handed over.
-function Balances({ feed, stockMap, locId, places, items, days, setDays, canReturn, onChanged, store }) {
+function Balances({ feed, stockMap, lastUsed, locId, places, items, days, setDays, canReturn, onChanged, store }) {
   const toast = useToast()
   const [ret, setRet] = useState(null)   // { dept, item, qty, reason }
   const [busy, setBusy] = useState(false)
@@ -268,6 +300,9 @@ function Balances({ feed, stockMap, locId, places, items, days, setDays, canRetu
     } catch (e) { toast(e.message, 'error') }
     setBusy(false)
   }
+  // Whether the dates loaded at all. Without them the page still works;
+  // it just says nothing about use rather than saying "never".
+  const knowUse = !!lastUsed
   const depts = locId ? places.filter(p => p.id === locId) : places
   if (feed === null) return <p className="py-8 text-center text-dim">Loading…</p>
   const byKey = {}
@@ -308,16 +343,25 @@ function Balances({ feed, stockMap, locId, places, items, days, setDays, canRetu
       )}
 
       {depts.map(d => {
-        const rows = items.map(i => ({ i, e: byKey[`${d.id}:${i.id}`] || { got: 0, used: 0 }, have: stockMap[`${i.id}:${d.id}`] ?? 0 }))
+        const rows = items.map(i => ({ i, e: byKey[`${d.id}:${i.id}`] || { got: 0, used: 0 },
+            have: stockMap[`${i.id}:${d.id}`] ?? 0, when: lastUsed?.[`${i.id}:${d.id}`] || null }))
           .filter(r => r.e.got || r.e.used || r.have)
           .sort((a, b) => a.have - b.have)
+        // Holding supplies with nothing ever recorded against them. Said
+        // as a fact and not as advice: on the day a department is first
+        // issued something it is true and means nothing, and only the
+        // Store Manager knows which of the two she is looking at.
+        const silent = knowUse && rows.some(r => r.have > 0) && !rows.some(r => r.when)
         return (
           <div key={d.id} className="mb-4 rounded-2xl border border-line bg-surface px-4 py-3">
             <p className="font-bold">{d.name}</p>
+            {silent && (
+              <p className="text-amber text-xs mt-1">Holding supplies with no use ever recorded.</p>
+            )}
             {!rows.length && <p className="text-dim text-sm mt-1">No supplies held or used.</p>}
-            {rows.map(({ i, e, have }) => (
+            {rows.map(({ i, e, have, when }) => (
               <div key={i.id}>
-              <div className="flex items-baseline gap-2 py-1 text-sm">
+              <div className="flex items-baseline gap-2 pt-1 text-sm">
                 <span className="flex-1 min-w-0 truncate">{i.name}</span>
                 <span className="text-dim tnum">+{e.got} / −{e.used}</span>
                 <span className={`tnum w-14 text-right font-semibold ${have < 0 ? 'text-clay' : ''}`}>{have}</span>
@@ -326,6 +370,12 @@ function Balances({ feed, stockMap, locId, places, items, days, setDays, canRetu
                     className="text-amber text-xs font-semibold">Return</button>
                 )}
               </div>
+              {/* All time, not the 7/30/90 window above it: a department
+                  that last recorded a use six weeks ago must not read the
+                  same as one that has never recorded at all. */}
+              {knowUse && (when
+                ? <p className="text-dim text-xs pb-1">{sinceText(when)}</p>
+                : have > 0 && <p className="text-clay text-xs pb-1">no use ever recorded</p>)}
               {ret && ret.dept === d.id && ret.item === i.id && (
                 <div className="flex flex-wrap gap-2 pb-2">
                   <input inputMode="decimal" value={ret.qty} placeholder="How many"
