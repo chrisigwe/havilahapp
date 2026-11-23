@@ -4595,6 +4595,27 @@ export async function voidSuppliesUse(movementId, reason) {
   if (error) throw error
 }
 
+// When each department last RECORDED using a supply, all time.
+//
+// Deliberately not taken from loadSuppliesUse: that is windowed to 7, 30
+// or 90 days, so a department whose last entry was six weeks ago looks
+// identical to one that has never recorded anything at all. The Store
+// Manager refuses or issues supplies on this signal, so a false "never"
+// would have her accusing the department that does keep records.
+//
+// The view excludes uses that were later undone, and carries
+// security_invoker, so it shows exactly what the person could read in
+// stock_movements themselves.
+export async function loadSupplyLastUsed(branchId) {
+  const { data, error } = await supabase.from('v_supply_last_used')
+    .select('location_id, stock_item_id, last_used')
+    .eq('branch_id', branchId)
+  if (error) throw error
+  const map = {}
+  for (const r of data) map[`${r.stock_item_id}:${r.location_id}`] = r.last_used
+  return map
+}
+
 // Which supplies each department may hold and use: { locationId: Set(itemId) }.
 // A department with no entries is unrestricted.
 export async function loadDepartmentSupplies(branchId) {
