@@ -9,6 +9,7 @@ import NavIcon from './NavIcon'
 import { tabsFor, countBadgeTabFor } from '../lib/tabs'
 import ReadOnlyBanner from './ReadOnlyBanner'
 import LoadFailures from './LoadFailures'
+import RefusedWrites from './RefusedWrites'
 import { clearAllLoadFailures } from '../lib/loadfail'
 import NotificationSetup from './NotificationSetup'
 import { signOutCleanly } from '../lib/push'
@@ -331,6 +332,10 @@ export default function Shell({ staff, tab, onTab, children,
       <NotificationSetup staff={staff} alertEligible={alertEligible} />
       {/* Above the page, because what is missing from a figure has to be
           read before the figure is. */}
+      {/* Above the load failures on purpose: a page that did not load is
+          an inconvenience, an entry the server refused is money that was
+          never recorded. */}
+      <RefusedWrites />
       {/* The technical line goes only to the people who can act on it. */}
       <LoadFailures showDetail={is(staff.role, MANAGEMENT)} />
       {children}

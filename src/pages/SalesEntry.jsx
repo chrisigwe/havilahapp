@@ -1115,7 +1115,10 @@ export default function SalesEntry({ boot }) {
     try {
       const wDate = w.date || date
       const payload = { staffLite: { id: staff.id, branch_id: staff.branch_id },
-        itemId: w.item.id, locationId, kind: w.kind, qty: w.qty, unitValue: w.unitValue, date: wDate,
+        itemId: w.item.id, itemName: w.item.name, locationId, kind: w.kind,
+        qty: w.qty, unitValue: w.unitValue, date: wDate,
+        // itemName rides along only so a refused write-off can say what
+        // it was; nothing sends it to the server.
         note: w.note || null, damageReason: w.kind === 'damage' ? (w.damageReason || null) : null }
       try {
         await saveWriteoff({ staff, item: w.item, locationId, kind: w.kind,

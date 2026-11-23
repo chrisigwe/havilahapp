@@ -19,7 +19,9 @@ export default function WriteoffSheet({ staff, item, locationId, onClose, onSave
     if (kind === 'damage' && !damageReason) return
     setBusy(true)
     const payload = { staffLite: { id: staff.id, branch_id: staff.branch_id },
-      itemId: item.id, locationId, kind, qty, unitValue, date,
+      itemId: item.id, itemName: item.name, locationId, kind, qty, unitValue, date,
+      // itemName rides along only so a refused write-off can say what it
+      // was; nothing sends it to the server.
       note: note || null, damageReason: kind === 'damage' ? (damageReason || null) : null }
     try {
       try {
