@@ -7,7 +7,7 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "check": "node tools/check-guards.mjs && node tools/check-tdz.mjs && node tools/check-jsx-names.mjs && node tools/check-undefined.mjs && node tools/check-silent-failures.mjs && node tools/dates.test.mjs && node tools/nights.test.mjs && node tools/months.test.mjs && node tools/names.test.mjs && node tools/payments.test.mjs && node tools/methodpick.test.mjs && node tools/aging.test.mjs && node tools/pdftext.test.mjs && node tools/scrollnav.test.mjs && node tools/supplytext.test.mjs && node tools/creditsplit.test.mjs && node tools/creditwatch.test.mjs && node tools/conversion.test.mjs && node tools/openingday.test.mjs"
+    "check": "node tools/check-guards.mjs && node tools/check-tdz.mjs && node tools/check-jsx-names.mjs && node tools/check-undefined.mjs && node tools/check-silent-failures.mjs && node tools/dates.test.mjs && node tools/nights.test.mjs && node tools/months.test.mjs && node tools/names.test.mjs && node tools/payments.test.mjs && node tools/methodpick.test.mjs && node tools/aging.test.mjs && node tools/pdftext.test.mjs && node tools/scrollnav.test.mjs && node tools/supplytext.test.mjs && node tools/outboxtext.test.mjs && node tools/creditsplit.test.mjs && node tools/creditwatch.test.mjs && node tools/conversion.test.mjs && node tools/openingday.test.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.45.0",
