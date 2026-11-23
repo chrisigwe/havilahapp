@@ -4595,24 +4595,31 @@ export async function voidSuppliesUse(movementId, reason) {
   if (error) throw error
 }
 
-// When each department last RECORDED using a supply, all time.
+// What the Store gave each department, what they recorded using, and
+// what came back - all time, per department and item, with the date of
+// the last recorded use.
 //
-// Deliberately not taken from loadSuppliesUse: that is windowed to 7, 30
-// or 90 days, so a department whose last entry was six weeks ago looks
-// identical to one that has never recorded anything at all. The Store
-// Manager refuses or issues supplies on this signal, so a false "never"
-// would have her accusing the department that does keep records.
+// All time deliberately. The Entries feed is windowed to 7, 30 or 90
+// days; showing those flows beside an all-time balance meant the three
+// numbers on a line did not reconcile and could not be made to, which
+// is what made the page hard to read. These do: gave - used - sent back
+// is the balance, and the page derives anything left over from the
+// balance itself rather than computing it twice.
 //
-// The view excludes uses that were later undone, and carries
-// security_invoker, so it shows exactly what the person could read in
-// stock_movements themselves.
-export async function loadSupplyLastUsed(branchId) {
-  const { data, error } = await supabase.from('v_supply_last_used')
-    .select('location_id, stock_item_id, last_used')
+// The view carries security_invoker, so it shows exactly the movements
+// the person could already read.
+export async function loadSupplyFlow(branchId) {
+  const { data, error } = await supabase.from('v_supply_department_flow')
+    .select('location_id, stock_item_id, received, used, returned, last_used')
     .eq('branch_id', branchId)
   if (error) throw error
   const map = {}
-  for (const r of data) map[`${r.stock_item_id}:${r.location_id}`] = r.last_used
+  for (const r of data) map[`${r.stock_item_id}:${r.location_id}`] = {
+    received: Number(r.received || 0),
+    used: Number(r.used || 0),
+    returned: Number(r.returned || 0),
+    lastUsed: r.last_used,
+  }
   return map
 }
 

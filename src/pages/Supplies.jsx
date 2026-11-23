@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useState } from 'react'
 import { loadStockMap, loadSuppliesUse, recordSuppliesUse, voidSuppliesUse,
          loadDepartmentSupplies, setDepartmentSupply, returnSuppliesToStore,
-         loadSupplyLastUsed } from '../lib/data'
+         loadSupplyFlow } from '../lib/data'
 import { lagosDaysAgo, lagosToday } from '../lib/format'
+import { supplyStory, supplyShortfall, sinceText } from '../lib/supplytext'
 import { useToast } from '../components/Toast'
 import { VersionLine } from './More'
 import { tracked } from '../lib/loadfail'
@@ -37,9 +38,10 @@ export default function Supplies({ boot }) {
 
   const [stockMap, setStockMap] = useState({})
   // null until it has loaded, and null again if it fails -- never {}.
-  // An empty map renders as "no use ever recorded" against every line,
-  // which is the Store Manager refusing supplies over a failed fetch.
-  const [lastUsed, setLastUsed] = useState(null)
+  // An empty map renders as "the Store has never given any" against
+  // every line, which is the Store Manager refusing supplies over a
+  // failed fetch.
+  const [flow, setFlow] = useState(null)
   const [deptLists, setDeptLists] = useState({})
   const isAdmin = ['gm', 'admin'].includes(staff.role)
   const [feed, setFeed] = useState(null)
@@ -63,7 +65,7 @@ export default function Supplies({ boot }) {
     loadStockMap(staff.branch_id).then(setStockMap).catch(console.error)
     tracked('Supplies used', loadSuppliesUse(staff.branch_id, days)).then(setFeed).catch(() => setFeed([]))
     loadDepartmentSupplies(staff.branch_id).then(setDeptLists).catch(() => {})
-    tracked('Supply use dates', loadSupplyLastUsed(staff.branch_id)).then(setLastUsed).catch(() => setLastUsed(null))
+    tracked('Supply totals', loadSupplyFlow(staff.branch_id)).then(setFlow).catch(() => setFlow(false))
   }
   useEffect(refresh, [staff.branch_id, days])
   useEffect(() => { setLines([]); setNote(''); setUsedBy('') }, [locId])
@@ -254,9 +256,8 @@ export default function Supplies({ boot }) {
       )}
 
       {view === 'balances' && (
-        <Balances feed={feed} stockMap={stockMap} lastUsed={lastUsed} locId={locId}
-          places={places} items={supplyItems} days={days}
-          setDays={setDays} canReturn={isKeeper} onChanged={refresh}
+        <Balances flow={flow} stockMap={stockMap} locId={locId}
+          places={places} items={supplyItems} canReturn={isKeeper} onChanged={refresh}
           store={(allLocations || locations).find(l => l.is_store)} />
       )}
 
@@ -272,21 +273,9 @@ export default function Supplies({ boot }) {
   )
 }
 
-// How long since a department last recorded using something. The age is
-// what decides whether to issue more, so it is spelled out rather than
-// left as a date to subtract in your head.
-const sinceText = (d) => {
-  if (!d) return null
-  const day = new Date(d + 'T12:00:00')
-  const days = Math.round((new Date(lagosToday() + 'T12:00:00') - day) / 864e5)
-  const when = day.toLocaleDateString('en-NG', { day: 'numeric', month: 'short' })
-  if (days <= 0) return 'last recorded today'
-  return `last recorded ${when}, ${days} day${days === 1 ? '' : 's'} ago`
-}
-
 // Per department and item: handed over by the Store, used (net of undone), and
 // what the system says is still held. Negative = used more than was handed over.
-function Balances({ feed, stockMap, lastUsed, locId, places, items, days, setDays, canReturn, onChanged, store }) {
+function Balances({ flow, stockMap, locId, places, items, canReturn, onChanged, store }) {
   const toast = useToast()
   const [ret, setRet] = useState(null)   // { dept, item, qty, reason }
   const [busy, setBusy] = useState(false)
@@ -300,42 +289,39 @@ function Balances({ feed, stockMap, lastUsed, locId, places, items, days, setDay
     } catch (e) { toast(e.message, 'error') }
     setBusy(false)
   }
-  // Whether the dates loaded at all. Without them the page still works;
-  // it just says nothing about use rather than saying "never".
-  const knowUse = !!lastUsed
   const depts = locId ? places.filter(p => p.id === locId) : places
-  if (feed === null) return <p className="py-8 text-center text-dim">Loading…</p>
-  const byKey = {}
-  for (const r of feed) {
-    const k = `${r.dept_id}:${r.stock_item_id}`
-    const e = byKey[k] || (byKey[k] = { got: 0, used: 0 })
-    if (r.kind === 'received') e.got += Number(r.qty)
-    else if (r.kind === 'used') e.used += Number(r.qty)
-    else if (r.kind === 'undo') e.used -= Number(r.qty)
-  }
+  // null is still loading, false is a load that failed. They are kept
+  // apart so a failure cannot sit on screen as a spinner, and so that
+  // nothing here ever renders "the Store has never given any" because a
+  // fetch did not arrive.
+  if (flow === null) return <p className="py-8 text-center text-dim">Loading…</p>
+  if (flow === false) return (
+    <p className="py-8 text-center text-dim">
+      The supply totals did not load, so these figures are not shown rather than shown wrong.
+    </p>
+  )
+  const at = (item, loc) => flow[`${item}:${loc}`] || { received: 0, used: 0, returned: 0, lastUsed: null }
+
   return (
     <section>
-      <div className="flex gap-2 mb-3">
-        {[7, 30, 90].map(d => (
-          <button key={d} onClick={() => setDays(d)}
-            className={`h-9 px-3 rounded-full border text-sm ${d === days
-              ? 'border-amber text-amber font-bold' : 'border-line text-dim'}`}>{d} days</button>
-        ))}
-      </div>
+      <p className="text-dim text-xs mb-3">
+        What each department should be holding now, counting everything the Store gave
+        and everything recorded as used. Check it against the shelf.
+      </p>
+
       {store && !locId && (
         <div className="mb-4 rounded-2xl border border-amber/60 bg-surface px-4 py-3">
           <p className="font-bold">In the Store</p>
-          <p className="text-dim text-xs mb-1">What is still in the Store, waiting to be issued.</p>
+          <p className="text-dim text-xs mb-1">Waiting to be issued.</p>
           {items.map(i => {
             const have = stockMap[`${i.id}:${store.id}`] ?? 0
-            const out = Object.entries(byKey).reduce((s2, [k, e]) =>
-              k.endsWith(':' + i.id) ? s2 + e.got : s2, 0)
+            const out = places.reduce((t, d) => t + at(i.id, d.id).received, 0)
             if (!have && !out) return null
             return (
               <div key={i.id} className="flex items-baseline gap-2 py-1 text-sm">
-                <span className="flex-1 min-w-0 truncate">{i.name}</span>
-                <span className="text-dim tnum">−{out} issued</span>
-                <span className={`tnum w-14 text-right font-semibold ${have < 0 ? 'text-clay' : ''}`}>{have}</span>
+                <span className="flex-1 min-w-0">{i.name}</span>
+                <span className="text-dim tnum">{out} issued so far</span>
+                <span className={`tnum w-12 text-right font-semibold ${have < 0 ? 'text-clay' : ''}`}>{have}</span>
               </div>
             )
           })}
@@ -343,15 +329,14 @@ function Balances({ feed, stockMap, lastUsed, locId, places, items, days, setDay
       )}
 
       {depts.map(d => {
-        const rows = items.map(i => ({ i, e: byKey[`${d.id}:${i.id}`] || { got: 0, used: 0 },
-            have: stockMap[`${i.id}:${d.id}`] ?? 0, when: lastUsed?.[`${i.id}:${d.id}`] || null }))
-          .filter(r => r.e.got || r.e.used || r.have)
+        const rows = items.map(i => ({ i, f: at(i.id, d.id), have: stockMap[`${i.id}:${d.id}`] ?? 0 }))
+          .filter(r => r.f.received || r.f.used || r.f.returned || r.have)
           .sort((a, b) => a.have - b.have)
         // Holding supplies with nothing ever recorded against them. Said
         // as a fact and not as advice: on the day a department is first
         // issued something it is true and means nothing, and only the
         // Store Manager knows which of the two she is looking at.
-        const silent = knowUse && rows.some(r => r.have > 0) && !rows.some(r => r.when)
+        const silent = rows.some(r => r.have > 0) && !rows.some(r => r.f.lastUsed)
         return (
           <div key={d.id} className="mb-4 rounded-2xl border border-line bg-surface px-4 py-3">
             <p className="font-bold">{d.name}</p>
@@ -359,41 +344,49 @@ function Balances({ feed, stockMap, lastUsed, locId, places, items, days, setDay
               <p className="text-amber text-xs mt-1">Holding supplies with no use ever recorded.</p>
             )}
             {!rows.length && <p className="text-dim text-sm mt-1">No supplies held or used.</p>}
-            {rows.map(({ i, e, have, when }) => (
-              <div key={i.id}>
-              <div className="flex items-baseline gap-2 pt-1 text-sm">
-                <span className="flex-1 min-w-0 truncate">{i.name}</span>
-                <span className="text-dim tnum">+{e.got} / −{e.used}</span>
-                <span className={`tnum w-14 text-right font-semibold ${have < 0 ? 'text-clay' : ''}`}>{have}</span>
-                {canReturn && have > 0 && (
-                  <button onClick={() => setRet({ dept: d.id, item: i.id, qty: '', reason: '' })}
-                    className="text-amber text-xs font-semibold">Return</button>
-                )}
-              </div>
-              {/* All time, not the 7/30/90 window above it: a department
-                  that last recorded a use six weeks ago must not read the
-                  same as one that has never recorded at all. */}
-              {knowUse && (when
-                ? <p className="text-dim text-xs pb-1">{sinceText(when)}</p>
-                : have > 0 && <p className="text-clay text-xs pb-1">no use ever recorded</p>)}
-              {ret && ret.dept === d.id && ret.item === i.id && (
-                <div className="flex flex-wrap gap-2 pb-2">
-                  <input inputMode="decimal" value={ret.qty} placeholder="How many"
-                    onChange={e => setRet({ ...ret, qty: e.target.value })}
-                    className="w-24 h-10 px-3 rounded-lg bg-raise border border-line tnum" />
-                  <input value={ret.reason} placeholder="Why? (e.g. issued to wrong department)"
-                    onChange={e => setRet({ ...ret, reason: e.target.value })}
-                    className="flex-1 min-w-40 h-10 px-3 rounded-lg bg-raise border border-line placeholder:text-dim" />
-                  <button onClick={doReturn} disabled={busy}
-                    className="h-10 px-3 rounded-lg bg-amber text-bg font-bold disabled:opacity-40">Send back</button>
-                  <button onClick={() => setRet(null)} className="h-10 px-2 text-dim">Cancel</button>
+            {rows.map(({ i, f, have }) => {
+              const short = have < 0
+              return (
+                <div key={i.id} className="py-2 border-t border-line/50">
+                  <div className="flex items-baseline gap-3">
+                    <span className="flex-1 min-w-0 font-semibold">{i.name}</span>
+                    <span className={`tnum text-2xl font-extrabold leading-none ${short ? 'text-clay' : ''}`}>{have}</span>
+                    <span className="text-dim text-xs shrink-0">should be here</span>
+                  </div>
+                  <div className="flex items-baseline gap-3 mt-0.5">
+                    <p className={`flex-1 min-w-0 text-xs ${short ? 'text-clay' : 'text-dim'}`}>
+                      {short
+                        ? supplyShortfall(have)
+                        : supplyStory(f, have)}
+                      {/* All time, so a department that last recorded six
+                          weeks ago does not read like one that has never
+                          recorded at all. */}
+                      <br />
+                      {f.lastUsed
+                        ? sinceText(f.lastUsed, lagosToday())
+                        : <span className={short ? '' : 'text-clay'}>No use ever recorded.</span>}
+                    </p>
+                    {canReturn && have > 0 && (
+                      <button onClick={() => setRet({ dept: d.id, item: i.id, qty: '', reason: '' })}
+                        className="text-amber text-xs font-semibold shrink-0">Return</button>
+                    )}
+                  </div>
+                  {ret && ret.dept === d.id && ret.item === i.id && (
+                    <div className="flex flex-wrap gap-2 pt-2">
+                      <input inputMode="decimal" value={ret.qty} placeholder="How many"
+                        onChange={e => setRet({ ...ret, qty: e.target.value })}
+                        className="w-24 h-10 px-3 rounded-lg bg-raise border border-line tnum" />
+                      <input value={ret.reason} placeholder="Why? (e.g. issued to wrong department)"
+                        onChange={e => setRet({ ...ret, reason: e.target.value })}
+                        className="flex-1 min-w-40 h-10 px-3 rounded-lg bg-raise border border-line placeholder:text-dim" />
+                      <button onClick={doReturn} disabled={busy}
+                        className="h-10 px-3 rounded-lg bg-amber text-bg font-bold disabled:opacity-40">Send back</button>
+                      <button onClick={() => setRet(null)} className="h-10 px-2 text-dim">Cancel</button>
+                    </div>
+                  )}
                 </div>
-              )}
-              </div>
-            ))}
-            {rows.length > 0 && (
-              <p className="text-dim text-xs mt-1">+received from Store / −used in the period · right-hand number is held now (red = used more than received).</p>
-            )}
+              )
+            })}
           </div>
         )
       })}
