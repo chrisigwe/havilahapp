@@ -73,12 +73,26 @@ export function looksSimilar(a, b) {
   return x.some(t => t.length >= 4 && y.some(u => sameWord(t, u)))
 }
 
+// A staff account is a different KIND of record, and the branch names
+// them so: "Casmir (staff)", "Manager (staff)". Chris, 24 November
+// 2026: "Casmir (staff) is a staff not Prof Casmir Unizik" -- two men
+// who share a first name, and this had them as one, because
+// normalisation strips the "(staff)" that was the whole distinction.
+//
+// Only the WARNING cares. A barman typing "Casmir" should still be
+// shown the staff account, because staff buy things; what must not
+// happen is the app insisting the two records are one person and
+// refusing to let a new one be made.
+const STAFF_TAG = /\(\s*staff\s*\)/i
+export const isStaffAccount = (s) => STAFF_TAG.test(String(s || ''))
+
 // Worth WARNING about: every word of the shorter name is present in the
-// longer one. Stricter on purpose, because this is what stops somebody
+// longer one, and the two are the same kind of record. Stricter on purpose, because this is what stops somebody
 // creating a record -- and blocking a real new customer because they
 // share a first name with an existing one is worse than the duplicate
 // it would prevent. "Emeka Obi" and "Emeka Nwosu" are two people.
 export function probablySame(a, b) {
+  if (isStaffAccount(a) !== isStaffAccount(b)) return false
   const x = nameTokens(a), y = nameTokens(b)
   if (!x.length || !y.length) return false
   const [short, long] = x.length <= y.length ? [x, y] : [y, x]
