@@ -1,7 +1,7 @@
 // The real pairs from Awka's customer list, 24 November 2026. Each one
 // is a person recorded twice because the app could not see that the two
 // names were the same.
-import { nameTokens, sameWord, looksSimilar, probablySame, nameScore, within } from '../src/lib/namematch.js'
+import { nameTokens, sameWord, looksSimilar, probablySame, nameScore, within, isStaffAccount } from '../src/lib/namematch.js'
 
 let pass = 0, fail = 0
 const eq = (name, got, want) => {
@@ -36,8 +36,18 @@ eq('two people sharing a first name are two people',
 eq('but they are still worth showing in the list',
    looksSimilar('Emeka Obi', 'Emeka Nwosu'), true)
 eq('three-letter names get no slack', sameWord('obi', 'oby'), false)
-eq('a staff account is not the guest of the same name',
-   probablySame('Casmir (staff)', 'Prof Casmir Unizik'), true)
+// Written the other way round first, on my assumption that they were
+// one man. Chris, 24 November 2026: "Casmir (staff) is a staff not
+// Prof Casmir Unizik." Two people who share a first name, and the
+// "(staff)" that says so is exactly what normalisation throws away.
+eq('a staff account is NOT the guest of the same name',
+   probablySame('Casmir (staff)', 'Prof Casmir Unizik'), false)
+eq('but it is still worth showing when somebody types Casmir',
+   looksSimilar('Casmir (staff)', 'Prof Casmir Unizik'), true)
+eq('two staff accounts can still be the same person',
+   probablySame('Casmir (staff)', 'Casmir Okeke (staff)'), true)
+eq('the tag is not case or space sensitive',
+   probablySame('Casmir ( Staff )', 'Prof Casmir Unizik'), false)
 
 eq('one letter in a six-letter word', sameWord('casmin', 'casmir'), true)
 eq('one letter in a nine-letter word', sameWord('callistus', 'calistus'), true)
@@ -61,6 +71,9 @@ eq('nothing typed scores nothing', nameScore('', 'Anybody'), 0)
 eq('null name', looksSimilar(null, 'Someone'), false)
 eq('empty both', probablySame('', ''), false)
 eq('digits only', looksSimilar('207', '101'), false)
+
+eq('a staff tag is seen', isStaffAccount('Manager (staff)'), true)
+eq('and its absence', isStaffAccount('Prof Casmir Unizik'), false)
 
 console.log(`\nnamematch: ${pass} passed, ${fail} failed`)
 process.exit(fail ? 1 : 0)
