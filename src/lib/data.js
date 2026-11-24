@@ -668,9 +668,14 @@ export async function loadNoCreditIds(branchId) {
 // flag does is put the name in front of whoever opens the sales page,
 // and onto the list that goes to the bar.
 export async function setCustomerNoCredit(customerId, on) {
-  const { error } = await supabase.from('customers')
-    .update({ no_more_credit: !!on }).eq('id', customerId)
+  const { data, error } = await supabase.from('customers')
+    .update({ no_more_credit: !!on }).eq('id', customerId).select('id')
   if (error) throw error
+  // Same blind spot as the guest link (24 November 2026): a refused
+  // update is silent, and this one decides whether a name is flagged to
+  // the whole bar. Reporting "done" over a write that did not happen is
+  // worse here than an error.
+  if (!data?.length) throw new Error('That did not save. Your role may not be allowed to change customer records.')
 }
 
 export async function createCustomer(branchId, name, servedBy) {
@@ -1168,9 +1173,10 @@ export async function deleteCustomer(customerId) {
 }
 
 export async function deactivateCustomer(customerId) {
-  const { error } = await supabase.from('customers')
-    .update({ is_active: false }).eq('id', customerId)
+  const { data, error } = await supabase.from('customers')
+    .update({ is_active: false }).eq('id', customerId).select('id')
   if (error) throw error
+  if (!data?.length) throw new Error('That account was not switched off. Your role may not be allowed to change customer records.')
 }
 
 // Everything that has ARRIVED anywhere, newest first (Chris, 24 October
@@ -1715,10 +1721,19 @@ export async function mergeGuests(survivorId, duplicateIds) {
 // guest's real, stable identity, now that guest dedup means one
 // guest is one clean record. Linked to guests, not a specific stay,
 // so the connection survives checkout and any future re-checkin.
+// .select() is not decoration. An update that matches no row -- because
+// row security refused it, or the id is not a customer -- returns no
+// error and no rows, and both callers toast "Linked to X" on the
+// strength of there being no error. Chris, 24 November 2026: "trying to
+// link the guest from guest account doesn't work", with nothing on
+// screen to say why. A write that changed nothing now says so.
 export async function linkCustomerToGuest(customerId, guestId) {
-  const { error } = await supabase.from('customers')
-    .update({ linked_guest_id: guestId }).eq('id', customerId)
+  const { data, error } = await supabase.from('customers')
+    .update({ linked_guest_id: guestId }).eq('id', customerId).select('id')
   if (error) throw error
+  if (!data?.length) throw new Error(
+    'That account was not linked. Either the record is not there any more, '
+    + 'or your role cannot change customer records.')
 }
 
 // Undoes the above. Until now there was only a way to CREATE the link,
@@ -1732,9 +1747,12 @@ export async function linkCustomerToGuest(customerId, guestId) {
 // is, on the customer account; it simply stops appearing on that
 // guest's folio and goes back to being chased through Credit.
 export async function unlinkCustomerFromGuest(customerId) {
-  const { error } = await supabase.from('customers')
-    .update({ linked_guest_id: null }).eq('id', customerId)
+  const { data, error } = await supabase.from('customers')
+    .update({ linked_guest_id: null }).eq('id', customerId).select('id')
   if (error) throw error
+  if (!data?.length) throw new Error(
+    'The link was not removed. Either the record is not there any more, '
+    + 'or your role cannot change customer records.')
 }
 
 // Converts a linked customer's balance at this one department into a
