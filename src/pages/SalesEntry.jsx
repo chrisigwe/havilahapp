@@ -11,6 +11,7 @@ import { checkRepeatSale, loadStockMap, loadPopular, loadToday, saveBasket, save
          getOrCreateGuestTab, updateSaleWithPayments, undoRecentReceipt, recordTillCheck, tillCheckDone,
          conversionRows, saveMovements } from '../lib/data'
 import { creditWatch, creditWatchLine } from '../lib/creditwatch'
+import { probablySame } from '../lib/namematch'
 import { enqueue, flush, isConnectionError } from '../lib/outbox'
 import { useToast } from '../components/Toast'
 import ReceptionDashboard from '../components/ReceptionDashboard'
@@ -2024,13 +2025,31 @@ export default function SalesEntry({ boot }) {
 
             {roomGuard && (
               <div className="mb-5 rounded-2xl border border-clay bg-surface p-4">
-                <p className="text-clay text-sm">
-                  "{roomGuard.name}" looks like a hotel guest. {canChargeToRoom
-                    ? 'Charge it to their room, or their own tab, instead?'
-                    : 'Put it on a tab in their own name instead?'}
-                </p>
+                {roomGuard.match ? (<>
+                  {/* Named, because "looks like a hotel guest" is a
+                      riddle and this is an answer: the man is upstairs,
+                      here is his room, one tap takes it. */}
+                  <p className="text-clay text-sm">
+                    {roomGuard.match.guests?.full_name} is checked into room{' '}
+                    {roomGuard.match.rooms?.room_number} right now. {canChargeToRoom
+                      ? 'Charge it to the room, or their own tab, instead?'
+                      : 'Put it on their own tab instead?'}
+                  </p>
+                  <button onClick={() => { const st = roomGuard.match; setRoomGuard(null); setGuestChoice(st) }}
+                    className="mt-3 w-full h-12 rounded-xl bg-amber text-bg font-bold text-left px-4 flex items-center gap-3">
+                    <span className="tnum shrink-0">Rm {roomGuard.match.rooms?.room_number}</span>
+                    <span className="truncate">{roomGuard.match.guests?.full_name}</span>
+                  </button>
+                  {inHouse.length > 1 && <p className="text-dim text-xs mt-3">Somebody else?</p>}
+                </>) : (
+                  <p className="text-clay text-sm">
+                    "{roomGuard.name}" looks like a hotel guest. {canChargeToRoom
+                      ? 'Charge it to their room, or their own tab, instead?'
+                      : 'Put it on a tab in their own name instead?'}
+                  </p>
+                )}
                 <div className="space-y-2 mt-3 max-h-56 overflow-y-auto">
-                  {inHouse.map(st => (
+                  {inHouse.filter(st => st.id !== roomGuard.match?.id).map(st => (
                     <button key={st.id} onClick={() => { setRoomGuard(null); setGuestChoice(st) }}
                       className="w-full h-12 px-4 rounded-xl border border-line text-left flex items-center gap-3">
                       <span className="font-bold tnum w-20 shrink-0">Rm {st.rooms?.room_number}</span>
@@ -2107,14 +2126,25 @@ export default function SalesEntry({ boot }) {
             })()}
 
               <CustomerPicker branchId={staff.branch_id} canOverride={isGmOrAdmin} customers={customers} value={paying.customerId}
+                guests={creditAmount(paying) > 0 ? inHouse : []}
+                onPickGuest={st => { setRoomGuard(null); setGuestChoice(st) }}
                 onPick={id => setPaying(p => ({ ...p, customerId: id }))}
                 onCreate={async (name, servedBy) => {
                   // Room-numbered accounts ("Room 203 Mr Vincent") are the
                   // habit that split guests' debt from their folio. Caught
                   // here and redirected, with an escape hatch for the rare
                   // genuine name that happens to match.
-                  if (looksLikeRoom(name) && inHouse.length) {
-                    setRoomGuard({ name, servedBy }); return
+                  // AND a name that IS somebody currently in the house,
+                  // however it is spelled (Chris, 24 November 2026).
+                  // The room-number test only ever caught "101
+                  // Professor Casmin". Somebody who knows the guest
+                  // writes "Prof Casmir Unizik" properly, nothing was
+                  // looking at the names at all, and the second record
+                  // was created in silence -- which is the one the
+                  // restaurant keeps making.
+                  const guest = inHouse.find(st => probablySame(name, st.guests?.full_name || ''))
+                  if ((guest || looksLikeRoom(name)) && inHouse.length) {
+                    setRoomGuard({ name, servedBy, match: guest || null }); return
                   }
                   await createAndPick(name, servedBy)
                 }} />
