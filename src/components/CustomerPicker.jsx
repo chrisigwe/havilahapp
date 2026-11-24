@@ -19,7 +19,18 @@ function sameByInitials(a, b) {
   return (!!ia && ia === b.replace(/ /g, '')) || (!!ib && ib === a.replace(/ /g, ''))
 }
 
-export default function CustomerPicker({ customers, value, onPick, onCreate, branchId, canOverride = false }) {
+// guests / onPickGuest: the people checked in right now. Optional --
+// the refused-charges screen passes neither and behaves as before.
+//
+// They are offered INSIDE this search, not only in the list above it
+// (Chris, 24 November 2026: "encourage the restaurant staff to choose
+// from in-house guests rather than turning a guest into a customer").
+// The in-house list sits above the box, and the moment somebody starts
+// typing a name they have left it behind -- what they are looking at
+// is a list of customer accounts, so that is what they pick or create.
+// The guest now arrives where their eyes already are.
+export default function CustomerPicker({ customers, value, onPick, onCreate, branchId,
+                                         canOverride = false, guests = [], onPickGuest }) {
   const [q, setQ] = useState('')
   const [servedBy, setServedBy] = useState('')
 
@@ -55,6 +66,18 @@ export default function CustomerPicker({ customers, value, onPick, onCreate, bra
   // nameScore keeps every substring hit it used to return -- a room
   // number typed on its own still finds the room-named account -- and
   // adds the ones a letter away, best first.
+  // Checked-in guests the typed name reaches, by name or by room.
+  const guestHits = useMemo(() => {
+    const typed = (q || '').trim()
+    if (!onPickGuest || !guests.length || typed.length < 2) return []
+    const room = typed.replace(/\b(room|rm)\.?\s*/ig, '').trim()
+    return guests.filter(st => {
+      const full = st.guests?.full_name || ''
+      const no = String(st.rooms?.room_number || '')
+      return (no && no === room) || nameScore(typed, full) >= 40
+    }).slice(0, 3)
+  }, [guests, q, onPickGuest])
+
   const matches = useMemo(() => {
     if (!key) return customers.slice(0, 8)
     return customers
@@ -103,6 +126,25 @@ export default function CustomerPicker({ customers, value, onPick, onCreate, bra
       <input value={q} onChange={e => setQ(e.target.value)}
         placeholder="Type the customer's name"
         className="h-14 w-full px-4 rounded-xl bg-surface border border-line placeholder:text-dim" />
+
+      {!!guestHits.length && (
+        <ul className="mt-2 rounded-xl border border-amber bg-surface divide-y divide-line/60 overflow-hidden">
+          {guestHits.map(st => (
+            <li key={st.id} className="bg-amber/10">
+              <button onClick={() => onPickGuest(st)}
+                className="w-full text-left px-4 py-3 flex items-baseline gap-3">
+                <span className="font-bold tnum shrink-0">Rm {st.rooms?.room_number}</span>
+                <span className="flex-1 min-w-0">
+                  <span className="font-semibold block truncate">{st.guests?.full_name}</span>
+                  <span className="block text-amber text-xs font-semibold mt-0.5">
+                    Checked in &middot; put it on the guest, not a new account
+                  </span>
+                </span>
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
 
       {!!matches.length && (
         // Four, then scroll — the same max-h-56 the in-house guest list
