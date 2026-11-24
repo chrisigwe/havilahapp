@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { naira } from '../lib/format'
 
 import { normalizeCustomerName as nameKey } from '../lib/customerName'
+import { nameScore, probablySame } from '../lib/namematch'
 import { findSimilarCustomers } from '../lib/data'
 import { tracked } from '../lib/loadfail'
 
@@ -48,11 +49,20 @@ export default function CustomerPicker({ customers, value, onPick, onCreate, bra
   const outside = q.replace(/\(.*?\)/g, ' ')
   const roomName = /\b(room|rm)\.?\s*\d+/i.test(outside) || /^\s*\d{3}\s*$/.test(q)
   const key = nameKey(roomName ? outside.replace(ROOM_RE, ' ') : q)
+  // Ranked, not just filtered (24 November 2026). Substring matching
+  // alone could not find "101 Professor Casmin" from "Casmir": the room
+  // number is in the stored name and the spelling is a letter out.
+  // nameScore keeps every substring hit it used to return -- a room
+  // number typed on its own still finds the room-named account -- and
+  // adds the ones a letter away, best first.
   const matches = useMemo(() => {
     if (!key) return customers.slice(0, 8)
-    return customers.filter(c => nameKey(c.name).includes(key) || key.includes(nameKey(c.name)))
-      .slice(0, 8)
-  }, [customers, key])
+    return customers
+      .map(c => ({ c, score: nameScore(q, c.name) }))
+      .filter(x => x.score > 0)
+      .sort((a, b) => b.score - a.score || a.c.name.localeCompare(b.c.name))
+      .slice(0, 8).map(x => x.c)
+  }, [customers, q, key])
 
   const exact = customers.find(c => nameKey(c.name) === key)
   // Names that are probably the SAME person: initials match, or the
@@ -62,9 +72,21 @@ export default function CustomerPicker({ customers, value, onPick, onCreate, bra
     if (!key) return []
     const byInit = customers.filter(c => sameByInitials(nameKey(c.name), key))
     const ids = new Set(byInit.map(c => c.id))
+    // Names that are the same once the room number and a letter's
+    // spelling are set aside. This is what was missing: the database's
+    // similarity search never saw "101 Professor Casmin" as a candidate
+    // for "Casmir Unizik", so nothing stood between a barman and a
+    // second record for the same man.
+    const bySpelling = customers.filter(c =>
+      !ids.has(c.id) && probablySame(q, c.name))
+    for (const c of bySpelling) ids.add(c.id)
     const bySim = similar.filter(x => !ids.has(x.id))
-    return [...byInit.map(c => ({ ...c, reason: 'same initials' })), ...bySim]
-  }, [customers, similar, key])
+    return [
+      ...byInit.map(c => ({ ...c, reason: 'same initials' })),
+      ...bySpelling.map(c => ({ ...c, reason: 'almost the same spelling' })),
+      ...bySim,
+    ]
+  }, [customers, similar, key, q])
   const chosen = customers.find(c => c.id === value)
 
   if (chosen) {
