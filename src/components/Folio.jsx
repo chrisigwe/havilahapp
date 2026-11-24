@@ -114,7 +114,9 @@ export default function Folio({ boot, room, onClose, onChanged }) {
   useEffect(() => {
     if (!billToOpen) return
     const t = setTimeout(() => {
-      searchSimilarGuests(staff.branch_id, editing?.billTo || '').then(setBillToSuggestions)
+      tracked('Guests with a similar name',
+        searchSimilarGuests(staff.branch_id, editing?.billTo || ''))
+        .then(setBillToSuggestions).catch(() => setBillToSuggestions([]))
     }, 400)
     return () => clearTimeout(t)
   }, [editing?.billTo, staff.branch_id, billToOpen])

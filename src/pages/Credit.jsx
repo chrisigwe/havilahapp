@@ -432,10 +432,20 @@ export default function Credit({ boot }) {
              morePays: Math.max(0, pays.length - recent.length) }
   }, [open?.chain, open?.ledger, open?.allocations])
 
+  // An empty result used to look the same as a failed one and the same
+  // as not having typed enough: nothing on screen either way (Chris, 24
+  // November 2026, "link to a guest doesn't work"). The search now
+  // reports a failure through tracked(), and linkState says which of
+  // the three the blank list is.
+  const [linkState, setLinkState] = useState('idle')  // idle | short | searching | done | failed
   useEffect(() => {
-    if (!linking) return
+    if (!linking) { setLinkState('idle'); return }
+    if (linkQuery.trim().length < 3) { setLinkResults([]); setLinkState('short'); return }
+    setLinkState('searching')
     const t = setTimeout(() => {
-      searchSimilarGuests(staff.branch_id, linkQuery).then(setLinkResults)
+      tracked('Guests with a similar name', searchSimilarGuests(staff.branch_id, linkQuery))
+        .then(r => { setLinkResults(r); setLinkState('done') })
+        .catch(() => { setLinkResults([]); setLinkState('failed') })
     }, 350)
     return () => clearTimeout(t)
   }, [linkQuery, linking, staff.branch_id])
@@ -3359,6 +3369,21 @@ export default function Credit({ boot }) {
           <input value={linkQuery} onChange={e => setLinkQuery(e.target.value)} autoFocus
             placeholder="Search by name"
             className="mt-4 h-14 w-full px-4 rounded-xl bg-surface border border-line placeholder:text-dim" />
+          {linkState === 'short' && (
+            <p className="mt-3 text-dim text-sm">Type at least three letters of the guest's name.</p>
+          )}
+          {linkState === 'searching' && <p className="mt-3 text-dim text-sm">Searching…</p>}
+          {linkState === 'done' && !linkResults.length && (
+            <p className="mt-3 text-dim text-sm">
+              No guest matches “{linkQuery.trim()}”. Check the spelling, or the guest may never
+              have been checked in under that name.
+            </p>
+          )}
+          {linkState === 'failed' && (
+            <p className="mt-3 text-clay text-sm">
+              The guest search did not run. Check the connection and try again.
+            </p>
+          )}
           <div className="mt-2 divide-y divide-line">
             {linkResults.map(g => (
               <button key={g.id} disabled={linkBusy} onClick={() => confirmLink(g)}

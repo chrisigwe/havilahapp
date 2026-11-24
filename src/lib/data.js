@@ -1682,7 +1682,12 @@ export async function searchSimilarGuests(branchId, query) {
     .eq('branch_id', branchId).ilike('full_name', `%${q}%`)
     .not('full_name', 'ilike', '[merged into%')
     .order('full_name').limit(25)
-  if (error) return []
+  // Was `return []` (24 November 2026). A failed search and a search
+  // that found nobody looked identical -- an empty list, no message --
+  // and every caller wraps this in tracked(), which never fired because
+  // resolving with [] is not a failure. "Link to a guest doesn't work"
+  // was exactly this: type a name, nothing appears, nothing says why.
+  if (error) throw error
   const rows = data || []
   const owed = await loadOwedByGuests(rows.map(r => r.id))
   for (const r of rows) {
