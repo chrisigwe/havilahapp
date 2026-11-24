@@ -13,10 +13,15 @@
 // Two guards, and both are right on their own terms whatever the bar
 // happens to do: a bounce is not a thumb movement, and a slide that has
 // only just started should be allowed to finish before it is reversed.
+// How long the bar's own CSS transition lasts, in ms. Shared so the
+// settle guard below and the screen-awake loop in Shell cannot drift
+// from the stylesheet: .hv-tabbar transitions transform over 200ms.
+export const NAV_SLIDE_MS = 200
+
 export const NAV = {
   dead: 6,       // px of movement below which nothing is a deliberate scroll
   top: 80,       // px from the top where the bar always comes back
-  settle: 260,   // ms a slide is left alone; the transition itself is 200
+  settle: NAV_SLIDE_MS + 60,   // ms a slide is left alone before it may reverse
 }
 
 export const navStart = (y = 0) => ({ last: y, down: false, movedAt: -Infinity })
