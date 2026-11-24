@@ -194,7 +194,12 @@ export default function Credit({ boot }) {
   // single counter understates the debt when it is handed to a
   // customer. Both are right, so the document has to say which it is
   // rather than silently being the narrow one.
-  const partialAccount = !seesAllDepartments
+  // Partial for two reasons now. A department user never sees other
+  // counters; and ANY viewer standing in a single department's tab is
+  // looking at that counter alone, oversight or not (24 November 2026).
+  // Either way the statement has to say so rather than quietly be the
+  // narrow one.
+  const partialAccount = !seesAllDepartments || locId !== 'all'
   const seenDepts = (rows) => [...new Set((rows || [])
     .map(r => locById[r.location_id]?.name).filter(Boolean))].sort()
   // Which statement is open: null, 'all', or a 'YYYY-MM'. A statement is
@@ -339,13 +344,34 @@ export default function Credit({ boot }) {
       // allocations say which items each of those payments paid for,
       // which is what a statement has to show and what nothing could
       // answer before 19 November.
+      // THE DEPARTMENT TAB HOLDS INSIDE THE ACCOUNT TOO (Chris, 24
+      // November 2026: "Openbar credit should stay in Openbar, as well
+      // as Minimart, Restaurant, Mainbar").
+      //
+      // The list behind this panel has been department-scoped since 21
+      // November, and credit_chain hides departments a DEPARTMENT user
+      // may not see. But an oversight account may see everything, so
+      // standing in the OpenBar tab and opening a person showed every
+      // counter they owed at -- the tab silently stopped applying at the
+      // moment you looked closer.
+      //
+      // So the selected department is passed down and the two loads that
+      // cannot take it are filtered on the way in. All departments is
+      // still all departments.
+      const only = locId === 'all' ? null : locId
       const [ledger, chain, allocations] = await Promise.all([
-        loadCustomerLedger(staff.branch_id, c.customer_id, null, null),
+        loadCustomerLedger(staff.branch_id, c.customer_id, only, null),
         loadCreditChain(staff.branch_id, c.customer_id, 4000),
         loadCreditAllocations(staff.branch_id, c.customer_id).catch(() => []),
       ])
+      const inDept = only
+        ? (chain || []).filter(r => r.location_id === only)
+        : chain
+      const allocHere = only
+        ? (allocations || []).filter(a => a.locationId === only)
+        : allocations
       setOpen(o => (o && o.customer.customer_id === c.customer_id)
-        ? { ...o, ledger, chain, allocations } : o)
+        ? { ...o, ledger, chain: inDept, allocations: allocHere } : o)
     } catch (e) {
       setOpen(o => (o && o.customer.customer_id === c.customer_id)
         ? { ...o, error: e.message || 'could not load' } : o)
@@ -2387,7 +2413,11 @@ export default function Credit({ boot }) {
                   {isMonth ? 'Statement for' : 'Statement of account'}
                 </p>
                 <h1 className="text-3xl font-extrabold leading-tight">
-                  {isMonth ? monthLabel(statementFor) : 'The whole account'}
+                  {/* Not "the whole account" when it demonstrably is not
+                      one: a statement scoped to a single counter says so
+                      in its title as well as in the note below it. */}
+                  {isMonth ? monthLabel(statementFor)
+                    : partialAccount ? 'What is owed here' : 'The whole account'}
                 </h1>
                 <p className="text-dim mt-1">
                   Havilah Suite Ltd · {boot.branchName || ''}
