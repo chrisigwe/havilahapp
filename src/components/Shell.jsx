@@ -15,7 +15,7 @@ import NotificationSetup from './NotificationSetup'
 import { signOutCleanly } from '../lib/push'
 import { is, MANAGEMENT } from '../lib/roles'
 import { moreItemsFor } from '../pages/More'
-import { navStart, navStep } from '../lib/scrollnav'
+import { navStart, navStep, NAV_SLIDE_MS } from '../lib/scrollnav'
 
 // GM/admin/manager oversee everything rather than doing one
 // department's day-to-day work — their four most load-bearing
@@ -67,10 +67,44 @@ export default function Shell({ staff, tab, onTab, children,
   const tabsRef = useRef(null)
   const navRef = useRef(navStart(0))
   const downRef = useRef(false)
+  // KEEPING THE SCREEN AWAKE FOR THE LENGTH OF THE SLIDE.
+  //
+  // Chris, 24 November 2026, after this had survived three fixes:
+  // "the tab bar hangs, and when you screen record, it stops."
+  //
+  // That sentence is the whole diagnosis. The code runs identically
+  // either way, so the fault was never in the logic -- and the one
+  // thing a screen recording changes is how the display is driven. iOS
+  // pins the refresh rate while recording. Left alone, an iPhone drops
+  // its display to as little as ~10Hz the moment the screen goes still,
+  // which is exactly when a flick ends -- with a 200ms transition still
+  // in flight. It gets a frame, then nothing for a tenth of a second,
+  // and comes to rest halfway. Recording holds the rate up and the same
+  // slide completes.
+  //
+  // So the bar is given something to keep the display ramped for the
+  // length of its own transition: an empty animation-frame loop, about
+  // a dozen frames, no DOM reads and no work. It cannot regress
+  // anything, because it does nothing except exist while the slide
+  // runs. Causes 1 to 3 were all real and all main-thread; this one is
+  // not, which is why none of them touched it.
+  const awakeRef = useRef(0)
+  const keepDisplayAwake = () => {
+    if (typeof requestAnimationFrame !== 'function') return
+    const until = performance.now() + NAV_SLIDE_MS
+    if (awakeRef.current) { awakeRef.current = until; return }   // already ticking
+    awakeRef.current = until
+    const tick = () => {
+      if (performance.now() >= awakeRef.current) { awakeRef.current = 0; return }
+      requestAnimationFrame(tick)
+    }
+    requestAnimationFrame(tick)
+  }
   const setNavDown = (down) => {
     if (downRef.current === down) return     // no redundant DOM writes
     downRef.current = down
     tabsRef.current?.classList.toggle('is-down', down)
+    keepDisplayAwake()
   }
   // The big page title at the top of a screen shrinks into the bar as you
   // scroll, and comes back at the top — WhatsApp's Chats screen, which is
