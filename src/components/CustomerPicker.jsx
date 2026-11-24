@@ -83,7 +83,13 @@ export default function CustomerPicker({ customers, value, onPick, onCreate, bra
         className="h-14 w-full px-4 rounded-xl bg-surface border border-line placeholder:text-dim" />
 
       {!!matches.length && (
-        <ul className="mt-2 rounded-xl border border-line bg-surface divide-y divide-line/60">
+        // Four, then scroll — the same max-h-56 the in-house guest list
+        // above it uses, so the two panels are the same height (Chris,
+        // 24 November 2026). Eight matches used to render in full and
+        // push Save sale off the bottom of the screen, which is the one
+        // button somebody is reaching for at this point.
+        <ul className="mt-2 rounded-xl border border-line bg-surface divide-y divide-line/60
+                       max-h-56 overflow-y-auto">
           {matches.map(c => (
             <li key={c.id}>
               <button onClick={() => onPick(c.id)} className="w-full text-left px-4 py-3">
