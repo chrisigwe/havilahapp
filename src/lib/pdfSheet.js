@@ -392,6 +392,52 @@ export async function receiptPdf(d) {
   return s.finish()
 }
 
+// ---------- an organisation's account ----------
+// One document for both states. While the organisation is in funds it
+// reads as a statement; once the balance goes the other way the same
+// sheet is the invoice, with only the closing line changing its words.
+// Building two documents would guarantee that one of them drifted.
+export async function sponsorStatementPdf(d) {
+  await loadPdfEngine()
+  const owing = Number(d.balance || 0) < -0.009
+  const s = new Sheet(`Statement — ${d.accountName || 'Account'}`)
+  s.head({ business: 'Havilah Suite Ltd',
+           subtitle: `${d.branchName || ''} · Statement of Account` })
+  s.meta([['Account', d.accountName || 'Account', true],
+          ['Covers', d.covers || 'Accommodation, meals and over-stay']],
+         [['Date', stamp()], ['Period', d.period || 'All to date']])
+
+  s.heading('Payments received')
+  s.table(
+    [{ label: 'Date', align: 'left', w: 14 }, { label: 'Method', align: 'left', w: 16 },
+     { label: 'Note', align: 'left', w: 44 }, { label: 'Amount (NGN)', align: 'right', w: 26 }],
+    (d.paidIn || []).map(r => ({ cells: [r.date, r.method || '', r.note || '', num(r.amount)] })),
+    [{ label: 'Paid to date', value: num(d.paidTotal), bold: true }],
+  )
+
+  s.heading('Drawn against the account')
+  s.table(
+    [{ label: 'Date', align: 'left', w: 13 }, { label: 'Guest', align: 'left', w: 21 },
+     { label: 'Room', align: 'left', w: 7 }, { label: 'Nights', align: 'right', w: 7 },
+     { label: 'Room (NGN)', align: 'right', w: 14 },
+     { label: 'Over-stay', align: 'right', w: 12 }, { label: 'Meals', align: 'right', w: 11 },
+     { label: 'Drawn (NGN)', align: 'right', w: 15 }],
+    (d.draws || []).map(r => ({
+      cells: [r.date, r.guest, r.roomNo || '—', String(r.nights || ''),
+              num(r.room), num(r.overstay), num(r.meals), num(r.amount)] })),
+    [{ label: 'Drawn to date', value: num(d.drawnTotal), bold: true }],
+  )
+
+  s.balance(owing ? 'Balance owing' : 'Balance in hand', money(Math.abs(Number(d.balance || 0))))
+  s.gap(4)
+  s.note(d.footer || (owing
+    ? 'The account has been drawn past what was paid in. The balance above is due.'
+    : 'Drinks and minimart purchases are settled by the guest and are not drawn '
+      + 'from this account. Stays still in progress are drawn only once the guest '
+      + 'has checked out.'))
+  return s.finish()
+}
+
 // Hand the finished file to the phone: share sheet (Files, WhatsApp, Mail),
 // then a plain download, then a tab it can be saved from.
 export async function savePdf(docOrPromise, filename) {

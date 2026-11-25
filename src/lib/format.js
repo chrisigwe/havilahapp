@@ -20,7 +20,9 @@ export const lagosHour = () => Number(
     { timeZone: 'Africa/Lagos', hour: '2-digit', hourCycle: 'h23' }).format(new Date()))
 
 export const tierLabel = { general: 'Standard', lounge: 'Lounge', staff: 'Staff' }
-export const methodLabel = { pos: 'POS', cash: 'Cash', credit: 'Credit', transfer: 'Transfer' }
+export const methodLabel = { pos: 'POS', cash: 'Cash', credit: 'Credit', transfer: 'Transfer',
+  // Settled from an organisation's account rather than at a till.
+  sponsor: 'Account' }
 
 // Calendar-date arithmetic lives in days.js: this file imports roles,
 // which node cannot resolve without an extension, and date arithmetic

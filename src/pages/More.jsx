@@ -48,6 +48,11 @@ const ITEMS = [
   // trail, which the auditor still has in full under History.
   { key: 'review', label: 'Needs a look', hint: 'Corrections, deletions and gaps worth asking about',
     roles: ['gm', 'admin'] },
+  // An organisation that pays for other people's stays -- UNIZIK at
+  // Awka (Chris, 25 November 2026). GM and admin only, in the row
+  // policies as well as here.
+  { key: 'sponsors', label: 'Organisations', hint: 'Accounts that pay for their people\u2019s stays \u2014 balance and statements',
+    roles: ['gm', 'admin'] },
   { key: 'activity', label: 'Staff activity', hint: 'Who uses the app, which pages and what they do',
     roles: ['gm', 'admin'] },
   { key: 'attendance', label: 'Attendance', hint: 'Who is at the branch, first in and last seen',

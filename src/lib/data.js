@@ -4669,3 +4669,145 @@ export async function returnSuppliesToStore(locationId, itemId, qty, reason) {
     { p_location: locationId, p_item: itemId, p_qty: qty, p_reason: reason })
   if (error) throw error
 }
+
+// ---- organisation accounts (UNIZIK at Awka, 25 November 2026) ----
+//
+// An organisation that pays for other people's stays. The balance is
+// one subtraction and there is no table of charges: money IN is
+// sponsor_payments, money OUT is an ordinary folio payment of method
+// 'sponsor' on a stay billed to that organisation. So the folio stays
+// the single place a stay's cost is worked out, and the account can
+// never disagree with the bill the guest signed.
+//
+// A 'sponsor' payment is deliberately NOT one of the methods the till
+// check counts — that code filters IN 'pos' and 'cash' — which is the
+// whole reason for a method of its own. Keyed as POS, N660,000 of
+// university money sat on Reception's terminal figure for a week.
+
+// Every organisation account at a branch. The account is its own row
+// now rather than something inferred from its payments: an agreement
+// signed before any money moves is still an account, and the per-night
+// fee owed on its stays has to be written down somewhere.
+export async function loadSponsors(branchId) {
+  const { data, error } = await supabase.from('sponsor_accounts')
+    .select('id, guest_id, rebate_per_night, rebate_payee, note, created_at, guests!guest_id(full_name)')
+    .eq('branch_id', branchId).eq('is_active', true)
+    .order('created_at', { ascending: true })
+  if (error) throw error
+  return (data || []).map(r => ({
+    accountId: r.id,
+    id: r.guest_id,
+    name: r.guests?.full_name || 'Account',
+    rebatePerNight: Number(r.rebate_per_night || 0),
+    rebatePayee: r.rebate_payee || null,
+    note: r.note || null,
+  }))
+}
+
+// Which guests are organisation accounts. Ids only, from a view that
+// carries no balance and no terms, so the front desk can be offered
+// the account as a way to settle a bill without being able to read
+// what is on it. Returns a Set; an empty one simply means no chip.
+export async function loadSponsorGuestIds(branchId) {
+  const { data, error } = await supabase.from('v_sponsor_guests')
+    .select('guest_id').eq('branch_id', branchId)
+  if (error) throw error
+  return new Set((data || []).map(r => r.guest_id))
+}
+
+// One account in full: what was paid in, and every stay drawn against
+// it with the figures the statement prints.
+//
+// The draw is the PAYMENT, not the folio total: a stay part-covered by
+// the account and part-paid by the guest draws only its own share, and
+// a stay still open draws nothing until it is settled.
+export async function loadSponsorAccount(branchId, sponsorGuestId, accountId) {
+  const [paidRes, stayRes, rebateRes] = await Promise.all([
+    supabase.from('sponsor_payments')
+      .select('id, paid_on, amount, method, note, created_at')
+      .eq('branch_id', branchId).eq('sponsor_guest_id', sponsorGuestId)
+      .order('paid_on', { ascending: true }),
+    supabase.from('stays')
+      .select('id, check_in_date, actual_out, scheduled_out, status, guest_id, guests!guest_id(full_name), rooms(room_number)')
+      .eq('branch_id', branchId).eq('bill_to_guest_id', sponsorGuestId),
+    accountId
+      ? supabase.from('sponsor_rebate_payouts')
+          .select('id, paid_on, amount, method, note, created_at')
+          .eq('branch_id', branchId).eq('sponsor_account_id', accountId)
+          .order('paid_on', { ascending: true })
+      : Promise.resolve({ data: [], error: null }),
+  ])
+  if (paidRes.error) throw paidRes.error
+  if (stayRes.error) throw stayRes.error
+  if (rebateRes.error) throw rebateRes.error
+
+  const stays = stayRes.data || []
+  const stayIds = stays.map(s => s.id)
+  const paidIn = (paidRes.data || []).map(r => ({ ...r, amount: Number(r.amount || 0) }))
+  const payouts = (rebateRes.data || []).map(r => ({ ...r, amount: Number(r.amount || 0) }))
+  if (!stayIds.length) return { paidIn, payouts, draws: [], stays: [] }
+
+  const [payRes, folioRes] = await Promise.all([
+    supabase.from('payments')
+      .select('id, stay_id, business_date, amount, method, remark, created_at')
+      .in('stay_id', stayIds).eq('method', 'sponsor')
+      .order('business_date', { ascending: true }),
+    supabase.from('v_stay_folio')
+      .select('stay_id, nights, daily_rate, room_charge, room_change_charge, overstay_charge, orders_charge, total_due, total_paid, outstanding')
+      .in('stay_id', stayIds),
+  ])
+  if (payRes.error) throw payRes.error
+  if (folioRes.error) throw folioRes.error
+
+  const stayById = new Map(stays.map(s => [s.id, s]))
+  const folioById = new Map((folioRes.data || []).map(f => [f.stay_id, f]))
+  const draws = (payRes.data || []).map(p => {
+    const st = stayById.get(p.stay_id) || {}
+    const fo = folioById.get(p.stay_id) || {}
+    return {
+      id: p.id, stay_id: p.stay_id, business_date: p.business_date,
+      amount: Number(p.amount || 0), remark: p.remark,
+      guest_name: st.guests?.full_name || 'A guest',
+      room_number: st.rooms?.room_number || null,
+      check_in_date: st.check_in_date || null,
+      actual_out: st.actual_out || st.scheduled_out || null,
+      nights: Number(fo.nights || 0),
+      room_charge: Number(fo.room_charge || 0) + Number(fo.room_change_charge || 0),
+      overstay_charge: Number(fo.overstay_charge || 0),
+      orders_charge: Number(fo.orders_charge || 0),
+      outstanding: Number(fo.outstanding || 0),
+    }
+  })
+  return { paidIn, payouts, draws, stays }
+}
+
+// A payment made to the person the per-night fee is owed to. Its own
+// table, never mixed with money from the organisation: one is income
+// against the account and the other is a cost of having it.
+export async function saveRebatePayout({ staff, accountId, paidOn, amount, method, note, ref }) {
+  const value = Number(amount)
+  if (!(value > 0)) throw new Error('Enter how much was paid.')
+  if (!accountId) throw new Error('This payment has no account to go on.')
+  const { data, error } = await supabase.from('sponsor_rebate_payouts').insert({
+    branch_id: staff.branch_id, sponsor_account_id: accountId,
+    paid_on: paidOn, amount: value, method: method || 'cash',
+    note: note || null, recorded_by: staff.id, client_ref: ref || null,
+  }).select('id').single()
+  if (error) throw error
+  return data
+}
+
+// Money received from an organisation. GM/admin only, enforced by the
+// row policies whatever the screen allows.
+export async function saveSponsorPayment({ staff, sponsorGuestId, paidOn, amount, method, note, ref }) {
+  const value = Number(amount)
+  if (!(value > 0)) throw new Error('Enter how much they paid.')
+  if (!sponsorGuestId) throw new Error('This payment has no account to go on.')
+  const { data, error } = await supabase.from('sponsor_payments').insert({
+    branch_id: staff.branch_id, sponsor_guest_id: sponsorGuestId,
+    paid_on: paidOn, amount: value, method: method || 'transfer',
+    note: note || null, recorded_by: staff.id, client_ref: ref || null,
+  }).select('id').single()
+  if (error) throw error
+  return data
+}

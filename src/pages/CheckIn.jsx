@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { naira, lagosToday, nightsBetween, addDays, cyclesFor, friendlyStayError } from '../lib/format'
 import {
-  createStay, findOrCreateGuest, loadBranchStaySettings, loadFreeRooms, loadPriorBalance, searchSimilarGuests, loadUpcomingReservations,
+  createStay, findOrCreateGuest, loadBranchStaySettings, loadFreeRooms, loadPriorBalance, loadPrStaysOverlapping, resolveGuestId, searchSimilarGuests, loadUpcomingReservations,
 } from '../lib/data'
 import { useToast } from '../components/Toast'
 import Notice from '../components/Notice'
@@ -58,6 +58,7 @@ export default function CheckIn({ boot, onDone }) {
     }, 400)
     return () => clearTimeout(t)
   }, [phone, name, staff.branch_id, confirmedGuestId])
+
   const [roomId, setRoomId] = useState('')
   const [rateType, setRateType] = useState('standard')
   const [rateOverride, setRateOverride] = useState('')
@@ -69,6 +70,35 @@ export default function CheckIn({ boot, onDone }) {
   const [billToGuestId, setBillToGuestId] = useState(null)
   const [billToSuggestions, setBillToSuggestions] = useState([])
   const [billToOpen, setBillToOpen] = useState(false)
+
+  // ALREADY ON PR FOR THESE NIGHTS? (Chris, 22 November 2026.)
+  //
+  // Sir Ben Etiaba was on PR in the Suite, 105, 203 and 204 for 20-21
+  // November. Room 207 — same guest, same nights — went in as a one-off
+  // at N38,000 and sat outstanding until he asked why. Keyed five days
+  // earlier by somebody who had not been told the booking was
+  // complimentary.
+  //
+  // Asked here, where it can still be answered, and never enforced: a
+  // guest genuinely can have one room free and another charged.
+  const [prElsewhere, setPrElsewhere] = useState([])
+  useEffect(() => {
+    let dead = false
+    setPrElsewhere([])
+    if (!checkIn || !scheduledOut) return
+    const t = setTimeout(async () => {
+      try {
+        // The same guest-matching the prior-balance warning uses, not a
+        // second rule that would drift from it.
+        const gid = confirmedGuestId
+          || await resolveGuestId(staff.branch_id, name, phone)
+        if (!gid || dead) return
+        const rows = await loadPrStaysOverlapping(staff.branch_id, gid, checkIn, scheduledOut)
+        if (!dead) setPrElsewhere(rows)
+      } catch { /* a warning that cannot load must not block a check-in */ }
+    }, 400)
+    return () => { dead = true; clearTimeout(t) }
+  }, [confirmedGuestId, name, phone, checkIn, scheduledOut, staff.branch_id])
   const [similarGuests, setSimilarGuests] = useState([])
   const [suggestionsOpen, setSuggestionsOpen] = useState(false)
 
@@ -296,6 +326,26 @@ export default function CheckIn({ boot, onDone }) {
             </button>
           ))}
         </div>
+        {!!prElsewhere.length && cycle !== 'pr' && (
+          <Notice tone="warn"
+            title={`${name.trim() || 'This guest'} is already on PR for these nights`}>
+            <p>
+              {prElsewhere.length === 1 ? 'Room ' : 'Rooms '}
+              {prElsewhere.map(r => r.rooms?.room_number).filter(Boolean).join(', ')
+                || 'another room'}
+              {prElsewhere.length === 1 ? ' is' : ' are'} complimentary over the same
+              dates. This one is set to charge.
+            </p>
+            {/* Only where PR is a cycle this branch allows — otherwise the
+                form would reset the choice a moment after the tap. */}
+            {cycles.some(c => c.value === 'pr') && (
+              <button type="button" onClick={() => setCycle('pr')}
+                className="mt-3 h-10 px-4 rounded-xl bg-amber text-bg font-semibold">
+                Make this PR too
+              </button>
+            )}
+          </Notice>
+        )}
       </div>
 
       <label className="mt-4 flex items-center gap-2 text-dim">
