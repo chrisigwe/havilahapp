@@ -4684,27 +4684,24 @@ export async function returnSuppliesToStore(locationId, itemId, qty, reason) {
 // whole reason for a method of its own. Keyed as POS, N660,000 of
 // university money sat on Reception's terminal figure for a week.
 
-// Every organisation account at a branch, with what it has paid in.
-// An organisation is a guest row that sponsor_payments points at.
+// Every organisation account at a branch. The account is its own row
+// now rather than something inferred from its payments: an agreement
+// signed before any money moves is still an account, and the per-night
+// fee owed on its stays has to be written down somewhere.
 export async function loadSponsors(branchId) {
-  const { data, error } = await supabase.from('sponsor_payments')
-    .select('id, sponsor_guest_id, paid_on, amount, method, note, created_at, guests!sponsor_guest_id(full_name)')
-    .eq('branch_id', branchId)
-    .order('paid_on', { ascending: true })
+  const { data, error } = await supabase.from('sponsor_accounts')
+    .select('id, guest_id, rebate_per_night, rebate_payee, note, created_at, guests!guest_id(full_name)')
+    .eq('branch_id', branchId).eq('is_active', true)
+    .order('created_at', { ascending: true })
   if (error) throw error
-  const byGuest = new Map()
-  for (const r of data || []) {
-    if (!byGuest.has(r.sponsor_guest_id)) {
-      byGuest.set(r.sponsor_guest_id, {
-        id: r.sponsor_guest_id, name: r.guests?.full_name || 'Account', paidIn: [],
-      })
-    }
-    byGuest.get(r.sponsor_guest_id).paidIn.push({
-      id: r.id, paid_on: r.paid_on, amount: Number(r.amount || 0),
-      method: r.method, note: r.note,
-    })
-  }
-  return [...byGuest.values()]
+  return (data || []).map(r => ({
+    accountId: r.id,
+    id: r.guest_id,
+    name: r.guests?.full_name || 'Account',
+    rebatePerNight: Number(r.rebate_per_night || 0),
+    rebatePayee: r.rebate_payee || null,
+    note: r.note || null,
+  }))
 }
 
 // One account in full: what was paid in, and every stay drawn against
@@ -4713,8 +4710,8 @@ export async function loadSponsors(branchId) {
 // The draw is the PAYMENT, not the folio total: a stay part-covered by
 // the account and part-paid by the guest draws only its own share, and
 // a stay still open draws nothing until it is settled.
-export async function loadSponsorAccount(branchId, sponsorGuestId) {
-  const [paidRes, stayRes] = await Promise.all([
+export async function loadSponsorAccount(branchId, sponsorGuestId, accountId) {
+  const [paidRes, stayRes, rebateRes] = await Promise.all([
     supabase.from('sponsor_payments')
       .select('id, paid_on, amount, method, note, created_at')
       .eq('branch_id', branchId).eq('sponsor_guest_id', sponsorGuestId)
@@ -4722,14 +4719,22 @@ export async function loadSponsorAccount(branchId, sponsorGuestId) {
     supabase.from('stays')
       .select('id, check_in_date, actual_out, scheduled_out, status, guest_id, guests!guest_id(full_name), rooms(room_number)')
       .eq('branch_id', branchId).eq('bill_to_guest_id', sponsorGuestId),
+    accountId
+      ? supabase.from('sponsor_rebate_payouts')
+          .select('id, paid_on, amount, method, note, created_at')
+          .eq('branch_id', branchId).eq('sponsor_account_id', accountId)
+          .order('paid_on', { ascending: true })
+      : Promise.resolve({ data: [], error: null }),
   ])
   if (paidRes.error) throw paidRes.error
   if (stayRes.error) throw stayRes.error
+  if (rebateRes.error) throw rebateRes.error
 
   const stays = stayRes.data || []
   const stayIds = stays.map(s => s.id)
   const paidIn = (paidRes.data || []).map(r => ({ ...r, amount: Number(r.amount || 0) }))
-  if (!stayIds.length) return { paidIn, draws: [], stays: [] }
+  const payouts = (rebateRes.data || []).map(r => ({ ...r, amount: Number(r.amount || 0) }))
+  if (!stayIds.length) return { paidIn, payouts, draws: [], stays: [] }
 
   const [payRes, folioRes] = await Promise.all([
     supabase.from('payments')
@@ -4762,7 +4767,23 @@ export async function loadSponsorAccount(branchId, sponsorGuestId) {
       outstanding: Number(fo.outstanding || 0),
     }
   })
-  return { paidIn, draws, stays }
+  return { paidIn, payouts, draws, stays }
+}
+
+// A payment made to the person the per-night fee is owed to. Its own
+// table, never mixed with money from the organisation: one is income
+// against the account and the other is a cost of having it.
+export async function saveRebatePayout({ staff, accountId, paidOn, amount, method, note, ref }) {
+  const value = Number(amount)
+  if (!(value > 0)) throw new Error('Enter how much was paid.')
+  if (!accountId) throw new Error('This payment has no account to go on.')
+  const { data, error } = await supabase.from('sponsor_rebate_payouts').insert({
+    branch_id: staff.branch_id, sponsor_account_id: accountId,
+    paid_on: paidOn, amount: value, method: method || 'cash',
+    note: note || null, recorded_by: staff.id, client_ref: ref || null,
+  }).select('id').single()
+  if (error) throw error
+  return data
 }
 
 // Money received from an organisation. GM/admin only, enforced by the

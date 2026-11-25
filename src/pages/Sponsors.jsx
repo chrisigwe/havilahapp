@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { naira, lagosToday, methodLabel } from '../lib/format'
-import { loadSponsors, loadSponsorAccount, saveSponsorPayment } from '../lib/data'
-import { sponsorStanding, sponsorTotals, byMonth } from '../lib/sponsor'
+import { loadSponsors, loadSponsorAccount, saveSponsorPayment, saveRebatePayout } from '../lib/data'
+import { sponsorStanding, sponsorTotals, byMonth, rebateOwed } from '../lib/sponsor'
 import { sponsorStatementPdf, savePdf } from '../lib/pdfSheet'
 import { useToast } from '../components/Toast'
 import FoldedDays from '../components/FoldedDays'
@@ -38,8 +38,17 @@ export default function Sponsors({ boot }) {
   const [errAccount, setErrAccount] = useState(false)
   const [busy, setBusy] = useState(false)
   const [draft, setDraft] = useState(null)
+  const [feeDraft, setFeeDraft] = useState(null)
 
   const branchId = staff.branch_id
+  // Worded exactly as Recovery words a day, so the two pages read the
+  // same way: a raw 2026-11-18 is a column heading, not a date anyone
+  // reads aloud.
+  const dayLabel = (d) => (d ? new Date(d + 'T12:00:00')
+    .toLocaleDateString('en-NG', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })
+    : '')
+  const shortDay = (d) => (d ? new Date(d + 'T12:00:00')
+    .toLocaleDateString('en-NG', { day: 'numeric', month: 'short' }) : '—')
   const today = lagosToday()
 
   useEffect(() => {
@@ -51,20 +60,27 @@ export default function Sponsors({ boot }) {
     return () => { alive = false }
   }, [branchId])
 
+  // The account row's own id, which the fee payouts hang off. Kept as
+  // a callback so refresh() does not rebuild on every render.
+  const accountIdFor = useCallback(
+    (guestId) => (accounts || []).find(a => a.id === guestId)?.accountId || null,
+    [accounts])
+
   const refresh = useCallback(() => {
     if (!pickedId) return
     let alive = true
     setAccount(null); setErrAccount(false)
-    loadSponsorAccount(branchId, pickedId)
+    loadSponsorAccount(branchId, pickedId, accountIdFor(pickedId))
       .then(a => { if (alive) setAccount(a) })
       .catch(() => { if (alive) { setAccount(null); setErrAccount(true) } })
     return () => { alive = false }
-  }, [branchId, pickedId])
+  }, [branchId, pickedId, accountIdFor])
 
   useEffect(() => { refresh() }, [refresh])
 
   const picked = (accounts || []).find(a => a.id === pickedId) || null
   const paidIn = account?.paidIn || []
+  const payouts = account?.payouts || []
   const draws = account?.draws || []
 
   const standing = useMemo(
@@ -72,6 +88,9 @@ export default function Sponsors({ boot }) {
     [paidIn, draws, today])
   const totals = useMemo(() => sponsorTotals(paidIn, draws), [paidIn, draws])
   const months = useMemo(() => byMonth(draws), [draws])
+  const fee = useMemo(
+    () => rebateOwed({ draws, perNight: picked?.rebatePerNight || 0, payouts }),
+    [draws, picked, payouts])
 
   // FoldedDays folds a day-grouped list; the month headings come from
   // the fold itself, so the page hands it days and nothing more.
@@ -125,6 +144,23 @@ export default function Sponsors({ boot }) {
       refresh()
     } catch (e) {
       toast(e.message || 'That payment was not saved.')
+    } finally { setBusy(false) }
+  }
+
+  const recordPayout = async () => {
+    if (!picked?.accountId || !feeDraft) return
+    setBusy(true)
+    try {
+      await saveRebatePayout({
+        staff, accountId: picked.accountId, paidOn: feeDraft.paidOn,
+        amount: feeDraft.amount, method: feeDraft.method,
+        note: feeDraft.note, ref: feeDraft.ref,
+      })
+      setFeeDraft(null)
+      toast('Recorded.')
+      refresh()
+    } catch (e) {
+      toast(e.message || 'That was not saved.')
     } finally { setBusy(false) }
   }
 
@@ -246,6 +282,72 @@ export default function Sponsors({ boot }) {
             </section>
           )}
 
+          {/* Owed by Havilah for the nights drawn, not by the
+              organisation — which is why it is a card of its own and
+              why nothing here reaches the statement. */}
+          {picked?.rebatePerNight > 0 && (
+            <section className="mt-3 rounded-2xl border border-line bg-surface p-4">
+              <span className="block text-dim text-[0.65rem] uppercase tracking-[0.18em] font-semibold">
+                Owed to {picked.rebatePayee || 'the agreed payee'}
+              </span>
+              <p className={`mt-1 text-3xl font-extrabold tnum ${fee.owed > 0.009 ? 'text-amber' : 'text-dim'}`}>
+                {naira(Math.abs(fee.owed))}{fee.owed < -0.009 ? ' over' : ''}
+              </p>
+              <p className="text-dim mt-1 text-sm">
+                {fee.nights} {fee.nights === 1 ? 'night' : 'nights'} across {fee.stays}{' '}
+                {fee.stays === 1 ? 'stay' : 'stays'} at {naira(fee.rate)} a night
+                {fee.paid > 0.009 ? ` · ${naira(fee.paid)} already paid` : ''}
+              </p>
+              <p className="text-dim mt-2 text-xs">
+                Ours to pay, not the organisation’s. It is not on their statement.
+              </p>
+              <button
+                onClick={() => setFeeDraft({ paidOn: today, amount: '', method: 'cash',
+                                             note: '', ref: crypto.randomUUID() })}
+                disabled={busy}
+                className="mt-3 w-full py-2.5 rounded-xl border border-line text-sm font-semibold disabled:opacity-50">
+                Record a payment to {picked.rebatePayee || 'them'}
+              </button>
+            </section>
+          )}
+
+          {feeDraft && (
+            <section className="mt-3 rounded-2xl border border-line bg-surface p-4">
+              <h2 className="font-semibold">Paid to {picked?.rebatePayee || 'the payee'}</h2>
+              <label className="block mt-3 text-sm text-dim">How much</label>
+              <input inputMode="decimal" value={feeDraft.amount}
+                onChange={e => setFeeDraft(d => ({ ...d, amount: e.target.value }))}
+                className="w-full mt-1 px-3 py-2.5 rounded-xl bg-raise border border-line tnum" />
+              <label className="block mt-3 text-sm text-dim">Day it was paid</label>
+              <input type="date" value={feeDraft.paidOn} max={today}
+                onChange={e => setFeeDraft(d => ({ ...d, paidOn: e.target.value }))}
+                className="w-full mt-1 px-3 py-2.5 rounded-xl bg-raise border border-line" />
+              <div className="mt-3 flex gap-2">
+                {['cash', 'transfer', 'pos'].map(m => (
+                  <button key={m} onClick={() => setFeeDraft(d => ({ ...d, method: m }))}
+                    className={`flex-1 py-2 rounded-xl border text-sm capitalize ${
+                      feeDraft.method === m ? 'bg-amber text-bg border-amber font-semibold'
+                                            : 'border-line text-dim'}`}>
+                    {m}
+                  </button>
+                ))}
+              </div>
+              <label className="block mt-3 text-sm text-dim">Note (optional)</label>
+              <input value={feeDraft.note}
+                onChange={e => setFeeDraft(d => ({ ...d, note: e.target.value }))}
+                placeholder="What it covers"
+                className="w-full mt-1 px-3 py-2.5 rounded-xl bg-raise border border-line" />
+              <div className="mt-4 flex gap-2">
+                <button onClick={() => setFeeDraft(null)} disabled={busy}
+                  className="flex-1 py-2.5 rounded-xl border border-line text-sm">Cancel</button>
+                <button onClick={recordPayout} disabled={busy || !(Number(feeDraft.amount) > 0)}
+                  className="flex-1 py-2.5 rounded-xl bg-leaf text-bg text-sm font-semibold disabled:opacity-50">
+                  {busy ? 'Saving…' : 'Save'}
+                </button>
+              </div>
+            </section>
+          )}
+
           {!draws.length ? (
             <p className="text-dim py-10 text-center">
               Nothing has been drawn against this account yet.
@@ -264,7 +366,7 @@ export default function Sponsors({ boot }) {
                       Drawn on
                     </span>
                     <span className="flex items-baseline justify-between gap-3">
-                      <span className="text-lg font-extrabold">{day}</span>
+                      <span className="text-lg font-extrabold">{dayLabel(day)}</span>
                       <span className="tnum font-extrabold text-amber shrink-0">
                         {naira(items.reduce((t, r) => t + Number(r.amount || 0), 0))}
                       </span>
@@ -280,7 +382,7 @@ export default function Sponsors({ boot }) {
                         <p className="text-dim text-sm mt-0.5">
                           {r.room_number ? `Room ${r.room_number} · ` : ''}
                           {r.nights} {r.nights === 1 ? 'night' : 'nights'}
-                          {r.check_in_date ? ` · ${r.check_in_date} to ${r.actual_out || '—'}` : ''}
+                          {r.check_in_date ? ` · ${shortDay(r.check_in_date)} to ${shortDay(r.actual_out)}` : ''}
                         </p>
                         <p className="text-dim text-sm">
                           Room {naira(r.room_charge)}
@@ -309,7 +411,7 @@ export default function Sponsors({ boot }) {
                 {paidIn.map(p => (
                   <li key={p.id} className="px-4 py-3 border-t border-line">
                     <div className="flex items-baseline justify-between gap-3">
-                      <span className="font-semibold">{p.paid_on}</span>
+                      <span className="font-semibold">{dayLabel(p.paid_on)}</span>
                       <span className="tnum font-semibold shrink-0 text-leaf">{naira(p.amount)}</span>
                     </div>
                     <p className="text-dim text-sm mt-0.5 capitalize">{p.method}</p>
