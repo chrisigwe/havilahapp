@@ -7,6 +7,8 @@ import { supplyStory, supplyShortfall, sinceText } from '../lib/supplytext'
 import { useToast } from '../components/Toast'
 import { VersionLine } from './More'
 import { tracked } from '../lib/loadfail'
+import SwitchTabs from '../components/SwitchTabs'
+import FoldedDays from '../components/FoldedDays'
 
 // Supplies used. The Store hands supplies to a department (Store > Supplies >
 // Issue); the department holds them and records each use here, with a note.
@@ -60,6 +62,7 @@ export default function Supplies({ boot }) {
   const [usedBy, setUsedBy] = useState('')
   const [busy, setBusy] = useState(false)
   const [undoing, setUndoing] = useState(null)     // { id, reason }
+  const [openEntryDays, setOpenEntryDays] = useState(null)
 
   const refresh = () => {
     loadStockMap(staff.branch_id).then(setStockMap).catch(console.error)
@@ -133,12 +136,8 @@ export default function Supplies({ boot }) {
         {places.map(l => <Chip key={l.id} on={l.id === locId} onClick={() => setLocId(l.id)}>{l.name}</Chip>)}
       </div>
 
-      <div className="grid gap-1 mb-3" style={{ gridTemplateColumns: `repeat(${tabs.length}, minmax(0, 1fr))` }}>
-        {tabs.map(([k, label]) => (
-          <button key={k} onClick={() => setView(k)}
-            className={`h-9 px-0.5 rounded-lg border text-[13px] tracking-tight leading-none whitespace-nowrap truncate font-bold ${view === k
-              ? 'bg-amber/20 text-amber border-amber' : 'border-line text-dim'}`}>{label}</button>
-        ))}
+      <div className="mb-3">
+        <SwitchTabs label="What to show" options={tabs} value={view} onChange={setView} />
       </div>
 
       {view === 'record' && canRecord && (
@@ -203,7 +202,36 @@ export default function Supplies({ boot }) {
         ) : <p className="py-8 text-center text-dim">Pick a department above to record its use.</p>
       )}
 
-      {view === 'entries' && (
+      {view === 'entries' && (() => {
+        // Folded by day, then month, then year (Chris, 25 November
+        // 2026), through the same FoldedDays the Recovered page uses,
+        // with the same letterhead on each day. Ninety days of entries
+        // is otherwise one unbroken list.
+        const byDay = new Map()
+        for (const r of shown) {
+          if (!byDay.has(r.business_date)) byDay.set(r.business_date, [])
+          byDay.get(r.business_date).push(r)
+        }
+        const groups = [...byDay.entries()]
+        const firstDay = groups[0]?.[0]
+        const dayOpen = (d) => openEntryDays ? openEntryDays.has(d) : d === firstDay
+        const toggleDay = (d) => setOpenEntryDays(cur => {
+          const next = cur ? new Set(cur) : new Set(firstDay ? [firstDay] : [])
+          if (next.has(d)) next.delete(d); else next.add(d)
+          return next
+        })
+        const dayLabel = (d) => new Date(d + 'T12:00:00')
+          .toLocaleDateString('en-NG', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })
+        // Counted, never summed: twelve toilet rolls and three bags of
+        // charcoal do not add up to fifteen of anything.
+        const tally = (items) => {
+          const got = items.filter(r => r.kind === 'received').length
+          const used = items.filter(r => r.kind === 'used').length
+          const undone = items.filter(r => r.kind === 'undo').length
+          return [got && `${got} received`, used && `${used} used`, undone && `${undone} undone`]
+            .filter(Boolean).join(' · ')
+        }
+        return (
         <section>
           <div className="flex gap-2 mb-3">
             {[7, 30, 90].map(d => (
@@ -213,47 +241,80 @@ export default function Supplies({ boot }) {
             ))}
           </div>
           {feed === null && <p className="py-8 text-center text-dim">Loading…</p>}
-          <ul className="divide-y divide-line/60">
-            {shown.map(r => (
-              <li key={r.id} className="py-3 text-sm">
-                <div className="flex items-center gap-3">
-                  <span className={`flex-1 min-w-0 font-semibold truncate ${r.undone ? 'line-through text-dim' : ''}`}>
-                    {r.kind === 'received' ? '+' : r.kind === 'undo' ? '↩' : '−'}{Number(r.qty)} × {r.stock_items?.name}
-                  </span>
-                  <span className="tnum text-dim">{r.business_date}</span>
-                </div>
-                <p className="text-dim">
-                  {r.dept_name || '—'} ·{' '}
-                  {r.kind === 'received' ? `from Store${r.received_by ? `, collected by ${r.received_by}` : ''}`
-                    : r.kind === 'undo' ? 'undone'
-                    : `used${r.received_by ? ` (taken by ${r.received_by})` : ''}`}
-                  {` · by ${r.staff?.full_name || '?'}`}
-                  {r.undone ? ' · UNDONE' : ''}
-                </p>
-                {r.kind === 'used' && (
-                  <p className={!r.note || r.note.trim().length < 5 ? 'text-clay' : 'text-dim'}>“{r.note || 'no note'}”</p>
-                )}
-                {r.kind === 'undo' && <p className="text-dim">{r.note}</p>}
-                {canUndo(r) && (undoing?.id === r.id ? (
-                  <div className="mt-2 flex gap-2">
-                    <input value={undoing.reason} autoFocus
-                      onChange={e => setUndoing({ id: r.id, reason: e.target.value })}
-                      placeholder="Why undo? (e.g. wrong quantity)"
-                      className="flex-1 h-10 px-3 rounded-lg bg-surface border border-line placeholder:text-dim" />
-                    <button onClick={undo} disabled={busy}
-                      className="h-10 px-3 rounded-lg bg-clay text-bg font-bold disabled:opacity-40">Undo</button>
-                    <button onClick={() => setUndoing(null)} className="h-10 px-2 text-dim">Cancel</button>
-                  </div>
-                ) : (
-                  <button onClick={() => setUndoing({ id: r.id, reason: '' })}
-                    className="mt-1 text-amber text-sm font-semibold">Undo this entry</button>
-                ))}
-              </li>
-            ))}
-            {feed && !shown.length && <li className="py-8 text-center text-dim">Nothing in this period.</li>}
-          </ul>
+          {feed && !shown.length && <p className="py-8 text-center text-dim">Nothing in this period.</p>}
+          <FoldedDays groups={groups} today={lagosToday()} eyebrow="Recorded in"
+            summary={(items) => (
+              <span className="tnum text-2xl font-extrabold">{items.length}</span>
+            )}
+            renderDay={(day, items) => {
+              const open = dayOpen(day)
+              return (
+                <section key={day} className="mt-4 rounded-2xl border border-line bg-surface overflow-hidden">
+                  <button type="button" onClick={() => toggleDay(day)} aria-expanded={open}
+                    className="w-full px-4 py-3 text-left bg-raise">
+                    <span className="block text-dim text-[0.65rem] uppercase tracking-[0.18em] font-semibold">
+                      Recorded on
+                    </span>
+                    <span className="block text-xl font-extrabold uppercase tracking-wide leading-tight">
+                      {dayLabel(day)}
+                    </span>
+                    <span className="mt-1 flex items-baseline justify-between gap-3">
+                      <span className="text-dim text-xs">{tally(items)}</span>
+                      <span className="flex items-baseline gap-2 shrink-0">
+                        <span className="tnum text-xl font-extrabold">{items.length}</span>
+                        <svg viewBox="0 0 20 20" aria-hidden="true"
+                             className={`w-4 h-4 shrink-0 text-dim transition-transform ${open ? 'rotate-180' : ''}`}
+                             fill="none" stroke="currentColor" strokeWidth="2">
+                          <path d="M5 8l5 5 5-5" strokeLinecap="round" strokeLinejoin="round" />
+                        </svg>
+                      </span>
+                    </span>
+                  </button>
+                  {open && (
+                  <ul className="px-4 pb-1 border-t border-line divide-y divide-line/60">
+                    {items.map(r => (
+                      <li key={r.id} className="py-3 text-sm">
+                        <div className="flex items-center gap-3">
+                          <span className={`flex-1 min-w-0 font-semibold truncate ${r.undone ? 'line-through text-dim' : ''}`}>
+                            {r.kind === 'received' ? '+' : r.kind === 'undo' ? '↩' : '−'}{Number(r.qty)} × {r.stock_items?.name}
+                          </span>
+                        </div>
+                        <p className="text-dim">
+                          {r.dept_name || '—'} ·{' '}
+                          {r.kind === 'received' ? `from Store${r.received_by ? `, collected by ${r.received_by}` : ''}`
+                            : r.kind === 'undo' ? 'undone'
+                            : `used${r.received_by ? ` (taken by ${r.received_by})` : ''}`}
+                          {` · by ${r.staff?.full_name || '?'}`}
+                          {r.undone ? ' · UNDONE' : ''}
+                        </p>
+                        {r.kind === 'used' && (
+                          <p className={!r.note || r.note.trim().length < 5 ? 'text-clay' : 'text-dim'}>“{r.note || 'no note'}”</p>
+                        )}
+                        {r.kind === 'undo' && <p className="text-dim">{r.note}</p>}
+                        {canUndo(r) && (undoing?.id === r.id ? (
+                          <div className="mt-2 flex gap-2">
+                            <input value={undoing.reason} autoFocus
+                              onChange={e => setUndoing({ id: r.id, reason: e.target.value })}
+                              placeholder="Why undo? (e.g. wrong quantity)"
+                              className="flex-1 h-10 px-3 rounded-lg bg-surface border border-line placeholder:text-dim" />
+                            <button onClick={undo} disabled={busy}
+                              className="h-10 px-3 rounded-lg bg-clay text-bg font-bold disabled:opacity-40">Undo</button>
+                            <button onClick={() => setUndoing(null)} className="h-10 px-2 text-dim">Cancel</button>
+                          </div>
+                        ) : (
+                          <button onClick={() => setUndoing({ id: r.id, reason: '' })}
+                            className="mt-1 text-amber text-sm font-semibold">Undo this entry</button>
+                        ))}
+                      </li>
+                    ))}
+                  </ul>
+                  )}
+                </section>
+              )
+            }} />
         </section>
-      )}
+        )
+      })()}
 
       {view === 'balances' && (
         <Balances flow={flow} stockMap={stockMap} locId={locId}
