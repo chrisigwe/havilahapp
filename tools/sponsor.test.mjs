@@ -5,7 +5,7 @@
 // which is the moment the wording has to change without anyone editing
 // anything.
 import { sponsorTotals, burn, weeksLeft, isLow, sponsorStanding,
-         roundWeeks, oldestUnfunded, byMonth, splitStay } from '../src/lib/sponsor.js'
+         roundWeeks, oldestUnfunded, byMonth, splitStay, rebateOwed } from '../src/lib/sponsor.js'
 
 let pass = 0, fail = 0
 const eq = (name, got, want) => {
@@ -157,6 +157,42 @@ for (const mv of [0, 500, 7500, -2000]) {
     fail++; console.log(`  FAIL moving ${mv} changed the bill total -> ${s.total}`)
   } else { pass++; console.log(`  ok   moving ${mv} leaves the bill total alone`) }
 }
+
+// The rebate to the Protocol Officer. Havilah owes it, the university
+// pays the full rate and is never told, so these figures must never
+// reach the statement — they are kept in their own function for that
+// reason.
+const stay = (stay_id, nights, amount) => ({ stay_id, nights, amount,
+                                             business_date: '2026-11-18' })
+// The eight real November stays: 2 nights each but Prof Casmir's one.
+const NOV = [stay('a', 2, 80000), stay('b', 2, 85000), stay('c', 2, 90000),
+             stay('d', 2, 90000), stay('e', 2, 90000), stay('f', 2, 90000),
+             stay('g', 2, 90000), stay('h', 1, 45000)]
+
+eq('fifteen nights at five thousand',
+   rebateOwed({ draws: NOV, perNight: 5000 }),
+   { nights: 15, stays: 8, rate: 5000, earned: 75000, paid: 0, owed: 75000 })
+
+eq('after paying him fifty',
+   rebateOwed({ draws: NOV, perNight: 5000, payouts: [{ amount: 50000 }] }).owed, 25000)
+
+eq('paid in full', rebateOwed({ draws: NOV, perNight: 5000,
+                                payouts: [{ amount: 75000 }] }).owed, 0)
+eq('overpaid reads as a credit against him',
+   rebateOwed({ draws: NOV, perNight: 5000, payouts: [{ amount: 80000 }] }).owed, -5000)
+
+// A stay settled in two payments is two draws and ONE stay. Paying a
+// man twice for the same night is the error this guards.
+eq('one stay settled by two payments',
+   rebateOwed({ draws: [stay('a', 2, 40000), stay('a', 2, 50000)], perNight: 5000 }),
+   { nights: 2, stays: 1, rate: 5000, earned: 10000, paid: 0, owed: 10000 })
+
+eq('no agreement means nothing owed',
+   rebateOwed({ draws: NOV, perNight: 0 }).owed, 0)
+eq('nothing drawn yet', rebateOwed({ draws: [], perNight: 5000 }).owed, 0)
+eq('a draw with no stay behind it is not counted',
+   rebateOwed({ draws: [{ nights: 2, amount: 100 }], perNight: 5000 }).nights, 0)
+eq('rates arriving as text', rebateOwed({ draws: NOV, perNight: '5000.00' }).earned, 75000)
 
 console.log(`\nsponsor: ${pass} passed, ${fail} failed`)
 process.exit(fail ? 1 : 0)

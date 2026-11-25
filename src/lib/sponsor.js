@@ -164,6 +164,31 @@ export function byMonth(drawn = []) {
   return out
 }
 
+// The rebate owed to a third party for sending the business — UNIZIK's
+// Protocol Officer, N5,000 a night (Chris, 25 November 2026).
+//
+// Havilah owes it; the organisation pays the full rate and is never
+// told about it. It must therefore never reach a statement, and the
+// two sides are kept apart here so that cannot happen by accident.
+//
+// Nights are counted per STAY, not per draw. A stay settled in two
+// payments is two draws and one stay, and paying a man twice for the
+// same night is exactly the error this arithmetic exists to avoid.
+export function rebateOwed({ draws = [], perNight = 0, payouts = [] }) {
+  const rate = num(perNight)
+  const seen = new Set()
+  let nights = 0
+  for (const d of draws || []) {
+    const key = d.stay_id || d.id
+    if (!key || seen.has(key)) continue
+    seen.add(key)
+    nights += num(d.nights)
+  }
+  const earned = nights * rate
+  const paid = (payouts || []).reduce((s, p) => s + num(p.amount), 0)
+  return { nights, stays: seen.size, rate, earned, paid, owed: earned - paid }
+}
+
 // What a stay costs the organisation, and what it leaves for the guest.
 // The split follows the agreement: room, any room-change adjustment and
 // the over-stay fee are theirs; food is theirs; drinks and minimart are
