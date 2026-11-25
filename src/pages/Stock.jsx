@@ -1,8 +1,11 @@
 import { useEffect, useMemo, useState } from 'react'
 import { loadStockMap, loadRecentlyAdded } from '../lib/data'
 import { STOCK_OPENS_ON_ALL, is } from '../lib/roles'
+import SwitchTabs from '../components/SwitchTabs'
 import Notice from '../components/Notice'
 import { tracked } from '../lib/loadfail'
+import FoldedDays from '../components/FoldedDays'
+import { lagosToday } from '../lib/format'
 
 export default function Stock({ boot }) {
   const { staff, locations, items, seesAll } = boot
@@ -27,7 +30,18 @@ export default function Stock({ boot }) {
   }, [locations, locId])
   const [q, setQ] = useState('')
   // Shape only — neither changes what is loaded.
-  const [show, setShow] = useState('all')     // all | out | negative
+  const [show, setShow] = useState('all')     // all | added
+  // AT ZERO AND BELOW ZERO ARE NO LONGER TABS (Chris, 25 November
+  // 2026: "do we need the at zero and below zero tabs, or otherwise
+  // remove"). The card at the top of this page already SAYS how many
+  // are at zero and how many are below it, and says why below zero
+  // matters -- so a tab added nothing to knowing, only to seeing
+  // which. Those two counts are now the control themselves: tap the
+  // figure to narrow the list to it, tap again to come back. The
+  // answer and the way to act on it are in the same place, and the
+  // tab row is left with the two things that are genuinely different
+  // views of this page.
+  const [only, setOnly] = useState(null)     // null | out | negative
   const [sort, setSort] = useState('name')    // name | lowest
   const [openItem, setOpenItem] = useState(null)
 
@@ -85,15 +99,15 @@ export default function Stock({ boot }) {
   const zeroes = all.filter(r => r.shown === 0 && r.total !== 0)
 
   const rows = useMemo(() => {
-    const base = show === 'negative' ? negatives
-      : show === 'out' ? zeroes
+    const base = only === 'negative' ? negatives
+      : only === 'out' ? zeroes
       : inScope
     const sorted = [...base]
     if (sort === 'lowest') sorted.sort((a, b) => a.shown - b.shown
       || a.item.name.localeCompare(b.item.name))
     else sorted.sort((a, b) => a.item.name.localeCompare(b.item.name))
     return sorted
-  }, [inScope, negatives, zeroes, show, sort])
+  }, [inScope, negatives, zeroes, only, sort])
 
   const units = inScope.reduce((s, r) => s + r.shown, 0)
   const placeName = locId === 'all'
@@ -141,29 +155,32 @@ export default function Stock({ boot }) {
         </div>
         <div className="text-dim text-sm mt-1">
           across {inScope.length} {inScope.length === 1 ? 'item' : 'items'}
-          {zeroes.length > 0 && <> · {zeroes.length} at zero</>}
+          {zeroes.length > 0 && <>
+            {' · '}
+            <button onClick={() => { setShow('all'); setOnly(o => o === 'out' ? null : 'out') }}
+              className={`underline underline-offset-2 ${only === 'out' ? 'text-amber font-semibold' : ''}`}>
+              {zeroes.length} at zero
+            </button>
+          </>}
         </div>
         {negatives.length > 0 && (
           <p className="text-clay text-sm mt-2 pt-2 border-t border-line">
-            {negatives.length} {negatives.length === 1 ? 'item is' : 'items are'} below zero.
-            That cannot happen on a shelf — it means a movement is missing, or one
+            <button onClick={() => { setShow('all'); setOnly(o => o === 'negative' ? null : 'negative') }}
+              className={`underline underline-offset-2 font-semibold ${only === 'negative' ? 'text-amber' : ''}`}>
+              {negatives.length} {negatives.length === 1 ? 'item is' : 'items are'} below zero
+            </button>
+            . That cannot happen on a shelf — it means a movement is missing, or one
             was recorded twice. Worth a count.
           </p>
         )}
       </section>
 
-      {/* Scrollable rather than four equal buttons: at 320px "Below zero"
-          and "Recently added" cannot both fit on a quarter of the width,
-          and a clipped label is worse than a scroll. */}
-      <div className="flex gap-2 mt-3 overflow-x-auto -mx-1 px-1 pb-1">
-        {[['all', 'All'], ['added', 'Recently added'], ['out', 'At zero'], ['negative', 'Below zero']].map(([k, label]) => (
-          <button key={k} onClick={() => setShow(k)}
-            className={`shrink-0 h-10 px-4 rounded-xl border text-sm font-semibold ${show === k
-              ? (k === 'negative' ? 'bg-raise border-clay text-clay' : 'bg-raise border-amber text-amber')
-              : 'border-line text-dim'}`}>
-            {label}
-          </button>
-        ))}
+      {/* Two tabs now, so they fit the shared switch rather than a
+          scrolling row of four. */}
+      <div className="mt-3">
+        <SwitchTabs label="What to show"
+          options={[['all', 'All'], ['added', 'Recently added']]}
+          value={show} onChange={setShow} />
       </div>
 
       {show === 'added' ? (
@@ -225,8 +242,8 @@ export default function Stock({ boot }) {
         {!rows.length && (
           <li className="py-8 text-center text-dim">
             {needle ? `Nothing matches “${q.trim()}”.`
-              : show === 'negative' ? 'Nothing is below zero. Good.'
-              : show === 'out' ? 'Nothing is at zero.'
+              : only === 'negative' ? 'Nothing is below zero. Good.'
+              : only === 'out' ? 'Nothing is at zero.'
               : 'Nothing here yet.'}
           </li>
         )}
@@ -270,8 +287,10 @@ function movementPhrase(type, to, from) {
 
 function AddedFeed({ rows, err, locations, locId }) {
   // Thirty days of arrivals is a long scroll, so each day folds (Chris,
-  // 25 October 2026). Newest open, the rest shut — the same shape
-  // Variances and Corrections use, so one habit covers all three.
+  // 25 October 2026) -- and from 25 November the months and years fold
+  // above them, through the same FoldedDays the Recovered page uses,
+  // with the same letterhead on each day. One shape across the app:
+  // learn it on Recovered, read it here.
   const [openDays, setOpenDays] = useState(null)
   if (err) {
     return (
@@ -291,21 +310,23 @@ function AddedFeed({ rows, err, locations, locId }) {
   }
   const nameOf = (id) => (locations || []).find(l => l.id === id)?.name || null
 
-  const days = []
-  const seen = new Map()
+  const byDay = new Map()
   for (const r of rows) {
-    let d = seen.get(r.business_date)
-    if (!d) { d = { date: r.business_date, items: [] }; seen.set(r.business_date, d); days.push(d) }
-    d.items.push(r)
+    if (!byDay.has(r.business_date)) byDay.set(r.business_date, [])
+    byDay.get(r.business_date).push(r)
   }
+  const groups = [...byDay.entries()]
 
-  const first = days[0]?.date
+  const first = groups[0]?.[0]
   const isOpen = (d) => openDays ? openDays.has(d) : d === first
   const toggle = (d) => setOpenDays(cur => {
     const next = cur ? new Set(cur) : new Set(first ? [first] : [])
     if (next.has(d)) next.delete(d); else next.add(d)
     return next
   })
+  const units = (items) => items.reduce((t, r) => t + Number(r.qty || 0), 0)
+  const dayLabel = (d) => new Date(d + 'T12:00:00')
+    .toLocaleDateString('en-NG', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })
 
   return (
     <div className="mt-3">
@@ -313,62 +334,69 @@ function AddedFeed({ rows, err, locations, locId }) {
         Everything that arrived {locId === 'all' ? 'at any department' : 'here'} in the
         last 30 days, newest first.
       </p>
-      {days.map(d => {
-        const open = isOpen(d.date)
-        const units = d.items.reduce((t, r) => t + Number(r.qty || 0), 0)
-        return (
-        <section key={d.date} className="mt-3 rounded-2xl border border-line bg-surface">
-          <button type="button" onClick={() => toggle(d.date)} aria-expanded={open}
-            className="w-full px-4 py-3 flex items-baseline justify-between gap-3 text-left">
-            <span className="min-w-0">
-              <span className="font-semibold">
-                {new Date(d.date + 'T12:00:00').toLocaleDateString('en-NG',
-                  { weekday: 'short', day: 'numeric', month: 'short' })}
-              </span>
-              <span className="text-dim text-sm block">
-                {d.items.length} {d.items.length === 1 ? 'arrival' : 'arrivals'}
-              </span>
-            </span>
-            <span className="flex items-baseline gap-2 shrink-0">
-              <span className="tnum font-bold text-leaf">+{units}</span>
-              <svg viewBox="0 0 20 20" aria-hidden="true"
-                   className={`w-4 h-4 text-dim transition-transform ${open ? 'rotate-180' : ''}`}
-                   fill="none" stroke="currentColor" strokeWidth="2">
-                <path d="M5 8l5 5 5-5" strokeLinecap="round" strokeLinejoin="round" />
-              </svg>
-            </span>
-          </button>
-          {open && (
-          <ul className="px-4 pb-1 border-t border-line divide-y divide-line/60">
-            {d.items.map(r => {
-              const to = nameOf(r.to_location)
-              const from = nameOf(r.from_location)
-              return (
-                <li key={r.id} className="py-3">
-                  <div className="flex items-baseline gap-3">
-                    <span className="flex-1 min-w-0 font-semibold break-words">
-                      {r.stock_items?.name || 'Item'}
-                    </span>
-                    <span className="tnum font-bold text-leaf shrink-0">+{r.qty}</span>
-                  </div>
-                  <div className="text-dim text-sm break-words">
-                    {movementPhrase(r.movement_type, to, from)}
-                  </div>
-                  <div className="text-dim text-sm break-words">
-                    {r.received_by
-                      ? `Received by ${r.received_by}`
-                      : 'Nobody named as receiving it'}
-                    {r.staff?.full_name ? ` · recorded by ${r.staff.full_name}` : ''}
-                  </div>
-                  {r.note && <div className="text-dim text-xs break-words mt-0.5">{r.note}</div>}
-                </li>
-              )
-            })}
-          </ul>
-          )}
-        </section>
-        )
-      })}
+      <FoldedDays groups={groups} today={lagosToday()} eyebrow="Added in"
+        summary={(items) => (
+          <span className="tnum text-2xl font-extrabold text-leaf">+{units(items)}</span>
+        )}
+        renderDay={(day, items) => {
+          const open = isOpen(day)
+          return (
+            <section key={day} className="mt-4 rounded-2xl border border-line bg-surface overflow-hidden">
+              <button type="button" onClick={() => toggle(day)} aria-expanded={open}
+                className="w-full px-4 py-3 text-left bg-raise">
+                <span className="block text-dim text-[0.65rem] uppercase tracking-[0.18em] font-semibold">
+                  Added on
+                </span>
+                <span className="block text-xl font-extrabold uppercase tracking-wide leading-tight">
+                  {dayLabel(day)}
+                </span>
+                {/* The figure under the date, not beside it: a long date
+                    and a total cannot share a line at phone width. */}
+                <span className="mt-1 flex items-baseline justify-between gap-3">
+                  <span className="text-dim text-xs">
+                    {items.length} {items.length === 1 ? 'arrival' : 'arrivals'}
+                  </span>
+                  <span className="flex items-baseline gap-2 shrink-0">
+                    <span className="tnum text-xl font-extrabold text-leaf">+{units(items)}</span>
+                    <svg viewBox="0 0 20 20" aria-hidden="true"
+                         className={`w-4 h-4 shrink-0 text-dim transition-transform ${open ? 'rotate-180' : ''}`}
+                         fill="none" stroke="currentColor" strokeWidth="2">
+                      <path d="M5 8l5 5 5-5" strokeLinecap="round" strokeLinejoin="round" />
+                    </svg>
+                  </span>
+                </span>
+              </button>
+              {open && (
+              <ul className="px-4 pb-1 border-t border-line divide-y divide-line/60">
+                {items.map(r => {
+                  const to = nameOf(r.to_location)
+                  const from = nameOf(r.from_location)
+                  return (
+                    <li key={r.id} className="py-3">
+                      <div className="flex items-baseline gap-3">
+                        <span className="flex-1 min-w-0 font-semibold break-words">
+                          {r.stock_items?.name || 'Item'}
+                        </span>
+                        <span className="tnum font-bold text-leaf shrink-0">+{r.qty}</span>
+                      </div>
+                      <div className="text-dim text-sm break-words">
+                        {movementPhrase(r.movement_type, to, from)}
+                      </div>
+                      <div className="text-dim text-sm break-words">
+                        {r.received_by
+                          ? `Received by ${r.received_by}`
+                          : 'Nobody named as receiving it'}
+                        {r.staff?.full_name ? ` · recorded by ${r.staff.full_name}` : ''}
+                      </div>
+                      {r.note && <div className="text-dim text-xs break-words mt-0.5">{r.note}</div>}
+                    </li>
+                  )
+                })}
+              </ul>
+              )}
+            </section>
+          )
+        }} />
       <p className="text-dim text-xs mt-6">
         Arrived at the wrong department? Corrections → Entries can move it to the
         right one, or delete it.

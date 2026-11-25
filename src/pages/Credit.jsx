@@ -16,6 +16,7 @@ import { EDITOR, OPENS_ON_ALL, OVERSIGHT, SUPERVISOR, is } from '../lib/roles'
 import { accountStatementPdf, savePdf } from '../lib/pdfSheet'
 import Notice from '../components/Notice'
 import { tracked } from '../lib/loadfail'
+import SwitchTabs from '../components/SwitchTabs'
 import { useScrollLock } from '../lib/scrollLock'
 
 
@@ -1575,20 +1576,10 @@ export default function Credit({ boot }) {
           one. The choice is remembered per phone, so nobody has to set
           it every time they open the page. */}
       {seesAllDepartments && (
-        <div role="group" aria-label="How to list the debt"
-          className="mt-3 flex rounded-xl border border-line bg-surface p-1">
-          <button type="button" onClick={() => chooseView('people')}
-            aria-pressed={!showMonths}
-            className={`flex-1 h-9 rounded-lg text-sm font-semibold
-                        ${showMonths ? 'text-dim' : 'bg-raise text-ink'}`}>
-            By person
-          </button>
-          <button type="button" onClick={() => chooseView('months')}
-            aria-pressed={showMonths}
-            className={`flex-1 h-9 rounded-lg text-sm font-semibold
-                        ${showMonths ? 'bg-raise text-ink' : 'text-dim'}`}>
-            By month
-          </button>
+        <div className="mt-3">
+          <SwitchTabs label="How to list the debt"
+            options={[['people', 'By person'], ['months', 'By month']]}
+            value={showMonths ? 'months' : 'people'} onChange={chooseView} />
         </div>
       )}
 
