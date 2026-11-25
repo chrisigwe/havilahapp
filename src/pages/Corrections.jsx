@@ -7,6 +7,7 @@ import { loadActivity, deleteEntry, updateEntry, loadAudit,
          findDuplicateGuests, mergeGuests, dismissDuplicatePair,
          findDuplicateCustomers, mergeCustomers } from '../lib/data'
 import { useToast } from '../components/Toast'
+import SwitchTabs from '../components/SwitchTabs'
 import FoldedDays from '../components/FoldedDays'
 import MergeGuestsSheet from '../components/MergeGuestsSheet'
 import MergeCustomersSheet from '../components/MergeCustomersSheet'
@@ -26,21 +27,30 @@ const MOVEMENT_LABEL = {
 // person opened it. Fourteen days of two departments is several hundred
 // rows, and they were all painted at once in one flat list: the only way
 // to find Tuesday's entry was to scroll past Wednesday's.
-function DayGroup({ label, sub, right, open, onToggle, children }) {
+// The letterhead the Recovered page uses, so every day on this page
+// reads the same as every day on that one (Chris, 25 November 2026).
+// The figure sits UNDER the date rather than beside it: a long date
+// and a total cannot share a line at phone width.
+function DayGroup({ eyebrow, label, sub, right, open, onToggle, children }) {
   return (
-    <section className="mt-3 rounded-2xl border border-line bg-surface">
+    <section className="mt-4 rounded-2xl border border-line bg-surface overflow-hidden">
       <button type="button" onClick={onToggle} aria-expanded={open}
-        className="w-full px-4 py-3 flex items-baseline justify-between gap-3 text-left">
-        <span className="min-w-0">
-          <span className="font-semibold">{label}</span>
-          {sub && <span className="text-dim text-sm block">{sub}</span>}
-        </span>
-        <span className="flex items-baseline gap-2 shrink-0">
-          {right}
-          <svg viewBox="0 0 20 20" className={`w-4 h-4 text-dim transition-transform ${open ? 'rotate-180' : ''}`}
-               fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
-            <path d="M5 8l5 5 5-5" strokeLinecap="round" strokeLinejoin="round" />
-          </svg>
+        className="w-full px-4 py-3 text-left bg-raise">
+        {eyebrow && (
+          <span className="block text-dim text-[0.65rem] uppercase tracking-[0.18em] font-semibold">
+            {eyebrow}
+          </span>
+        )}
+        <span className="block text-xl font-extrabold uppercase tracking-wide leading-tight">{label}</span>
+        <span className="mt-1 flex items-baseline justify-between gap-3">
+          <span className="text-dim text-xs">{sub}</span>
+          <span className="flex items-baseline gap-2 shrink-0">
+            {right}
+            <svg viewBox="0 0 20 20" className={`w-4 h-4 shrink-0 text-dim transition-transform ${open ? 'rotate-180' : ''}`}
+                 fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+              <path d="M5 8l5 5 5-5" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+          </span>
         </span>
       </button>
       {open && <div className="px-4 pb-1 border-t border-line">{children}</div>}
@@ -601,18 +611,16 @@ export default function Corrections({ boot }) {
           history stays gated on !ownOnly exactly as before — adding
           the Reception tab must not quietly hand front desk a view
           they were never meant to have. */}
-      {canEdit && (!ownOnly || seesGuests) && <div className="flex gap-2 py-2">
-        {[...(seesGuests && landsOnReception ? [['guests', 'Reception']] : []),
-          ['entries', 'Entries'],
-          ...(seesGuests && !landsOnReception ? [['guests', 'Reception']] : []),
-          ...(!ownOnly ? [['history', 'History']] : [])].map(([k, label]) => (
-          <button key={k} onClick={() => setView(k)}
-            className={`flex-1 h-12 rounded-xl border font-bold ${view === k
-              ? 'bg-amber text-bg border-amber' : 'border-line text-dim'}`}>
-            {label}
-          </button>
-        ))}
-      </div>}
+      {canEdit && (!ownOnly || seesGuests) && (
+        <div className="py-2">
+          <SwitchTabs label="Which corrections"
+            options={[...(seesGuests && landsOnReception ? [['guests', 'Reception']] : []),
+              ['entries', 'Entries'],
+              ...(seesGuests && !landsOnReception ? [['guests', 'Reception']] : []),
+              ...(!ownOnly ? [['history', 'History']] : [])]}
+            value={view} onChange={setView} />
+        </div>
+      )}
 
       {!canEdit && (
         <p className="text-dim text-sm py-2">
@@ -739,7 +747,7 @@ export default function Corrections({ boot }) {
                   to scroll past. Finished months and years fold into one
                   row each; the month in progress still shows its days,
                   because that is where the corrections actually are (579). */}
-              <FoldedDays groups={payByDay} today={lagosToday()}
+              <FoldedDays groups={payByDay} today={lagosToday()} eyebrow="Collected in"
                 forceOpen={(items) => items.some(r => payPicked.has(r.id))}
                 summary={(items) => (
                   <span className="tnum font-bold">
@@ -750,7 +758,7 @@ export default function Corrections({ boot }) {
                 const dayTotal = rows.reduce((t, r) => t + Number(r.amount || 0), 0)
                 const ticked = rows.filter(r => payPicked.has(r.id)).length
                 return (
-                <DayGroup key={day} label={dayLabel(day)}
+                <DayGroup key={day} eyebrow="Collected on" label={dayLabel(day)}
                   sub={`${rows.length} payment${rows.length === 1 ? '' : 's'} · ${naira(dayTotal)}`}
                   right={ticked
                     ? <span className="text-amber text-sm font-semibold">{ticked} picked</span>
@@ -973,11 +981,15 @@ export default function Corrections({ boot }) {
           ))}
         </div>
 
-        {auditDays.map(([day, dayRows]) => {
+        <FoldedDays groups={auditDays} today={lagosToday()} eyebrow="Changed in"
+          summary={(items) => (
+            <span className="tnum text-2xl font-extrabold">{items.length}</span>
+          )}
+          renderDay={(day, dayRows) => {
           const first = auditDays[0][0]
           const dels = dayRows.filter(a => a.action === 'deleted').length
           return (
-            <DayGroup key={day} label={dayLabel(day)}
+            <DayGroup key={day} eyebrow="Changed on" label={dayLabel(day)}
               sub={`${dayRows.length} ${dayRows.length === 1 ? 'change' : 'changes'}`}
               right={dels > 0
                 ? <span className="text-clay text-sm font-semibold">{dels} deleted</span>
@@ -1008,7 +1020,7 @@ export default function Corrections({ boot }) {
               </ul>
             </DayGroup>
           )
-        })}
+          }} />
 
         {audit && !filteredAudit.length && (
           <p className="py-8 text-center text-dim">
@@ -1050,22 +1062,24 @@ export default function Corrections({ boot }) {
 
       {/* A correction is nearly always to one or the other, and the two
           were shuffled together in one stream. */}
-      <div className="flex gap-2 mt-3">
-        {[['all', 'All'], ['sale', 'Sales'], ['movement', 'Stock']].map(([k, label]) => (
-          <button key={k} onClick={() => setKindFilter(k)}
-            className={`flex-1 h-10 rounded-xl border text-sm font-semibold ${kindFilter === k
-              ? 'bg-raise border-amber text-amber' : 'border-line text-dim'}`}>
-            {label}
-          </button>
-        ))}
+      <div className="mt-3">
+        <SwitchTabs label="Sales or stock"
+          options={[['all', 'All'], ['sale', 'Sales'], ['movement', 'Stock']]}
+          value={kindFilter} onChange={setKindFilter} />
       </div>
 
-      {entryDays.map(([day, dayRows]) => {
+      {/* Folded by month and year above the days, so a fortnight of
+          corrections is not one unbroken column. */}
+      <FoldedDays groups={entryDays} today={lagosToday()} eyebrow="Recorded in"
+        summary={(items) => (
+          <span className="tnum text-2xl font-extrabold">{items.length}</span>
+        )}
+        renderDay={(day, dayRows) => {
         const first = entryDays[0][0]
         const money = dayRows.reduce((t, r) => t + (r.kind === 'sale'
           ? Number(r.amount ?? r.qty * r.unit_price ?? 0) : 0), 0)
         return (
-          <DayGroup key={day} label={dayLabel(day)}
+          <DayGroup key={day} eyebrow="Recorded on" label={dayLabel(day)}
             sub={`${dayRows.length} ${dayRows.length === 1 ? 'entry' : 'entries'}`}
             right={money > 0 ? <span className="tnum font-semibold">{naira(money)}</span> : null}
             open={dayOpen(day, first)} onToggle={() => toggleDay(day, first)}>
@@ -1137,7 +1151,7 @@ export default function Corrections({ boot }) {
             </ul>
           </DayGroup>
         )
-      })}
+        }} />
 
       {!filteredRows.length && (
         <p className="py-8 text-center text-dim">
