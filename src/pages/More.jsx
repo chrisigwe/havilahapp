@@ -42,8 +42,12 @@ const ITEMS = [
     roles: ['gm', 'admin'] },
   { key: 'myweek', label: 'My week', hint: 'Your Total Sales checks, and your streak',
     roles: ['bar', 'front_desk', 'storekeeper', 'manager', 'gm', 'admin', 'auditor'] },
+  // GM and admin only (Chris, 25 November 2026). The auditor had it
+  // because reviewing is their work, but this page is where the GM
+  // decides what to ask about -- a different thing from the audit
+  // trail, which the auditor still has in full under History.
   { key: 'review', label: 'Needs a look', hint: 'Corrections, deletions and gaps worth asking about',
-    roles: ['gm', 'admin', 'auditor'] },
+    roles: ['gm', 'admin'] },
   { key: 'activity', label: 'Staff activity', hint: 'Who uses the app, which pages and what they do',
     roles: ['gm', 'admin'] },
   { key: 'attendance', label: 'Attendance', hint: 'Who is at the branch, first in and last seen',

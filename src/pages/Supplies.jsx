@@ -47,7 +47,12 @@ export default function Supplies({ boot }) {
   const [deptLists, setDeptLists] = useState({})
   const isAdmin = ['gm', 'admin'].includes(staff.role)
   const [feed, setFeed] = useState(null)
-  const [days, setDays] = useState(30)
+  // A year, with no period chips (Chris, 25 November 2026). They were
+  // how you got to older entries before the list folded; now the months
+  // and years do that, and three buttons that reload the same list are
+  // just a second way to navigate the same thing. The ceiling stays,
+  // because the loader caps at 2000 rows.
+  const [days] = useState(365)
   // Who opens where. A department records its own use, so it lands on
   // Record use. The Store Manager and above do not record anything --
   // that panel is blank for them until they pick a department -- and
@@ -233,13 +238,6 @@ export default function Supplies({ boot }) {
         }
         return (
         <section>
-          <div className="flex gap-2 mb-3">
-            {[7, 30, 90].map(d => (
-              <button key={d} onClick={() => setDays(d)}
-                className={`h-9 px-3 rounded-full border text-sm ${d === days
-                  ? 'border-amber text-amber font-bold' : 'border-line text-dim'}`}>{d} days</button>
-            ))}
-          </div>
           {feed === null && <p className="py-8 text-center text-dim">Loading…</p>}
           {feed && !shown.length && <p className="py-8 text-center text-dim">Nothing in this period.</p>}
           <FoldedDays groups={groups} today={lagosToday()} eyebrow="Recorded in"

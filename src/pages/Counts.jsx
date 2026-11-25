@@ -4,6 +4,7 @@ import { loadStockMap, loadCounts, loadCountLines, saveCountLine, saveCountReaso
          postOpeningBalance, auditorAdjustCountLine } from '../lib/data'
 import { lagosToday, startingDept } from '../lib/format'
 import { enqueue, flush, isConnectionError } from '../lib/outbox'
+import SwitchTabs from '../components/SwitchTabs'
 import { useToast } from '../components/Toast'
 import Notice from '../components/Notice'
 
@@ -349,15 +350,10 @@ export default function Counts({ boot }) {
         </div>
       </section>
 
-      <div className="flex gap-2 mt-3 mb-1">
-        {[['all', 'All'], ['submitted', 'Waiting'], ['draft', 'Counting'], ['verified', 'Verified']]
-          .map(([k, label]) => (
-          <button key={k} onClick={() => setStatusFilter(k)}
-            className={`flex-1 h-10 rounded-xl border text-sm font-semibold ${statusFilter === k
-              ? 'bg-raise border-amber text-amber' : 'border-line text-dim'}`}>
-            {label}
-          </button>
-        ))}
+      <div className="mt-3 mb-1">
+        <SwitchTabs label="Which counts"
+          options={[['all', 'All'], ['submitted', 'Waiting'], ['draft', 'Counting'], ['verified', 'Verified']]}
+          value={statusFilter} onChange={setStatusFilter} />
       </div>
 
       <ul className="divide-y divide-line/60">
