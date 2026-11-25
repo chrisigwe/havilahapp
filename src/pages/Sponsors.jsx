@@ -164,18 +164,17 @@ export default function Sponsors({ boot }) {
     } finally { setBusy(false) }
   }
 
-  if (accounts === null) return <p className="text-dim py-10 text-center">Loading…</p>
+  if (accounts === null) return <p className="px-5 text-dim py-10 text-center">Loading…</p>
 
   if (errList && !accounts.length) return (
-    <p className="text-clay py-10 text-center">
+    <p className="px-5 text-clay py-10 text-center">
       The accounts could not be loaded. Nothing has been lost — try again in a moment.
     </p>
   )
 
   if (!accounts.length) return (
-    <div className="py-10 text-center">
-      <h1 className="text-2xl font-bold">Organisations</h1>
-      <p className="text-dim mt-3 max-w-sm mx-auto">
+    <div className="px-5 py-10 text-center">
+      <p className="text-dim max-w-sm mx-auto">
         No organisation account yet. These are for a company or institution that pays
         for its people’s stays — their guests check in as normal and the stays are
         billed to the account.
@@ -185,13 +184,14 @@ export default function Sponsors({ boot }) {
 
   const tone = TONE[standing.tone] || TONE.funds
 
+  // px-5 to match every other page. The Shell draws the page's title
+  // and the staff name above this (its hv-large-title block), so a
+  // heading here would be the same word twice -- which is what Chris
+  // saw on 25 November.
   return (
-    <div className="pb-4">
-      <h1 className="text-2xl font-bold">Organisations</h1>
-      <p className="text-dim text-sm">They pay, their people stay</p>
-
+    <div className="px-5 pb-10">
       {accounts.length > 1 && (
-        <div className="mt-3 flex gap-2 overflow-x-auto py-2 -mx-1 px-1">
+        <div className="flex gap-2 overflow-x-auto py-2 -mx-1 px-1">
           {accounts.map(a => (
             <button key={a.id} onClick={() => setPickedId(a.id)}
               className={`shrink-0 px-4 py-2 rounded-full border text-sm whitespace-nowrap ${
@@ -214,7 +214,7 @@ export default function Sponsors({ boot }) {
         <>
           {/* The headline. One figure, and a sentence that answers the
               question anyone actually has: when do we write to them. */}
-          <section className={`mt-4 rounded-2xl border ${tone.ring} bg-surface p-4`}>
+          <section className={`mt-2 rounded-2xl border ${tone.ring} bg-surface p-4`}>
             <span className="block text-dim text-[0.65rem] uppercase tracking-[0.18em] font-semibold">
               {picked?.name}
             </span>
