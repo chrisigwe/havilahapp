@@ -4704,6 +4704,17 @@ export async function loadSponsors(branchId) {
   }))
 }
 
+// Which guests are organisation accounts. Ids only, from a view that
+// carries no balance and no terms, so the front desk can be offered
+// the account as a way to settle a bill without being able to read
+// what is on it. Returns a Set; an empty one simply means no chip.
+export async function loadSponsorGuestIds(branchId) {
+  const { data, error } = await supabase.from('v_sponsor_guests')
+    .select('guest_id').eq('branch_id', branchId)
+  if (error) throw error
+  return new Set((data || []).map(r => r.guest_id))
+}
+
 // One account in full: what was paid in, and every stay drawn against
 // it with the figures the statement prints.
 //

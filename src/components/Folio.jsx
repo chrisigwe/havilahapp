@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
-import { naira, lagosToday, lagosDaysAgo, lagosTime, nightsBetween, partPaidNote, roomChargeDept, seesStayTimes, cyclesFor, friendlyStayError, addDays } from '../lib/format'
-import { billedToLabel, checkOutStay, loadFreeRooms, loadStayMoves, moveStayRoom, undoLastRoomMove, loadCustomers, linkCustomerToGuest, recordStayCredit, checkRepeatPayment, checkRepeatRepayment, deleteOrderItem, deleteStay, extendStayTo, loadBranchStaySettings, loadFolio, moveRoomChargeDate, recordStayPayment, reopenStay, saveRepaymentByCredit, searchSimilarGuests, settleBilledToStays, unlinkCustomerFromGuest, updateOrderItem, updateOverstayFee, updateStayBillTo, updateStayDetails } from '../lib/data'
+import { naira, methodLabel, lagosToday, lagosDaysAgo, lagosTime, nightsBetween, partPaidNote, roomChargeDept, seesStayTimes, cyclesFor, friendlyStayError, addDays } from '../lib/format'
+import { billedToLabel, checkOutStay, loadFreeRooms, loadStayMoves, moveStayRoom, undoLastRoomMove, loadCustomers, linkCustomerToGuest, recordStayCredit, checkRepeatPayment, checkRepeatRepayment, deleteOrderItem, deleteStay, extendStayTo, loadBranchStaySettings, loadFolio, loadSponsorGuestIds, moveRoomChargeDate, recordStayPayment, reopenStay, saveRepaymentByCredit, searchSimilarGuests, settleBilledToStays, unlinkCustomerFromGuest, updateOrderItem, updateOverstayFee, updateStayBillTo, updateStayDetails } from '../lib/data'
 import { useToast } from '../components/Toast'
 import PaymentMethodPicker, { paymentParts, paymentAllocated } from './PaymentMethodPicker'
 import FolioStatement from './FolioStatement'
@@ -22,6 +22,11 @@ export default function Folio({ boot, room, onClose, onChanged }) {
   const { staff, allLocations, locations } = boot
   const payMethods = ['pos', 'cash']   // deliberately fixed, not derived from branch config —
                                         // Rooms payment is POS/Cash only, no Transfer
+  // Which guests are organisation accounts. Only a stay BILLED TO one
+  // may be settled from it: bill_to_guest_id on its own means somebody
+  // else is paying, which is usually a husband at the desk with a card,
+  // and offering "Account" there would record money that never arrived.
+  const [sponsorIds, setSponsorIds] = useState(() => new Set())
   const toast = useToast()
   const [data, setData] = useState(null)
   const [branchSettings, setBranchSettings] = useState(null)
@@ -106,6 +111,17 @@ export default function Folio({ boot, room, onClose, onChanged }) {
   // goes away immediately instead of waiting for the folio to reload.
   const [extended, setExtended] = useState(false)
 
+  // A failure here only means no Account chip is offered, which is the
+  // safe way to be wrong: the desk falls back to POS and cash, and the
+  // draw can be corrected afterwards. Nothing on the bill depends on it.
+  useEffect(() => {
+    let alive = true
+    loadSponsorGuestIds(staff.branch_id)
+      .then(ids => { if (alive) setSponsorIds(ids) })
+      .catch(() => { if (alive) setSponsorIds(new Set()) })
+    return () => { alive = false }
+  }, [staff.branch_id])
+
   const refresh = () => { tracked("This guest's bill", loadFolio(room.stay_id)).then(setData).catch(() => setData(null)) }
   useEffect(refresh, [room.stay_id])
   useEffect(() => {
@@ -139,6 +155,9 @@ export default function Folio({ boot, room, onClose, onChanged }) {
   )
 
   const { orders, payments, folio, stay, departmentCredit, billedToYou, paidByItem, receiptByItem } = data
+  const billedToAccount = !!stay?.bill_to_guest_id && sponsorIds.has(stay.bill_to_guest_id)
+  // An account settles the whole bill or none of it, so it leads.
+  const methodsHere = billedToAccount ? ['sponsor', ...payMethods] : payMethods
   const outstanding = Number(folio?.outstanding ?? 0)
   // The room's own balance — used for the pay-button default and
   // checkout logic below, which are genuinely room-specific
@@ -1329,7 +1348,7 @@ export default function Folio({ boot, room, onClose, onChanged }) {
 
             <label className="block text-dim text-sm mt-3">Paid by</label>
             <div className="mt-1">
-              <PaymentMethodPicker methods={payMethods} amount={pay.amount}
+              <PaymentMethodPicker methods={methodsHere} amount={pay.amount}
                 value={pay} onChange={v => setPay(p => ({ ...p, ...v }))} />
             </div>
 
@@ -2017,11 +2036,11 @@ export default function Folio({ boot, room, onClose, onChanged }) {
 
           <label className="block mt-4 text-dim">How</label>
           <div className="flex gap-2 mt-1">
-            {payMethods.map(m => (
+            {methodsHere.map(m => (
               <button key={m} onClick={() => setGroupDraft(d => ({ ...d, method: m }))}
                 className={`flex-1 h-12 rounded-xl border font-semibold uppercase ${
                   groupDraft.method === m ? 'bg-amber text-bg border-amber' : 'border-line text-dim'}`}>
-                {m}
+                {methodLabel[m] || m}
               </button>
             ))}
           </div>
