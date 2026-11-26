@@ -248,7 +248,13 @@ export default function StaffAccounts({ boot }) {
         <p className="text-dim py-8 text-center">No staff accounts at this branch.</p>
       )}
 
-      {adding && (
+      {/* The policies read staff_locations as "no rows means every
+          department", so a seller created without one can record for
+          Reception, the Restaurant and the Minimart as well. Justin got
+          all five that way on 26 November. Oversight roles are
+          branch-wide by design and are left alone. */}
+      {adding && (() => { const needsDept =
+          ['bar', 'front_desk', 'storekeeper'].includes(adding.role); return (
         <div className="fixed inset-0 z-50 bg-bg overflow-y-auto">
           <div className="px-5 py-6">
             <button onClick={() => setAdding(null)} className="text-dim">Back</button>
@@ -286,14 +292,17 @@ export default function StaffAccounts({ boot }) {
             {!!(locations || []).length && (
               <>
                 <label className="block text-dim text-sm mt-4">
-                  Which department do they open on?
+                  Which department?{' '}
+                  {needsDept && <span className="text-amber">Required</span>}
                 </label>
                 <select value={adding.locationId}
                   onChange={e => setAdding(a => ({
                     ...a, locationId: e.target.value,
                     email: a.touchedEmail ? a.email : suggestEmail(a.fullName, e.target.value) }))}
                   className="mt-1 h-12 w-full px-3 rounded-xl bg-surface border border-line">
-                  <option value="">No particular one</option>
+                  <option value="">
+                    {needsDept ? 'Choose one' : 'No particular one'}
+                  </option>
                   {(locations || []).map(l => (
                     <option key={l.id} value={l.id}>{l.name}</option>
                   ))}
@@ -320,13 +329,14 @@ export default function StaffAccounts({ boot }) {
 
             <button onClick={doAdd}
               disabled={busy || !adding.fullName.trim() || !adding.email.trim()
-                        || adding.password.length < 8}
+                        || adding.password.length < 8
+                        || (needsDept && !adding.locationId)}
               className="mt-6 w-full h-14 rounded-2xl bg-leaf text-bg text-lg font-bold disabled:opacity-40">
               {busy ? 'Creating…' : 'Create the login'}
             </button>
           </div>
         </div>
-      )}
+      ) })()}
 
       {handover && (
         <div className="fixed inset-0 z-50 bg-bg overflow-y-auto">
