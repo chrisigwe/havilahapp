@@ -98,14 +98,12 @@ export const chargeCategoryFor = (locationName) =>
     : /minimart/i.test(locationName || '') ? 'minimart'
       : 'drink'
 
-// Mirrors the database's own generated column exactly (guests.name_key
-// is GENERATED ALWAYS using this identical pattern) — needed client-side
-// because a generated column can't be searched against directly; this
-// computes the same key to look an existing guest up by.
-export const nameKey = (name) =>
-  String(name || '').toLowerCase()
-    .replace(/^\s*(mr|mrs|ms|miss|dr|chief|engr|elder|pastor|prof|alhaji|hajia)\.?\s+/, '')
-    .replace(/[^a-z0-9]+/g, '')
+// nameKey lived here and claimed to mirror guests.name_key. It did
+// not -- it stripped spaces, where the database keeps them -- and the
+// claim is why nobody checked. Guest keys now go through
+// normalizeCustomerName in lib/customerName.js, which is mirrored from
+// the same database function the generated column actually calls
+// (26 November 2026).
 
 export const nightsBetween = (from, to) =>
   Math.max(1, Math.round((new Date(to) - new Date(from)) / 864e5))

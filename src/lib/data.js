@@ -1,5 +1,5 @@
 import { supabase } from './supabase'
-import { lagosDaysAgo, lagosToday, addDays, chargeCategoryFor, nameKey } from './format'
+import { lagosDaysAgo, lagosToday, addDays, chargeCategoryFor } from './format'
 import { normalizeCustomerName } from './customerName'
 import { tidyName } from './names'
 import { nightsInWindow } from './nights'
@@ -1902,7 +1902,7 @@ export async function resolveGuestId(branchId, name, phone) {
     }
   }
   if (!guestId) {
-    const key = nameKey(name)
+    const key = guestKey(name)
     if (!key) return null
     const { data } = await live(supabase.from('guests')
       .select('id').eq('branch_id', branchId).eq('name_key', key))
@@ -1911,6 +1911,24 @@ export async function resolveGuestId(branchId, name, phone) {
   }
   return guestId
 }
+
+// guests.name_key is a generated column, and the expression is
+// normalize_customer_name(full_name) -- the very same function the
+// customer list uses. It keeps the spaces between words.
+//
+// format.js exported a second normaliser called nameKey whose comment
+// claimed it mirrored the database and did not: it stripped every
+// space, so "chinemelum okoli" became "chinemelumokoli". Three guest
+// lookups used it, so they could not find a guest who was sitting
+// there, inserted a second row, and the unique index refused it. The
+// recovery written for exactly that case re-queried with the same
+// wrong key and missed too, which is how a raw
+// "duplicate key value violates unique constraint
+// guests_branch_name_key_uniq" reached a front-desk screen on
+// 26 November 2026 while booking a man who already existed.
+//
+// One normaliser now, the one that is actually mirrored.
+const guestKey = (name) => normalizeCustomerName(name)
 
 // IS THIS GUEST ALREADY ON PR FOR THESE NIGHTS (Chris, 22 November 2026).
 //
@@ -1968,7 +1986,7 @@ export async function loadPriorBalance(branchId, name, phone) {
     }
   }
   if (!guestId) {
-    const key = nameKey(name)
+    const key = guestKey(name)
     if (!key) return { amount: 0, billedTo: null }
     const { data } = await live(supabase.from('guests')
       .select('id').eq('branch_id', branchId).eq('name_key', key))
@@ -2007,7 +2025,7 @@ export async function findOrCreateGuest(branchId, name, phone) {
     }
   }
 
-  const key = nameKey(name)
+  const key = guestKey(name)
   if (key) {
     const { data: byName } = await live(supabase.from('guests')
       .select('id, phone').eq('branch_id', branchId).eq('name_key', key))
@@ -2027,10 +2045,20 @@ export async function findOrCreateGuest(branchId, name, phone) {
   // Two phones checked in under one name at the same moment, or a spelling
   // the key says is the same person. The unique index refuses the second
   // row; reuse the record that won rather than failing the check-in.
-  if (String(error.code) === '23505' && key) {
-    const { data: found } = await live(supabase.from('guests')
-      .select('id').eq('branch_id', branchId).eq('name_key', key)).order('created_at').limit(1)
-    if (found?.length) return found[0].id
+  if (String(error.code) === '23505') {
+    if (key) {
+      const { data: found } = await live(supabase.from('guests')
+        .select('id').eq('branch_id', branchId).eq('name_key', key)).order('created_at').limit(1)
+      if (found?.length) return found[0].id
+    }
+    // Last resort, so a future drift between the two normalisers can
+    // never again put a constraint name in front of the front desk.
+    const { data: byExact } = await live(supabase.from('guests')
+      .select('id').eq('branch_id', branchId).ilike('full_name', tidyName(name)))
+      .order('created_at').limit(1)
+    if (byExact?.length) return byExact[0].id
+    throw new Error(`"${tidyName(name)}" is already a guest at this branch, `
+      + 'but the existing record could not be found to reuse. Search the guest list for them.')
   }
   throw error
 }
