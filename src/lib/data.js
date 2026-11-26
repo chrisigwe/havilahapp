@@ -4277,6 +4277,31 @@ export async function resetStaffPassword(staffId, newPassword, newHolderName) {
   return out
 }
 
+// Create a login for a replacement. Server-side for the same reason as
+// the password reset: creating a user needs the service-role key, and
+// that must never reach a phone.
+//
+// This exists so that switching off a leaver and giving their
+// replacement their own account is two taps rather than a session in
+// the Supabase dashboard — because when the right thing is the harder
+// thing, people rename the old account instead, and every entry it
+// ever made starts naming somebody who was not there.
+export async function createStaffLogin({ branchId, fullName, email, password, role, defaultLocationId }) {
+  const { data: { session } } = await supabase.auth.getSession()
+  if (!session) throw new Error('Not signed in')
+
+  const res = await fetch(
+    `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/create-staff-login`,
+    { method: 'POST',
+      headers: { 'Content-Type': 'application/json',
+                 Authorization: `Bearer ${session.access_token}` },
+      body: JSON.stringify({ branchId, fullName, email, password, role,
+                             defaultLocationId: defaultLocationId || null }) })
+  const out = await res.json().catch(() => ({ ok: false, error: 'No response from the server' }))
+  if (!out.ok) throw new Error(out.error || 'Could not create the login')
+  return out
+}
+
 // A leaver on a PERSONAL login is deactivated, not reset: sign-in
 // requires is_active, so this locks them out immediately whatever their
 // password is, and every database rule checks it too.
