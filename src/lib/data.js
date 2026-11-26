@@ -1733,12 +1733,22 @@ export async function mergeGuests(survivorId, duplicateIds) {
 // link the guest from guest account doesn't work", with nothing on
 // screen to say why. A write that changed nothing now says so.
 export async function linkCustomerToGuest(customerId, guestId) {
-  const { data, error } = await supabase.from('customers')
-    .update({ linked_guest_id: guestId }).eq('id', customerId).select('id')
-  if (error) throw error
-  if (!data?.length) throw new Error(
-    'That account was not linked. Either the record is not there any more, '
-    + 'or your role cannot change customer records.')
+  // Through a function, not a direct update (26 November 2026).
+  // customers_amend requires app_is_editor(), which is storekeeper,
+  // manager, GM and admin — so a bar or front-desk account could
+  // CREATE a tab for a room guest and then not link it, and "Open the
+  // tab" failed on Room 202 with nothing wrong but the policy.
+  //
+  // Widening that policy would also hand them renaming, no-credit and
+  // deactivation. This door is one column wide: it sets
+  // linked_guest_id and refuses to move a tab already linked to
+  // somebody else.
+  const { error } = await supabase.rpc('link_customer_guest', {
+    p_customer: customerId, p_guest: guestId,
+  })
+  if (error) throw new Error(error.message
+    || 'That account was not linked. Either the record is not there any more, '
+       + 'or your role cannot change customer records.')
 }
 
 // Undoes the above. Until now there was only a way to CREATE the link,
@@ -3609,14 +3619,28 @@ export async function loadRoomsSoldInMonth(branchId, date) {
 // Deliberately NOT read from v_occupancy_today: that view is keyed on
 // rooms and would hide a second stay sharing a room, and it omits the
 // rate/cycle fields the correction sheet has to pre-fill.
+// How long a guest stays on the Room guest list after they check out
+// (Chris, 26 November 2026). A man settles his room at midday and is
+// still in the bar at four; dropping him off the list the moment the
+// front desk closes his stay means the bar cannot put his drinks on
+// his own name, and the tab gets opened under something invented.
+export const RECENTLY_OUT_HOURS = 12
+
 export async function loadLiveStays(branchId) {
+  const since = new Date(Date.now() - RECENTLY_OUT_HOURS * 3600e3).toISOString()
   const { data, error } = await supabase.from('stays')
-    .select(`id, status, check_in_date, scheduled_out, checked_in_at, daily_rate, billing_cycle,
+    .select(`id, status, check_in_date, scheduled_out, checked_in_at, checked_out_at,
+             actual_out, daily_rate, billing_cycle,
              guest_id, rooms(room_number, is_internal), guests!guest_id(id, full_name, phone)`)
-    .eq('branch_id', branchId).in('status', ['occupied', 'reserved'])
+    .eq('branch_id', branchId)
+    .or(`status.in.(occupied,reserved),and(status.eq.checked_out,checked_out_at.gte.${since})`)
     .order('check_in_date', { ascending: false })
   if (error) throw error
-  return data || []
+  // Flagged, not hidden. Whoever is choosing needs to know the man has
+  // already settled his room — the tab they open is the department's
+  // own to collect, and nobody at the front desk will be seeing him
+  // again.
+  return (data || []).map(r => ({ ...r, recentlyOut: r.status === 'checked_out' }))
 }
 
 // A misspelled name belongs to the GUEST record, not the stay, so it
