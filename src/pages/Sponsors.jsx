@@ -88,9 +88,13 @@ export default function Sponsors({ boot }) {
     [paidIn, draws, today])
   const totals = useMemo(() => sponsorTotals(paidIn, draws), [paidIn, draws])
   const months = useMemo(() => byMonth(draws), [draws])
+  // Only room draws carry a stay and a night count. Handing meals to
+  // rebateOwed would be handing it rows whose nights are zero.
+  const roomDraws = useMemo(() => draws.filter(d => d.kind !== 'meal'), [draws])
+  const mealDraws = useMemo(() => draws.filter(d => d.kind === 'meal'), [draws])
   const fee = useMemo(
-    () => rebateOwed({ draws, perNight: picked?.rebatePerNight || 0, payouts }),
-    [draws, picked, payouts])
+    () => rebateOwed({ draws: roomDraws, perNight: picked?.rebatePerNight || 0, payouts }),
+    [roomDraws, picked, payouts])
 
   // FoldedDays folds a day-grouped list; the month headings come from
   // the fold itself, so the page hands it days and nothing more.
@@ -120,8 +124,11 @@ export default function Sponsors({ boot }) {
         })),
         draws: draws.map(r => ({
           date: r.business_date, guest: r.guest_name, roomNo: r.room_number,
-          nights: r.nights, room: r.room_charge, overstay: r.overstay_charge,
-          meals: r.orders_charge, amount: r.amount,
+          nights: r.kind === 'meal' ? '' : r.nights,
+          room: r.kind === 'meal' ? 0 : r.room_charge,
+          overstay: r.kind === 'meal' ? 0 : r.overstay_charge,
+          meals: r.kind === 'meal' ? r.amount : r.orders_charge,
+          amount: r.amount,
         })),
       }), `${picked.name} statement ${today}`)
     } catch (e) {
@@ -226,7 +233,10 @@ export default function Sponsors({ boot }) {
               <span className="tnum font-semibold">{naira(totals.paid)}</span>
             </div>
             <div className="mt-1 flex items-baseline justify-between gap-3 text-sm">
-              <span className="text-dim">Drawn by {draws.length} {draws.length === 1 ? 'stay' : 'stays'}</span>
+              <span className="text-dim">
+                {roomDraws.length} {roomDraws.length === 1 ? 'stay' : 'stays'}
+                {mealDraws.length > 0 && ` · ${mealDraws.length} ${mealDraws.length === 1 ? 'meal' : 'meals'}`}
+              </span>
               <span className="tnum font-semibold">{naira(totals.used)}</span>
             </div>
 
@@ -379,16 +389,24 @@ export default function Sponsors({ boot }) {
                           <span className="font-semibold">{r.guest_name}</span>
                           <span className="tnum font-semibold shrink-0">{naira(r.amount)}</span>
                         </div>
-                        <p className="text-dim text-sm mt-0.5">
-                          {r.room_number ? `Room ${r.room_number} · ` : ''}
-                          {r.nights} {r.nights === 1 ? 'night' : 'nights'}
-                          {r.check_in_date ? ` · ${shortDay(r.check_in_date)} to ${shortDay(r.actual_out)}` : ''}
-                        </p>
-                        <p className="text-dim text-sm">
-                          Room {naira(r.room_charge)}
-                          {r.overstay_charge > 0.009 ? ` · over-stay ${naira(r.overstay_charge)}` : ''}
-                          {r.orders_charge > 0.009 ? ` · meals ${naira(r.orders_charge)}` : ''}
-                        </p>
+                        {r.kind === 'meal' ? (
+                          <p className="text-dim text-sm mt-0.5">
+                            {r.room_number ? `Room ${r.room_number} · ` : ''}{r.description}
+                          </p>
+                        ) : (
+                          <>
+                            <p className="text-dim text-sm mt-0.5">
+                              {r.room_number ? `Room ${r.room_number} · ` : ''}
+                              {r.nights} {r.nights === 1 ? 'night' : 'nights'}
+                              {r.check_in_date ? ` · ${shortDay(r.check_in_date)} to ${shortDay(r.actual_out)}` : ''}
+                            </p>
+                            <p className="text-dim text-sm">
+                              Room {naira(r.room_charge)}
+                              {r.overstay_charge > 0.009 ? ` · over-stay ${naira(r.overstay_charge)}` : ''}
+                              {r.orders_charge > 0.009 ? ` · on the room bill ${naira(r.orders_charge)}` : ''}
+                            </p>
+                          </>
+                        )}
                       </li>
                     ))}
                   </ul>
