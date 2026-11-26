@@ -1970,6 +1970,13 @@ export default function SalesEntry({ boot }) {
                       className="w-full h-12 px-4 rounded-xl border border-line text-left flex items-center gap-3">
                       <span className="font-bold tnum w-20 shrink-0">Rm {st.rooms?.room_number}</span>
                       <span className="truncate">{st.guests?.full_name}</span>
+                      {/* Still listed for 12 hours after the front desk
+                          closes the stay, but said plainly: he has
+                          settled his room and will not be back at the
+                          desk, so this tab is ours to collect. */}
+                      {st.recentlyOut && (
+                        <span className="ml-auto shrink-0 text-amber text-xs">checked out</span>
+                      )}
                     </button>
                   ))}
                 </div>
@@ -1981,7 +1988,10 @@ export default function SalesEntry({ boot }) {
                 <div className="font-bold">
                   Room {guestChoice.rooms?.room_number} · {guestChoice.guests?.full_name}
                 </div>
-                {canChargeToRoom ? (<>
+                {/* A guest who has checked out has no open room bill to
+                    charge, however the department is set up. The stay
+                    is settled; only a tab of our own is left. */}
+                {canChargeToRoom && !guestChoice.recentlyOut ? (<>
                   <p className="mt-2 text-sm font-semibold">
                     Charge {naira(basketTotal)} to Room {guestChoice.rooms?.room_number} · {guestChoice.guests?.full_name}
                     {guestChoice.check_in_date ? ` (checked in ${niceDay(guestChoice.check_in_date)})` : ''}
