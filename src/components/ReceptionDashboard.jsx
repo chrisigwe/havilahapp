@@ -128,7 +128,7 @@ export default function ReceptionDashboard({
       </div>
 
       <div className="mt-4 pt-3 border-t border-line flex items-baseline justify-between">
-        <span className="text-dim">In-house today — every occupied room</span>
+        <span className="text-dim">Room guests today — every occupied room</span>
         <span className="tnum font-bold">{dashboard.inHouse.length}</span>
       </div>
       <p className="text-dim text-xs mt-0.5">

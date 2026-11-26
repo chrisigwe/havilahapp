@@ -187,7 +187,7 @@ export default function CustomerPicker({ customers, value, onPick, onCreate, bra
       {roomName && (
         <p className="mt-3 rounded-xl border border-clay p-3 text-clay text-sm">
           Do not put the room number in the name. Type the guest's own name and pick
-          the account above. To bill a room guest, choose "In-house guest?" and charge their room.
+          the account above. To bill a room guest, choose "Room guest?" and charge their room.
         </p>
       )}
 

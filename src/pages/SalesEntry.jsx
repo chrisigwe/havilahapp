@@ -945,7 +945,7 @@ export default function SalesEntry({ boot }) {
   // one at the bar to charge. Internal rooms (GM Office) excluded.
   useEffect(() => {
     if (!paying) return
-    tracked('Guests in house', loadLiveStays(staff.branch_id))
+    tracked('Room guests', loadLiveStays(staff.branch_id))
       .then(rows => setInHouse((rows || [])
         .filter(r => r.status === 'occupied' && !r.rooms?.is_internal)
         .sort((a, b) => String(a.rooms?.room_number).localeCompare(
@@ -1963,7 +1963,7 @@ export default function SalesEntry({ boot }) {
                 path (charge to room) was a separate button further up. */}
             {creditAmount(paying) > 0 && !!inHouse.length && !guestChoice && !roomGuard && (
               <div className="mb-5">
-                <div className="text-dim mb-2">In-house guest?</div>
+                <div className="text-dim mb-2">Room guest?</div>
                 <div className="space-y-2 max-h-56 overflow-y-auto">
                   {inHouse.map(st => (
                     <button key={st.id} onClick={() => { setRoomGuard(null); setGuestChoice(st) }}
