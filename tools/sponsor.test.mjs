@@ -211,5 +211,28 @@ eq('a meal wearing its stay id would have hidden the nights',
    rebateOwed({ draws: [{ stay_id: 'a', nights: 0, amount: 12000 }, stay('a', 2, 80000)],
                 perNight: 5000 }).nights, 0)
 
+// Money already spoken for. The headline answers "what is left to
+// spend", so the fee owed onward comes off it -- but `gross` carries
+// the organisation's own balance for the statement, which must never
+// mention the arrangement.
+const MEALS_IN = [paid('2026-11-18', 1000000)]
+const CONSUMED = [...UNIZIK_OUT, draw('2026-11-18', 144500)]
+const net = sponsorStanding({ paidIn: MEALS_IN, drawn: CONSUMED,
+                              today: '2026-11-25', money, setAside: 75000 })
+eq('the headline is what is left to spend', net.headline, 'N120,500 left')
+eq('the gross stays available for the statement', net.gross, 195500)
+eq('and the set-aside is carried', net.setAside, 75000)
+
+const noAside = sponsorStanding({ paidIn: MEALS_IN, drawn: CONSUMED,
+                                  today: '2026-11-25', money })
+eq('no set-aside leaves gross and balance equal', noAside.gross, noAside.balance)
+
+// Set aside more than is left and the account reads as owing, which is
+// true: the money is promised and not there.
+const over = sponsorStanding({ paidIn: MEALS_IN, drawn: CONSUMED,
+                               today: '2026-11-25', money, setAside: 250000 })
+eq('set aside past the balance reads as owed', over.tone, 'debt')
+eq('and the gross is untouched', over.gross, 195500)
+
 console.log(`\nsponsor: ${pass} passed, ${fail} failed`)
 process.exit(fail ? 1 : 0)

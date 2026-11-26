@@ -78,8 +78,17 @@ export function isLow(balance, paid, fraction = LOW_FRACTION) {
 //
 // Returns { tone, headline, detail } — tone is 'funds' | 'low' | 'debt',
 // which is also what the card colours itself by.
-export function sponsorStanding({ paidIn = [], drawn = [], today, money = (n) => String(n) }) {
-  const { paid, used, balance } = sponsorTotals(paidIn, drawn)
+// setAside: money inside the balance that is already spoken for and
+// cannot be spent on more stays -- the per-night fee owed onward to a
+// third party. It changes what the HEADLINE says, because the honest
+// answer to "how much is left" is what is left to spend. It must never
+// reach the statement: the organisation is not party to that
+// arrangement, and `gross` is returned for the document to use.
+export function sponsorStanding({ paidIn = [], drawn = [], today,
+                                  money = (n) => String(n), setAside = 0 }) {
+  const { paid, used, balance: gross } = sponsorTotals(paidIn, drawn)
+  const aside = num(setAside)
+  const balance = gross - aside
   const b = burn(drawn, today)
   const weeks = weeksLeft(balance, b.perDay)
 
@@ -87,7 +96,7 @@ export function sponsorStanding({ paidIn = [], drawn = [], today, money = (n) =>
     const oldest = oldestUnfunded(paidIn, drawn)
     return {
       tone: 'debt',
-      balance,
+      balance, gross, setAside: aside,
       headline: `${money(Math.abs(balance))} owed`,
       detail: oldest
         ? `Past the account since ${oldest}`
@@ -103,7 +112,7 @@ export function sponsorStanding({ paidIn = [], drawn = [], today, money = (n) =>
 
   return {
     tone: low ? 'low' : 'funds',
-    balance,
+    balance, gross, setAside: aside,
     headline: `${money(balance)} left`,
     detail: `${rate}${runway}`,
     paid,
