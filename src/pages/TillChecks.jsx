@@ -18,6 +18,10 @@ export default function TillChecks({ boot }) {
   if (!data) return <p className="px-5 text-dim">Loading…</p>
   const { checks, missing } = data
   const clean = checks.filter(c => Math.abs(c.pos_gap) < 1 && Math.abs(c.cash_gap) < 1).length
+  // Saved once, then saved again with a different number. Not wrong in
+  // itself -- fixing a mis-keyed sale and re-checking is what the screen
+  // is for -- but it is the one thing the old table could not tell you.
+  const recounted = checks.filter(c => c.recounted).length
 
   const dates = [...new Set([...checks, ...missing].map(r => r.business_date))].sort().reverse()
 
@@ -25,6 +29,10 @@ export default function TillChecks({ boot }) {
     <div className="px-5 pb-8">
       <p className="text-dim text-sm py-2">
         What staff typed from the POS slip and the cash drawer when they matched their Total Sales. Last 14 days.
+        {recounted > 0 && (
+          <> <span className="text-amber">{recounted} {recounted === 1 ? 'check was' : 'checks were'} saved
+          again with a different figure.</span></>
+        )}
       </p>
 
       <div className="grid grid-cols-3 gap-2 text-center">
@@ -62,7 +70,43 @@ export default function TillChecks({ boot }) {
                       {Math.abs(c.cash_gap) >= 1 && <div>Cash: drawer has {naira(Math.abs(c.cash_gap))} {c.cash_gap > 0 ? 'more' : 'less'} than the app</div>}
                     </div>
                   )}
-                  {c.attempts > 1 && <div className="text-dim text-xs mt-1">checked {c.attempts} times (last result shown)</div>}
+                  {/* A re-save used to overwrite the count with no trace,
+                      and the app's figure is on screen by then -- so a
+                      second attempt is not blind. The first figure is now
+                      kept (26 November 2026) and said plainly here.
+                      Three states on purpose: changed, unchanged, and
+                      not known. A row from before the column existed must
+                      not read as "the same figure each time", because
+                      nobody knows that. */}
+                  {c.attempts > 1 && (
+                    c.recounted ? (
+                      <div className="text-amber text-xs mt-1 tnum">
+                        First counted{' '}
+                        {Math.abs(Number(c.first_pos) - Number(c.counted_pos)) > 0.5
+                          && `${naira(c.first_pos)} POS`}
+                        {Math.abs(Number(c.first_pos) - Number(c.counted_pos)) > 0.5
+                          && Math.abs(Number(c.first_cash) - Number(c.counted_cash)) > 0.5 && ' and '}
+                        {Math.abs(Number(c.first_cash) - Number(c.counted_cash)) > 0.5
+                          && `${naira(c.first_cash)} cash`}
+                        , recorded{' '}
+                        {Math.abs(Number(c.first_pos) - Number(c.counted_pos)) > 0.5
+                          && `${naira(c.counted_pos)} POS`}
+                        {Math.abs(Number(c.first_pos) - Number(c.counted_pos)) > 0.5
+                          && Math.abs(Number(c.first_cash) - Number(c.counted_cash)) > 0.5 && ' and '}
+                        {Math.abs(Number(c.first_cash) - Number(c.counted_cash)) > 0.5
+                          && `${naira(c.counted_cash)} cash`}
+                        {' '}· {c.attempts} attempts
+                      </div>
+                    ) : c.first_pos == null ? (
+                      <div className="text-dim text-xs mt-1">
+                        Checked {c.attempts} times — the first figures were not kept
+                      </div>
+                    ) : (
+                      <div className="text-dim text-xs mt-1">
+                        Checked {c.attempts} times, the same figures each time
+                      </div>
+                    )
+                  )}
                 </li>
               )
             })}
