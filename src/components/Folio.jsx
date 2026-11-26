@@ -1541,7 +1541,7 @@ export default function Folio({ boot, room, onClose, onChanged }) {
             {pay.date && pay.date !== lagosToday() && (
               <p className="text-amber text-sm -mt-2 mb-3">
                 Dating this payment {pay.date}. It will count towards that day's
-                collections, not today's.
+                Total Income, not today's.
               </p>
             )}
 

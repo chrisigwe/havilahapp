@@ -265,7 +265,7 @@ export default function DailySales({ boot }) {
     const rec = Number(summary.recoveredBy?.pos || 0) + Number(summary.recoveredBy?.cash || 0)
     if (!(rec > 0.009)) return undefined
     return `Includes ${naira(rec)} of old debt paid off at the desk. It is in today's `
-         + 'collections, but it was counted as a sale on the day the bill was raised, not today.'
+         + 'Total Income, but it was counted as a sale on the day the bill was raised, not today.'
   })()
 
   const tillGapNote = (() => {
@@ -274,7 +274,7 @@ export default function DailySales({ boot }) {
               + Number(summary.recoveredFromRooms || 0)
     if (!(rec > 0.009)) return undefined
     return `Sales only. ${naira(rec)} of old debt was also collected today — `
-         + "it is in today's collections but it is not a sale, so it is not counted above."
+         + "it is in today's Total Income but it is not a sale, so it is not counted above."
   })()
 
   // What the person counting up is counting against (Chris,
@@ -451,7 +451,7 @@ export default function DailySales({ boot }) {
                       <span className="tnum font-bold">{naira(paid + rec)}</span>
                     </div>
                     <p className="text-dim text-xs mt-2">
-                      It was in that day&#39;s collections, but it is not one of the payments
+                      It was in that day&#39;s Total Income, but it is not one of the payments
                       above — it was counted as a sale on the day the bill was raised.
                     </p>
                   </div>
@@ -601,15 +601,15 @@ export default function DailySales({ boot }) {
           have to open anything to find the number they are counting
           against. Shown only when it differs from the sales above.
 
-          Headed "collections", not "the drawer": the block carries a
+          Headed "Total Income", not "the drawer": the block carries a
           POS figure as well as a cash one, and POS money is in the
           bank, so calling it cash at hand would have put card money in
-          somebody's hand. Collections is the Nigerian term for money
-          received whichever way it came, and the page already says
-          "Collected at the desk in all" (Chris, 26 November). */}
+          somebody's hand. Total Income is what Chidera and Ikenna
+          actually call it -- Chris, 26 November, correcting
+          "collections", which was mine and not theirs. */}
       {summary && drawer && (
         <div className="mt-3 rounded-2xl border border-line bg-surface p-4">
-          <p className="font-semibold text-sm">What today&#39;s collections should come to</p>
+          <p className="font-semibold text-sm">What today&#39;s Total Income should come to</p>
           <div className="grid grid-cols-2 gap-3 mt-2">
             <div className="min-w-0">
               <div className="text-dim text-sm">POS</div>
