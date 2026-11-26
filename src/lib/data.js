@@ -1326,13 +1326,28 @@ export async function auditorAdjustCountLine(countId, itemId, qty, reason) {
 // no new security is needed here, only the queries themselves.
 
 // Live stays (reserved/occupied) matching a room number or guest name.
+// How long a guest stays on the Room guest list after they check out
+// (Chris, 26 November 2026). A man settles his room at midday and is
+// still in the bar at four; dropping him off the list the moment the
+// front desk closes his stay means the bar cannot put his drinks on
+// his own name, and the tab gets opened under something invented.
+export const RECENTLY_OUT_HOURS = 12
+
 export async function searchLiveStays(branchId, query) {
   const q = (query || '').trim()
+  // Checked out within the last RECENTLY_OUT_HOURS counts as live here
+  // too (Chris, 26 November 2026). A charge missed while the guest was
+  // still at the table is put on the room he actually had, not on a
+  // name somebody invents afterwards. The list says "Checked out"
+  // beside him so the choice is made with eyes open: the front desk
+  // has closed that stay, so anything added to it is money still to
+  // collect rather than money waiting at the desk.
+  const since = new Date(Date.now() - RECENTLY_OUT_HOURS * 3600e3).toISOString()
   let req = supabase.from('stays')
-    .select(`id, status, check_in_date, scheduled_out,
+    .select(`id, status, check_in_date, scheduled_out, checked_out_at,
              guests!guest_id(full_name, phone), rooms(room_number)`)
     .eq('branch_id', branchId)
-    .in('status', ['reserved', 'occupied'])
+    .or(`status.in.(reserved,occupied),and(status.eq.checked_out,checked_out_at.gte.${since})`)
     .order('check_in_date', { ascending: false })
     .limit(30)
   const { data, error } = await req
@@ -3619,13 +3634,6 @@ export async function loadRoomsSoldInMonth(branchId, date) {
 // Deliberately NOT read from v_occupancy_today: that view is keyed on
 // rooms and would hide a second stay sharing a room, and it omits the
 // rate/cycle fields the correction sheet has to pre-fill.
-// How long a guest stays on the Room guest list after they check out
-// (Chris, 26 November 2026). A man settles his room at midday and is
-// still in the bar at four; dropping him off the list the moment the
-// front desk closes his stay means the bar cannot put his drinks on
-// his own name, and the tab gets opened under something invented.
-export const RECENTLY_OUT_HOURS = 12
-
 export async function loadLiveStays(branchId) {
   const since = new Date(Date.now() - RECENTLY_OUT_HOURS * 3600e3).toISOString()
   const { data, error } = await supabase.from('stays')
