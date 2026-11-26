@@ -4231,11 +4231,16 @@ export async function findSimilarCustomers(branchId, name) {
 // Active staff at this branch, with their login email and when it was
 // last used — enough to see whether an account is still in use before
 // handing it to someone else.
+// Switched-off accounts come back too (26 November 2026). They used to
+// be filtered out, which hid a leaver's hand-over history at the exact
+// moment somebody would want it: the record of who held the Chef login
+// in November lives on the account, and switching the account off took
+// the record off the screen with it.
 export async function loadStaffAccounts(branchId) {
   const { data, error } = await supabase.from('staff')
     .select('id, full_name, role, is_active, note')
-    .eq('branch_id', branchId).eq('is_active', true)
-    .order('role').order('full_name')
+    .eq('branch_id', branchId)
+    .order('is_active', { ascending: false }).order('role').order('full_name')
   if (error) throw error
   return data || []
 }
