@@ -83,11 +83,6 @@ export default function Sponsors({ boot }) {
   const payouts = account?.payouts || []
   const draws = account?.draws || []
 
-  const standing = useMemo(
-    () => sponsorStanding({ paidIn, drawn: draws, today, money: naira }),
-    [paidIn, draws, today])
-  const totals = useMemo(() => sponsorTotals(paidIn, draws), [paidIn, draws])
-  const months = useMemo(() => byMonth(draws), [draws])
   // Only room draws carry a stay and a night count. Handing meals to
   // rebateOwed would be handing it rows whose nights are zero.
   const roomDraws = useMemo(() => draws.filter(d => d.kind !== 'meal'), [draws])
@@ -95,6 +90,18 @@ export default function Sponsors({ boot }) {
   const fee = useMemo(
     () => rebateOwed({ draws: roomDraws, perNight: picked?.rebatePerNight || 0, payouts }),
     [roomDraws, picked, payouts])
+
+  // The fee is owed out of what is here, so the headline figure -- the
+  // answer to "how much is left" -- has it taken off (Chris, 26
+  // November). The organisation's OWN balance is `standing.gross`, and
+  // that is what the statement prints: they are not party to the
+  // arrangement, and a refund worked out from the net would be short.
+  const standing = useMemo(
+    () => sponsorStanding({ paidIn, drawn: draws, today, money: naira,
+                            setAside: Math.max(0, fee.owed) }),
+    [paidIn, draws, today, fee])
+  const totals = useMemo(() => sponsorTotals(paidIn, draws), [paidIn, draws])
+  const months = useMemo(() => byMonth(draws), [draws])
 
   // FoldedDays folds a day-grouped list; the month headings come from
   // the fold itself, so the page hands it days and nothing more.
@@ -227,6 +234,13 @@ export default function Sponsors({ boot }) {
             </span>
             <p className={`mt-1 text-4xl font-extrabold tnum ${tone.ink}`}>{standing.headline}</p>
             <p className="text-dim mt-1">{standing.detail}</p>
+
+            {standing.setAside > 0.009 && (
+              <p className="text-dim text-sm mt-2">
+                {naira(standing.gross)} of their money is here, less {naira(standing.setAside)}{' '}
+                owed to {picked?.rebatePayee || 'the agreed payee'}.
+              </p>
+            )}
 
             <div className="mt-3 pt-3 border-t border-line flex items-baseline justify-between gap-3 text-sm">
               <span className="text-dim">Paid in</span>
