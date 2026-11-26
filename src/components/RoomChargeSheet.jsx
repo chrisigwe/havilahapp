@@ -163,7 +163,14 @@ export default function RoomChargeSheet({ boot, stockMap, onClose, toast, fromRe
                     <div className="flex items-center gap-3">
                       <span className="font-bold w-14">{s.rooms?.room_number}</span>
                       <span className="flex-1 min-w-0 truncate">{s.guests?.full_name}</span>
-                      <span className="text-dim text-sm capitalize">{s.status}</span>
+                      {/* "checked_out" would read as "Checked_out" under
+                          capitalize, so the underscore goes first. Amber,
+                          because that stay is already settled and anything
+                          added to it is money still to collect. */}
+                      <span className={`text-sm capitalize shrink-0 ${
+                        s.status === 'checked_out' ? 'text-amber' : 'text-dim'}`}>
+                        {String(s.status || '').replace(/_/g, ' ')}
+                      </span>
                     </div>
                   </button>
                 </li>

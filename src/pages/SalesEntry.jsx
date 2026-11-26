@@ -1988,10 +1988,14 @@ export default function SalesEntry({ boot }) {
                 <div className="font-bold">
                   Room {guestChoice.rooms?.room_number} · {guestChoice.guests?.full_name}
                 </div>
-                {/* A guest who has checked out has no open room bill to
-                    charge, however the department is set up. The stay
-                    is settled; only a tab of our own is left. */}
-                {canChargeToRoom && !guestChoice.recentlyOut ? (<>
+                {/* A checked-out guest CAN still be charged to his room
+                    (Chris, 26 November 2026). I had withdrawn it here on
+                    the grounds that the stay is settled; he wants the
+                    charge to land on the room the man actually had,
+                    rather than on a name somebody invents. The two doors
+                    to this -- here and the Charge to a room sheet -- now
+                    agree, which matters more than either answer. */}
+                {canChargeToRoom ? (<>
                   <p className="mt-2 text-sm font-semibold">
                     Charge {naira(basketTotal)} to Room {guestChoice.rooms?.room_number} · {guestChoice.guests?.full_name}
                     {guestChoice.check_in_date ? ` (checked in ${niceDay(guestChoice.check_in_date)})` : ''}
@@ -1999,6 +2003,12 @@ export default function SalesEntry({ boot }) {
                   <p className="text-dim text-sm mt-1">
                     Is this the right guest? Check the name and room before charging.
                   </p>
+                  {guestChoice.recentlyOut && (
+                    <p className="text-amber text-sm mt-1">
+                      He has already checked out. This goes on that stay as money
+                      still to collect, not as something waiting at the desk.
+                    </p>
+                  )}
                   <button onClick={() => chooseRoomBill(guestChoice)}
                     className="mt-3 w-full h-12 rounded-xl bg-amber text-bg font-bold">
                     Add to room bill
