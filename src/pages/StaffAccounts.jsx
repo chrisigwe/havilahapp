@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useState } from 'react'
 import { SUPERVISOR, is } from '../lib/roles'
 import { loadStaffAccounts, resetStaffPassword, deactivateStaff } from '../lib/data'
+import { heldBy, holderOn, otherLines } from '../lib/holders'
+import { lagosToday } from '../lib/format'
 import { useToast } from '../components/Toast'
 import Notice from '../components/Notice'
 
@@ -33,6 +35,9 @@ export default function StaffAccounts({ boot }) {
   const [handover, setHandover] = useState(null)
   const [confirmOff, setConfirmOff] = useState(null)
   const [busy, setBusy] = useState(false)
+  // Empty until somebody asks. A date prefilled with today would
+  // answer a question nobody put.
+  const [asOf, setAsOf] = useState('')
 
   const refresh = useCallback(() => {
     loadStaffAccounts(staff.branch_id)
@@ -68,16 +73,106 @@ export default function StaffAccounts({ boot }) {
     setBusy(false)
   }
 
+  const dShort = (d) => (d ? new Date(d + 'T12:00:00')
+    .toLocaleDateString('en-NG', { day: 'numeric', month: 'short', year: 'numeric' }) : '')
+
+  // One account. Drawn the same whether it is on or off, because the
+  // history is the point and a switched-off account still has one.
+  const accountRow = (r) => {
+    const held = heldBy(r.note)
+    const remarks = otherLines(r.note)
+    const then = asOf ? holderOn(r.note, asOf) : null
+    return (
+      <div key={r.id} className="py-3 border-b border-line/60">
+        <div className="flex items-baseline justify-between gap-3">
+          <span className={`font-semibold truncate ${r.is_active ? '' : 'text-dim'}`}>
+            {r.full_name}
+          </span>
+          <span className="text-dim text-sm shrink-0 capitalize">
+            {r.role.replace('_', ' ')}
+          </span>
+        </div>
+
+        {asOf && (
+          <p className={`text-sm mt-1 ${then ? 'text-leaf' : 'text-dim'}`}>
+            {then
+              ? `On ${dShort(asOf)} this login was held by ${then.name}, since ${dShort(then.since)}.`
+              : `No record of who held this on ${dShort(asOf)} — it had not been handed over by then.`}
+          </p>
+        )}
+
+        {!!held.length && (
+          <ul className="mt-1">
+            {held.map(h => (
+              <li key={h.from} className="text-dim text-xs">
+                {h.until
+                  ? `${dShort(h.from)} to ${dShort(h.until)} — ${h.name}`
+                  : r.is_active
+                    ? `${dShort(h.from)} to now — ${h.name}`
+                    : `${dShort(h.from)} until it was switched off — ${h.name}`}
+                {h.by ? ` · handed over by ${h.by}` : ''}
+              </li>
+            ))}
+          </ul>
+        )}
+
+        {!!remarks.length && (
+          <div className="text-dim text-xs mt-1 whitespace-pre-line">{remarks.join('\n')}</div>
+        )}
+
+        {r.is_active ? (
+          /* min-h, not h: at phone width "Hand over / change password"
+             wraps to two lines, and a fixed height let the second line
+             hang outside the border. */
+          <div className="flex flex-wrap gap-2 mt-2">
+            <button onClick={() => setHandover({ row: r, password: '', holder: '' })}
+              className="min-h-9 px-3 py-1.5 rounded-lg border border-amber text-amber
+                         text-sm font-semibold leading-tight">
+              Hand over / change password
+            </button>
+            <button onClick={() => setConfirmOff(r)}
+              className="min-h-9 px-3 py-1.5 rounded-lg border border-clay text-clay
+                         text-sm font-semibold leading-tight">
+              Switch off
+            </button>
+          </div>
+        ) : (
+          <p className="text-dim text-xs mt-2">Cannot sign in.</p>
+        )}
+      </div>
+    )
+  }
+
   // gm/admin accounts are not listed — see the note above.
-  const list = (rows || []).filter(r => !['gm', 'admin'].includes(r.role))
+  const all = (rows || []).filter(r => !['gm', 'admin'].includes(r.role))
+  const list = all.filter(r => r.is_active)
+  const off = all.filter(r => !r.is_active)
 
   return (
     <div className="px-5 pb-8">
-      <h1 className="text-xl font-bold py-2">Staff accounts</h1>
-      <p className="text-dim text-sm mb-3">
+      {/* No heading here: the Shell draws the page title and the staff
+          name above every page. */}
+      <p className="text-dim text-sm py-2 mb-1">
         When someone leaves: if the login is theirs alone, switch it off. If it
         belongs to the job and someone else is taking over, change the password.
+        Never rename an account — every entry it ever made would start naming
+        the new person.
       </p>
+
+      {/* An entry names the ACCOUNT. Put the entry's date in here and
+          each login below says who was holding it that day. One control
+          for the whole page, because the question is always asked while
+          looking at something else (26 November 2026). */}
+      <div className="rounded-2xl border border-line bg-surface p-4 mb-3">
+        <label className="block text-dim text-sm">Reading an old entry? Put its date here</label>
+        <input type="date" value={asOf} max={lagosToday()}
+          onChange={e => setAsOf(e.target.value)}
+          className="mt-1 h-12 w-full px-3 rounded-xl bg-raise border border-line" />
+        <p className="text-dim text-xs mt-1">
+          Entries name the login, not the person. This says who was holding each
+          one on that day.
+        </p>
+      </div>
 
       {loadErr && (
         <Notice tone="problem" title="Staff accounts could not be loaded" className="mb-3">
@@ -98,29 +193,22 @@ export default function StaffAccounts({ boot }) {
 
       {rows === null && !loadErr && <p className="text-dim py-8 text-center">Loading…</p>}
 
-      {list.map(r => (
-        <div key={r.id} className="py-3 border-b border-line/60">
-          <div className="flex items-baseline justify-between gap-3">
-            <span className="font-semibold truncate">{r.full_name}</span>
-            <span className="text-dim text-sm shrink-0 capitalize">
-              {r.role.replace('_', ' ')}
-            </span>
-          </div>
-          {r.note && (
-            <div className="text-dim text-xs mt-1 whitespace-pre-line">{r.note}</div>
-          )}
-          <div className="flex gap-2 mt-2">
-            <button onClick={() => setHandover({ row: r, password: '', holder: '' })}
-              className="h-9 px-3 rounded-lg border border-amber text-amber text-sm font-semibold">
-              Hand over / change password
-            </button>
-            <button onClick={() => setConfirmOff(r)}
-              className="h-9 px-3 rounded-lg border border-clay text-clay text-sm font-semibold">
-              Switch off
-            </button>
-          </div>
-        </div>
-      ))}
+      {list.map(r => accountRow(r))}
+
+      {/* Switched-off accounts stay on the page. Their history is the
+          whole reason to keep them visible. */}
+      {!!off.length && (
+        <section className="mt-6">
+          <h2 className="text-dim text-[0.65rem] uppercase tracking-[0.18em] font-semibold">
+            Switched off
+          </h2>
+          <p className="text-dim text-xs mt-1 mb-1">
+            These cannot sign in. They are here because the entries they made are
+            still in the books.
+          </p>
+          {off.map(r => accountRow(r))}
+        </section>
+      )}
 
       {!!rows && !loadErr && !list.length && (
         <p className="text-dim py-8 text-center">No staff accounts at this branch.</p>
