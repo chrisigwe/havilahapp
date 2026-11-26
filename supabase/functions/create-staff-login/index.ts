@@ -35,6 +35,17 @@ const json = (body: unknown, status = 200) =>
 
 const ALLOWED = ['bar', 'front_desk', 'storekeeper', 'manager', 'auditor', 'housekeeper']
 
+// Roles that must be tied to a department. The policies read
+// staff_locations as "no rows means every department", so a bar login
+// created without one can record sales for Reception, the Restaurant
+// and the Minimart. Justin got all five on 26 November because this
+// function set default_location_id -- which is only where he LANDS --
+// and never wrote the row that restricts him.
+//
+// Manager, auditor and housekeeper are deliberately absent: those are
+// branch-wide by design, which is what having no rows means.
+const MUST_HAVE_DEPARTMENT = ['bar', 'front_desk', 'storekeeper']
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return json({ ok: true })
 
@@ -75,6 +86,10 @@ Deno.serve(async (req) => {
     // A GM works both branches, so the branch is passed rather than
     // taken from the caller — but only one they can actually see.
     if (!branchId) return json({ ok: false, error: 'Which branch is this login for?' }, 400)
+    if (MUST_HAVE_DEPARTMENT.includes(role) && !defaultLocationId) {
+      return json({ ok: false,
+        error: 'Choose the department. Without one this login could record for every department in the branch.' }, 400)
+    }
     if (caller.role !== 'admin' && caller.branch_id !== branchId) {
       return json({ ok: false, error: 'That branch is not yours' }, 403)
     }
@@ -121,6 +136,23 @@ Deno.serve(async (req) => {
       // would fail with "already in use" for no visible reason.
       await admin.auth.admin.deleteUser(made.user.id)
       return json({ ok: false, error: `Login not created: ${sErr.message}` }, 400)
+    }
+
+    // THE ROW THAT RESTRICTS THEM. default_location_id above only says
+    // where the page opens; staff_locations is what the policies read,
+    // and no rows there means every department.
+    if (defaultLocationId) {
+      const { error: lErr } = await admin.from('staff_locations')
+        .insert({ staff_id: made.user.id, location_id: defaultLocationId })
+      if (lErr) {
+        // Unwound completely rather than left half-made: an account
+        // with no department is not a smaller version of this one, it
+        // is one that can record for all of them.
+        await admin.from('staff').delete().eq('id', made.user.id)
+        await admin.auth.admin.deleteUser(made.user.id)
+        return json({ ok: false,
+          error: `Login not created: the department could not be set (${lErr.message})` }, 400)
+      }
     }
 
     return json({ ok: true, staff: row, email })
