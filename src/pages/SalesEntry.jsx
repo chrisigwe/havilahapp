@@ -496,10 +496,10 @@ export default function SalesEntry({ boot }) {
         handedOutTotal > 0
           && `less ${naira(handedOutTotal)} you collected here on the departments' behalf`,
         recovered > 0.009
-          && `including ${naira(recovered)} of old debt paid off at the desk, which is money in the drawer but was counted as a sale on the day the bill was raised`,
+          && `including ${naira(recovered)} of old debt paid off at the desk, which is money in today's takings but was counted as a sale on the day the bill was raised`,
       ].filter(Boolean)
       return parts.length
-        ? `What should be in hand — your whole slip and drawer, ${parts.join(', and ')}.`
+        ? `What should be in hand — your whole slip and cash, ${parts.join(', and ')}.`
         : 'What should be in hand at the front desk.'
     }
     const credit = roomUnpaidToday > 0

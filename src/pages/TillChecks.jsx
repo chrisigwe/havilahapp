@@ -28,7 +28,7 @@ export default function TillChecks({ boot }) {
   return (
     <div className="px-5 pb-8">
       <p className="text-dim text-sm py-2">
-        What staff typed from the POS slip and the cash drawer when they matched their Total Sales. Last 14 days.
+        What staff typed from the POS slip and the cash at hand when they matched their Total Sales. Last 14 days.
         {recounted > 0 && (
           <> <span className="text-amber">{recounted} {recounted === 1 ? 'check was' : 'checks were'} saved
           again with a different figure.</span></>
@@ -67,7 +67,7 @@ export default function TillChecks({ boot }) {
                   {!ok && (
                     <div className="text-sm text-dim tnum mt-1">
                       {Math.abs(c.pos_gap) >= 1 && <div>POS: app is {naira(Math.abs(c.pos_gap))} {c.pos_gap > 0 ? 'more' : 'less'} than the terminal</div>}
-                      {Math.abs(c.cash_gap) >= 1 && <div>Cash: drawer has {naira(Math.abs(c.cash_gap))} {c.cash_gap > 0 ? 'more' : 'less'} than the app</div>}
+                      {Math.abs(c.cash_gap) >= 1 && <div>Cash: {naira(Math.abs(c.cash_gap))} {c.cash_gap > 0 ? 'more' : 'less'} in hand than the app expects</div>}
                     </div>
                   )}
                   {/* A re-save used to overwrite the count with no trace,

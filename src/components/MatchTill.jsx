@@ -214,7 +214,7 @@ export default function MatchTill({ rows = [], posTotal = 0, cashTotal = 0, cred
       </div>
       <p className="text-dim text-sm mt-1">
         {blind
-          ? 'Count your drawer and read your POS slip, then type what you actually found. The app shows whether it agrees once you save.'
+          ? 'Count your cash and read your POS slip, then type what you actually found. The app shows whether it agrees once you save.'
           : 'Total Sales is your POS, Cash and Credit (plus any old debt paid today). Type what you have in hand and the app shows where it does not agree.'}
       </p>
 
@@ -225,7 +225,7 @@ export default function MatchTill({ rows = [], posTotal = 0, cashTotal = 0, cred
           inc.handedOutPos > 0 && `Less ${naira(inc.handedOutPos)} of this slip that belongs to the departments, written on it`,
         ].filter(Boolean).join('. ') || null}
         higher="more on the app than on the POS slip" lower="less on the app than on the POS slip" blind={blind} />
-      <AmountRow label="Cash in your drawer" app={appCash} value={cash} onChange={edit(setCash)} gap={cashGap} ok={cashOk}
+      <AmountRow label="Cash at hand" app={appCash} value={cash} onChange={edit(setCash)} gap={cashGap} ok={cashOk}
         hint={[
           inc.recoveredCash > 0 && `Includes ${naira(inc.recoveredCash)} of old debt paid in cash`,
           inc.roomCash > 0 && `Includes ${naira(inc.roomCash)} of guests' debt the front desk recovered in cash and hands over at close`,
