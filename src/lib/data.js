@@ -4761,10 +4761,11 @@ export async function loadSponsorAccount(branchId, sponsorGuestId, accountId) {
 
   const stayById = new Map(stays.map(s => [s.id, s]))
   const folioById = new Map((folioRes.data || []).map(f => [f.stay_id, f]))
-  const draws = (payRes.data || []).map(p => {
+  const roomDraws = (payRes.data || []).map(p => {
     const st = stayById.get(p.stay_id) || {}
     const fo = folioById.get(p.stay_id) || {}
     return {
+      kind: 'room',
       id: p.id, stay_id: p.stay_id, business_date: p.business_date,
       amount: Number(p.amount || 0), remark: p.remark,
       guest_name: st.guests?.full_name || 'A guest',
@@ -4778,7 +4779,76 @@ export async function loadSponsorAccount(branchId, sponsorGuestId, accountId) {
       outstanding: Number(fo.outstanding || 0),
     }
   })
-  return { paidIn, payouts, draws, stays }
+
+  const meals = await loadSponsorMeals(branchId, stays)
+  // Meal rows carry no stay_id on purpose. The per-night fee counts
+  // nights once per stay, and a meal sharing its stay's id would claim
+  // that stay first and hide the night count behind a zero.
+  return { paidIn, payouts, draws: [...roomDraws, ...meals], stays }
+}
+
+// What the organisation's guests ate, sold at the Restaurant on credit
+// to their own customer accounts rather than charged to the room.
+//
+// This is how it has actually happened at Awka: the kitchen opens a tab
+// per guest and the organisation settles it, so the meals never reach
+// the folio and the room payment does not cover them. They are still
+// the organisation's to pay under the agreement, so they are draws.
+//
+// Tied to the stay by the LINK between a customer and a guest, and by
+// the meal falling inside that guest's own dates. Only the Restaurant
+// counts: a bar tab is the guest's own, and food charged to the room is
+// already inside the folio total the room payment settled, so counting
+// it here would charge the organisation twice.
+async function loadSponsorMeals(branchId, stays) {
+  const guestIds = [...new Set(stays.map(s => s.guest_id).filter(Boolean))]
+  if (!guestIds.length) return []
+
+  const [custRes, locRes] = await Promise.all([
+    supabase.from('customers').select('id, name, linked_guest_id')
+      .eq('branch_id', branchId).in('linked_guest_id', guestIds),
+    supabase.from('stock_locations').select('id, name').eq('branch_id', branchId),
+  ])
+  if (custRes.error) throw custRes.error
+  if (locRes.error) throw locRes.error
+
+  const custs = custRes.data || []
+  if (!custs.length) return []
+  const mealLocs = (locRes.data || []).filter(l => /restaurant/i.test(l.name || ''))
+  if (!mealLocs.length) return []
+
+  const { data, error } = await supabase.from('sales')
+    .select('id, business_date, description, amount, customer_id, sale_payments!inner(method, amount)')
+    .eq('branch_id', branchId)
+    .in('customer_id', custs.map(c => c.id))
+    .in('location_id', mealLocs.map(l => l.id))
+    .eq('sale_payments.method', 'credit')
+    .order('business_date', { ascending: true })
+  if (error) throw error
+
+  const guestOf = new Map(custs.map(c => [c.id, c.linked_guest_id]))
+  const nameOf = new Map(custs.map(c => [c.id, c.name]))
+  const out = []
+  for (const r of data || []) {
+    const guestId = guestOf.get(r.customer_id)
+    const stay = stays.find(s => s.guest_id === guestId
+      && String(r.business_date) >= String(s.check_in_date)
+      && String(r.business_date) <= String(s.actual_out || s.scheduled_out || '9999-12-31'))
+    if (!stay) continue      // ate outside their own stay: not this account's
+    const onCredit = (r.sale_payments || [])
+      .filter(p => p.method === 'credit')
+      .reduce((t, p) => t + Number(p.amount || 0), 0)
+    if (!(onCredit > 0.009)) continue
+    out.push({
+      kind: 'meal',
+      id: r.id, stay_id: null, business_date: r.business_date,
+      amount: onCredit,
+      guest_name: nameOf.get(r.customer_id) || 'A guest',
+      description: r.description || 'Meal',
+      room_number: stay.rooms?.room_number || null,
+    })
+  }
+  return out
 }
 
 // A payment made to the person the per-night fee is owed to. Its own

@@ -194,5 +194,22 @@ eq('a draw with no stay behind it is not counted',
    rebateOwed({ draws: [{ nights: 2, amount: 100 }], perNight: 5000 }).nights, 0)
 eq('rates arriving as text', rebateOwed({ draws: NOV, perNight: '5000.00' }).earned, 75000)
 
+// Meals are draws too, but they are not nights. A meal row carrying
+// its stay's id would claim that stay first and hide the night count
+// behind a zero, so meal rows carry no stay and the page hands
+// rebateOwed only the room draws.
+const MEALS = [{ kind: 'meal', id: 'm1', stay_id: null, nights: 0, amount: 12000 },
+               { kind: 'meal', id: 'm2', stay_id: null, nights: 0, amount: 11000 }]
+const ROOMS = NOV.map(r => ({ ...r, kind: 'room' }))
+
+eq('meals mixed in do not change the nights owed',
+   rebateOwed({ draws: [...ROOMS, ...MEALS], perNight: 5000 }).nights, 15)
+eq('and do not change what is owed',
+   rebateOwed({ draws: [...ROOMS, ...MEALS], perNight: 5000 }).owed, 75000)
+// The failure this guards: a meal row that DID carry its stay's id.
+eq('a meal wearing its stay id would have hidden the nights',
+   rebateOwed({ draws: [{ stay_id: 'a', nights: 0, amount: 12000 }, stay('a', 2, 80000)],
+                perNight: 5000 }).nights, 0)
+
 console.log(`\nsponsor: ${pass} passed, ${fail} failed`)
 process.exit(fail ? 1 : 0)
