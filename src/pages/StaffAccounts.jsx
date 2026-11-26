@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { SUPERVISOR, is } from '../lib/roles'
-import { loadStaffAccounts, resetStaffPassword, deactivateStaff } from '../lib/data'
+import { loadStaffAccounts, resetStaffPassword, deactivateStaff, createStaffLogin } from '../lib/data'
 import { heldBy, holderOn, otherLines } from '../lib/holders'
 import { lagosToday } from '../lib/format'
 import { useToast } from '../components/Toast'
@@ -25,7 +25,7 @@ import Notice from '../components/Notice'
 // only administrator out. The server refuses it too, so the rule does
 // not depend on this screen.
 export default function StaffAccounts({ boot }) {
-  const { staff } = boot
+  const { staff, locations } = boot
   const toast = useToast()
   const [rows, setRows] = useState(null)
   // Setting rows to empty on failure made the page say "No staff
@@ -38,6 +38,7 @@ export default function StaffAccounts({ boot }) {
   // Empty until somebody asks. A date prefilled with today would
   // answer a question nobody put.
   const [asOf, setAsOf] = useState('')
+  const [adding, setAdding] = useState(null)
 
   const refresh = useCallback(() => {
     loadStaffAccounts(staff.branch_id)
@@ -143,6 +144,32 @@ export default function StaffAccounts({ boot }) {
     )
   }
 
+  // Suggested from the name and the department, in the shape the
+  // existing logins use: justin.mainbar@havilah.local. Editable,
+  // because the GM owns the convention and I do not.
+  const suggestEmail = (name, locId) => {
+    const first = String(name || '').trim().split(/\s+/)[0] || ''
+    const dept = (locations || []).find(l => l.id === locId)?.name || ''
+    const slug = (t) => String(t).toLowerCase().replace(/[^a-z0-9]+/g, '')
+    if (!first) return ''
+    return `${slug(first)}${dept ? '.' + slug(dept) : ''}@havilah.local`
+  }
+
+  async function doAdd() {
+    const d = adding
+    if (!d) return
+    setBusy(true)
+    try {
+      const out = await createStaffLogin({
+        branchId: staff.branch_id, fullName: d.fullName.trim(), email: d.email.trim(),
+        password: d.password, role: d.role, defaultLocationId: d.locationId || null,
+      })
+      toast(`${out.staff.full_name} can now sign in as ${out.email}`, 'success')
+      setAdding(null); refresh()
+    } catch (e) { toast(e.message, 'error') }
+    setBusy(false)
+  }
+
   // gm/admin accounts are not listed — see the note above.
   const all = (rows || []).filter(r => !['gm', 'admin'].includes(r.role))
   const list = all.filter(r => r.is_active)
@@ -173,6 +200,13 @@ export default function StaffAccounts({ boot }) {
           one on that day.
         </p>
       </div>
+
+      <button
+        onClick={() => setAdding({ fullName: '', email: '', password: '', role: 'bar',
+                                   locationId: '', touchedEmail: false })}
+        className="w-full h-12 rounded-xl border border-leaf text-leaf font-semibold mb-3">
+        Add a login
+      </button>
 
       {loadErr && (
         <Notice tone="problem" title="Staff accounts could not be loaded" className="mb-3">
@@ -212,6 +246,86 @@ export default function StaffAccounts({ boot }) {
 
       {!!rows && !loadErr && !list.length && (
         <p className="text-dim py-8 text-center">No staff accounts at this branch.</p>
+      )}
+
+      {adding && (
+        <div className="fixed inset-0 z-50 bg-bg overflow-y-auto">
+          <div className="px-5 py-6">
+            <button onClick={() => setAdding(null)} className="text-dim">Back</button>
+            <h2 className="mt-3 text-2xl font-bold">Add a login</h2>
+            <p className="text-dim text-sm mt-1">
+              For somebody new, or for a replacement once the person who left has
+              been switched off. Their own name goes on their own entries.
+            </p>
+
+            <label className="block text-dim text-sm mt-5">Their name</label>
+            <input value={adding.fullName} autoComplete="off"
+              onChange={e => setAdding(a => ({
+                ...a, fullName: e.target.value,
+                email: a.touchedEmail ? a.email : suggestEmail(e.target.value, a.locationId) }))}
+              className="mt-1 h-12 w-full px-3 rounded-xl bg-surface border border-line" />
+            <p className="text-dim text-xs mt-1">
+              This is the name every entry they make will carry.
+            </p>
+
+            <label className="block text-dim text-sm mt-4">What they do</label>
+            <select value={adding.role}
+              onChange={e => setAdding(a => ({ ...a, role: e.target.value }))}
+              className="mt-1 h-12 w-full px-3 rounded-xl bg-surface border border-line">
+              <option value="bar">Bar</option>
+              <option value="front_desk">Front desk</option>
+              <option value="storekeeper">Store manager</option>
+              <option value="manager">Manager</option>
+              <option value="auditor">Auditor</option>
+              <option value="housekeeper">Housekeeper</option>
+            </select>
+            <p className="text-dim text-xs mt-1">
+              GM and admin logins are made in the Supabase dashboard, not here.
+            </p>
+
+            {!!(locations || []).length && (
+              <>
+                <label className="block text-dim text-sm mt-4">
+                  Which department do they open on?
+                </label>
+                <select value={adding.locationId}
+                  onChange={e => setAdding(a => ({
+                    ...a, locationId: e.target.value,
+                    email: a.touchedEmail ? a.email : suggestEmail(a.fullName, e.target.value) }))}
+                  className="mt-1 h-12 w-full px-3 rounded-xl bg-surface border border-line">
+                  <option value="">No particular one</option>
+                  {(locations || []).map(l => (
+                    <option key={l.id} value={l.id}>{l.name}</option>
+                  ))}
+                </select>
+              </>
+            )}
+
+            <label className="block text-dim text-sm mt-4">Sign-in address</label>
+            <input value={adding.email} autoComplete="off" inputMode="email"
+              onChange={e => setAdding(a => ({ ...a, email: e.target.value, touchedEmail: true }))}
+              className="mt-1 h-12 w-full px-3 rounded-xl bg-surface border border-line" />
+            <p className="text-dim text-xs mt-1">
+              Suggested from the name and department. Change it if your convention differs.
+            </p>
+
+            <label className="block text-dim text-sm mt-4">Password</label>
+            <input type="text" value={adding.password} autoComplete="off"
+              onChange={e => setAdding(a => ({ ...a, password: e.target.value }))}
+              className="mt-1 h-12 w-full px-3 rounded-xl bg-surface border border-line" />
+            <p className="text-dim text-xs mt-1">
+              At least 8 characters. Shown as you type so you can pass it on
+              correctly — write it down before saving.
+            </p>
+
+            <button onClick={doAdd}
+              disabled={busy || !adding.fullName.trim() || !adding.email.trim()
+                        || adding.password.length < 8}
+              className="mt-6 w-full h-14 rounded-2xl bg-leaf text-bg text-lg font-bold disabled:opacity-40">
+              {busy ? 'Creating…' : 'Create the login'}
+            </button>
+          </div>
+        </div>
       )}
 
       {handover && (
