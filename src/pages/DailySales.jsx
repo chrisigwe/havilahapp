@@ -264,8 +264,8 @@ export default function DailySales({ boot }) {
     if (!isReception || !summary) return undefined
     const rec = Number(summary.recoveredBy?.pos || 0) + Number(summary.recoveredBy?.cash || 0)
     if (!(rec > 0.009)) return undefined
-    return `Includes ${naira(rec)} of old debt paid off at the desk. It is in the drawer, `
-         + 'but it was counted as a sale on the day the bill was raised, not today.'
+    return `Includes ${naira(rec)} of old debt paid off at the desk. It is in today's `
+         + 'collections, but it was counted as a sale on the day the bill was raised, not today.'
   })()
 
   const tillGapNote = (() => {
@@ -274,10 +274,10 @@ export default function DailySales({ boot }) {
               + Number(summary.recoveredFromRooms || 0)
     if (!(rec > 0.009)) return undefined
     return `Sales only. ${naira(rec)} of old debt was also collected today — `
-         + 'it is in the drawer but it is not a sale, so it is not counted above.'
+         + "it is in today's collections but it is not a sale, so it is not counted above."
   })()
 
-  // What the person counting the drawer is counting against (Chris,
+  // What the person counting up is counting against (Chris,
   // 6 November 2026: the Awka store manager is also the cashier).
   // Sales plus whatever came in against old debt — the same figure the
   // department's own page shows, so the two screens can be read side by
@@ -451,7 +451,7 @@ export default function DailySales({ boot }) {
                       <span className="tnum font-bold">{naira(paid + rec)}</span>
                     </div>
                     <p className="text-dim text-xs mt-2">
-                      It was in the drawer that day, but it is not one of the payments
+                      It was in that day&#39;s collections, but it is not one of the payments
                       above — it was counted as a sale on the day the bill was raised.
                     </p>
                   </div>
@@ -597,12 +597,19 @@ export default function DailySales({ boot }) {
         </TillTile>
       )}
 
-      {/* Outside the fold, because the person counting the drawer should
-          not have to open anything to find the number they are counting
-          against. Shown only when it differs from the sales above. */}
+      {/* Outside the fold, because the person counting up should not
+          have to open anything to find the number they are counting
+          against. Shown only when it differs from the sales above.
+
+          Headed "collections", not "the drawer": the block carries a
+          POS figure as well as a cash one, and POS money is in the
+          bank, so calling it cash at hand would have put card money in
+          somebody's hand. Collections is the Nigerian term for money
+          received whichever way it came, and the page already says
+          "Collected at the desk in all" (Chris, 26 November). */}
       {summary && drawer && (
         <div className="mt-3 rounded-2xl border border-line bg-surface p-4">
-          <p className="font-semibold text-sm">What should be in the drawer</p>
+          <p className="font-semibold text-sm">What today&#39;s collections should come to</p>
           <div className="grid grid-cols-2 gap-3 mt-2">
             <div className="min-w-0">
               <div className="text-dim text-sm">POS</div>

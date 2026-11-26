@@ -96,7 +96,7 @@ export default function TillTile({
         </p>
       ) : hidden ? (
         <p className="text-amber text-xs mt-3">
-          These are hidden until you have counted. Type your POS slip and your drawer into
+          These are hidden until you have counted. Type your POS slip and your cash at hand into
           Match your Total Sales below — they fill in the moment you save, and the app tells
           you whether it agrees. The day&#39;s detail opens here once you have.
         </p>
