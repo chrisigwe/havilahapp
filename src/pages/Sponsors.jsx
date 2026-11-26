@@ -91,28 +91,37 @@ export default function Sponsors({ boot }) {
     () => rebateOwed({ draws: roomDraws, perNight: picked?.rebatePerNight || 0, payouts }),
     [roomDraws, picked, payouts])
 
-  // The fee is owed out of what is here, so the headline figure -- the
-  // answer to "how much is left" -- has it taken off (Chris, 26
-  // November). The organisation's OWN balance is `standing.gross`, and
-  // that is what the statement prints: they are not party to the
-  // arrangement, and a refund worked out from the net would be short.
+  // The per-night fee is billed to the organisation as a SERVICE
+  // CHARGE (Chris, 26 November), so it is a charge on the stay like
+  // the room is -- not a quiet deduction from what is left. It is on
+  // their statement under that name, which is what makes it
+  // legitimate: a refund of the balance is then correct, because the
+  // service charge really was consumed.
+  //
+  // What we owe the officer out of it stays a separate figure, and is
+  // the card lower down.
+  const billed = useMemo(() => draws.map(d => {
+    if (d.kind !== 'room') return { ...d, service: 0 }
+    const service = Number(d.nights || 0) * Number(picked?.rebatePerNight || 0)
+    return { ...d, service, amount: Number(d.amount || 0) + service }
+  }), [draws, picked])
+
   const standing = useMemo(
-    () => sponsorStanding({ paidIn, drawn: draws, today, money: naira,
-                            setAside: Math.max(0, fee.owed) }),
-    [paidIn, draws, today, fee])
-  const totals = useMemo(() => sponsorTotals(paidIn, draws), [paidIn, draws])
-  const months = useMemo(() => byMonth(draws), [draws])
+    () => sponsorStanding({ paidIn, drawn: billed, today, money: naira }),
+    [paidIn, billed, today])
+  const totals = useMemo(() => sponsorTotals(paidIn, billed), [paidIn, billed])
+  const months = useMemo(() => byMonth(billed), [billed])
 
   // FoldedDays folds a day-grouped list; the month headings come from
   // the fold itself, so the page hands it days and nothing more.
   const byDay = useMemo(() => {
     const m = new Map()
-    for (const r of draws) {
+    for (const r of billed) {
       if (!m.has(r.business_date)) m.set(r.business_date, [])
       m.get(r.business_date).push(r)
     }
     return [...m.entries()]
-  }, [draws])
+  }, [billed])
 
   const makeStatement = async () => {
     if (!picked) return
@@ -129,12 +138,16 @@ export default function Sponsors({ boot }) {
           date: p.paid_on, method: methodLabel[p.method] || p.method,
           note: p.note || '', amount: p.amount,
         })),
-        draws: draws.map(r => ({
+        serviceNote: fee.rate > 0
+          ? `Service charge is ${naira(fee.rate)} per night on each stay.`
+          : '',
+        draws: billed.map(r => ({
           date: r.business_date, guest: r.guest_name, roomNo: r.room_number,
           nights: r.kind === 'meal' ? '' : r.nights,
           room: r.kind === 'meal' ? 0 : r.room_charge,
           overstay: r.kind === 'meal' ? 0 : r.overstay_charge,
           meals: r.kind === 'meal' ? r.amount : r.orders_charge,
+          service: r.service || 0,
           amount: r.amount,
         })),
       }), `${picked.name} statement ${today}`)
@@ -235,13 +248,6 @@ export default function Sponsors({ boot }) {
             <p className={`mt-1 text-4xl font-extrabold tnum ${tone.ink}`}>{standing.headline}</p>
             <p className="text-dim mt-1">{standing.detail}</p>
 
-            {standing.setAside > 0.009 && (
-              <p className="text-dim text-sm mt-2">
-                {naira(standing.gross)} of their money is here, less {naira(standing.setAside)}{' '}
-                owed to {picked?.rebatePayee || 'the agreed payee'}.
-              </p>
-            )}
-
             <div className="mt-3 pt-3 border-t border-line flex items-baseline justify-between gap-3 text-sm">
               <span className="text-dim">Paid in</span>
               <span className="tnum font-semibold">{naira(totals.paid)}</span>
@@ -323,7 +329,8 @@ export default function Sponsors({ boot }) {
                 {fee.paid > 0.009 ? ` · ${naira(fee.paid)} already paid` : ''}
               </p>
               <p className="text-dim mt-2 text-xs">
-                Ours to pay, not the organisation’s. It is not on their statement.
+                Billed to them as a service charge and owed on to him. Already counted
+                in what they have drawn, so paying him does not change their balance.
               </p>
               <button
                 onClick={() => setFeeDraft({ paidOn: today, amount: '', method: 'cash',
@@ -418,6 +425,7 @@ export default function Sponsors({ boot }) {
                               Room {naira(r.room_charge)}
                               {r.overstay_charge > 0.009 ? ` · over-stay ${naira(r.overstay_charge)}` : ''}
                               {r.orders_charge > 0.009 ? ` · on the room bill ${naira(r.orders_charge)}` : ''}
+                              {r.service > 0.009 ? ` · service ${naira(r.service)}` : ''}
                             </p>
                           </>
                         )}

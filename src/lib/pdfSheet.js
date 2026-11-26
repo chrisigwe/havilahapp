@@ -415,26 +415,32 @@ export async function sponsorStatementPdf(d) {
     [{ label: 'Paid to date', value: num(d.paidTotal), bold: true }],
   )
 
+  // Widths total 100 and anything past that is clipped in silence, so
+  // the service-charge column was cut out of the others rather than
+  // added to them.
   s.heading('Drawn against the account')
   s.table(
-    [{ label: 'Date', align: 'left', w: 13 }, { label: 'Guest', align: 'left', w: 21 },
+    [{ label: 'Date', align: 'left', w: 12 }, { label: 'Guest', align: 'left', w: 18 },
      { label: 'Room', align: 'left', w: 7 }, { label: 'Nights', align: 'right', w: 7 },
-     { label: 'Room (NGN)', align: 'right', w: 14 },
-     { label: 'Over-stay', align: 'right', w: 12 }, { label: 'Meals', align: 'right', w: 11 },
-     { label: 'Drawn (NGN)', align: 'right', w: 15 }],
+     { label: 'Room (NGN)', align: 'right', w: 12 },
+     { label: 'Over-stay', align: 'right', w: 9 }, { label: 'Meals', align: 'right', w: 10 },
+     { label: 'Service', align: 'right', w: 11 },
+     { label: 'Drawn (NGN)', align: 'right', w: 14 }],
     (d.draws || []).map(r => ({
       cells: [r.date, r.guest, r.roomNo || '—', String(r.nights || ''),
-              num(r.room), num(r.overstay), num(r.meals), num(r.amount)] })),
+              num(r.room), num(r.overstay), num(r.meals), num(r.service),
+              num(r.amount)] })),
     [{ label: 'Drawn to date', value: num(d.drawnTotal), bold: true }],
   )
 
   s.balance(owing ? 'Balance owing' : 'Balance in hand', money(Math.abs(Number(d.balance || 0))))
   s.gap(4)
-  s.note(d.footer || (owing
-    ? 'The account has been drawn past what was paid in. The balance above is due.'
-    : 'Drinks and minimart purchases are settled by the guest and are not drawn '
-      + 'from this account. Stays still in progress are drawn only once the guest '
-      + 'has checked out.'))
+  s.note(d.footer || ((owing
+    ? 'The account has been drawn past what was paid in. The balance above is due. '
+    : 'Stays still in progress are drawn only once the guest has checked out. ')
+    + 'Drinks and minimart purchases are settled by the guest and are not drawn '
+    + 'from this account.'
+    + (d.serviceNote ? ' ' + d.serviceNote : '')))
   return s.finish()
 }
 
