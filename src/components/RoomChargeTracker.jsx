@@ -240,7 +240,7 @@ export default function RoomChargeTracker({ branchId, locationId = null, refresh
                   {g.guest || 'Guest'} <span className="text-dim font-normal">· Room {g.room || '—'}</span>
                 </p>
                 <p className={`text-sm font-semibold ${g.status === 'debt' ? 'text-clay' : 'text-amber'}`}>
-                  {g.status === 'debt' ? 'Checked out still owing' : 'In house — bill still running'}
+                  {g.status === 'debt' ? 'Checked out still owing' : 'Room guest — bill still running'}
                 </p>
                 {/* The guest's whole bill, named for what it is so nobody
                     reads it as this department's figure. */}

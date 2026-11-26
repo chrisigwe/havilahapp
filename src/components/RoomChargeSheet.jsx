@@ -70,7 +70,7 @@ export default function RoomChargeSheet({ boot, stockMap, onClose, toast, fromRe
   useEffect(() => {
     if (stay) return
     const t = setTimeout(() => {
-      tracked('The search for a guest in house', searchLiveStays(staff.branch_id, q)).then(setStays).catch(() => setStays([]))
+      tracked('The search for a room guest', searchLiveStays(staff.branch_id, q)).then(setStays).catch(() => setStays([]))
     }, 200)
     return () => clearTimeout(t)
   }, [q, staff.branch_id, stay])
