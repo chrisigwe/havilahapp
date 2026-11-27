@@ -1686,17 +1686,26 @@ export async function updateStayBillTo({ stayId, billTo, billToGuestId }) {
 export async function searchSimilarGuests(branchId, query) {
   const q = query.trim()
   if (q.length < 3) return []
-  // RETIRED records are excluded. The merge tool does not delete the
-  // losing guest, it RENAMES it "[merged into Mr Onyeka] Mr Onyeka" — and
-  // that name contains the survivor's, so a search for "Mr Onyeka" matched
-  // every retired duplicate. They sort BEFORE the real one ("merged" <
-  // "Mr"), and the old cap of 5 was filled by exactly the five retired
-  // Onyeka records at Awka, so the live record never appeared.
-  const { data, error } = await supabase.from('guests')
-    .select('id, full_name, phone')
-    .eq('branch_id', branchId).ilike('full_name', `%${q}%`)
-    .not('full_name', 'ilike', '[merged into%')
-    .order('full_name').limit(25)
+  // MATCHED IN THE DATABASE, not by substring. A substring search cannot
+  // see a misspelling: on 27 November 2026 one man's six consecutive
+  // nights in Room 205 at Nnewi sat under three spellings --
+  // "Chinemerum Okoli", "chinemelum okoli", "chinaemerum okoli" -- none
+  // of which contains either of the others, so this dropdown, which
+  // already says "Similar guest already exists", stayed empty every
+  // time. search_similar_guests keeps the substring arm (typing "okoli"
+  // must still list the Okolis) and adds a trigram arm at 0.5.
+  //
+  // 0.5 came off the real Nnewi list, not a guess: the two missed
+  // spellings score 0.70 and 0.75 against the survivor, the closest
+  // name that is NOT a match scores 0.45, and a control name with no
+  // twin at the branch returns nothing at all.
+  //
+  // RETIRED records are excluded in the function. The merge tool does
+  // not delete the losing guest, it RENAMES it "[merged into Mr Onyeka]
+  // Mr Onyeka" -- and that name contains the survivor's, so a search
+  // for "Mr Onyeka" matched every retired duplicate.
+  const { data, error } = await supabase.rpc('search_similar_guests',
+    { p_branch: branchId, p_q: q })
   // Was `return []` (24 November 2026). A failed search and a search
   // that found nobody looked identical -- an empty list, no message --
   // and every caller wraps this in tracked(), which never fired because
@@ -1709,25 +1718,56 @@ export async function searchSimilarGuests(branchId, query) {
     r.owing = owed[r.id]?.amount || 0
     r.billedTo = owed[r.id]?.notes.length ? owed[r.id].notes.join('; ') : null
   }
-  // Anyone who owes comes first, then by name — ranked AFTER fetching a
-  // wider pool, so a common name cannot hide the person who owes.
+  // Anyone who owes comes first, then by how close the name is, then by
+  // name -- ranked AFTER fetching a wider pool, so a common name cannot
+  // hide the person who owes.
   rows.sort((x, y) => ((y.owing > 0) - (x.owing > 0)) || (y.owing - x.owing)
+    || ((y.score || 0) - (x.score || 0))
     || String(x.full_name).localeCompare(String(y.full_name)))
   return rows.slice(0, 6)
 }
 
-// For the merge-guests tool — same substring search as above, but
-// also returns each guest's stay count, so staff can see at a
-// glance which record has the real history worth keeping.
+// For the merge-guests tool — the substring search, PLUS the near-name
+// search, because the records most worth merging are exactly the ones
+// substring cannot reach. Nobody could have found Chinemerum /
+// chinemelum / chinaemerum in this sheet: searching any one spelling
+// returned only itself, so the tool built for duplicates was blind to
+// the kind of duplicate that actually happens.
+//
+// Retired records are deliberately NOT filtered out here (unlike the
+// check-in dropdown): this is the tool that made them, and staff need
+// to see where a name already went.
+//
+// Each row carries its stay count, so staff can see at a glance which
+// record has the real history worth keeping.
 export async function searchGuestsForMerge(branchId, query) {
   const q = query.trim()
   if (q.length < 2) return []
-  const { data, error } = await supabase.from('guests')
-    .select('id, full_name, phone, stays!guest_id(count)')
-    .eq('branch_id', branchId).ilike('full_name', `%${q}%`)
-    .order('full_name').limit(10)
-  if (error) return []
-  return (data || []).map(g => ({ ...g, stayCount: g.stays?.[0]?.count ?? 0 }))
+  const cols = 'id, full_name, phone, stays!guest_id(count)'
+  const [sub, near] = await Promise.all([
+    supabase.from('guests').select(cols)
+      .eq('branch_id', branchId).ilike('full_name', `%${q}%`)
+      .order('full_name').limit(10),
+    // The function needs three characters; below that the substring
+    // arm alone is what this tool has always done.
+    q.length >= 3
+      ? supabase.rpc('search_similar_guests', { p_branch: branchId, p_q: q })
+      : Promise.resolve({ data: [], error: null }),
+  ])
+  if (sub.error) return []
+  const withCount = g => ({ ...g, stayCount: g.stays?.[0]?.count ?? 0 })
+  const rows = (sub.data || []).map(withCount)
+  // A failure of the near-name arm leaves the tool exactly as useful as
+  // it was before this was added, which is why it is not fatal here —
+  // but it must never silently swallow the arm that IS the tool.
+  const have = new Set(rows.map(r => r.id))
+  const extra = (near.data || []).map(r => r.id).filter(id => !have.has(id))
+  if (extra.length) {
+    const { data: more } = await supabase.from('guests').select(cols).in('id', extra)
+    for (const g of (more || [])) rows.push(withCount(g))
+  }
+  rows.sort((a, b) => String(a.full_name).localeCompare(String(b.full_name)))
+  return rows.slice(0, 12)
 }
 
 export async function mergeGuests(survivorId, duplicateIds) {
