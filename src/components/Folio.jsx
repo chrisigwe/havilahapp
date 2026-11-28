@@ -2413,6 +2413,41 @@ export default function Folio({ boot, room, onClose, onChanged }) {
             </p>
           )}
 
+          {/* The BOOKED departure date, which this sheet never mentioned.
+              Ugochukwu Anufurude left Room 301 at Nnewi on 25 November,
+              was closed on the 26th with today's date sitting in the box,
+              and was billed a second night of N35,000 he had not stayed —
+              by which time he was gone. The grey paragraph above already
+              said to put the day they actually left; guidance read a
+              hundred times is not a control. What was missing is the
+              comparison against what the guest booked, and a way to take
+              the booked date that is not fighting a date picker on a
+              phone at the desk.
+
+              Only when the chosen date is LATER than the booking: that is
+              the only direction that invents money. A warning and a
+              button, never a block — a guest really can stay on, and the
+              desk is the only one who knows which happened. */}
+          {/* Booked nights must be at least one: a short-time or
+              same-day booking is not billed by the night, and "booked
+              out on the 24th, which is 0 nights" would be a true
+              sentence that misleads. */}
+          {checkIn && checkoutDate && scheduledOut && checkoutDate > scheduledOut
+            && nightsBetween(checkIn, scheduledOut) >= 1 && (
+            <>
+              <p className="text-clay text-sm mt-3 tnum">
+                Booked out on <b>{scheduledOut}</b>, which is{' '}
+                {nightsBetween(checkIn, scheduledOut)} night{nightsBetween(checkIn, scheduledOut) === 1 ? '' : 's'}.
+                This bills {nightsBetween(checkIn, checkoutDate)} — right only
+                if they really stayed on.
+              </p>
+              <button type="button" onClick={() => setCheckoutDate(scheduledOut)}
+                className="mt-3 w-full h-12 rounded-xl border border-line text-ink">
+                They left on {scheduledOut}, as booked
+              </button>
+            </>
+          )}
+
           {stay?.pre_reopen_actual_out && checkoutDate !== stay.pre_reopen_actual_out && (
             <p className="text-clay text-sm mt-3">
               Not the date it had before — this will change what the room
